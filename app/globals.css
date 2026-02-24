@@ -1,26 +1,53 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --brand-navy: #0f1b2d;
+  --brand-navy-light: #1a2d47;
+  --brand-blue: #2e7de8;
+  --brand-blue-light: #5a9cf0;
+  --brand-blue-muted: #1e3a5f;
+  --brand-teal: #0ea5a0;
+  --brand-teal-light: #14d4cd;
+  --brand-orange: #f0853a;
+  --brand-surface: #f7f8fa;
+  --brand-surface-elevated: #ffffff;
+  --brand-border: #e2e5ea;
+  --brand-text: #1a1f27;
+  --brand-text-secondary: #5a6370;
+  --brand-text-muted: #8b95a3;
+  --brand-success: #16a34a;
+  --brand-warning: #f59e0b;
+  --brand-error: #dc2626;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--brand-surface);
+  color: var(--brand-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--brand-border);
+  border-radius: 3px;
+}
+
+a, button {
+  transition: all 0.15s ease;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
