@@ -1112,6 +1112,14 @@ export function getAgentShows(agentId: string): (Show & { commission_rate?: numb
   }).filter(Boolean);
 }
 
+export function getInvoicesByAgent(agentId: string): Invoice[] {
+  return invoices.filter((inv) => {
+    const io = insertionOrders.find((io) => io.id === inv.io_id);
+    const deal = io ? deals.find((d) => d.id === io.deal_id) : undefined;
+    return deal?.agent_id === agentId;
+  });
+}
+
 export function getAgentStats(agentId: string) {
   const agentShows = getShowsByAgent(agentId);
   const agentDeals = getDealsByAgent(agentId);

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getDealsByAgent, getShowById, profiles } from "@/lib/data";
+import { getDealsByAgent, getShowById, getIOByDeal, profiles } from "@/lib/data";
 import type { DealStatus } from "@/lib/data";
 
 const agentDeals = getDealsByAgent("user-agent-001");
@@ -49,6 +49,9 @@ export default function DealsPage() {
           {agentDeals.map((deal) => {
             const show = getShowById(deal.show_id);
             const brandName = getBrandName(deal.brand_id);
+            const existingIO = getIOByDeal(deal.id);
+            const showIOLink = ["approved", "io_sent", "signed", "live", "completed"].includes(deal.status);
+            const ioLabel = existingIO ? "View IO" : "Generate IO";
             const flightStart = new Date(deal.flight_start).toLocaleDateString("en-US", { month: "short", day: "numeric" });
             const flightEnd = new Date(deal.flight_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
@@ -75,6 +78,14 @@ export default function DealsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-5">
+                  {showIOLink && (
+                    <Link
+                      href={`/deals/${deal.id}/io`}
+                      className="text-xs text-[var(--brand-blue)] hover:underline font-medium"
+                    >
+                      {ioLabel}
+                    </Link>
+                  )}
                   <div className="text-right">
                     <div className="text-sm font-semibold text-[var(--brand-text)]">${deal.total_net.toLocaleString()}</div>
                     <div className="text-xs text-[var(--brand-text-muted)]">net revenue</div>

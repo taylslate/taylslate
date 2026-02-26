@@ -1,35 +1,16 @@
 import Link from "next/link";
+import { campaigns, type CampaignStatus } from "@/lib/data";
 
-const mockCampaigns = [
-  {
-    id: "1",
-    name: "Q2 Fitness Launch",
-    status: "active",
-    budget_total: 20000,
-    platforms: ["podcast"],
-    created_at: "2026-02-10",
-    recommendations_count: 15,
-  },
-  {
-    id: "2",
-    name: "Summer DTC Push",
-    status: "planned",
-    budget_total: 35000,
-    platforms: ["podcast", "youtube"],
-    created_at: "2026-02-18",
-    recommendations_count: 22,
-  },
-];
-
-const statusStyles: Record<string, string> = {
+const statusStyles: Record<CampaignStatus, string> = {
   draft: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
   planned: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
   active: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
   completed: "bg-[var(--brand-teal)]/10 text-[var(--brand-teal)]",
+  archived: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
 };
 
 export default function CampaignsPage() {
-  const hasCampaigns = mockCampaigns.length > 0;
+  const hasCampaigns = campaigns.length > 0;
 
   return (
     <div className="p-8 max-w-5xl">
@@ -50,7 +31,7 @@ export default function CampaignsPage() {
 
       {hasCampaigns ? (
         <div className="space-y-3">
-          {mockCampaigns.map((campaign) => (
+          {campaigns.map((campaign) => (
             <Link
               key={campaign.id}
               href={`/campaigns/${campaign.id}`}
@@ -72,7 +53,7 @@ export default function CampaignsPage() {
                       {new Date(campaign.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </span>
                     <span className="text-xs text-[var(--brand-text-muted)]">{campaign.platforms.join(" + ")}</span>
-                    <span className="text-xs text-[var(--brand-text-muted)]">{campaign.recommendations_count} shows</span>
+                    <span className="text-xs text-[var(--brand-text-muted)]">{campaign.recommendations.length} shows</span>
                   </div>
                 </div>
               </div>
