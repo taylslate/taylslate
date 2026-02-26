@@ -47,13 +47,13 @@ export default function Home() {
           </p>
 
           <div className="flex flex-wrap items-center gap-4">
-            <Link href="/signup" className="inline-flex items-center gap-2 bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white px-7 py-3.5 rounded-xl font-semibold text-base transition-all hover:translate-y-[-1px] hover:shadow-lg hover:shadow-blue-500/20">
-              Start planning free
+            <Link href="/campaigns" className="inline-flex items-center gap-2 bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white px-7 py-3.5 rounded-xl font-semibold text-base transition-all hover:translate-y-[-1px] hover:shadow-lg hover:shadow-blue-500/20">
+              Enter Dashboard
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="ml-1">
                 <path d="M3 8h10m0 0L9 4m4 4L9 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </Link>
-            <span className="text-sm text-white/30">No credit card required</span>
+            <span className="text-sm text-white/30">Development preview</span>
           </div>
         </div>
 
