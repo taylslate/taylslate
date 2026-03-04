@@ -1,45 +1,156 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import { getDealsByAgent, getShowById, getIOByDeal, profiles } from "@/lib/data";
-import type { DealStatus } from "@/lib/data";
+import type { Deal, DealStatus } from "@/lib/data";
 
-const agentDeals = getDealsByAgent("user-agent-001");
+const initialDeals = getDealsByAgent("user-agent-001");
 
-const statusStyles: Record<DealStatus, string> = {
-  proposed: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
-  negotiating: "bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]",
-  approved: "bg-[var(--brand-teal)]/10 text-[var(--brand-teal)]",
-  io_sent: "bg-[var(--brand-teal)]/10 text-[var(--brand-teal)]",
-  signed: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-  live: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-  completed: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
-  cancelled: "bg-[var(--brand-error)]/10 text-[var(--brand-error)]",
-};
+// Kanban columns — approved/io_sent map into "signed"
+const pipelineColumns: { key: string; label: string; statuses: DealStatus[] }[] = [
+  { key: "proposed", label: "Proposed", statuses: ["proposed"] },
+  { key: "negotiating", label: "Negotiating", statuses: ["negotiating"] },
+  { key: "signed", label: "Signed", statuses: ["approved", "io_sent", "signed"] },
+  { key: "live", label: "Live", statuses: ["live"] },
+  { key: "completed", label: "Completed", statuses: ["completed"] },
+];
 
-const statusLabels: Record<DealStatus, string> = {
-  proposed: "Proposed",
-  negotiating: "Negotiating",
-  approved: "Approved",
-  io_sent: "IO Sent",
-  signed: "Signed",
-  live: "Live",
-  completed: "Completed",
-  cancelled: "Cancelled",
+const columnColors: Record<string, string> = {
+  proposed: "var(--brand-blue)",
+  negotiating: "var(--brand-warning)",
+  signed: "var(--brand-success)",
+  live: "var(--brand-success)",
+  completed: "var(--brand-text-muted)",
 };
 
 function getBrandName(brandId: string): string {
   return profiles.find((p) => p.id === brandId)?.company_name ?? "Unknown Brand";
 }
 
-export default function DealsPage() {
-  const hasDeals = agentDeals.length > 0;
+function DealCard({
+  deal,
+  onDragStart,
+}: {
+  deal: Deal;
+  onDragStart: (e: React.DragEvent, dealId: string) => void;
+}) {
+  const show = getShowById(deal.show_id);
+  const brandName = getBrandName(deal.brand_id);
+  const existingIO = getIOByDeal(deal.id);
+  const showIOLink = ["approved", "io_sent", "signed", "live", "completed"].includes(deal.status);
+  const ioLabel = existingIO ? "View IO" : "Generate IO";
+  const flightStart = new Date(deal.flight_start).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const flightEnd = new Date(deal.flight_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
   return (
-    <div className="p-8 max-w-5xl">
-      <div className="flex items-center justify-between mb-8">
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, deal.id)}
+      className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] hover:border-[var(--brand-blue)]/30 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing"
+    >
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-sm font-semibold text-[var(--brand-text)] truncate">
+          {show?.name ?? "Unknown Show"}
+        </h4>
+      </div>
+      <p className="text-xs text-[var(--brand-text-muted)] mb-2">{brandName}</p>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-[var(--brand-text-muted)]">
+          {flightStart} – {flightEnd}
+        </span>
+        <span className="text-sm font-semibold text-[var(--brand-text)]">
+          ${deal.total_net.toLocaleString()}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-[var(--brand-border)]">
+        <span className="text-xs text-[var(--brand-text-muted)]">
+          {deal.num_episodes} ep{deal.num_episodes !== 1 ? "s" : ""} · {deal.placement}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {["live", "completed"].includes(deal.status) && existingIO && existingIO.line_items.some((li) => li.actual_post_date || li.verified) && (
+            <Link
+              href="/invoices"
+              className="text-xs text-[var(--brand-teal)] hover:underline font-medium"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Invoice
+            </Link>
+          )}
+          {showIOLink && (
+            <Link
+              href={`/deals/${deal.id}/io`}
+              className="text-xs text-[var(--brand-blue)] hover:underline font-medium"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {ioLabel}
+            </Link>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function DealsPage() {
+  const [dealList, setDealList] = useState<Deal[]>(initialDeals);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
+
+  // Map column key to the primary status to set when dropping
+  const columnDropStatus: Record<string, DealStatus> = {
+    proposed: "proposed",
+    negotiating: "negotiating",
+    signed: "signed",
+    live: "live",
+    completed: "completed",
+  };
+
+  function handleDragStart(e: React.DragEvent, dealId: string) {
+    e.dataTransfer.setData("text/plain", dealId);
+    e.dataTransfer.effectAllowed = "move";
+    setDraggedDealId(dealId);
+  }
+
+  function handleDragOver(e: React.DragEvent, columnKey: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverColumn(columnKey);
+  }
+
+  function handleDragLeave() {
+    setDragOverColumn(null);
+  }
+
+  function handleDrop(e: React.DragEvent, columnKey: string) {
+    e.preventDefault();
+    const dealId = e.dataTransfer.getData("text/plain");
+    const newStatus = columnDropStatus[columnKey];
+
+    setDealList((prev) =>
+      prev.map((d) => (d.id === dealId ? { ...d, status: newStatus } : d))
+    );
+    setDragOverColumn(null);
+    setDraggedDealId(null);
+  }
+
+  function handleDragEnd() {
+    setDragOverColumn(null);
+    setDraggedDealId(null);
+  }
+
+  // Exclude cancelled from kanban
+  const visibleDeals = dealList.filter((d) => d.status !== "cancelled");
+  const totalValue = visibleDeals.reduce((s, d) => s + d.total_net, 0);
+
+  return (
+    <div className="p-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Deals</h1>
+          <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Deal Pipeline</h1>
           <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
-            Track and manage sponsorship deals across your shows.
+            Drag deals between columns to update their status.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -66,63 +177,91 @@ export default function DealsPage() {
         </div>
       </div>
 
-      {hasDeals ? (
-        <div className="space-y-3">
-          {agentDeals.map((deal) => {
-            const show = getShowById(deal.show_id);
-            const brandName = getBrandName(deal.brand_id);
-            const existingIO = getIOByDeal(deal.id);
-            const showIOLink = ["approved", "io_sent", "signed", "live", "completed"].includes(deal.status);
-            const ioLabel = existingIO ? "View IO" : "Generate IO";
-            const flightStart = new Date(deal.flight_start).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-            const flightEnd = new Date(deal.flight_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      {/* Summary Bar */}
+      <div className="flex items-center gap-6 mb-6 p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
+        <div>
+          <div className="text-lg font-bold text-[var(--brand-text)]">{visibleDeals.length}</div>
+          <div className="text-xs text-[var(--brand-text-muted)]">Total Deals</div>
+        </div>
+        <div className="w-px h-8 bg-[var(--brand-border)]" />
+        <div>
+          <div className="text-lg font-bold text-[var(--brand-text)]">${totalValue.toLocaleString()}</div>
+          <div className="text-xs text-[var(--brand-text-muted)]">Pipeline Value</div>
+        </div>
+        <div className="w-px h-8 bg-[var(--brand-border)]" />
+        {pipelineColumns.map((col) => {
+          const count = visibleDeals.filter((d) => col.statuses.includes(d.status)).length;
+          return (
+            <div key={col.key} className="flex items-center gap-2">
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: columnColors[col.key] }}
+              />
+              <span className="text-xs text-[var(--brand-text-muted)]">
+                {col.label}: <span className="font-semibold text-[var(--brand-text)]">{count}</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Kanban Board */}
+      {visibleDeals.length > 0 ? (
+        <div className="grid grid-cols-5 gap-4">
+          {pipelineColumns.map((col) => {
+            const columnDeals = visibleDeals.filter((d) => col.statuses.includes(d.status));
+            const columnValue = columnDeals.reduce((s, d) => s + d.total_net, 0);
+            const isOver = dragOverColumn === col.key;
 
             return (
               <div
-                key={deal.id}
-                className="flex items-center justify-between p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] hover:border-[var(--brand-blue)]/30 hover:shadow-sm transition-all group"
+                key={col.key}
+                onDragOver={(e) => handleDragOver(e, col.key)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, col.key)}
+                className={`flex flex-col rounded-xl border transition-colors min-h-[400px] ${
+                  isOver
+                    ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.03]"
+                    : "border-[var(--brand-border)] bg-[var(--brand-surface)]"
+                }`}
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--brand-blue)]/10 to-[var(--brand-teal)]/10 flex items-center justify-center">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-[var(--brand-text)]">
-                      {show?.name ?? "Unknown Show"}
-                    </h3>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs text-[var(--brand-text-muted)]">{brandName}</span>
-                      <span className="text-xs text-[var(--brand-text-muted)]">{deal.num_episodes} ep{deal.num_episodes !== 1 ? "s" : ""} &middot; {deal.placement}</span>
-                      <span className="text-xs text-[var(--brand-text-muted)]">{flightStart} &ndash; {flightEnd}</span>
+                {/* Column Header */}
+                <div className="p-3 border-b border-[var(--brand-border)]">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-2.5 h-2.5 rounded-full"
+                        style={{ backgroundColor: columnColors[col.key] }}
+                      />
+                      <span className="text-sm font-semibold text-[var(--brand-text)]">
+                        {col.label}
+                      </span>
                     </div>
+                    <span className="text-xs font-medium text-[var(--brand-text-muted)] bg-[var(--brand-surface-elevated)] px-2 py-0.5 rounded-full">
+                      {columnDeals.length}
+                    </span>
                   </div>
+                  {columnDeals.length > 0 && (
+                    <div className="text-xs text-[var(--brand-text-muted)]">
+                      ${columnValue.toLocaleString()}
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-5">
-                  {["live", "completed"].includes(deal.status) && existingIO && existingIO.line_items.some((li) => li.actual_post_date || li.verified) && (
-                    <Link
-                      href="/invoices"
-                      className="text-xs text-[var(--brand-teal)] hover:underline font-medium"
-                    >
-                      Generate Invoice
-                    </Link>
+
+                {/* Cards */}
+                <div className="flex-1 p-2 space-y-2 overflow-y-auto">
+                  {columnDeals.map((deal) => (
+                    <DealCard
+                      key={deal.id}
+                      deal={deal}
+                      onDragStart={handleDragStart}
+                    />
+                  ))}
+                  {columnDeals.length === 0 && (
+                    <div className="flex items-center justify-center h-full text-xs text-[var(--brand-text-muted)] italic">
+                      No deals
+                    </div>
                   )}
-                  {showIOLink && (
-                    <Link
-                      href={`/deals/${deal.id}/io`}
-                      className="text-xs text-[var(--brand-blue)] hover:underline font-medium"
-                    >
-                      {ioLabel}
-                    </Link>
-                  )}
-                  <div className="text-right">
-                    <div className="text-sm font-semibold text-[var(--brand-text)]">${deal.total_net.toLocaleString()}</div>
-                    <div className="text-xs text-[var(--brand-text-muted)]">net revenue</div>
-                  </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusStyles[deal.status]}`}>
-                    {statusLabels[deal.status]}
-                  </span>
                 </div>
               </div>
             );
