@@ -155,13 +155,32 @@ export interface ShowRecommendation {
   contact_email: string;
 }
 
+export interface YouTubeRecommendation {
+  show_id: string;
+  show_name: string;
+  platform: "youtube";
+  network?: string;
+  fit_score: number; // 0-100
+  audience_size: number; // avg views per video
+  categories: string[];
+  current_sponsors: string[];
+  allocated_budget: number;
+  flat_fee_per_video: number;
+  num_videos: number;
+  estimated_views: number; // audience_size × num_videos
+  overlap_flag: boolean;
+  overlap_with: string[];
+  contact_email: string;
+}
+
 export interface ExpansionShow {
   show_id: string;
   show_name: string;
   platform: Platform;
   network?: string;
   fit_score: number; // 0-100
-  estimated_cpm: number;
+  estimated_cpm?: number; // podcast only
+  flat_fee?: number; // youtube only — per video
   audience_size: number;
   categories: string[];
   current_sponsors: string[];
@@ -177,10 +196,23 @@ export interface Campaign {
   budget_total: number;
   platforms: Platform[];
   status: CampaignStatus;
-  recommendations: ShowRecommendation[];
+  recommendations: ShowRecommendation[]; // podcast recommendations
+  youtube_recommendations?: YouTubeRecommendation[];
   expansion_opportunities?: ExpansionShow[];
   created_at: string;
   updated_at: string;
+}
+
+// ---- Outreach Drafts ----
+
+export interface OutreachDraft {
+  show_id: string;
+  show_name: string;
+  platform: Platform;
+  contact_email: string;
+  subject: string;
+  body: string;
+  sent?: boolean;
 }
 
 // ---- Deals ----
