@@ -3,6 +3,29 @@ import { deals, getShowById, getIOByDeal, profiles } from "@/lib/data";
 import { generateIOPdf } from "@/lib/pdf/io-pdf";
 import type { InsertionOrder, IOLineItem } from "@/lib/data";
 
+// POST: Generate PDF from provided IO data (for edited IOs)
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const io = body.io as InsertionOrder;
+    if (!io || !io.io_number || !io.line_items) {
+      return NextResponse.json({ error: "Invalid IO data" }, { status: 400 });
+    }
+
+    const pdfBuffer = generateIOPdf(io);
+    const filename = `${io.io_number.replace(/\s+/g, "_")}.pdf`;
+
+    return new NextResponse(new Uint8Array(pdfBuffer), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+  } catch {
+    return NextResponse.json({ error: "PDF generation failed" }, { status: 500 });
+  }
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

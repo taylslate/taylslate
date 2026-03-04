@@ -13,6 +13,7 @@ const interestOptions = [
 export default function NewCampaignPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["podcast"]);
 
@@ -31,8 +32,44 @@ export default function NewCampaignPage() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    router.push("/campaigns/1");
+    setError(null);
+
+    const formData = new FormData(e.currentTarget);
+    const keywordsRaw = (formData.get("keywords") as string) || "";
+
+    const body = {
+      name: formData.get("name") as string,
+      brand_url: (formData.get("brand_url") as string) || undefined,
+      budget_total: Number(formData.get("budget_total")),
+      platforms: selectedPlatforms,
+      target_age_range: (formData.get("age_range") as string) || undefined,
+      target_gender: (formData.get("gender") as string) || undefined,
+      target_interests: selectedInterests,
+      keywords: keywordsRaw ? keywordsRaw.split(",").map((k) => k.trim()).filter(Boolean) : [],
+      campaign_goals: (formData.get("campaign_goals") as string) || undefined,
+    };
+
+    try {
+      const res = await fetch("/api/campaigns/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Something went wrong. Please try again.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      localStorage.setItem("taylslate_generated_campaign", JSON.stringify(data.campaign));
+      router.push("/campaigns/generated");
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -162,7 +199,7 @@ export default function NewCampaignPage() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                Generating your media plan...
+                Analyzing shows and building your media plan...
               </>
             ) : (
               <>
@@ -173,6 +210,11 @@ export default function NewCampaignPage() {
               </>
             )}
           </button>
+          {error && (
+            <div className="mt-4 p-3 rounded-lg border border-[var(--brand-error)]/30 bg-[var(--brand-error)]/[0.04] text-sm text-[var(--brand-error)]">
+              {error}
+            </div>
+          )}
         </div>
       </form>
     </div>

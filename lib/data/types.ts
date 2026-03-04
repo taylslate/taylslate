@@ -155,6 +155,20 @@ export interface ShowRecommendation {
   contact_email: string;
 }
 
+export interface ExpansionShow {
+  show_id: string;
+  show_name: string;
+  platform: Platform;
+  network?: string;
+  fit_score: number; // 0-100
+  estimated_cpm: number;
+  audience_size: number;
+  categories: string[];
+  current_sponsors: string[];
+  contact_email: string;
+  reason: string; // why this show is a good expansion pick
+}
+
 export interface Campaign {
   id: string;
   user_id: string;
@@ -164,6 +178,7 @@ export interface Campaign {
   platforms: Platform[];
   status: CampaignStatus;
   recommendations: ShowRecommendation[];
+  expansion_opportunities?: ExpansionShow[];
   created_at: string;
   updated_at: string;
 }

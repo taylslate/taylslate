@@ -51,6 +51,13 @@ export default function InvoicesPage() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
 
+  // Send state
+  const [showSendConfirm, setShowSendConfirm] = useState(false);
+  const [sendingInvoice, setSendingInvoice] = useState<Invoice | null>(null);
+  const [sendingInvoiceId, setSendingInvoiceId] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ success: boolean; to?: string; toName?: string; error?: string } | null>(null);
+
   const handleGenerate = async () => {
     if (!selectedIOId) return;
     setIsGenerating(true);
@@ -119,6 +126,57 @@ export default function InvoicesPage() {
       // silent fail
     } finally {
       setIsDownloading(null);
+    }
+  };
+
+  // Open send confirmation for an existing invoice (by ID)
+  const handleSendExisting = (invoice: Invoice) => {
+    setSendingInvoice(null);
+    setSendingInvoiceId(invoice.id);
+    setSendResult(null);
+    setShowSendConfirm(true);
+  };
+
+  // Open send confirmation for a generated invoice (full object)
+  const handleSendGenerated = () => {
+    if (!generatedInvoice) return;
+    setSendingInvoice(generatedInvoice);
+    setSendingInvoiceId(null);
+    setSendResult(null);
+    setShowSendConfirm(true);
+  };
+
+  // The invoice being sent — either from seed data or generated
+  const invoiceToSend = sendingInvoiceId
+    ? agentInvoices.find((inv) => inv.id === sendingInvoiceId) ?? null
+    : sendingInvoice;
+
+  const handleSendEmail = async () => {
+    if (!invoiceToSend) return;
+    setIsSending(true);
+    setSendResult(null);
+
+    try {
+      const body = sendingInvoiceId
+        ? { invoice_id: sendingInvoiceId }
+        : { invoice: sendingInvoice };
+
+      const res = await fetch("/api/invoices/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSendResult({ success: false, error: data.error });
+      } else {
+        setSendResult({ success: true, to: data.to, toName: data.toName });
+      }
+    } catch {
+      setSendResult({ success: false, error: "Network error. Please try again." });
+    } finally {
+      setIsSending(false);
+      setShowSendConfirm(false);
     }
   };
 
@@ -194,18 +252,30 @@ export default function InvoicesPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-5">
-                  <button
-                    onClick={() => handleDownloadExisting(invoice.id)}
-                    disabled={isDownloading === invoice.id}
-                    className="flex items-center gap-1.5 text-xs text-[var(--brand-blue)] hover:underline font-medium opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                    {isDownloading === invoice.id ? "..." : "PDF"}
-                  </button>
+                  <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handleDownloadExisting(invoice.id)}
+                      disabled={isDownloading === invoice.id}
+                      className="flex items-center gap-1.5 text-xs text-[var(--brand-blue)] hover:underline font-medium disabled:opacity-50"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      {isDownloading === invoice.id ? "..." : "PDF"}
+                    </button>
+                    <button
+                      onClick={() => handleSendExisting(invoice)}
+                      className="flex items-center gap-1.5 text-xs text-[var(--brand-teal)] hover:underline font-medium"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
+                      Send
+                    </button>
+                  </div>
                   <div className="text-right">
                     <div className="text-sm font-semibold text-[var(--brand-text)]">${invoice.total_due.toLocaleString()}</div>
                     <div className="text-xs text-[var(--brand-text-muted)]">total due</div>
@@ -410,7 +480,7 @@ export default function InvoicesPage() {
                   <button
                     onClick={handleDownloadGenerated}
                     disabled={isDownloading === "generated"}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors disabled:opacity-50"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -419,9 +489,126 @@ export default function InvoicesPage() {
                     </svg>
                     {isDownloading === "generated" ? "Generating..." : "Download PDF"}
                   </button>
+                  <button
+                    onClick={handleSendGenerated}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-teal)] hover:bg-[var(--brand-teal-light)] text-white text-sm font-medium transition-colors"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="22" y1="2" x2="11" y2="13" />
+                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                    </svg>
+                    Send via Email
+                  </button>
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Send Confirmation Modal */}
+      {showSendConfirm && invoiceToSend && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowSendConfirm(false)}>
+          <div className="bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)] shadow-xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-2">Send Invoice via Email</h3>
+            <p className="text-sm text-[var(--brand-text-secondary)] mb-4">
+              This will email <strong>{invoiceToSend.invoice_number}</strong> as a PDF attachment to:
+            </p>
+            <div className="p-3 rounded-lg bg-[var(--brand-surface)] border border-[var(--brand-border)] mb-3">
+              <div className="text-sm font-medium text-[var(--brand-text)]">{invoiceToSend.bill_to_name}</div>
+              <div className="text-sm text-[var(--brand-text-muted)]">{invoiceToSend.bill_to_email}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--brand-surface)] border border-[var(--brand-border)] mb-5 space-y-1.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-[var(--brand-text-muted)]">Advertiser</span>
+                <span className="font-medium text-[var(--brand-text)]">{invoiceToSend.advertiser_name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--brand-text-muted)]">Period</span>
+                <span className="font-medium text-[var(--brand-text)]">{invoiceToSend.campaign_period}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--brand-text-muted)]">Total due</span>
+                <span className="font-bold text-[var(--brand-blue)]">
+                  ${invoiceToSend.total_due.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--brand-text-muted)]">Due date</span>
+                <span className="font-medium text-[var(--brand-text)]">
+                  {new Date(invoiceToSend.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                onClick={() => setShowSendConfirm(false)}
+                className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendEmail}
+                disabled={isSending}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-teal)] hover:bg-[var(--brand-teal-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {isSending ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Sending...
+                  </>
+                ) : (
+                  "Send Now"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send result toast */}
+      {sendResult && (
+        <div className={`mt-4 p-4 rounded-xl border ${
+          sendResult.success
+            ? "bg-[var(--brand-success)]/[0.06] border-[var(--brand-success)]/20"
+            : "bg-[var(--brand-error)]/[0.06] border-[var(--brand-error)]/20"
+        }`}>
+          <div className="flex items-start gap-3">
+            {sendResult.success ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-error)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+            )}
+            <div>
+              <p className={`text-sm font-medium ${sendResult.success ? "text-[var(--brand-success)]" : "text-[var(--brand-error)]"}`}>
+                {sendResult.success
+                  ? `Invoice sent to ${sendResult.toName ?? sendResult.to}`
+                  : "Failed to send"}
+              </p>
+              {sendResult.success && sendResult.to && (
+                <p className="text-xs text-[var(--brand-text-muted)] mt-0.5">{sendResult.to}</p>
+              )}
+              {sendResult.error && (
+                <p className="text-xs text-[var(--brand-error)] mt-0.5">{sendResult.error}</p>
+              )}
+            </div>
+            <button
+              onClick={() => setSendResult(null)}
+              className="ml-auto p-1 rounded text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
       )}

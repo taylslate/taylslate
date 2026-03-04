@@ -50,9 +50,13 @@ function DealCard({
       className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] hover:border-[var(--brand-blue)]/30 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing"
     >
       <div className="flex items-center justify-between mb-2">
-        <h4 className="text-sm font-semibold text-[var(--brand-text)] truncate">
+        <Link
+          href={`/deals/${deal.id}`}
+          className="text-sm font-semibold text-[var(--brand-text)] truncate hover:text-[var(--brand-blue)] transition-colors"
+          onClick={(e) => e.stopPropagation()}
+        >
           {show?.name ?? "Unknown Show"}
-        </h4>
+        </Link>
       </div>
       <p className="text-xs text-[var(--brand-text-muted)] mb-2">{brandName}</p>
       <div className="flex items-center justify-between">
