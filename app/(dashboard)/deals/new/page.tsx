@@ -25,6 +25,10 @@ export default function NewDealPage() {
   const [isPersonalExperience, setIsPersonalExperience] = useState(true);
   const [postDates, setPostDates] = useState<string[]>([""]);
   const [notes, setNotes] = useState("");
+  const [showAgency, setShowAgency] = useState(false);
+  const [agencyName, setAgencyName] = useState("");
+  const [agencyContact, setAgencyContact] = useState("");
+  const [agencyEmail, setAgencyEmail] = useState("");
 
   const selectedShow = agentShows.find((s) => s.id === showId);
 
@@ -131,6 +135,55 @@ export default function NewDealPage() {
             placeholder="e.g., Athletic Greens"
             className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
           />
+        </div>
+
+        {/* Agency (optional) */}
+        <div className="rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-sm font-medium text-[var(--brand-text)]">Agency</label>
+            <button
+              type="button"
+              onClick={() => setShowAgency(!showAgency)}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                showAgency
+                  ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]"
+                  : "border-[var(--brand-border)] text-[var(--brand-text-muted)] hover:border-[var(--brand-text-muted)]"
+              }`}
+            >
+              {showAgency ? "Remove Agency" : "Add Agency"}
+            </button>
+          </div>
+          {showAgency ? (
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={agencyName}
+                onChange={(e) => setAgencyName(e.target.value)}
+                placeholder="Agency name, e.g., VeritoneOne"
+                className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  value={agencyContact}
+                  onChange={(e) => setAgencyContact(e.target.value)}
+                  placeholder="Contact name"
+                  className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+                />
+                <input
+                  type="email"
+                  value={agencyEmail}
+                  onChange={(e) => setAgencyEmail(e.target.value)}
+                  placeholder="billing@agency.com"
+                  className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+                />
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-[var(--brand-text-muted)]">
+              No agency — brand is the billing party. Add one if a media buying agency is involved.
+            </p>
+          )}
         </div>
 
         {/* Placement */}
@@ -365,6 +418,18 @@ export default function NewDealPage() {
                 <div className="flex justify-between col-span-2">
                   <span className="text-[var(--brand-text-muted)]">Show</span>
                   <span className="font-medium text-[var(--brand-text)]">{selectedShow.name}</span>
+                </div>
+              )}
+              {showAgency && agencyName && (
+                <div className="flex justify-between col-span-2">
+                  <span className="text-[var(--brand-text-muted)]">Agency</span>
+                  <span className="font-medium text-[var(--brand-text)]">{agencyName}</span>
+                </div>
+              )}
+              {!showAgency && brandName && (
+                <div className="flex justify-between col-span-2">
+                  <span className="text-[var(--brand-text-muted)]">Billing party</span>
+                  <span className="font-medium text-[var(--brand-text)]">{brandName} (direct)</span>
                 </div>
               )}
               {numEpisodes > 0 && (

@@ -100,6 +100,14 @@ export default function DealsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-5">
+                  {["live", "completed"].includes(deal.status) && existingIO && existingIO.line_items.some((li) => li.actual_post_date || li.verified) && (
+                    <Link
+                      href="/invoices"
+                      className="text-xs text-[var(--brand-teal)] hover:underline font-medium"
+                    >
+                      Generate Invoice
+                    </Link>
+                  )}
                   {showIOLink && (
                     <Link
                       href={`/deals/${deal.id}/io`}

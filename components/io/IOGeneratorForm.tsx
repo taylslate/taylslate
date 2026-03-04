@@ -90,11 +90,60 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
     );
   };
 
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ success: boolean; to?: string; toName?: string; error?: string } | null>(null);
+  const [showSendConfirm, setShowSendConfirm] = useState(false);
+
+  // Determine recipient for the IO email
+  const recipientEmail = existingIO?.agency_contact_email ?? agency?.email ?? existingIO?.advertiser_contact_email ?? brand.email;
+  const recipientName = existingIO?.agency_contact_name ?? agency?.full_name ?? existingIO?.advertiser_contact_name ?? brand.full_name;
+
   const handleSave = async () => {
     setIsSaving(true);
     // Simulate save delay — will wire to Supabase later
     await new Promise((r) => setTimeout(r, 1500));
     setIsSaving(false);
+  };
+
+  const handleDownloadPdf = async () => {
+    setIsDownloading(true);
+    try {
+      const res = await fetch(`/api/deals/${deal.id}/io/pdf`);
+      if (!res.ok) throw new Error("PDF generation failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${ioNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // Could add error toast here
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    setIsSending(true);
+    setSendResult(null);
+    try {
+      const res = await fetch(`/api/deals/${deal.id}/io/send`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setSendResult({ success: false, error: data.error });
+      } else {
+        setSendResult({ success: true, to: data.to, toName: data.toName });
+      }
+    } catch {
+      setSendResult({ success: false, error: "Network error. Please try again." });
+    } finally {
+      setIsSending(false);
+      setShowSendConfirm(false);
+    }
   };
 
   return (
@@ -375,28 +424,138 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
       )}
 
       {/* Actions */}
-      {!isViewMode && (
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowPreview(!showPreview)}
-            className="px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
-          >
-            {showPreview ? "Edit" : "Preview"}
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors disabled:opacity-50"
-          >
-            Save Draft
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            {isSaving ? "Sending..." : "Send IO"}
-          </button>
+      <div className="flex items-center gap-3">
+        {!isViewMode && (
+          <>
+            <button
+              onClick={() => setShowPreview(!showPreview)}
+              className="px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+            >
+              {showPreview ? "Edit" : "Preview"}
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors disabled:opacity-50"
+            >
+              Save Draft
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {isSaving ? "Sending..." : "Send IO"}
+            </button>
+          </>
+        )}
+        <button
+          onClick={handleDownloadPdf}
+          disabled={isDownloading}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors disabled:opacity-50"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          {isDownloading ? "Generating..." : "Download PDF"}
+        </button>
+        <button
+          onClick={() => setShowSendConfirm(true)}
+          disabled={isSending}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--brand-teal)] hover:bg-[var(--brand-teal-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+          Send via Email
+        </button>
+      </div>
+
+      {/* Send confirmation modal */}
+      {showSendConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowSendConfirm(false)}>
+          <div className="bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)] shadow-xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-2">Send IO via Email</h3>
+            <p className="text-sm text-[var(--brand-text-secondary)] mb-4">
+              This will email <strong>{ioNumber}</strong> as a PDF attachment to:
+            </p>
+            <div className="p-3 rounded-lg bg-[var(--brand-surface)] border border-[var(--brand-border)] mb-5">
+              <div className="text-sm font-medium text-[var(--brand-text)]">{recipientName}</div>
+              <div className="text-sm text-[var(--brand-text-muted)]">{recipientEmail}</div>
+            </div>
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                onClick={() => setShowSendConfirm(false)}
+                className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendEmail}
+                disabled={isSending}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-teal)] hover:bg-[var(--brand-teal-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {isSending ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Sending...
+                  </>
+                ) : (
+                  "Send Now"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send result toast */}
+      {sendResult && (
+        <div className={`mt-4 p-4 rounded-xl border ${
+          sendResult.success
+            ? "bg-[var(--brand-success)]/[0.06] border-[var(--brand-success)]/20"
+            : "bg-[var(--brand-error)]/[0.06] border-[var(--brand-error)]/20"
+        }`}>
+          <div className="flex items-start gap-3">
+            {sendResult.success ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-error)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+            )}
+            <div>
+              <p className={`text-sm font-medium ${sendResult.success ? "text-[var(--brand-success)]" : "text-[var(--brand-error)]"}`}>
+                {sendResult.success
+                  ? `IO sent to ${sendResult.toName ?? sendResult.to}`
+                  : "Failed to send"}
+              </p>
+              {sendResult.success && sendResult.to && (
+                <p className="text-xs text-[var(--brand-text-muted)] mt-0.5">{sendResult.to}</p>
+              )}
+              {sendResult.error && (
+                <p className="text-xs text-[var(--brand-error)] mt-0.5">{sendResult.error}</p>
+              )}
+            </div>
+            <button
+              onClick={() => setSendResult(null)}
+              className="ml-auto p-1 rounded text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
       )}
     </div>
