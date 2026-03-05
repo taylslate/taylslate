@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   getDealsByAgent,
@@ -12,7 +12,7 @@ import {
 import type { Deal, DealStatus, Placement, PriceType } from "@/lib/data";
 
 const agentId = "user-agent-001";
-const allDeals = getDealsByAgent(agentId);
+const seedDeals = getDealsByAgent(agentId);
 const agentShows = getShowsByAgent(agentId);
 
 const statusOptions: { value: DealStatus; label: string }[] = [
@@ -49,11 +49,22 @@ const readOnlyClass =
 export default function DealDetailPage({ params }: { params: Promise<{ id: string }> }) {
   // Unwrap params in a client component — use React.use() pattern
   const { id } = params as unknown as { id: string };
-  const initialDeal = allDeals.find((d) => d.id === id);
+  const seedDeal = seedDeals.find((d) => d.id === id);
 
-  const [deal, setDeal] = useState<Deal | undefined>(initialDeal);
+  const [deal, setDeal] = useState<Deal | undefined>(seedDeal);
+  const [isLoading, setIsLoading] = useState(!seedDeal);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Fetch from API if not in seed data
+  useEffect(() => {
+    if (seedDeal) return;
+    fetch(`/api/deals/${id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (data?.deal) setDeal(data.deal); })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, [id, seedDeal]);
 
   // Edit form state
   const [editBrandName, setEditBrandName] = useState("");
@@ -68,6 +79,16 @@ export default function DealDetailPage({ params }: { params: Promise<{ id: strin
   const [editFlightStart, setEditFlightStart] = useState("");
   const [editFlightEnd, setEditFlightEnd] = useState("");
   const [editNotes, setEditNotes] = useState("");
+
+  if (isLoading) {
+    return (
+      <div className="p-8 max-w-3xl">
+        <div className="flex items-center justify-center py-24">
+          <div className="w-8 h-8 border-3 border-[var(--brand-blue)]/20 border-t-[var(--brand-blue)] rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
   if (!deal) {
     return (

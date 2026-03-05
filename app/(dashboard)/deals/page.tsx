@@ -1,11 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getDealsByAgent, getShowById, getIOByDeal, profiles } from "@/lib/data";
+import { getShowById, getIOByDeal, profiles } from "@/lib/data";
 import type { Deal, DealStatus } from "@/lib/data";
-
-const initialDeals = getDealsByAgent("user-agent-001");
 
 // Kanban columns — approved/io_sent map into "signed"
 const pipelineColumns: { key: string; label: string; statuses: DealStatus[] }[] = [
@@ -97,9 +95,18 @@ function DealCard({
 }
 
 export default function DealsPage() {
-  const [dealList, setDealList] = useState<Deal[]>(initialDeals);
+  const [dealList, setDealList] = useState<Deal[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/deals")
+      .then((res) => res.json())
+      .then((data) => setDealList(data.deals))
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, []);
 
   // Map column key to the primary status to set when dropping
   const columnDropStatus: Record<string, DealStatus> = {
@@ -146,6 +153,17 @@ export default function DealsPage() {
   // Exclude cancelled from kanban
   const visibleDeals = dealList.filter((d) => d.status !== "cancelled");
   const totalValue = visibleDeals.reduce((s, d) => s + d.total_net, 0);
+
+  if (isLoading) {
+    return (
+      <div className="p-8">
+        <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight mb-6">Deal Pipeline</h1>
+        <div className="flex items-center justify-center py-24">
+          <div className="w-8 h-8 border-3 border-[var(--brand-blue)]/20 border-t-[var(--brand-blue)] rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8">

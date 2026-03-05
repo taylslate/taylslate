@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Campaign, OutreachDraft } from "@/lib/data";
 
 type Tab = "plan" | "outreach" | "adcopy";
 
 export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
+  const router = useRouter();
   const recommendations = campaign.recommendations;
   const youtubeRecs = campaign.youtube_recommendations ?? [];
   const expansions = campaign.expansion_opportunities ?? [];
@@ -20,6 +22,12 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
   const [outreachError, setOutreachError] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<Record<string, "sending" | "sent" | "failed">>({});
   const [isSendingAll, setIsSendingAll] = useState(false);
+
+  // Deal creation state
+  const [isCreatingDeals, setIsCreatingDeals] = useState(false);
+  const [dealsCreated, setDealsCreated] = useState(false);
+  const [dealsError, setDealsError] = useState<string | null>(null);
+  const [dealsCount, setDealsCount] = useState(0);
 
   const selectedPodcasts = recommendations.filter((r) => selectedShows.includes(r.show_id));
   const selectedYouTube = youtubeRecs.filter((r) => selectedShows.includes(r.show_id));
@@ -58,6 +66,38 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
       setOutreachError("Network error. Please try again.");
     } finally {
       setIsGeneratingOutreach(false);
+    }
+  };
+
+  const handleCreateDeals = async () => {
+    setIsCreatingDeals(true);
+    setDealsError(null);
+    try {
+      const selectedPodcastRecs = recommendations.filter((r) => selectedShows.includes(r.show_id));
+      const selectedYouTubeRecs = youtubeRecs.filter((r) => selectedShows.includes(r.show_id));
+
+      const res = await fetch("/api/campaigns/deals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          campaign_id: campaign.id,
+          campaign_name: campaign.name,
+          brand_id: campaign.user_id,
+          recommendations: selectedPodcastRecs,
+          youtube_recommendations: selectedYouTubeRecs,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDealsError(data.error || "Failed to create deals");
+        return;
+      }
+      setDealsCreated(true);
+      setDealsCount(data.count);
+    } catch {
+      setDealsError("Network error. Please try again.");
+    } finally {
+      setIsCreatingDeals(false);
     }
   };
 
@@ -143,6 +183,35 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
         </div>
         <div className="flex items-center gap-3">
           <button className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors">Export CSV</button>
+          {dealsCreated ? (
+            <button
+              onClick={() => router.push("/deals")}
+              className="px-4 py-2 rounded-lg bg-[var(--brand-success)] text-white text-sm font-medium transition-colors flex items-center gap-2"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              {dealsCount} Deals Created — View Pipeline
+            </button>
+          ) : (
+            <button
+              onClick={handleCreateDeals}
+              disabled={isCreatingDeals || totalShowCount === 0}
+              className="px-4 py-2 rounded-lg bg-[var(--brand-teal)] hover:bg-[var(--brand-teal-light)] text-white text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {isCreatingDeals ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Creating Deals...
+                </>
+              ) : (
+                <>Approve & Create Deals ({totalShowCount})</>
+              )}
+            </button>
+          )}
           <button
             onClick={handleApproveAndDraft}
             disabled={isGeneratingOutreach}
@@ -168,6 +237,12 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
       {outreachError && (
         <div className="mb-6 px-4 py-3 bg-[var(--brand-error)]/10 border border-[var(--brand-error)]/20 rounded-lg text-sm text-[var(--brand-error)]">
           {outreachError}
+        </div>
+      )}
+
+      {dealsError && (
+        <div className="mb-6 px-4 py-3 bg-[var(--brand-error)]/10 border border-[var(--brand-error)]/20 rounded-lg text-sm text-[var(--brand-error)]">
+          {dealsError}
         </div>
       )}
 
