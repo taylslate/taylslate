@@ -338,8 +338,9 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                           <div className="flex items-center gap-6 text-sm">
                             <div><span className="text-[var(--brand-text-muted)]">Downloads: </span><span className="font-medium text-[var(--brand-text)]">{(show.audience_size / 1000).toFixed(0)}K/ep</span></div>
                             <div><span className="text-[var(--brand-text-muted)]">CPM: </span><span className="font-medium text-[var(--brand-text)]">${show.estimated_cpm}</span></div>
+                            <div><span className="text-[var(--brand-text-muted)]">Per Episode: </span><span className="font-medium text-[var(--brand-text)]">${Math.round((show.audience_size / 1000) * show.estimated_cpm).toLocaleString()}</span></div>
                             <div><span className="text-[var(--brand-text-muted)]">Episodes: </span><span className="font-medium text-[var(--brand-text)]">{show.num_episodes}x {show.placement}</span></div>
-                            <div><span className="text-[var(--brand-text-muted)]">Allocation: </span><span className="font-semibold text-[var(--brand-blue)]">${show.allocated_budget.toLocaleString()}</span></div>
+                            <div><span className="text-[var(--brand-text-muted)]">Total: </span><span className="font-semibold text-[var(--brand-blue)]">${show.allocated_budget.toLocaleString()}</span></div>
                           </div>
                           <div className="flex items-center gap-2 mt-3">
                             <span className="text-xs text-[var(--brand-text-muted)]">Also sponsors:</span>

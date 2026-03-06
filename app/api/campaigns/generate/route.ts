@@ -40,18 +40,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Budget must be at least $1,000" }, { status: 400 });
   }
 
-  // Check API key
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      {
-        error: "AI campaign planning is not configured. Please add an ANTHROPIC_API_KEY environment variable.",
-        code: "NO_API_KEY",
-      },
-      { status: 503 }
-    );
-  }
-
   // Send ALL shows to Claude — the system prompt handles platform prioritization
   // based on the user's selected platforms in the brief
   const validPlatforms = body.platforms as Platform[];
@@ -71,8 +59,19 @@ export async function POST(request: NextRequest) {
 
   const userPrompt = buildCampaignUserPrompt(brief, body.budget_total, body.platforms, showsJson);
 
-  // Call Claude
-  const client = new Anthropic({ apiKey });
+  // Instantiate Anthropic client — SDK reads ANTHROPIC_API_KEY from env automatically
+  let client: Anthropic;
+  try {
+    client = new Anthropic();
+  } catch {
+    return NextResponse.json(
+      {
+        error: "AI campaign planning is not configured. Please add an ANTHROPIC_API_KEY environment variable.",
+        code: "NO_API_KEY",
+      },
+      { status: 503 }
+    );
+  }
 
   try {
     const message = await client.messages.create({
@@ -97,6 +96,7 @@ export async function POST(request: NextRequest) {
         show_id: string;
         fit_score: number;
         estimated_cpm: number;
+        cost_per_episode?: number;
         allocated_budget: number;
         num_episodes: number;
         placement: string;
@@ -147,10 +147,29 @@ export async function POST(request: NextRequest) {
     const showLookup = new Map(shows.map((s) => [s.id, s]));
 
     // Cross-reference podcast recommendations with real show data
+    // Server-side enforcement: recalculate allocated_budget and impressions from
+    // actual show data to guarantee correct CPM math regardless of AI output.
     const recommendations: ShowRecommendation[] = rawRecommendations
       .filter((rec) => showLookup.has(rec.show_id))
       .map((rec) => {
         const show = showLookup.get(rec.show_id)!;
+        const placement = (["pre-roll", "mid-roll", "post-roll"].includes(rec.placement)
+          ? rec.placement
+          : "mid-roll") as ShowRecommendation["placement"];
+        const numEpisodes = Math.max(1, Math.round(rec.num_episodes));
+
+        // Use the rate card CPM for the chosen placement, falling back to the AI's estimate
+        const cpmFromCard =
+          placement === "pre-roll" ? show.rate_card.preroll_cpm :
+          placement === "post-roll" ? show.rate_card.postroll_cpm :
+          show.rate_card.midroll_cpm;
+        const estimatedCpm = cpmFromCard ?? rec.estimated_cpm;
+
+        // Correct math: (downloads / 1000) × CPM × episodes
+        const costPerEpisode = (show.audience_size / 1000) * estimatedCpm;
+        const allocatedBudget = Math.round(costPerEpisode * numEpisodes);
+        const estimatedImpressions = show.audience_size * numEpisodes;
+
         return {
           show_id: show.id,
           show_name: show.name,
@@ -161,13 +180,11 @@ export async function POST(request: NextRequest) {
           audience_size: show.audience_size,
           contact_email: show.contact.email,
           fit_score: Math.max(0, Math.min(100, Math.round(rec.fit_score))),
-          estimated_cpm: rec.estimated_cpm,
-          allocated_budget: rec.allocated_budget,
-          num_episodes: Math.max(1, Math.round(rec.num_episodes)),
-          placement: (["pre-roll", "mid-roll", "post-roll"].includes(rec.placement)
-            ? rec.placement
-            : "mid-roll") as ShowRecommendation["placement"],
-          estimated_impressions: rec.estimated_impressions,
+          estimated_cpm: estimatedCpm,
+          allocated_budget: allocatedBudget,
+          num_episodes: numEpisodes,
+          placement,
+          estimated_impressions: estimatedImpressions,
           overlap_flag: rec.overlap_flag ?? false,
           overlap_with: rec.overlap_with ?? [],
         };
@@ -178,6 +195,13 @@ export async function POST(request: NextRequest) {
       .filter((rec) => showLookup.has(rec.show_id))
       .map((rec) => {
         const show = showLookup.get(rec.show_id)!;
+        const numVideos = Math.max(1, Math.round(rec.num_videos));
+
+        // Use rate card flat rate if available, otherwise AI's estimate
+        const flatFee = show.rate_card.flat_rate ?? rec.flat_fee_per_video;
+        const allocatedBudget = Math.round(flatFee * numVideos);
+        const estimatedViews = show.audience_size * numVideos;
+
         return {
           show_id: show.id,
           show_name: show.name,
@@ -188,10 +212,10 @@ export async function POST(request: NextRequest) {
           audience_size: show.audience_size,
           contact_email: show.contact.email,
           fit_score: Math.max(0, Math.min(100, Math.round(rec.fit_score))),
-          flat_fee_per_video: rec.flat_fee_per_video,
-          allocated_budget: rec.allocated_budget,
-          num_videos: Math.max(1, Math.round(rec.num_videos)),
-          estimated_views: rec.estimated_views,
+          flat_fee_per_video: flatFee,
+          allocated_budget: allocatedBudget,
+          num_videos: numVideos,
+          estimated_views: estimatedViews,
           overlap_flag: rec.overlap_flag ?? false,
           overlap_with: rec.overlap_with ?? [],
         };

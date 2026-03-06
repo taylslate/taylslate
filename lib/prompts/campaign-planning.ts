@@ -13,10 +13,10 @@ Podcasts and YouTube are DIFFERENT ad products with different pricing models. Ke
 2. Score each show on fit (0-100) based on:
    - Demographic alignment: compare target age/gender to show demographics
    - Interest overlap: match brand keywords and interests to show categories, tags, and audience_interests
-   - Audience size relative to budget
+   - Audience size relative to budget (expensive shows with a small budget = poor fit)
    - Sponsor affinity: existing sponsors in similar categories signal good fit
-3. Recommend a MINIMUM of 3-5 shows total for proper campaign testing. For larger budgets ($15K+), recommend 5-8 shows.
-4. Allocate budget proportionally based on fit_score × audience_size.
+3. **BEFORE recommending**, compute each show's cost_per_episode and verify the total cost fits within budget. Do NOT recommend shows the budget cannot afford.
+4. Recommend a MINIMUM of 3-5 shows total for proper campaign testing. For larger budgets ($15K+), recommend 5-8 shows.
 5. Flag audience overlap: if two recommended shows share similar demographics AND categories, set overlap_flag = true and list the overlapping show names.
 
 ## Platform Rules
@@ -36,12 +36,19 @@ Podcasts use **CPM pricing** with ad placements within episodes.
 - Pre-roll: Brand awareness on high-volume shows. ~20-30%.
 - Post-roll: Lower CPM, good for budget stretching. ~10-20%.
 
-**Pricing:**
+**Pricing — FOLLOW THIS EXACTLY:**
 - Use the rate_card value for the chosen placement (midroll_cpm, preroll_cpm, or postroll_cpm)
 - cost_per_episode = (audience_size / 1000) × cpm_rate
+- allocated_budget = cost_per_episode × num_episodes
 - estimated_impressions = audience_size × num_episodes
 
-**Episode count:** Standard test is 3-4 episodes per show. Minimum 2.
+**Example:** Huberman Lab has 520,000 downloads and $35 midroll CPM.
+  cost_per_episode = (520000 / 1000) × 35 = $18,200
+  3 episodes = $54,600 allocated_budget. This show alone costs more than a $25K budget.
+
+**Episode count:** Standard test is 3-4 episodes per show. Minimum 2. Reduce to 2 episodes if budget is tight. If even 2 episodes of a show exceed the remaining budget, skip that show — do NOT recommend shows the budget cannot afford.
+
+**Budget feasibility:** After selecting shows, sum ALL allocated_budget values across podcast + YouTube recommendations. If the total exceeds the campaign budget, reduce episode counts or drop the most expensive shows until it fits. The total MUST NOT exceed the campaign budget.
 
 ## YouTube Channels (platform = "youtube")
 
@@ -70,11 +77,12 @@ Return ONLY a valid JSON object with three arrays. No markdown, no explanation, 
     {
       "show_id": "string — podcast show id",
       "fit_score": "number 0-100",
-      "estimated_cpm": "number — CPM rate used",
-      "allocated_budget": "number — dollars allocated",
+      "estimated_cpm": "number — CPM rate used for this placement",
+      "cost_per_episode": "number — (audience_size / 1000) × estimated_cpm",
+      "allocated_budget": "number — cost_per_episode × num_episodes (MUST equal this exactly)",
       "num_episodes": "number — 2-4 episodes",
       "placement": "pre-roll | mid-roll | post-roll",
-      "estimated_impressions": "number",
+      "estimated_impressions": "number — audience_size × num_episodes",
       "overlap_flag": "boolean",
       "overlap_with": ["string — show names, empty array if none"]
     }
@@ -108,9 +116,10 @@ Return ONLY a valid JSON object with three arrays. No markdown, no explanation, 
 - ONLY recommend shows from the provided data. Never invent shows.
 - Use the show's actual id field as show_id.
 - Podcast shows go in "recommendations". YouTube channels go in "youtube_recommendations". Never mix them.
-- Total allocated_budget across ALL recommendations (podcast + youtube) should be close to (but not exceed) the campaign budget.
+- **MATH CHECK:** For every podcast recommendation, allocated_budget MUST equal (audience_size / 1000) × estimated_cpm × num_episodes. Do not round or approximate — compute it exactly.
+- **BUDGET CHECK:** Sum ALL allocated_budget values (podcast + YouTube). The total MUST NOT exceed the campaign budget. If it does, reduce episodes or remove shows until it fits.
 - Expansion shows must NOT overlap with any recommended shows.
-- You MUST recommend at least 3 shows total. If budget only supports fewer, reduce episodes/videos per show rather than dropping shows.
+- You MUST recommend at least 3 shows total. If budget only supports fewer, prefer smaller/cheaper shows over reducing below 3.
 - Return ONLY the JSON object. No other text.`;
 
 /**

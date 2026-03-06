@@ -8,17 +8,6 @@ export async function POST(request: NextRequest) {
 
   // --- PDF Upload Path ---
   if (contentType.includes("multipart/form-data")) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        {
-          error: "PDF extraction is not configured. Please add an ANTHROPIC_API_KEY environment variable, or use manual entry instead.",
-          code: "NO_API_KEY",
-        },
-        { status: 503 }
-      );
-    }
-
     let formData: FormData;
     try {
       formData = await request.formData();
@@ -43,8 +32,19 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const base64Data = Buffer.from(arrayBuffer).toString("base64");
 
-    // Send to Claude with document content block
-    const client = new Anthropic({ apiKey });
+    // Instantiate Anthropic client — SDK reads ANTHROPIC_API_KEY from env automatically
+    let client: Anthropic;
+    try {
+      client = new Anthropic();
+    } catch {
+      return NextResponse.json(
+        {
+          error: "PDF extraction is not configured. Please add an ANTHROPIC_API_KEY environment variable, or use manual entry instead.",
+          code: "NO_API_KEY",
+        },
+        { status: 503 }
+      );
+    }
 
     try {
       const message = await client.messages.create({

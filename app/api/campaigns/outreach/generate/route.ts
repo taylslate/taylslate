@@ -29,8 +29,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  const userPrompt = buildOutreachUserPrompt(campaign, recommendations, youtubeRecs);
+
+  let client: Anthropic;
+  try {
+    client = new Anthropic();
+  } catch {
     return NextResponse.json(
       {
         error: "AI outreach generation is not configured. Please add an ANTHROPIC_API_KEY environment variable.",
@@ -39,9 +43,6 @@ export async function POST(request: NextRequest) {
       { status: 503 }
     );
   }
-
-  const userPrompt = buildOutreachUserPrompt(campaign, recommendations, youtubeRecs);
-  const client = new Anthropic({ apiKey });
 
   try {
     const message = await client.messages.create({
