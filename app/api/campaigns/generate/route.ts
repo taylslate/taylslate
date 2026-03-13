@@ -71,11 +71,10 @@ export async function POST(request: NextRequest) {
 
   const userPrompt = buildCampaignUserPrompt(brief, body.budget_total, body.platforms, showsJson);
 
-  // Instantiate Anthropic client — SDK reads ANTHROPIC_API_KEY from env automatically
-  let client: Anthropic;
-  try {
-    client = new Anthropic();
-  } catch {
+  // Instantiate Anthropic client
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  console.log("[campaign/generate] ANTHROPIC_API_KEY present:", !!anthropicKey, "length:", anthropicKey?.length);
+  if (!anthropicKey) {
     return NextResponse.json(
       {
         error: "AI campaign planning is not configured. Please add an ANTHROPIC_API_KEY environment variable.",
@@ -84,6 +83,7 @@ export async function POST(request: NextRequest) {
       { status: 503 }
     );
   }
+  const client = new Anthropic({ apiKey: anthropicKey });
 
   try {
     const message = await client.messages.create({

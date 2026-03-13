@@ -1,15 +1,30 @@
 "use client";
 
-import { useState } from "react";
-import { getAgentShows } from "@/lib/data";
+import { useState, useEffect } from "react";
 import type { Show, Platform, PriceType } from "@/lib/data";
 
 type AgentShow = Show & { commission_rate?: number };
 
-const initialShows = getAgentShows("user-agent-001");
-
 export default function ShowsPage() {
-  const [showList, setShowList] = useState<AgentShow[]>(initialShows);
+  const [showList, setShowList] = useState<AgentShow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchShows() {
+      try {
+        const res = await fetch("/api/shows");
+        if (res.ok) {
+          const data = await res.json();
+          setShowList(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch shows:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchShows();
+  }, []);
   const [search, setSearch] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -457,7 +472,11 @@ export default function ShowsPage() {
         </div>
       </div>
 
-      {filteredShows.length > 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-24">
+          <p className="text-sm text-[var(--brand-text-muted)]">Loading shows...</p>
+        </div>
+      ) : filteredShows.length > 0 ? (
         <div className="space-y-3">
           {filteredShows.map((show) => {
             const isPodcast = show.platform === "podcast";
