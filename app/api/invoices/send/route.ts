@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { invoices, insertionOrders, profiles, deals } from "@/lib/data";
+import { getAuthenticatedUser, getInvoiceById, getIOById, getDealById, getProfileById } from "@/lib/data/queries";
 import { generateInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import type { Invoice } from "@/lib/data";
 
@@ -128,52 +128,57 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  // Resolve the invoice: either by ID (existing) or from the body (generated)
-  let invoice: Invoice;
-  if (body.invoice_id) {
-    const found = invoices.find((inv) => inv.id === body.invoice_id);
-    if (!found) {
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-    }
-    invoice = found;
-  } else if (body.invoice) {
-    invoice = body.invoice;
-  } else {
-    return NextResponse.json({ error: "Provide invoice_id or invoice object" }, { status: 400 });
-  }
-
-  // Determine recipient from invoice bill_to fields
-  const recipientEmail = invoice.bill_to_email;
-  const recipientName = invoice.bill_to_name;
-
-  if (!recipientEmail) {
-    return NextResponse.json(
-      { error: "No billing email found on the invoice." },
-      { status: 400 }
-    );
-  }
-
-  // Determine sender from the IO's publisher/agent
-  let senderName = invoice.from_name;
-  const io = insertionOrders.find((o) => o.id === invoice.io_id);
-  if (io) {
-    const deal = deals.find((d) => d.id === io.deal_id);
-    const agent = deal?.agent_id ? profiles.find((p) => p.id === deal.agent_id) : undefined;
-    if (agent) senderName = agent.full_name;
-  }
-
-  // Generate PDF
-  const pdfBuffer = generateInvoicePdf(invoice);
-  const filename = `${invoice.invoice_number.replace(/\s+/g, "_")}.pdf`;
-
-  // Build email
-  const subject = `Invoice ${invoice.invoice_number} — ${invoice.advertiser_name} — ${invoice.campaign_period}`;
-  const html = buildEmailHtml(invoice, senderName);
-
-  // Send via Resend
-  const resend = new Resend(apiKey);
-
   try {
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Resolve the invoice: either by ID (existing) or from the body (generated)
+    let invoice: Invoice;
+    if (body.invoice_id) {
+      const found = await getInvoiceById(body.invoice_id);
+      if (!found) {
+        return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+      }
+      invoice = found;
+    } else if (body.invoice) {
+      invoice = body.invoice;
+    } else {
+      return NextResponse.json({ error: "Provide invoice_id or invoice object" }, { status: 400 });
+    }
+
+    // Determine recipient from invoice bill_to fields
+    const recipientEmail = invoice.bill_to_email;
+    const recipientName = invoice.bill_to_name;
+
+    if (!recipientEmail) {
+      return NextResponse.json(
+        { error: "No billing email found on the invoice." },
+        { status: 400 }
+      );
+    }
+
+    // Determine sender from the IO's publisher/agent
+    let senderName = invoice.from_name;
+    const io = await getIOById(invoice.io_id);
+    if (io) {
+      const deal = await getDealById(io.deal_id);
+      const agent = deal?.agent_id ? await getProfileById(deal.agent_id) : undefined;
+      if (agent) senderName = agent.full_name;
+    }
+
+    // Generate PDF
+    const pdfBuffer = generateInvoicePdf(invoice);
+    const filename = `${invoice.invoice_number.replace(/\s+/g, "_")}.pdf`;
+
+    // Build email
+    const subject = `Invoice ${invoice.invoice_number} — ${invoice.advertiser_name} — ${invoice.campaign_period}`;
+    const html = buildEmailHtml(invoice, senderName);
+
+    // Send via Resend
+    const resend = new Resend(apiKey);
+
     const { error } = await resend.emails.send({
       from: `${senderName} via Taylslate <invoices@taylslate.com>`,
       to: recipientEmail,

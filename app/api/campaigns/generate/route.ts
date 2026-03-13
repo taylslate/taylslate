@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { shows } from "@/lib/data/seed";
+import { getAuthenticatedUser, getAllShows } from "@/lib/data/queries";
 import type { Campaign, ShowRecommendation, YouTubeRecommendation, ExpansionShow, Platform } from "@/lib/data/types";
 import {
   CAMPAIGN_PLANNING_SYSTEM_PROMPT,
@@ -38,6 +38,18 @@ export async function POST(request: NextRequest) {
   }
   if (!body.budget_total || body.budget_total < 1000) {
     return NextResponse.json({ error: "Budget must be at least $1,000" }, { status: 400 });
+  }
+
+  // Get authenticated user
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Fetch shows from Supabase instead of seed data
+  const shows = await getAllShows();
+  if (shows.length === 0) {
+    return NextResponse.json({ error: "No shows available in the database" }, { status: 500 });
   }
 
   // Send ALL shows to Claude — the system prompt handles platform prioritization
@@ -165,7 +177,7 @@ export async function POST(request: NextRequest) {
           show.rate_card.midroll_cpm;
         const estimatedCpm = cpmFromCard ?? rec.estimated_cpm;
 
-        // Correct math: (downloads / 1000) × CPM × episodes
+        // Correct math: (downloads / 1000) x CPM x episodes
         const costPerEpisode = (show.audience_size / 1000) * estimatedCpm;
         const allocatedBudget = Math.round(costPerEpisode * numEpisodes);
         const estimatedImpressions = show.audience_size * numEpisodes;
@@ -257,7 +269,7 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString();
     const campaign: Campaign = {
       id: `campaign-gen-${Date.now()}`,
-      user_id: "user-brand-001",
+      user_id: user.id,
       name: body.name,
       brief,
       budget_total: body.budget_total,

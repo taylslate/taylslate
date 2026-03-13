@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Deal, ShowRecommendation, YouTubeRecommendation } from "@/lib/data/types";
-import { addDeals } from "@/lib/data/deal-store";
+import { getAuthenticatedUser, addDeals } from "@/lib/data/queries";
 
 export async function POST(request: NextRequest) {
   let body: {
@@ -17,6 +17,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { campaign_id, brand_id, recommendations, youtube_recommendations } = body;
 
   if (!campaign_id || !brand_id) {
@@ -24,14 +29,14 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date().toISOString();
-  const deals: Deal[] = [];
+  const dealsToInsert: Omit<Deal, "created_at" | "updated_at">[] = [];
 
   // Create deals from podcast recommendations
   for (const rec of recommendations) {
     const netPerEpisode = Math.round((rec.audience_size / 1000) * rec.estimated_cpm);
     const totalNet = netPerEpisode * rec.num_episodes;
 
-    deals.push({
+    dealsToInsert.push({
       id: `deal-campaign-${campaign_id}-${rec.show_id}`,
       campaign_id,
       show_id: rec.show_id,
@@ -55,14 +60,12 @@ export async function POST(request: NextRequest) {
       rofr_days: 30,
       flight_start: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
       flight_end: new Date(Date.now() + 120 * 86400000).toISOString().split("T")[0],
-      created_at: now,
-      updated_at: now,
     });
   }
 
   // Create deals from YouTube recommendations
   for (const rec of youtube_recommendations) {
-    deals.push({
+    dealsToInsert.push({
       id: `deal-campaign-${campaign_id}-${rec.show_id}`,
       campaign_id,
       show_id: rec.show_id,
@@ -86,13 +89,14 @@ export async function POST(request: NextRequest) {
       rofr_days: 30,
       flight_start: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
       flight_end: new Date(Date.now() + 120 * 86400000).toISOString().split("T")[0],
-      created_at: now,
-      updated_at: now,
     });
   }
 
-  // Persist to in-memory store (replace with Supabase when connected)
-  addDeals(deals);
-
-  return NextResponse.json({ deals, count: deals.length });
+  try {
+    const deals = await addDeals(dealsToInsert);
+    return NextResponse.json({ deals, count: deals.length });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: `Failed to create deals: ${message}` }, { status: 500 });
+  }
 }

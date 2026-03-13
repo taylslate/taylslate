@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { deals, getShowById, getIOByDeal, profiles } from "@/lib/data";
+import { getAuthenticatedUser, getDealById, getShowById, getIOByDealId, getProfileById, getNextIONumber } from "@/lib/data/queries";
 import { generateIOPdf } from "@/lib/pdf/io-pdf";
-import type { InsertionOrder, IOLineItem } from "@/lib/data";
+import type { InsertionOrder, IOLineItem, Show, Deal, Profile } from "@/lib/data";
 
-function buildIOFromDeal(deal: (typeof deals)[number], show: NonNullable<ReturnType<typeof getShowById>>) {
-  const brand = profiles.find((p) => p.id === deal.brand_id);
-  const agency = deal.agency_id ? profiles.find((p) => p.id === deal.agency_id) : undefined;
-  const agent = deal.agent_id ? profiles.find((p) => p.id === deal.agent_id) : undefined;
-
+function buildIOFromDeal(
+  deal: Deal,
+  show: Show,
+  brand: Profile | null | undefined,
+  agency: Profile | null | undefined,
+  agent: Profile | null | undefined,
+  ioNumber: string
+) {
   const startDate = new Date(deal.flight_start);
   const cadenceDays: Record<string, number> = { daily: 7, weekly: 7, biweekly: 14, monthly: 28 };
   const spacing = cadenceDays[show.episode_cadence] ?? 7;
@@ -37,9 +40,6 @@ function buildIOFromDeal(deal: (typeof deals)[number], show: NonNullable<ReturnT
       make_good_triggered: false,
     });
   }
-
-  const year = new Date().getFullYear();
-  const ioNumber = `IO-${year}-${String(Math.floor(Math.random() * 9000) + 1000).padStart(4, "0")}`;
 
   const io: InsertionOrder = {
     id: `io-gen-${deal.id}`,
@@ -173,57 +173,66 @@ export async function POST(
     );
   }
 
-  const { id } = await params;
-  const deal = deals.find((d) => d.id === id);
-  if (!deal) {
-    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
-  }
-
-  const show = getShowById(deal.show_id);
-  if (!show) {
-    return NextResponse.json({ error: "Show not found" }, { status: 404 });
-  }
-
-  // Use existing IO or build from deal
-  const existingIO = getIOByDeal(deal.id);
-  let io: InsertionOrder;
-  let senderName: string;
-  let senderEmail: string;
-
-  if (existingIO) {
-    io = existingIO;
-    senderName = existingIO.publisher_contact_name;
-    senderEmail = existingIO.publisher_contact_email;
-  } else {
-    const built = buildIOFromDeal(deal, show);
-    io = built.io;
-    senderName = built.agent?.full_name ?? "Taylslate";
-    senderEmail = built.agent?.email ?? "";
-  }
-
-  // Determine recipient: agency if present, otherwise advertiser/brand
-  const recipientEmail = io.agency_contact_email ?? io.advertiser_contact_email;
-  const recipientName = io.agency_contact_name ?? io.advertiser_contact_name;
-
-  if (!recipientEmail) {
-    return NextResponse.json(
-      { error: "No recipient email found on the IO. Add an agency or advertiser email." },
-      { status: 400 }
-    );
-  }
-
-  // Generate PDF
-  const pdfBuffer = generateIOPdf(io);
-  const filename = `${io.io_number.replace(/\s+/g, "_")}.pdf`;
-
-  // Build email
-  const subject = `Insertion Order ${io.io_number} — ${io.advertiser_name} × ${io.line_items[0]?.show_name ?? "Campaign"}`;
-  const html = buildEmailHtml(io, senderName);
-
-  // Send via Resend
-  const resend = new Resend(apiKey);
-
   try {
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const deal = await getDealById(id);
+    if (!deal) {
+      return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
+
+    const show = await getShowById(deal.show_id);
+    if (!show) {
+      return NextResponse.json({ error: "Show not found" }, { status: 404 });
+    }
+
+    // Use existing IO or build from deal
+    const existingIO = await getIOByDealId(deal.id);
+    let io: InsertionOrder;
+    let senderName: string;
+    let senderEmail: string;
+
+    if (existingIO) {
+      io = existingIO;
+      senderName = existingIO.publisher_contact_name;
+      senderEmail = existingIO.publisher_contact_email;
+    } else {
+      const brand = await getProfileById(deal.brand_id);
+      const agency = deal.agency_id ? await getProfileById(deal.agency_id) : undefined;
+      const agent = deal.agent_id ? await getProfileById(deal.agent_id) : undefined;
+      const ioNumber = await getNextIONumber();
+      const built = buildIOFromDeal(deal, show, brand, agency, agent, ioNumber);
+      io = built.io;
+      senderName = built.agent?.full_name ?? "Taylslate";
+      senderEmail = built.agent?.email ?? "";
+    }
+
+    // Determine recipient: agency if present, otherwise advertiser/brand
+    const recipientEmail = io.agency_contact_email ?? io.advertiser_contact_email;
+    const recipientName = io.agency_contact_name ?? io.advertiser_contact_name;
+
+    if (!recipientEmail) {
+      return NextResponse.json(
+        { error: "No recipient email found on the IO. Add an agency or advertiser email." },
+        { status: 400 }
+      );
+    }
+
+    // Generate PDF
+    const pdfBuffer = generateIOPdf(io);
+    const filename = `${io.io_number.replace(/\s+/g, "_")}.pdf`;
+
+    // Build email
+    const subject = `Insertion Order ${io.io_number} — ${io.advertiser_name} × ${io.line_items[0]?.show_name ?? "Campaign"}`;
+    const html = buildEmailHtml(io, senderName);
+
+    // Send via Resend
+    const resend = new Resend(apiKey);
+
     const { error } = await resend.emails.send({
       from: `${senderName} via Taylslate <io@taylslate.com>`,
       to: recipientEmail,

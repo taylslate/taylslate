@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
-import { getAllDeals } from "@/lib/data/deal-store";
+import { getAuthenticatedUser, getAllDealsForUser } from "@/lib/data/queries";
 
 export async function GET() {
-  const deals = getAllDeals();
-  return NextResponse.json({ deals });
+  try {
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const deals = await getAllDealsForUser(user.id);
+    return NextResponse.json({ deals });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: `Failed to fetch deals: ${message}` }, { status: 500 });
+  }
 }
