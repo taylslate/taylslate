@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { shows } from "@/lib/data";
 import {
@@ -8,6 +8,7 @@ import {
   matchCSVToShows,
   type ShowMatchResult,
 } from "@/lib/utils/fuzzy-match";
+import { createClient } from "@/lib/supabase/client";
 
 type Step = "role" | "welcome" | "upload" | "review" | "complete";
 
@@ -21,6 +22,19 @@ export default function OnboardingPage() {
   const [dragActive, setDragActive] = useState(false);
   const [fileName, setFileName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Check auth on mount — redirect to /login if not authenticated
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) {
+        router.push("/login");
+      } else {
+        setAuthChecked(true);
+      }
+    });
+  }, [router]);
 
   // ---- CSV handling ----
 
@@ -185,6 +199,33 @@ export default function OnboardingPage() {
 
   // ---- Render ----
 
+  const handleRoleSelect = async (roleId: string) => {
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      await supabase.from("profiles").upsert({
+        id: user.id,
+        email: user.email,
+        full_name: user.user_metadata.full_name ?? "",
+        role: roleId,
+        tier: "free",
+      });
+    }
+
+    if (roleId === "agent") {
+      setStep("welcome");
+    } else {
+      router.push("/campaigns/new");
+    }
+  };
+
+  if (!authChecked) {
+    return null;
+  }
+
   if (step === "role") {
     return (
       <div className="py-12">
@@ -201,13 +242,7 @@ export default function OnboardingPage() {
           {roles.map((role) => (
             <button
               key={role.id}
-              onClick={() => {
-                if (role.id === "agent") {
-                  setStep("welcome");
-                } else {
-                  router.push("/campaigns/new");
-                }
-              }}
+              onClick={() => handleRoleSelect(role.id)}
               className="w-full flex items-center gap-5 p-5 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] hover:border-[var(--brand-blue)]/40 hover:bg-[var(--brand-blue)]/[0.02] transition-all text-left group"
             >
               <div className="w-12 h-12 rounded-xl bg-[var(--brand-blue)]/[0.06] flex items-center justify-center shrink-0 text-[var(--brand-blue)] group-hover:bg-[var(--brand-blue)]/[0.1] transition-colors">
