@@ -215,6 +215,14 @@ Dashboard uses light theme. Landing page uses dark theme.
 - Build clean API endpoints from day one — the web UI is one of several future interfaces
 - Schemas and forms must match real-world industry documents and processes
 
+## Git Convention
+
+- **Auto-commit after each completed feature.** When you finish a feature, bug fix, or meaningful unit of work, create a commit with a descriptive message and push to main.
+- Commit messages should be concise and describe the "what" and "why" — e.g., `Add Podscan enrichment client and /api/shows/[id]/enrich endpoint`
+- Push to `main` immediately after committing. We ship continuously.
+- Do not batch unrelated changes into one commit. One feature = one commit.
+- If a feature spans multiple files, that's fine — commit them together as one logical unit.
+
 ## Competitive Context (Quick Reference)
 
 - **LiveRead.io** — IO/invoice management, real integrations (Megaphone, Bill.com, BoldSign), but no AI, no discovery, no campaign planning. Operations only. Manages deals that already exist. We create them.

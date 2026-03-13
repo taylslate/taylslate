@@ -1,7 +1,9 @@
 # Taylslate — Technical Specification
 
-> **Stack:** Next.js 14 (App Router) · TypeScript · Supabase (Postgres + Auth) · Vercel · Claude API  
-> **Last updated:** February 2026 · v1.0
+> **Stack:** Next.js 16 (App Router) · TypeScript · Supabase (Postgres + Auth) · Tailwind 4 · Vercel · Claude API  
+> **Last updated:** March 2026 · v1.1
+
+> **⚠️ Schema Source of Truth:** `lib/data/types.ts` is the canonical data model for all entities. This spec's SQL schema is derived from those types. If there is ever a conflict, `types.ts` wins.
 
 ---
 
@@ -21,113 +23,93 @@
 
 ## 1. Project Structure
 
+This reflects the actual codebase as of March 2026.
+
 ```
 taylslate/
 ├── app/
-│   ├── layout.tsx                    # Root layout with Supabase provider
-│   ├── page.tsx                      # Landing / marketing page
-│   ├── (auth)/
+│   ├── layout.tsx                    # Root layout
+│   ├── page.tsx                      # Landing page (dark navy theme)
+│   ├── globals.css                   # Design tokens (--brand-blue, --brand-surface, etc.)
+│   ├── onboarding/
+│   │   ├── layout.tsx
+│   │   └── page.tsx                  # Agent onboarding: role selection, CSV import
+│   ├── (auth)/                       # TODO: auth pages
 │   │   ├── login/page.tsx
 │   │   ├── signup/page.tsx
 │   │   └── callback/route.ts         # Supabase OAuth callback
 │   ├── (dashboard)/
 │   │   ├── layout.tsx                # Authenticated layout with sidebar
+│   │   ├── dashboard/page.tsx        # Home dashboard with stats
 │   │   ├── campaigns/
 │   │   │   ├── page.tsx              # Campaign list
-│   │   │   ├── new/page.tsx          # Campaign brief form (7 fields)
-│   │   │   └── [id]/
-│   │   │       ├── page.tsx          # Campaign results / media plan
-│   │   │       ├── workspace/page.tsx # Campaign management (bookings, deal terms)
-│   │   │       └── export/route.ts   # CSV export endpoint
+│   │   │   ├── new/page.tsx          # Campaign brief form
+│   │   │   ├── generated/page.tsx    # Generated campaign results
+│   │   │   └── [id]/page.tsx         # Campaign detail
+│   │   ├── deals/
+│   │   │   ├── page.tsx              # Deal pipeline (kanban)
+│   │   │   ├── new/page.tsx          # Create deal form
+│   │   │   ├── import/page.tsx       # IO import (PDF parsing via Claude)
+│   │   │   └── [id]/page.tsx         # Deal detail + IO editor
+│   │   ├── invoices/
+│   │   │   └── page.tsx              # Invoice list + generation
 │   │   ├── shows/
-│   │   │   └── [id]/page.tsx         # Show detail page
-│   │   └── settings/page.tsx         # Account, billing, API keys
+│   │   │   └── page.tsx              # Show roster management
+│   │   └── settings/
+│   │       └── page.tsx              # Account & subscription settings
 │   └── api/
 │       ├── campaigns/
-│       │   ├── route.ts              # POST: create campaign
+│       │   ├── generate/route.ts     # POST: AI campaign planning (Claude API)
+│       │   ├── outreach/route.ts     # POST: outreach email generation
+│       │   └── deals/route.ts        # POST: create deals from campaign
+│       ├── deals/
+│       │   ├── route.ts              # GET: list deals
+│       │   ├── import/route.ts       # POST: IO import (PDF → parsed deal)
 │       │   └── [id]/
-│       │       ├── route.ts          # GET: campaign detail, PATCH: update
-│       │       ├── discover/route.ts  # POST: run discovery + scoring
-│       │       ├── allocate/route.ts  # POST: run budget optimization
-│       │       ├── outreach/route.ts  # POST: generate outreach emails
-│       │       ├── adcopy/route.ts    # POST: generate ad copy/scripts
-│       │       └── overlap/route.ts   # POST: check audience overlap
-│       ├── bookings/
-│       │   └── route.ts              # POST: create booking, GET: list
-│       ├── outcomes/
-│       │   └── route.ts              # POST: submit outcome rating
-│       ├── shows/
-│       │   └── [id]/route.ts         # GET: show detail
-│       ├── webhooks/
-│       │   └── stripe/route.ts       # Stripe webhook for subscriptions
-│       └── cron/
-│           ├── refresh-shows/route.ts      # Weekly: audience data refresh
-│           ├── refresh-metadata/route.ts   # Monthly: show metadata refresh
-│           └── refresh-sponsors/route.ts   # Weekly: sponsor history refresh
-├── mcp/
-│   ├── server.ts                     # MCP server entry point
-│   ├── tools/
-│   │   ├── discover_shows.ts
-│   │   ├── allocate_budget.ts
-│   │   ├── generate_outreach.ts
-│   │   ├── generate_adcopy.ts
-│   │   └── check_overlap.ts
-│   └── package.json                  # Separate package for MCP server
-├── lib/
-│   ├── supabase/
-│   │   ├── client.ts                 # Browser client
-│   │   ├── server.ts                 # Server client (cookies)
-│   │   ├── admin.ts                  # Service role client (cron jobs)
-│   │   └── types.ts                  # Generated DB types
-│   ├── ai/
-│   │   ├── claude.ts                 # Claude API wrapper
-│   │   ├── prompts/
-│   │   │   ├── discovery.ts          # Show scoring prompt
-│   │   │   ├── outreach.ts           # Email generation prompt
-│   │   │   ├── adcopy.ts             # Script generation prompt
-│   │   │   └── refinement.ts         # Campaign refinement prompt
-│   │   └── scoring.ts               # Show fit scoring algorithm
-│   ├── engines/
-│   │   ├── discovery.ts              # Discovery engine (DB queries + AI scoring)
-│   │   ├── budget.ts                 # Budget optimization algorithm
-│   │   └── overlap.ts               # Overlap detection algorithm
-│   ├── ingestion/
-│   │   ├── podchaser.ts             # Podchaser API client + caching logic
-│   │   ├── youtube.ts               # YouTube Data API client
-│   │   └── scraper.ts               # Apple/Spotify/social enrichment
-│   ├── utils/
-│   │   ├── csv.ts                   # CSV export builder
-│   │   ├── rate-limit.ts            # API rate limiting
-│   │   └── tier.ts                  # Tier enforcement helpers
-│   └── constants.ts                 # CPM defaults, budget rules, tier limits
+│       │       ├── route.ts          # GET: deal detail
+│       │       └── io/
+│       │           ├── pdf/route.ts  # GET/POST: IO PDF generation
+│       │           └── send/route.ts # POST: send IO via Resend
+│       └── invoices/
+│           ├── generate/route.ts     # POST: generate invoice from IO
+│           ├── [id]/route.ts         # GET/PATCH: invoice detail + status
+│           ├── pdf/route.ts          # POST: invoice PDF generation
+│           └── send/route.ts         # POST: send invoice via Resend
 ├── components/
-│   ├── ui/                          # Shared UI primitives (shadcn/ui)
-│   ├── campaign/
-│   │   ├── BriefForm.tsx            # 7-field campaign intake form
-│   │   ├── ResultsTable.tsx         # Ranked show recommendations
-│   │   ├── BudgetBreakdown.tsx      # Per-show allocation display
-│   │   ├── OverlapWarnings.tsx      # Overlap flags on results
-│   │   └── CompetitorBadges.tsx     # Sponsor history badges
-│   ├── workspace/
-│   │   ├── BookingForm.tsx          # Enter deal terms
-│   │   ├── OutcomeRating.tsx        # Post-campaign feedback
-│   │   └── CampaignStatus.tsx       # Status tracking
+│   ├── io/                           # IO-related components (editor, preview, etc.)
 │   └── layout/
-│       ├── Sidebar.tsx
-│       └── Header.tsx
-├── supabase/
-│   └── migrations/
-│       └── 001_initial_schema.sql   # Full schema migration
-├── .env.local.example
-├── next.config.ts
-├── tailwind.config.ts
+│       └── Sidebar.tsx               # Main navigation sidebar
+├── lib/
+│   ├── data/
+│   │   ├── types.ts                  # ⭐ CANONICAL data model — all TypeScript types
+│   │   ├── seed.ts                   # Seed data (18 shows, deals, IOs, invoices)
+│   │   ├── deal-store.ts             # In-memory deal store (to be replaced by Supabase)
+│   │   └── index.ts                  # Barrel export
+│   ├── pdf/
+│   │   └── io-pdf.ts                 # IO PDF generation (jsPDF)
+│   ├── prompts/
+│   │   └── campaign-planning.ts      # Claude API system prompts + prompt builders
+│   ├── supabase/
+│   │   ├── client.ts                 # Browser client (@supabase/ssr)
+│   │   ├── server.ts                 # Server client (cookies)
+│   │   └── admin.ts                  # Service role client (cron jobs)
+│   ├── utils/                        # Shared utilities
+│   └── validation/
+│       └── io-validation.ts          # IO field validation
+├── CLAUDE.md                         # Project context for Claude Code
+├── TAYLSLATE_CONTEXT.md              # Strategic context, competitive research
+├── TECHNICAL_SPEC.md                 # This file
+├── Combined Channel Roster.csv       # Real agent roster data
+├── package.json
 ├── tsconfig.json
-└── package.json
+└── next.config.ts
 ```
 
 ---
 
 ## 2. Database Schema
+
+All tables are derived from the types defined in `lib/data/types.ts`. The agent-side transaction entities (deals, insertion_orders, invoices) are the core of the MVP.
 
 ### Core Tables
 
@@ -145,6 +127,7 @@ CREATE TABLE public.profiles (
   full_name       TEXT,
   company_name    TEXT,
   company_url     TEXT,
+  role            TEXT NOT NULL CHECK (role IN ('brand', 'agency', 'agent', 'show')),
   tier            TEXT NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'starter', 'growth', 'business')),
   stripe_customer_id   TEXT,
   stripe_subscription_id TEXT,
@@ -155,66 +138,63 @@ CREATE TABLE public.profiles (
 );
 
 -- ============================================================
--- SHOWS (Our unified database — the center of gravity)
+-- SHOWS
 -- ============================================================
 
 CREATE TABLE public.shows (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  -- Identity
   name            TEXT NOT NULL,
   slug            TEXT UNIQUE,
   platform        TEXT NOT NULL CHECK (platform IN ('podcast', 'youtube')),
   description     TEXT,
   image_url       TEXT,
-  
+
   -- Taxonomy
-  categories      TEXT[] DEFAULT '{}',       -- e.g. {'comedy', 'society_culture'}
-  tags            TEXT[] DEFAULT '{}',        -- freeform keywords
-  language        TEXT DEFAULT 'en',
-  
+  categories      TEXT[] DEFAULT '{}',
+  tags            TEXT[] DEFAULT '{}',
+
   -- Network & contacts
-  network         TEXT,                       -- e.g. 'Wondery', 'Barstool'
+  network         TEXT,
   contact_name    TEXT,
   contact_email   TEXT,
-  contact_method  TEXT,                       -- 'email', 'form', 'network_rep'
-  
-  -- Audience metrics (refreshed weekly)
-  audience_size   INT,                        -- estimated downloads/ep (podcast) or avg views (YT)
-  audience_demo   JSONB DEFAULT '{}',         -- {"age_25_34": 0.35, "female": 0.62, ...}
-  audience_geo    JSONB DEFAULT '{}',         -- {"US": 0.70, "UK": 0.12, ...}
-  audience_interests JSONB DEFAULT '{}',      -- {"fitness": 0.8, "tech": 0.3, ...}
-  
-  -- Pricing (from rate cards + aggregated negotiated data)
-  rate_card       JSONB DEFAULT '{}',         -- {"preroll_cpm": 18, "midroll_cpm": 25, "postroll_cpm": 15}
-  avg_negotiated_cpm DECIMAL(10,2),           -- anonymized aggregate from campaign data
-  min_buy         DECIMAL(10,2),              -- minimum campaign spend
-  
+  contact_method  TEXT CHECK (contact_method IN ('email', 'form', 'network_rep', 'agent')),
+
+  -- Audience
+  audience_size   INT,                        -- avg downloads/ep (podcast) or avg views (youtube)
+  demographics    JSONB DEFAULT '{}',         -- ShowDemographics from types.ts
+  audience_interests TEXT[] DEFAULT '{}',
+
+  -- Pricing
+  rate_card       JSONB DEFAULT '{}',         -- ShowRateCard: {preroll_cpm, midroll_cpm, postroll_cpm, flat_rate}
+  price_type      TEXT CHECK (price_type IN ('cpm', 'flat_rate')),
+  min_buy         DECIMAL(10,2),
+
   -- Ad format info
-  ad_formats      TEXT[] DEFAULT '{}',        -- {'host_read', 'preroll', 'midroll', 'postroll', 'integration'}
-  episodes_per_week DECIMAL(3,1),             -- publishing frequency
-  avg_episode_length INT,                     -- minutes
-  
-  -- External IDs (for API cross-referencing)
-  podchaser_id    TEXT,
+  ad_formats      TEXT[] DEFAULT '{}',        -- {'host_read', 'scripted', 'personal_experience', 'dynamic_insertion', 'integration'}
+  episode_cadence TEXT CHECK (episode_cadence IN ('daily', 'weekly', 'biweekly', 'monthly')),
+  avg_episode_length_min INT,
+
+  -- Sponsors
+  current_sponsors TEXT[] DEFAULT '{}',
+  past_sponsors    TEXT[] DEFAULT '{}',
+
+  -- External IDs
   apple_id        TEXT,
   spotify_id      TEXT,
   youtube_channel_id TEXT,
   rss_url         TEXT,
-  
-  -- Ranking & enrichment signals
-  apple_rank      INT,                        -- current Apple Podcasts rank
-  spotify_rank    INT,
-  social_followers INT,                       -- aggregate across platforms
-  engagement_rate DECIMAL(5,4),               -- social engagement rate
-  
-  -- Verification & sourcing
-  is_claimed      BOOLEAN NOT NULL DEFAULT FALSE,  -- show owner claimed profile
-  is_verified     BOOLEAN NOT NULL DEFAULT FALSE,  -- we verified the data
-  data_sources    TEXT[] DEFAULT '{}',              -- {'podchaser', 'youtube_api', 'scraped', 'claimed'}
-  
-  -- Timestamps
+
+  -- Verification
+  is_claimed      BOOLEAN NOT NULL DEFAULT FALSE,
+  is_verified     BOOLEAN NOT NULL DEFAULT FALSE,
+  data_sources    TEXT[] DEFAULT '{}',
+
+  -- Availability
+  available_slots INT,
+  next_available_date DATE,
+
+  -- Enrichment tracking
   last_api_refresh    TIMESTAMPTZ,
-  last_scrape_refresh TIMESTAMPTZ,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -224,11 +204,26 @@ CREATE INDEX idx_shows_categories ON public.shows USING GIN(categories);
 CREATE INDEX idx_shows_tags ON public.shows USING GIN(tags);
 CREATE INDEX idx_shows_audience_size ON public.shows(audience_size DESC);
 CREATE INDEX idx_shows_network ON public.shows(network);
-CREATE INDEX idx_shows_podchaser_id ON public.shows(podchaser_id);
-CREATE INDEX idx_shows_youtube_channel_id ON public.shows(youtube_channel_id);
 
 -- ============================================================
--- SPONSORS (competitive intel — which brands advertise where)
+-- AGENT-SHOW RELATIONSHIPS
+-- ============================================================
+
+CREATE TABLE public.agent_show_relationships (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_id        UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  show_id         UUID NOT NULL REFERENCES public.shows(id) ON DELETE CASCADE,
+  commission_rate DECIMAL(5,4),               -- e.g. 0.15 for 15%
+  is_exclusive    BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(agent_id, show_id)
+);
+
+CREATE INDEX idx_agent_shows_agent ON public.agent_show_relationships(agent_id);
+CREATE INDEX idx_agent_shows_show ON public.agent_show_relationships(show_id);
+
+-- ============================================================
+-- SHOW SPONSORS (competitive intel)
 -- ============================================================
 
 CREATE TABLE public.show_sponsors (
@@ -239,7 +234,7 @@ CREATE TABLE public.show_sponsors (
   first_seen      DATE,
   last_seen       DATE,
   is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-  source          TEXT NOT NULL DEFAULT 'podchaser',  -- 'podchaser', 'scraped', 'user_reported'
+  source          TEXT NOT NULL DEFAULT 'manual',
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -247,34 +242,20 @@ CREATE INDEX idx_show_sponsors_show ON public.show_sponsors(show_id);
 CREATE INDEX idx_show_sponsors_brand ON public.show_sponsors(brand_name);
 
 -- ============================================================
--- CAMPAIGNS
+-- CAMPAIGNS (Brand-side campaign planning)
 -- ============================================================
 
 CREATE TABLE public.campaigns (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  
-  -- Brief inputs (the 7 fields)
-  name            TEXT NOT NULL,               -- user's name for this campaign
-  brand_url       TEXT,
-  target_demographics JSONB DEFAULT '{}',      -- {"age_range": "25-34", "gender": "female", "interests": ["fitness","wellness"]}
-  keywords        TEXT[] DEFAULT '{}',
+  name            TEXT NOT NULL,
+  brief           JSONB DEFAULT '{}',         -- CampaignBrief from types.ts
   budget_total    DECIMAL(10,2) NOT NULL,
-  budget_currency TEXT NOT NULL DEFAULT 'USD',
-  platforms       TEXT[] DEFAULT '{"podcast"}', -- {'podcast', 'youtube'}
-  campaign_goals  TEXT,                         -- freeform: "brand awareness", "DTC conversions", etc.
-  
-  -- Generated plan
+  platforms       TEXT[] DEFAULT '{"podcast"}',
   status          TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'planned', 'active', 'completed', 'archived')),
-  recommendations JSONB DEFAULT '[]',           -- array of scored show recommendations
-  budget_allocation JSONB DEFAULT '[]',         -- array of per-show allocations
-  overlap_warnings JSONB DEFAULT '[]',          -- array of overlap flags
-  
-  -- AI outputs (stored for re-display without re-generation)
-  outreach_drafts JSONB DEFAULT '[]',           -- array of {show_id, email_subject, email_body}
-  adcopy_drafts   JSONB DEFAULT '[]',           -- array of {show_id, script_text, duration}
-  
-  -- Metadata
+  recommendations JSONB DEFAULT '[]',         -- ShowRecommendation[]
+  youtube_recommendations JSONB DEFAULT '[]', -- YouTubeRecommendation[]
+  expansion_opportunities JSONB DEFAULT '[]', -- ExpansionShow[]
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -283,66 +264,235 @@ CREATE INDEX idx_campaigns_user ON public.campaigns(user_id);
 CREATE INDEX idx_campaigns_status ON public.campaigns(status);
 
 -- ============================================================
--- BOOKINGS (actual deals — the proprietary data gold mine)
+-- DEALS (the transaction — links brand/agency to show)
 -- ============================================================
 
-CREATE TABLE public.bookings (
+CREATE TABLE public.deals (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  campaign_id     UUID NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
+  campaign_id     UUID REFERENCES public.campaigns(id),  -- optional: agent-side deals may not have a campaign
   show_id         UUID NOT NULL REFERENCES public.shows(id),
-  user_id         UUID NOT NULL REFERENCES public.profiles(id),
-  
-  -- Deal terms (entered by user)
-  negotiated_cpm  DECIMAL(10,2),
-  total_cost      DECIMAL(10,2),
-  num_episodes    INT,
-  placement_type  TEXT CHECK (placement_type IN ('preroll', 'midroll', 'postroll', 'host_read', 'integration', 'other')),
-  flight_start    DATE,
-  flight_end      DATE,
-  
-  -- Status
-  status          TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'confirmed', 'live', 'completed', 'cancelled')),
+  brand_id        UUID NOT NULL REFERENCES public.profiles(id),
+  agent_id        UUID REFERENCES public.profiles(id),
+  agency_id       UUID REFERENCES public.profiles(id),
+
+  -- Status lifecycle: proposed → negotiating → approved → io_sent → signed → live → completed | cancelled
+  status          TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed', 'negotiating', 'approved', 'io_sent', 'signed', 'live', 'completed', 'cancelled')),
+
+  -- Deal terms
+  num_episodes    INT NOT NULL,
+  placement       TEXT NOT NULL CHECK (placement IN ('pre-roll', 'mid-roll', 'post-roll')),
+  ad_format       TEXT NOT NULL CHECK (ad_format IN ('host_read', 'scripted', 'personal_experience', 'dynamic_insertion', 'integration')),
+  price_type      TEXT NOT NULL CHECK (price_type IN ('cpm', 'flat_rate')),
+  cpm_rate        DECIMAL(10,2) NOT NULL,     -- negotiated CPM
+  gross_cpm       DECIMAL(10,2),              -- CPM charged to brand (if agency involved)
+  guaranteed_downloads INT NOT NULL,          -- per episode
+
+  -- Calculated amounts
+  net_per_episode DECIMAL(10,2) NOT NULL,     -- what the show receives per episode
+  gross_per_episode DECIMAL(10,2),            -- what the brand/agency pays per episode
+  total_net       DECIMAL(10,2) NOT NULL,     -- total show payment
+  total_gross     DECIMAL(10,2),              -- total brand payment
+
+  -- Content terms
+  is_scripted     BOOLEAN NOT NULL DEFAULT FALSE,
+  is_personal_experience BOOLEAN NOT NULL DEFAULT FALSE,
+  reader_type     TEXT NOT NULL DEFAULT 'host_read' CHECK (reader_type IN ('host_read', 'producer_read', 'guest_read')),
+  content_type    TEXT NOT NULL DEFAULT 'evergreen' CHECK (content_type IN ('evergreen', 'dated')),
+  pixel_required  BOOLEAN NOT NULL DEFAULT FALSE,
+
+  -- Exclusivity
+  competitor_exclusion TEXT[] DEFAULT '{}',
+  exclusivity_days INT NOT NULL DEFAULT 90,
+  rofr_days       INT NOT NULL DEFAULT 30,
+
+  -- Dates
+  flight_start    DATE NOT NULL,
+  flight_end      DATE NOT NULL,
+
   notes           TEXT,
-  
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_bookings_campaign ON public.bookings(campaign_id);
-CREATE INDEX idx_bookings_show ON public.bookings(show_id);
-CREATE INDEX idx_bookings_user ON public.bookings(user_id);
+CREATE INDEX idx_deals_show ON public.deals(show_id);
+CREATE INDEX idx_deals_brand ON public.deals(brand_id);
+CREATE INDEX idx_deals_agent ON public.deals(agent_id);
+CREATE INDEX idx_deals_status ON public.deals(status);
+CREATE INDEX idx_deals_campaign ON public.deals(campaign_id);
 
 -- ============================================================
--- OUTCOMES (self-reported campaign performance)
+-- INSERTION ORDERS (the contract generated from a deal)
 -- ============================================================
 
-CREATE TABLE public.outcomes (
+CREATE TABLE public.insertion_orders (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  booking_id      UUID NOT NULL REFERENCES public.bookings(id) ON DELETE CASCADE,
-  show_id         UUID NOT NULL REFERENCES public.shows(id),
-  user_id         UUID NOT NULL REFERENCES public.profiles(id),
-  
-  -- Ratings
-  overall_rating  INT NOT NULL CHECK (overall_rating BETWEEN 1 AND 5),
-  would_rebook    BOOLEAN,
-  audience_fit    INT CHECK (audience_fit BETWEEN 1 AND 5),
-  host_quality    INT CHECK (host_quality BETWEEN 1 AND 5),
-  
-  -- Optional performance data
-  reported_impressions INT,
-  reported_conversions INT,
-  reported_roas    DECIMAL(10,2),
-  
-  -- Attribution integration data (from Podscribe etc.)
-  attribution_source TEXT,                    -- 'podscribe', 'magellan', 'self_reported'
-  attribution_data   JSONB DEFAULT '{}',      -- raw data from attribution provider
-  
-  notes           TEXT,
+  io_number       TEXT NOT NULL UNIQUE,       -- e.g. "IO-2026-0001"
+  deal_id         UUID NOT NULL REFERENCES public.deals(id) ON DELETE CASCADE,
+
+  -- Parties
+  advertiser_name TEXT NOT NULL,
+  advertiser_contact_name TEXT,
+  advertiser_contact_email TEXT,
+
+  publisher_name  TEXT NOT NULL,
+  publisher_contact_name TEXT NOT NULL,
+  publisher_contact_email TEXT NOT NULL,
+  publisher_address TEXT,
+
+  agency_name     TEXT,
+  agency_contact_name TEXT,
+  agency_contact_email TEXT,
+  agency_billing_contact TEXT,
+  agency_address  TEXT,
+  send_invoices_to TEXT,
+
+  -- Totals
+  total_downloads INT NOT NULL,
+  total_gross     DECIMAL(10,2) NOT NULL,
+  total_net       DECIMAL(10,2) NOT NULL,
+
+  -- Standard terms (from VeritoneOne template)
+  payment_terms   TEXT NOT NULL DEFAULT 'Net 30 EOM',
+  competitor_exclusion TEXT[] DEFAULT '{}',
+  exclusivity_days INT NOT NULL DEFAULT 90,
+  rofr_days       INT NOT NULL DEFAULT 30,
+  cancellation_notice_days INT NOT NULL DEFAULT 14,
+  download_tracking_days INT NOT NULL DEFAULT 45,
+  make_good_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.10,  -- 10%
+
+  -- Status & signature
+  status          TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'signed', 'active', 'completed', 'cancelled')),
+  sent_at         TIMESTAMPTZ,
+  signed_at       TIMESTAMPTZ,
+  signed_by_publisher TEXT,
+  signed_by_agency TEXT,
+
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_io_deal ON public.insertion_orders(deal_id);
+CREATE INDEX idx_io_status ON public.insertion_orders(status);
+
+-- ============================================================
+-- IO LINE ITEMS (per-episode entries on an IO)
+-- ============================================================
+
+CREATE TABLE public.io_line_items (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  io_id           UUID NOT NULL REFERENCES public.insertion_orders(id) ON DELETE CASCADE,
+
+  format          TEXT NOT NULL CHECK (format IN ('podcast', 'youtube')),
+  post_date       DATE NOT NULL,
+  guaranteed_downloads INT NOT NULL,
+  show_name       TEXT NOT NULL,
+  placement       TEXT NOT NULL CHECK (placement IN ('pre-roll', 'mid-roll', 'post-roll')),
+  is_scripted     BOOLEAN NOT NULL DEFAULT FALSE,
+  is_personal_experience BOOLEAN NOT NULL DEFAULT FALSE,
+  reader_type     TEXT NOT NULL DEFAULT 'host_read',
+  content_type    TEXT NOT NULL DEFAULT 'evergreen',
+  pixel_required  BOOLEAN NOT NULL DEFAULT FALSE,
+  gross_rate      DECIMAL(10,2) NOT NULL,
+  gross_cpm       DECIMAL(10,2) NOT NULL,
+  price_type      TEXT NOT NULL CHECK (price_type IN ('cpm', 'flat_rate')),
+  net_due         DECIMAL(10,2) NOT NULL,
+
+  -- Post-delivery tracking
+  actual_post_date DATE,
+  actual_downloads INT,
+  episode_url     TEXT,
+  ad_timestamp    TEXT,
+  verified        BOOLEAN NOT NULL DEFAULT FALSE,
+  make_good_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+  make_good_reason TEXT,
+
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_outcomes_show ON public.outcomes(show_id);
-CREATE INDEX idx_outcomes_booking ON public.outcomes(booking_id);
+CREATE INDEX idx_io_line_items_io ON public.io_line_items(io_id);
+
+-- ============================================================
+-- INVOICES
+-- ============================================================
+
+CREATE TABLE public.invoices (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_number  TEXT NOT NULL UNIQUE,       -- e.g. "INV-2026-0001"
+  io_id           UUID NOT NULL REFERENCES public.insertion_orders(id),
+  io_number       TEXT NOT NULL,
+
+  -- Parties
+  bill_to_name    TEXT NOT NULL,
+  bill_to_email   TEXT NOT NULL,
+  bill_to_address TEXT,
+
+  from_name       TEXT NOT NULL,
+  from_email      TEXT NOT NULL,
+  from_address    TEXT,
+
+  -- Reference
+  advertiser_name TEXT NOT NULL,
+  campaign_period TEXT NOT NULL,              -- e.g. "August 2021"
+
+  -- Totals
+  subtotal        DECIMAL(10,2) NOT NULL,
+  adjustments     DECIMAL(10,2) NOT NULL DEFAULT 0,  -- make-good deductions
+  total_due       DECIMAL(10,2) NOT NULL,
+
+  -- Payment
+  status          TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'paid', 'overdue', 'disputed', 'cancelled')),
+  due_date        DATE NOT NULL,
+  sent_at         TIMESTAMPTZ,
+  paid_at         TIMESTAMPTZ,
+  payment_method  TEXT,
+
+  notes           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_invoices_io ON public.invoices(io_id);
+CREATE INDEX idx_invoices_status ON public.invoices(status);
+
+-- ============================================================
+-- INVOICE LINE ITEMS
+-- ============================================================
+
+CREATE TABLE public.invoice_line_items (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id      UUID NOT NULL REFERENCES public.invoices(id) ON DELETE CASCADE,
+  io_line_item_id UUID NOT NULL REFERENCES public.io_line_items(id),
+
+  show_name       TEXT NOT NULL,
+  post_date       DATE NOT NULL,
+  description     TEXT NOT NULL,
+  guaranteed_downloads INT NOT NULL,
+  actual_downloads INT,
+  rate            DECIMAL(10,2) NOT NULL,
+  make_good       BOOLEAN NOT NULL DEFAULT FALSE,
+
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_invoice_line_items_invoice ON public.invoice_line_items(invoice_id);
+
+-- ============================================================
+-- PAYMENTS
+-- ============================================================
+
+CREATE TABLE public.payments (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id      UUID NOT NULL REFERENCES public.invoices(id),
+  amount          DECIMAL(10,2) NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'refunded')),
+  method          TEXT NOT NULL CHECK (method IN ('stripe', 'wire', 'check', 'ach', 'manual')),
+  stripe_payment_id TEXT,
+  processed_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_payments_invoice ON public.payments(invoice_id);
+CREATE INDEX idx_payments_status ON public.payments(status);
 
 -- ============================================================
 -- API CACHE (tracking data freshness for ingestion pipeline)
@@ -350,43 +500,18 @@ CREATE INDEX idx_outcomes_booking ON public.outcomes(booking_id);
 
 CREATE TABLE public.api_cache_log (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  source          TEXT NOT NULL,               -- 'podchaser', 'youtube', 'apple_scrape', 'spotify_scrape'
-  entity_type     TEXT NOT NULL,               -- 'show', 'sponsor', 'audience'
-  entity_id       TEXT,                        -- external ID
+  source          TEXT NOT NULL,
+  entity_type     TEXT NOT NULL,
+  entity_id       TEXT,
   last_fetched    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   next_refresh    TIMESTAMPTZ NOT NULL,
   status          TEXT NOT NULL DEFAULT 'success' CHECK (status IN ('success', 'failed', 'pending')),
   error_message   TEXT,
-  points_used     INT                          -- for Podchaser query point tracking
+  points_used     INT
 );
 
 CREATE INDEX idx_cache_log_refresh ON public.api_cache_log(next_refresh);
 CREATE INDEX idx_cache_log_source ON public.api_cache_log(source, entity_type);
-
--- ============================================================
--- SHOW CLAIMS (supply-side portal)
--- ============================================================
-
-CREATE TABLE public.show_claims (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  show_id         UUID NOT NULL REFERENCES public.shows(id),
-  claimed_by_email TEXT NOT NULL,
-  claimed_by_name  TEXT,
-  verification_method TEXT,                    -- 'rss_ownership', 'email_domain', 'manual'
-  verification_status TEXT NOT NULL DEFAULT 'pending' CHECK (verification_status IN ('pending', 'verified', 'rejected')),
-  
-  -- Claimed data (overwrites show defaults when verified)
-  claimed_rate_card    JSONB DEFAULT '{}',
-  claimed_demographics JSONB DEFAULT '{}',
-  claimed_availability JSONB DEFAULT '{}',     -- {"available": true, "next_open_slot": "2026-04-01"}
-  claimed_ad_formats   TEXT[] DEFAULT '{}',
-  claimed_contact      JSONB DEFAULT '{}',
-  
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_claims_show ON public.show_claims(show_id);
 
 -- ============================================================
 -- ROW LEVEL SECURITY
@@ -394,35 +519,81 @@ CREATE INDEX idx_claims_show ON public.show_claims(show_id);
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.campaigns ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.outcomes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.deals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.insertion_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
 
--- Users can only see/edit their own data
+-- Profiles: users read/update their own
 CREATE POLICY "Users read own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Users update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Users insert own profile" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
+-- Campaigns: users manage their own
 CREATE POLICY "Users read own campaigns" ON public.campaigns FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users insert own campaigns" ON public.campaigns FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users update own campaigns" ON public.campaigns FOR UPDATE USING (auth.uid() = user_id);
 CREATE POLICY "Users delete own campaigns" ON public.campaigns FOR DELETE USING (auth.uid() = user_id);
 
-CREATE POLICY "Users read own bookings" ON public.bookings FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users insert own bookings" ON public.bookings FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users update own bookings" ON public.bookings FOR UPDATE USING (auth.uid() = user_id);
+-- Deals: accessible by agent, brand, or agency on the deal
+CREATE POLICY "Deal participants read deals" ON public.deals FOR SELECT USING (
+  auth.uid() = agent_id OR auth.uid() = brand_id OR auth.uid() = agency_id
+);
+CREATE POLICY "Deal participants insert deals" ON public.deals FOR INSERT WITH CHECK (
+  auth.uid() = agent_id OR auth.uid() = brand_id OR auth.uid() = agency_id
+);
+CREATE POLICY "Deal participants update deals" ON public.deals FOR UPDATE USING (
+  auth.uid() = agent_id OR auth.uid() = brand_id OR auth.uid() = agency_id
+);
 
-CREATE POLICY "Users read own outcomes" ON public.outcomes FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users insert own outcomes" ON public.outcomes FOR INSERT WITH CHECK (auth.uid() = user_id);
+-- IOs: accessible via deal relationship
+CREATE POLICY "IO access via deal" ON public.insertion_orders FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.deals WHERE deals.id = insertion_orders.deal_id
+    AND (deals.agent_id = auth.uid() OR deals.brand_id = auth.uid() OR deals.agency_id = auth.uid()))
+);
+CREATE POLICY "IO insert via deal" ON public.insertion_orders FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM public.deals WHERE deals.id = insertion_orders.deal_id
+    AND (deals.agent_id = auth.uid() OR deals.brand_id = auth.uid() OR deals.agency_id = auth.uid()))
+);
+CREATE POLICY "IO update via deal" ON public.insertion_orders FOR UPDATE USING (
+  EXISTS (SELECT 1 FROM public.deals WHERE deals.id = insertion_orders.deal_id
+    AND (deals.agent_id = auth.uid() OR deals.brand_id = auth.uid() OR deals.agency_id = auth.uid()))
+);
 
--- Shows are publicly readable (no RLS restriction on SELECT)
--- Only service role can write to shows (via cron/ingestion)
+-- Invoices: accessible via IO → deal relationship
+CREATE POLICY "Invoice access via deal" ON public.invoices FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.insertion_orders io
+    JOIN public.deals d ON d.id = io.deal_id
+    WHERE io.id = invoices.io_id
+    AND (d.agent_id = auth.uid() OR d.brand_id = auth.uid() OR d.agency_id = auth.uid()))
+);
+CREATE POLICY "Invoice insert via deal" ON public.invoices FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM public.insertion_orders io
+    JOIN public.deals d ON d.id = io.deal_id
+    WHERE io.id = invoices.io_id
+    AND (d.agent_id = auth.uid() OR d.brand_id = auth.uid() OR d.agency_id = auth.uid()))
+);
+CREATE POLICY "Invoice update via deal" ON public.invoices FOR UPDATE USING (
+  EXISTS (SELECT 1 FROM public.insertion_orders io
+    JOIN public.deals d ON d.id = io.deal_id
+    WHERE io.id = invoices.io_id
+    AND (d.agent_id = auth.uid() OR d.brand_id = auth.uid() OR d.agency_id = auth.uid()))
+);
+
+-- Shows: publicly readable, only service role can write
 ALTER TABLE public.shows ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Shows are publicly readable" ON public.shows FOR SELECT USING (true);
 
 ALTER TABLE public.show_sponsors ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Sponsors are publicly readable" ON public.show_sponsors FOR SELECT USING (true);
 
+-- Agent-show relationships: agents manage their own
+ALTER TABLE public.agent_show_relationships ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Agents read own relationships" ON public.agent_show_relationships FOR SELECT USING (auth.uid() = agent_id);
+CREATE POLICY "Agents insert own relationships" ON public.agent_show_relationships FOR INSERT WITH CHECK (auth.uid() = agent_id);
+CREATE POLICY "Agents delete own relationships" ON public.agent_show_relationships FOR DELETE USING (auth.uid() = agent_id);
+
 -- ============================================================
--- FUNCTIONS
+-- FUNCTIONS & TRIGGERS
 -- ============================================================
 
 -- Auto-update updated_at timestamps
@@ -437,7 +608,9 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER update_profiles_timestamp BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_shows_timestamp BEFORE UPDATE ON public.shows FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_campaigns_timestamp BEFORE UPDATE ON public.campaigns FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-CREATE TRIGGER update_bookings_timestamp BEFORE UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER update_deals_timestamp BEFORE UPDATE ON public.deals FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER update_io_timestamp BEFORE UPDATE ON public.insertion_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER update_invoices_timestamp BEFORE UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- Monthly campaign counter reset
 CREATE OR REPLACE FUNCTION reset_monthly_campaigns()
@@ -449,15 +622,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Aggregate negotiated CPM for a show (anonymized)
+-- Aggregate negotiated CPM for a show (anonymized, min 3 data points)
 CREATE OR REPLACE FUNCTION get_avg_negotiated_cpm(target_show_id UUID)
 RETURNS DECIMAL AS $$
-  SELECT AVG(negotiated_cpm)
-  FROM public.bookings
+  SELECT AVG(cpm_rate)
+  FROM public.deals
   WHERE show_id = target_show_id
-    AND negotiated_cpm IS NOT NULL
-    AND status IN ('confirmed', 'live', 'completed')
-  HAVING COUNT(*) >= 3;  -- only surface when we have 3+ data points
+    AND cpm_rate IS NOT NULL
+    AND status IN ('signed', 'live', 'completed')
+  HAVING COUNT(*) >= 3;
 $$ LANGUAGE sql SECURITY DEFINER;
 ```
 
@@ -465,131 +638,111 @@ $$ LANGUAGE sql SECURITY DEFINER;
 
 ## 3. API Endpoints
 
-### Campaigns
+### Deals (Agent-Side — MVP)
 
-| Method | Path | Description | Auth | Tier |
-|--------|------|-------------|------|------|
-| `POST` | `/api/campaigns` | Create campaign from brief | Yes | All |
-| `GET` | `/api/campaigns` | List user's campaigns | Yes | All |
-| `GET` | `/api/campaigns/[id]` | Get campaign detail + plan | Yes | All |
-| `PATCH` | `/api/campaigns/[id]` | Update campaign | Yes | All |
-| `DELETE` | `/api/campaigns/[id]` | Archive campaign | Yes | All |
-| `POST` | `/api/campaigns/[id]/discover` | Run discovery + scoring | Yes | All |
-| `POST` | `/api/campaigns/[id]/allocate` | Run budget optimization | Yes | All |
-| `POST` | `/api/campaigns/[id]/outreach` | Generate outreach emails | Yes | Starter+ |
-| `POST` | `/api/campaigns/[id]/adcopy` | Generate ad copy/scripts | Yes | Growth+ |
-| `POST` | `/api/campaigns/[id]/overlap` | Check audience overlap | Yes | All |
-| `GET` | `/api/campaigns/[id]/export` | CSV export of plan | Yes | All |
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| `POST` | `/api/deals` | Create deal | Yes |
+| `GET` | `/api/deals` | List deals for authenticated user | Yes |
+| `GET` | `/api/deals/[id]` | Deal detail with show + IO data | Yes |
+| `PATCH` | `/api/deals/[id]` | Update deal status/terms | Yes |
+| `DELETE` | `/api/deals/[id]` | Cancel deal (soft delete) | Yes |
+| `POST` | `/api/deals/import` | Import IO PDF → parsed deal | Yes |
+| `POST` | `/api/deals/[id]/io/generate` | Generate IO from deal | Yes |
+| `PATCH` | `/api/deals/[id]/io` | Update IO fields | Yes |
+| `GET` | `/api/deals/[id]/io/pdf` | Download IO as PDF | Yes |
+| `POST` | `/api/deals/[id]/io/send` | Send IO via email (Resend) | Yes |
 
-### Bookings & Outcomes
+### Invoices
 
-| Method | Path | Description | Auth | Tier |
-|--------|------|-------------|------|------|
-| `POST` | `/api/bookings` | Create booking (enter deal terms) | Yes | All |
-| `GET` | `/api/bookings?campaign_id=X` | List bookings for campaign | Yes | All |
-| `PATCH` | `/api/bookings/[id]` | Update booking status/terms | Yes | All |
-| `POST` | `/api/outcomes` | Submit outcome rating | Yes | All |
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| `POST` | `/api/invoices/generate` | Generate invoice from IO line items | Yes |
+| `GET` | `/api/invoices` | List invoices for authenticated user | Yes |
+| `GET` | `/api/invoices/[id]` | Invoice detail | Yes |
+| `PATCH` | `/api/invoices/[id]` | Update invoice status | Yes |
+| `POST` | `/api/invoices/pdf` | Generate invoice PDF | Yes |
+| `POST` | `/api/invoices/send` | Send invoice via email (Resend) | Yes |
 
 ### Shows
 
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| `GET` | `/api/shows` | List/search shows | Yes |
+| `POST` | `/api/shows` | Create show | Yes |
+| `PATCH` | `/api/shows/[id]` | Update show | Yes |
+| `POST` | `/api/shows/import` | CSV roster import | Yes |
+| `POST` | `/api/shows/[id]/enrich` | Trigger data enrichment | Yes |
+
+### Campaigns (Brand-Side)
+
 | Method | Path | Description | Auth | Tier |
 |--------|------|-------------|------|------|
-| `GET` | `/api/shows/[id]` | Show detail | Yes | All |
-| `GET` | `/api/shows?search=X&category=Y` | Search/filter shows | Yes | All |
+| `POST` | `/api/campaigns/generate` | AI campaign planning | Yes | All |
+| `POST` | `/api/campaigns/outreach` | Generate outreach emails | Yes | Starter+ |
+| `POST` | `/api/campaigns/deals` | Create deals from campaign plan | Yes | Growth+ |
 
 ### Request/Response Patterns
 
 ```typescript
-// POST /api/campaigns — Create campaign
+// POST /api/deals — Create deal
+// Request:
+{
+  show_id: string;
+  brand_id: string;
+  agent_id?: string;
+  agency_id?: string;
+  campaign_id?: string;
+  num_episodes: number;
+  placement: "pre-roll" | "mid-roll" | "post-roll";
+  ad_format: "host_read" | "scripted" | "personal_experience" | "dynamic_insertion" | "integration";
+  price_type: "cpm" | "flat_rate";
+  cpm_rate: number;
+  gross_cpm?: number;
+  guaranteed_downloads: number;
+  is_scripted: boolean;
+  is_personal_experience: boolean;
+  reader_type: "host_read" | "producer_read" | "guest_read";
+  content_type: "evergreen" | "dated";
+  pixel_required: boolean;
+  competitor_exclusion: string[];
+  exclusivity_days: number;      // default 90
+  rofr_days: number;             // default 30
+  flight_start: string;          // ISO date
+  flight_end: string;
+  notes?: string;
+}
+// Response: { deal: Deal }
+// Auto-calculates: net_per_episode, gross_per_episode, total_net, total_gross
+
+// POST /api/deals/[id]/io/generate — Generate IO from deal
+// Response: { insertion_order: InsertionOrder }
+// Auto-generates: io_number, line_items (one per episode), standard terms
+
+// POST /api/invoices/generate — Generate invoice from IO
+// Request:
+{
+  io_id: string;
+  line_item_ids?: string[];    // optional: specific line items to invoice (defaults to all delivered)
+}
+// Response: { invoice: Invoice }
+// Auto-calculates: make-good flags, CPM vs flat rate amounts, due date from payment terms
+
+// POST /api/campaigns/generate — AI campaign planning
 // Request:
 {
   name: string;
   brand_url?: string;
-  target_demographics: {
-    age_range?: string;       // "25-34"
-    gender?: string;          // "female", "male", "all"
-    interests?: string[];     // ["fitness", "wellness", "nutrition"]
-    location?: string;        // "US", "US+UK"
-  };
-  keywords: string[];         // ["health", "supplements", "DTC"]
-  budget_total: number;       // 20000
-  platforms: ("podcast" | "youtube")[];
-  campaign_goals?: string;    // "DTC conversions for Q2 launch"
-}
-
-// POST /api/campaigns/[id]/discover — Run discovery
-// Response:
-{
-  recommendations: {
-    show_id: string;
-    name: string;
-    platform: "podcast" | "youtube";
-    audience_size: number;
-    fit_score: number;          // 0-100
-    fit_rationale: string;      // AI-generated explanation
-    estimated_cpm: number;
-    categories: string[];
-    network: string | null;
-    contact_email: string | null;
-    current_sponsors: string[]; // competitive intel
-    overlap_flag: boolean;
-    overlap_with: string[];     // show IDs with likely overlap
-  }[];
-  total_results: number;
-  query_metadata: {
-    shows_evaluated: number;
-    ai_model: string;
-    generated_at: string;
-  };
-}
-
-// POST /api/campaigns/[id]/allocate — Budget optimization
-// Request:
-{
-  selected_show_ids: string[];   // user picks from recommendations
   budget_total: number;
-  strategy: "balanced" | "concentrated" | "testing";  // optional
+  platforms: ("podcast" | "youtube")[];
+  target_age_range?: string;
+  target_gender?: string;
+  target_interests: string[];
+  keywords: string[];
+  campaign_goals?: string;
 }
-// Response:
-{
-  allocations: {
-    show_id: string;
-    show_name: string;
-    allocated_budget: number;
-    num_episodes: number;
-    placement_type: string;
-    estimated_cpm: number;
-    estimated_impressions: number;
-    rationale: string;
-  }[];
-  budget_used: number;
-  budget_remaining: number;
-  warnings: string[];           // e.g. "Show X has a $5K minimum buy"
-}
-
-// POST /api/campaigns/[id]/outreach — Generate emails
-// Response:
-{
-  drafts: {
-    show_id: string;
-    show_name: string;
-    contact_email: string;
-    subject: string;
-    body: string;               // personalized email text
-  }[];
-}
-
-// POST /api/campaigns/[id]/adcopy — Generate scripts  
-// Response:
-{
-  scripts: {
-    show_id: string;
-    show_name: string;
-    script_text: string;        // 60-second host-read draft
-    duration_seconds: number;
-    tone_notes: string;         // "conversational, humor-forward"
-  }[];
-}
+// Response: { campaign: Campaign }
+// Includes: recommendations, youtube_recommendations, expansion_opportunities
 ```
 
 ---
@@ -721,9 +874,9 @@ export async function callClaude(params: {
 | Overlap detection | **No** — rule-based scoring | Network/category/demo comparison, no reasoning needed |
 | Outreach email generation | **Yes** — Claude writes personalized emails | Creative writing task |
 | Ad copy generation | **Yes** — Claude writes scripts | Creative writing task |
+| IO PDF import/parsing | **Yes** — Claude extracts structured data from IO PDFs | Unstructured data extraction |
 | Campaign refinement | **Yes** — Claude interprets natural language adjustments | Conversational reasoning |
 | Competitive sponsor lookup | **No** — database query | Structured data retrieval |
-| CSV export | **No** — template generation | Mechanical transformation |
 
 ### Cost Estimation Per Campaign
 
@@ -740,111 +893,60 @@ At $49/mo for 5 campaigns = $1.30 AI cost. Healthy margin.
 
 ## 6. Data Ingestion Pipeline
 
-### Podchaser Integration
+### Enrichment Providers
 
-```typescript
-// lib/ingestion/podchaser.ts
+**Rephonic ($99-$299/month) — Primary:**
+- 3M+ podcasts with demographics, reach estimates, sponsor history, contacts
+- Most permissive commercial terms
 
-const PODCHASER_API = "https://api.podchaser.com/graphql";
+**Podscan — Alternative:**
+- 4.4M podcasts, 51M episodes, real-time API, MCP server integration
+- Founder encourages building on their API
 
-// Discovery query — search shows by term, sorted by audience size
-const SEARCH_SHOWS_QUERY = `
-  query($term: String!, $first: Int!) {
-    podcasts(
-      searchTerm: $term,
-      first: $first,
-      sort: { sortBy: FOLLOWER_COUNT, direction: DESCENDING }
-    ) {
-      paginatorInfo { total hasMorePages }
-      data {
-        id
-        title
-        description
-        url
-        rssUrl
-        imageUrl
-        language
-        numberOfEpisodes
-        applePodcastsId
-        webUrl
-        categories { id title }
-      }
-    }
-  }
-`;
+### Enrichment Logic
 
-// Sponsor history query
-const SHOW_SPONSORS_QUERY = `
-  query($podcastId: ID!) {
-    podcast(identifier: { id: $podcastId, type: PODCHASER }) {
-      id
-      sponsors {
-        data {
-          name
-          url
-        }
-      }
-    }
-  }
-`;
-```
+Agent-provided data (CPMs, rate cards, audience size from CSV import) **always takes precedence** over API estimates. API data fills in gaps — demographics, interests, sponsors, external IDs — but never overwrites agent-provided values.
 
 ### Refresh Schedule (Vercel Cron)
 
-```typescript
+```json
 // vercel.json
 {
   "crons": [
-    {
-      "path": "/api/cron/refresh-shows",
-      "schedule": "0 3 * * 1"          // Weekly Monday 3AM UTC — audience data
-    },
-    {
-      "path": "/api/cron/refresh-metadata",
-      "schedule": "0 3 1 * *"          // Monthly 1st at 3AM UTC — show metadata
-    },
-    {
-      "path": "/api/cron/refresh-sponsors",
-      "schedule": "0 3 * * 4"          // Weekly Thursday 3AM UTC — sponsor history
-    }
+    { "path": "/api/cron/refresh-shows", "schedule": "0 3 * * 1" },
+    { "path": "/api/cron/refresh-metadata", "schedule": "0 3 1 * *" },
+    { "path": "/api/cron/refresh-sponsors", "schedule": "0 3 * * 4" }
   ]
 }
 ```
-
-### Ingestion Logic
-
-Each cron job:
-1. Queries `api_cache_log` for entities due for refresh
-2. Batches Podchaser API calls (respecting 50 req/10sec limit)
-3. Upserts show data into `public.shows`
-4. Tracks points usage via `X-Podchaser-Points-Remaining` header
-5. Logs results to `api_cache_log`
 
 ---
 
 ## 7. Authentication & Authorization
 
-### Supabase Auth (replaces Clerk from earlier plans)
+### Supabase Auth
 
-Using Supabase Auth directly instead of Clerk — reduces dependencies and integrates natively with RLS.
+Using Supabase Auth directly — integrates natively with RLS.
 
 ```typescript
-// lib/supabase/server.ts
+// lib/supabase/server.ts (already exists in codebase)
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-export function createClient() {
-  const cookieStore = cookies();
+export async function createClient() {
+  const cookieStore = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (cookiesToSet) => {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
+        getAll() { return cookieStore.getAll(); },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {}
         },
       },
     }
@@ -860,18 +962,8 @@ export const TIER_LIMITS = {
   free:     { campaigns_per_month: 1,  outreach: false, adcopy: false, mcp: false },
   starter:  { campaigns_per_month: 5,  outreach: true,  adcopy: false, mcp: false },
   growth:   { campaigns_per_month: 25, outreach: true,  adcopy: true,  mcp: true  },
-  business: { campaigns_per_month: -1, outreach: true,  adcopy: true,  mcp: true  }, // -1 = unlimited
+  business: { campaigns_per_month: -1, outreach: true,  adcopy: true,  mcp: true  },
 } as const;
-
-export function canCreateCampaign(profile: Profile): boolean {
-  const limit = TIER_LIMITS[profile.tier].campaigns_per_month;
-  if (limit === -1) return true;
-  return profile.campaigns_this_month < limit;
-}
-
-export function canUseFeature(profile: Profile, feature: keyof typeof TIER_LIMITS.free): boolean {
-  return TIER_LIMITS[profile.tier][feature] as boolean;
-}
 ```
 
 ---
@@ -884,26 +976,24 @@ export function canUseFeature(profile: Profile, feature: keyof typeof TIER_LIMIT
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-SUPABASE_SERVICE_ROLE_KEY=eyJ...          # Server-side only, for cron jobs
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
 
 # Claude
 ANTHROPIC_API_KEY=sk-ant-...
 
-# Podchaser
-PODCHASER_API_TOKEN=...                   # OAuth client credentials token
+# Email
+RESEND_API_KEY=re_...
 
-# YouTube
-YOUTUBE_API_KEY=...
+# Enrichment (when ready)
+REPHONIC_API_KEY=...
+PODSCAN_API_KEY=...
 
-# Stripe
+# Stripe (Phase 3+)
 STRIPE_SECRET_KEY=sk_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_...
 
-# MCP Server
-MCP_SERVER_PORT=3001
-
-# Cron auth (Vercel cron jobs send this header)
+# Cron auth
 CRON_SECRET=...
 ```
 
@@ -913,111 +1003,60 @@ CRON_SECRET=...
 
 Build in this sequence. Each phase is deployable and testable before moving to the next.
 
-### Phase 1: Foundation (Week 1-2)
+### Wave 1: Supabase Foundation
 
-- [ ] Initialize Next.js 14 project with TypeScript
-- [ ] Set up Supabase project + run migration SQL
+- [ ] Create Supabase project
+- [ ] Run migration SQL from section 2 above
 - [ ] Generate Supabase types (`supabase gen types typescript`)
-- [ ] Set up Supabase Auth (email/password + Google OAuth)
+- [ ] Set up Supabase Auth (email/password)
 - [ ] Build auth pages (login, signup, callback)
-- [ ] Build authenticated layout with sidebar
-- [ ] Build profile/settings page
+- [ ] Build middleware to protect dashboard routes
+- [ ] Wire onboarding to create profile record with role selection
+- [ ] Replace all seed data imports in API routes with Supabase queries
 - [ ] Deploy to Vercel, confirm auth flow works end-to-end
 
-**Milestone:** User can sign up, log in, see empty dashboard.
+**Milestone:** User can sign up, log in, see dashboard. API routes return data from Supabase.
 
-### Phase 2: Data Layer (Week 3-4)
+### Wave 2: Deal Transaction Loop
 
-- [ ] Build Podchaser API client (`lib/ingestion/podchaser.ts`)
-- [ ] Build initial data seed script — pull top 1000 podcasts by category
-- [ ] Build YouTube Data API client (`lib/ingestion/youtube.ts`)
-- [ ] Build show upsert logic (API data → `public.shows`)
-- [ ] Build sponsor ingestion (Podchaser → `public.show_sponsors`)
-- [ ] Set up Vercel cron jobs for refresh schedule
-- [ ] Build `api_cache_log` tracking
-- [ ] Verify data in Supabase dashboard
+- [ ] Build deal CRUD (POST, GET, PATCH, DELETE)
+- [ ] Build IO generation from deal (auto line items, standard terms)
+- [ ] Verify IO PDF generation works with Supabase data
+- [ ] Verify IO email send works with Supabase data
+- [ ] Migrate invoice generation to Supabase
+- [ ] Build invoice status tracking (draft → sent → paid)
+- [ ] Build make-good detection (>10% underdelivery auto-flag)
+- [ ] Verify IO import (PDF parsing via Claude) saves to Supabase
 
-**Milestone:** Database has 1000+ shows with metadata, audience data, and sponsor history.
+**Milestone:** Agent can create deal → generate IO → send IO → track delivery → generate invoice → send invoice. Full transaction loop works.
 
-### Phase 3: Core Engine (Week 5-7)
+### Wave 3: Show Roster & Agent Onboarding
 
-- [ ] Build campaign brief form (7 fields)
-- [ ] Build `POST /api/campaigns` endpoint
-- [ ] Build discovery engine (`lib/engines/discovery.ts`)
-  - DB query: filter shows by platform, category, audience size
-  - AI scoring: Claude scores top 50 candidates for fit
-  - Return ranked top 20
-- [ ] Build budget optimization algorithm (`lib/engines/budget.ts`)
-  - Input: selected shows + total budget
-  - Logic: 3-4 ep test flights, CPM-based allocation, diversification, min buy checks
-  - Output: per-show allocation
-- [ ] Build overlap detection (`lib/engines/overlap.ts`)
-  - Rule-based: network match, category match, demo similarity
-  - Output: overlap warnings with alternatives
-- [ ] Build results page UI (ranked table + budget breakdown + overlap warnings + competitor badges)
-- [ ] Build CSV export
+- [ ] Build show CRUD endpoints
+- [ ] Build CSV import endpoint (parse roster → create shows + agent relationships)
+- [ ] Build enrichment client stubs (Rephonic, Podscan — ready to plug in)
+- [ ] Build single-show and batch enrichment endpoints
+- [ ] Update onboarding flow: role selection → CSV upload → dashboard
+- [ ] Update shows page to pull from Supabase
+- [ ] Update dashboard stats to use real data
 
-**Milestone:** User submits brief → gets ranked, budget-allocated media plan with overlap warnings and competitive intel. Core product works.
+**Milestone:** Agent signs up → imports CSV roster → sees shows → creates deals. Sales agent MVP complete.
 
-### Phase 4: AI Content (Week 8-9)
+### Future Waves
 
-- [ ] Build outreach email generation (`lib/ai/prompts/outreach.ts`)
-- [ ] Build ad copy generation (`lib/ai/prompts/adcopy.ts`)
-- [ ] Build `POST /api/campaigns/[id]/outreach` endpoint
-- [ ] Build `POST /api/campaigns/[id]/adcopy` endpoint
-- [ ] Add outreach + adcopy sections to results page UI
-- [ ] Store generated content in campaign record (JSONB fields)
-
-**Milestone:** Full media plan now includes personalized outreach emails and ad scripts per show.
-
-### Phase 5: Campaign Management (Week 10-11)
-
-- [ ] Build campaign workspace page
-- [ ] Build booking form (enter deal terms: negotiated CPM, episodes, dates)
-- [ ] Build `POST /api/bookings` endpoint
-- [ ] Build outcome rating form (1-5 scale + notes)
-- [ ] Build `POST /api/outcomes` endpoint
-- [ ] Build logic to update `shows.avg_negotiated_cpm` from anonymized booking data
-- [ ] Build campaign status tracking (draft → planned → active → completed)
-
-**Milestone:** Brands can track bookings, enter real deal data, and rate outcomes. Proprietary data flywheel begins.
-
-### Phase 6: Distribution (Week 12-13)
-
-- [ ] Build MCP server (`/mcp/` directory)
-- [ ] Expose 5 tools: discover, allocate, outreach, overlap, adcopy
-- [ ] Build MCP API key generation in settings page
-- [ ] Build OpenClaw skill wrapper
-- [ ] Test with Claude Desktop MCP integration
-- [ ] Write MCP setup documentation
-
-**Milestone:** External agents can call Taylslate's intelligence. Distribution beyond our own UI.
-
-### Phase 7: Monetization (Week 14)
-
-- [ ] Set up Stripe products + prices for 4 tiers
-- [ ] Build Stripe checkout flow
-- [ ] Build Stripe webhook handler (subscription events)
-- [ ] Implement tier enforcement on all gated endpoints
-- [ ] Build monthly campaign counter reset cron
-- [ ] Build upgrade prompts in UI when hitting limits
-
-**Milestone:** Product is monetized. Free users convert to paid when they hit limits.
-
-### Phase 8: Show Portal (Week 15-16)
-
-- [ ] Build public show claim page
-- [ ] Build claim verification flow (RSS ownership check or email domain match)
-- [ ] Build claimed data override logic (verified claims take priority)
-- [ ] Surface "Verified" badges in recommendations
-
-**Milestone:** Supply-side data collection begins. Shows can improve their own listings.
+- [ ] Stripe Connect integration (payment facilitation, 2.5% early payment fee)
+- [ ] MCP server for agent-native distribution
+- [ ] Data enrichment API integration (Rephonic/Podscan)
+- [ ] Brand-side campaign planning with real show data
+- [ ] Vercel cron jobs for automated data refresh
+- [ ] Tier enforcement + billing
 
 ---
 
 ## Notes
 
-- **Supabase over Clerk:** Reduces dependencies. Supabase Auth + RLS gives us auth and data security in one system. One fewer vendor to manage.
-- **Sonnet over Opus for AI calls:** Cost efficiency. Sonnet handles scoring and content generation well. Reserve Opus for complex refinement if Sonnet underperforms.
-- **MCP at launch, REST API later:** MCP is lighter to build and reaches agent-native users immediately. REST API requires docs, versioning, billing — that's a Phase 2 product.
-- **No campaign calendar at launch:** Campaign workspace with status tracking covers the need. Visual calendar is a v1.1 polish feature.
+- **Schema source of truth:** `lib/data/types.ts`. This spec's SQL is derived from those types.
+- **Supabase over Clerk:** Reduces dependencies. Supabase Auth + RLS gives auth and data security in one system.
+- **Sonnet over Opus for AI calls:** Cost efficiency. Reserve Opus for complex refinement if Sonnet underperforms.
+- **Agent-side MVP first:** Deals/IOs/Invoices before brand-side campaign management. Clearer pain point, faster validation.
+- **MCP at launch, REST API later:** MCP is lighter to build and reaches agent-native users immediately.
