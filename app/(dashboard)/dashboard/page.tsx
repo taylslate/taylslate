@@ -1,143 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import {
-  getDealsByAgent,
-  getAgentStats,
-  getShowById,
-  getIOByDeal,
-  invoices,
-  insertionOrders,
-  deals,
-  profiles,
-} from "@/lib/data";
+import { useState, useEffect } from "react";
+import type { Deal, Show } from "@/lib/data/types";
 
-const agentId = "user-agent-001";
-const stats = getAgentStats(agentId);
-const agentDeals = getDealsByAgent(agentId);
-
-// Compute pipeline value (all non-cancelled, non-completed deals)
-const pipelineDeals = agentDeals.filter((d) =>
-  ["proposed", "negotiating", "approved", "io_sent", "signed", "live"].includes(d.status)
-);
-const pipelineValue = pipelineDeals.reduce((s, d) => s + d.total_net, 0);
-
-// Overdue invoices
-const now = new Date();
-const overdueInvoices = invoices.filter((inv) => {
-  if (inv.status !== "sent") return false;
-  return new Date(inv.due_date) < now;
-});
-
-// Pending invoices total
-const pendingInvoices = invoices.filter((inv) => inv.status === "sent");
-const pendingTotal = pendingInvoices.reduce((s, inv) => s + inv.total_due, 0);
-
-// Build activity feed from deals, IOs, invoices
-type Activity = {
-  id: string;
-  type: "deal" | "io" | "invoice";
-  title: string;
-  subtitle: string;
-  date: string;
-  status?: string;
-  href: string;
-};
-
-function buildActivityFeed(): Activity[] {
-  const items: Activity[] = [];
-
-  // Deals
-  for (const deal of agentDeals) {
-    const show = getShowById(deal.show_id);
-    const brand = profiles.find((p) => p.id === deal.brand_id);
-    items.push({
-      id: `deal-${deal.id}`,
-      type: "deal",
-      title: `${show?.name ?? "Unknown Show"} × ${brand?.company_name ?? "Unknown"}`,
-      subtitle: `${deal.num_episodes} ep · $${deal.total_net.toLocaleString()}`,
-      date: deal.updated_at ?? deal.created_at,
-      status: deal.status,
-      href: `/deals/${deal.id}`,
-    });
-  }
-
-  // IOs
-  for (const io of insertionOrders) {
-    const deal = deals.find((d) => d.id === io.deal_id);
-    if (deal?.agent_id !== agentId) continue;
-    items.push({
-      id: `io-${io.id}`,
-      type: "io",
-      title: `${io.io_number} — ${io.advertiser_name}`,
-      subtitle: `${io.line_items.length} line items · $${io.total_net.toLocaleString()}`,
-      date: io.sent_at ?? io.created_at,
-      status: io.status,
-      href: `/deals/${io.deal_id}/io`,
-    });
-  }
-
-  // Invoices
-  for (const inv of invoices) {
-    const io = insertionOrders.find((o) => o.id === inv.io_id);
-    const deal = io ? deals.find((d) => d.id === io.deal_id) : undefined;
-    if (deal?.agent_id !== agentId) continue;
-    items.push({
-      id: `inv-${inv.id}`,
-      type: "invoice",
-      title: `${inv.invoice_number} — ${inv.advertiser_name}`,
-      subtitle: `${inv.campaign_period} · $${inv.total_due.toLocaleString()}`,
-      date: inv.sent_at ?? inv.created_at,
-      status: inv.status,
-      href: "/invoices",
-    });
-  }
-
-  // Sort by date descending
-  items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  return items;
+interface DashboardData {
+  totalShows: number;
+  podcastCount: number;
+  youtubeCount: number;
+  activeDeals: number;
+  pendingInvoices: number;
+  revenueThisMonth: number;
+  revenueOutstanding: number;
+  pipelineValue: number;
+  overdueCount: number;
+  recentDeals: (Deal & { show_name?: string })[];
+  recentInvoices: { id: string; invoice_number: string; advertiser_name: string; total_due: number; status: string; due_date: string }[];
 }
-
-const activityFeed = buildActivityFeed();
-
-const typeIcons: Record<string, React.ReactNode> = {
-  deal: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z" />
-    </svg>
-  ),
-  io: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-    </svg>
-  ),
-  invoice: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="5" width="20" height="14" rx="2" />
-      <line x1="2" y1="10" x2="22" y2="10" />
-    </svg>
-  ),
-};
-
-const typeColors: Record<string, string> = {
-  deal: "var(--brand-blue)",
-  io: "var(--brand-teal)",
-  invoice: "var(--brand-orange)",
-};
-
-const statusBadge: Record<string, { bg: string; text: string; label: string }> = {
-  proposed: { bg: "var(--brand-blue)", text: "#fff", label: "Proposed" },
-  negotiating: { bg: "var(--brand-warning)", text: "#fff", label: "Negotiating" },
-  approved: { bg: "var(--brand-success)", text: "#fff", label: "Signed" },
-  io_sent: { bg: "var(--brand-success)", text: "#fff", label: "IO Sent" },
-  signed: { bg: "var(--brand-success)", text: "#fff", label: "Signed" },
-  live: { bg: "var(--brand-success)", text: "#fff", label: "Live" },
-  completed: { bg: "var(--brand-text-muted)", text: "#fff", label: "Completed" },
-  draft: { bg: "var(--brand-text-muted)", text: "#fff", label: "Draft" },
-  sent: { bg: "var(--brand-warning)", text: "#fff", label: "Sent" },
-  paid: { bg: "var(--brand-success)", text: "#fff", label: "Paid" },
-};
 
 function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -147,7 +26,109 @@ function fmtDate(dateStr: string): string {
   });
 }
 
+function fmtCurrency(amount: number): string {
+  return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+const statusBadge: Record<string, { bg: string; text: string; label: string }> = {
+  proposed: { bg: "var(--brand-blue)", text: "#fff", label: "Proposed" },
+  negotiating: { bg: "var(--brand-warning)", text: "#fff", label: "Negotiating" },
+  approved: { bg: "var(--brand-success)", text: "#fff", label: "Approved" },
+  io_sent: { bg: "var(--brand-success)", text: "#fff", label: "IO Sent" },
+  signed: { bg: "var(--brand-success)", text: "#fff", label: "Signed" },
+  live: { bg: "var(--brand-success)", text: "#fff", label: "Live" },
+  completed: { bg: "var(--brand-text-muted)", text: "#fff", label: "Completed" },
+  draft: { bg: "var(--brand-text-muted)", text: "#fff", label: "Draft" },
+  sent: { bg: "var(--brand-warning)", text: "#fff", label: "Sent" },
+  paid: { bg: "var(--brand-success)", text: "#fff", label: "Paid" },
+  overdue: { bg: "var(--brand-error)", text: "#fff", label: "Overdue" },
+  cancelled: { bg: "var(--brand-text-muted)", text: "#fff", label: "Cancelled" },
+};
+
 export default function DashboardPage() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchDashboard() {
+      try {
+        const [showsRes, dealsRes, invoicesRes] = await Promise.all([
+          fetch("/api/shows").then((r) => r.ok ? r.json() : []).catch(() => []),
+          fetch("/api/deals").then((r) => r.ok ? r.json() : { deals: [] }).catch(() => ({ deals: [] })),
+          fetch("/api/invoices").then((r) => r.ok ? r.json() : { invoices: [], stats: {} }).catch(() => ({ invoices: [], stats: {} })),
+        ]);
+
+        const shows: Show[] = Array.isArray(showsRes) ? showsRes : [];
+        const deals: (Deal & { show_name?: string })[] = Array.isArray(dealsRes.deals) ? dealsRes.deals : [];
+        const invoices = Array.isArray(invoicesRes.invoices) ? invoicesRes.invoices : [];
+        const stats = invoicesRes.stats ?? {};
+
+        const activeStatuses = ["proposed", "negotiating", "approved", "io_sent", "signed", "live"];
+        const activeDeals = deals.filter((d) => activeStatuses.includes(d.status));
+        const pipelineValue = activeDeals.reduce((s, d) => s + (d.total_net ?? 0), 0);
+
+        const now = new Date();
+        const pendingInvs = invoices.filter((inv: Record<string, unknown>) =>
+          inv.status === "sent" || inv.status === "overdue"
+        );
+        const overdueInvs = invoices.filter((inv: Record<string, unknown>) =>
+          inv.status === "sent" && new Date(inv.due_date as string) < now
+        );
+
+        setData({
+          totalShows: shows.length,
+          podcastCount: shows.filter((s) => s.platform === "podcast").length,
+          youtubeCount: shows.filter((s) => s.platform === "youtube").length,
+          activeDeals: activeDeals.length,
+          pendingInvoices: pendingInvs.length,
+          revenueThisMonth: stats.total_paid_this_month ?? 0,
+          revenueOutstanding: stats.total_outstanding ?? 0,
+          pipelineValue,
+          overdueCount: overdueInvs.length,
+          recentDeals: deals.slice(0, 5),
+          recentInvoices: invoices.slice(0, 5),
+        });
+      } catch (err) {
+        console.error("Dashboard fetch error:", err);
+        setData({
+          totalShows: 0, podcastCount: 0, youtubeCount: 0,
+          activeDeals: 0, pendingInvoices: 0, revenueThisMonth: 0,
+          revenueOutstanding: 0, pipelineValue: 0, overdueCount: 0,
+          recentDeals: [], recentInvoices: [],
+        });
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchDashboard();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="mb-8">
+          <div className="h-7 w-40 bg-[var(--brand-border)] rounded animate-pulse mb-2" />
+          <div className="h-4 w-64 bg-[var(--brand-border)] rounded animate-pulse" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] animate-pulse">
+              <div className="h-3 w-16 bg-[var(--brand-border)] rounded mb-2" />
+              <div className="h-6 w-12 bg-[var(--brand-border)] rounded" />
+            </div>
+          ))}
+        </div>
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-16 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const d = data!;
+
   return (
     <div className="p-8">
       {/* Header */}
@@ -160,28 +141,29 @@ export default function DashboardPage() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-        <StatCard label="Active Deals" value={stats.active_deals} href="/deals" />
+        <StatCard label="Active Deals" value={d.activeDeals} href="/deals" />
+        <StatCard label="Pipeline Value" value={fmtCurrency(d.pipelineValue)} href="/deals" />
         <StatCard
-          label="Pipeline Value"
-          value={`$${pipelineValue.toLocaleString()}`}
-          href="/deals"
+          label="Shows"
+          value={d.totalShows}
+          sub={d.totalShows > 0 ? `${d.podcastCount} podcasts, ${d.youtubeCount} YT` : undefined}
+          href="/shows"
         />
-        <StatCard label="Shows" value={stats.total_shows} href="/shows" />
         <StatCard
           label="Pending Invoices"
-          value={pendingInvoices.length}
-          sub={`$${pendingTotal.toLocaleString()}`}
+          value={d.pendingInvoices}
+          sub={d.revenueOutstanding > 0 ? fmtCurrency(d.revenueOutstanding) : undefined}
           href="/invoices"
         />
         <StatCard
           label="Overdue"
-          value={overdueInvoices.length}
-          highlight={overdueInvoices.length > 0}
+          value={d.overdueCount}
+          highlight={d.overdueCount > 0}
           href="/invoices"
         />
         <StatCard
           label="Revenue (This Mo.)"
-          value={`$${stats.revenue_this_month.toLocaleString()}`}
+          value={fmtCurrency(d.revenueThisMonth)}
           href="/invoices"
         />
       </div>
@@ -195,10 +177,10 @@ export default function DashboardPage() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          New Deal
+          Create Deal
         </Link>
         <Link
-          href="/deals/import"
+          href="/shows"
           className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] text-sm font-medium transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -206,69 +188,118 @@ export default function DashboardPage() {
             <polyline points="17 8 12 3 7 8" />
             <line x1="12" y1="3" x2="12" y2="15" />
           </svg>
-          Import IO
+          Import Shows
         </Link>
         <Link
-          href="/invoices"
+          href="/campaigns/new"
           className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] text-sm font-medium transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
+            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+            <line x1="4" x2="4" y1="22" y2="15" />
           </svg>
-          Invoices
+          New Campaign
         </Link>
       </div>
 
-      {/* Activity Feed */}
-      <div>
-        <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider mb-4">
-          Recent Activity
-        </h2>
-        <div className="bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] divide-y divide-[var(--brand-border)]">
-          {activityFeed.length === 0 ? (
-            <div className="p-8 text-center text-sm text-[var(--brand-text-muted)]">
-              No activity yet.
-            </div>
-          ) : (
-            activityFeed.map((item) => {
-              const badge = item.status ? statusBadge[item.status] : undefined;
-              return (
-                <Link
-                  key={item.id}
-                  href={item.href}
-                  className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--brand-surface)] transition-colors"
-                >
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                    style={{
-                      backgroundColor: `color-mix(in srgb, ${typeColors[item.type]} 10%, transparent)`,
-                      color: typeColors[item.type],
-                    }}
+      {/* Recent Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Deals */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider">
+              Recent Deals
+            </h2>
+            <Link href="/deals" className="text-xs text-[var(--brand-blue)] hover:underline">View all</Link>
+          </div>
+          <div className="bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] divide-y divide-[var(--brand-border)]">
+            {d.recentDeals.length === 0 ? (
+              <div className="p-8 text-center text-sm text-[var(--brand-text-muted)]">
+                No deals yet. Create your first deal to get started.
+              </div>
+            ) : (
+              d.recentDeals.map((deal) => {
+                const badge = statusBadge[deal.status];
+                return (
+                  <Link
+                    key={deal.id}
+                    href={`/deals/${deal.id}`}
+                    className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--brand-surface)] transition-colors"
                   >
-                    {typeIcons[item.type]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-[var(--brand-text)] truncate">
-                      {item.title}
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--brand-blue) 10%, transparent)", color: "var(--brand-blue)" }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z" />
+                      </svg>
                     </div>
-                    <div className="text-xs text-[var(--brand-text-muted)]">{item.subtitle}</div>
-                  </div>
-                  {badge && (
-                    <span
-                      className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: badge.bg, color: badge.text }}
-                    >
-                      {badge.label}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-[var(--brand-text)] truncate">
+                        {deal.show_name ?? "Unknown Show"}
+                      </div>
+                      <div className="text-xs text-[var(--brand-text-muted)]">
+                        {deal.num_episodes} ep &middot; {fmtCurrency(deal.total_net)}
+                      </div>
+                    </div>
+                    {badge && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: badge.bg, color: badge.text }}>
+                        {badge.label}
+                      </span>
+                    )}
+                    <span className="text-xs text-[var(--brand-text-muted)] flex-shrink-0 ml-2">
+                      {fmtDate(deal.updated_at ?? deal.created_at)}
                     </span>
-                  )}
-                  <span className="text-xs text-[var(--brand-text-muted)] flex-shrink-0 ml-2">
-                    {fmtDate(item.date)}
-                  </span>
-                </Link>
-              );
-            })
-          )}
+                  </Link>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Recent Invoices */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider">
+              Recent Invoices
+            </h2>
+            <Link href="/invoices" className="text-xs text-[var(--brand-blue)] hover:underline">View all</Link>
+          </div>
+          <div className="bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] divide-y divide-[var(--brand-border)]">
+            {d.recentInvoices.length === 0 ? (
+              <div className="p-8 text-center text-sm text-[var(--brand-text-muted)]">
+                No invoices yet.
+              </div>
+            ) : (
+              d.recentInvoices.map((inv) => {
+                const badge = statusBadge[inv.status];
+                return (
+                  <Link
+                    key={inv.id}
+                    href="/invoices"
+                    className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--brand-surface)] transition-colors"
+                  >
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--brand-orange) 10%, transparent)", color: "var(--brand-orange)" }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-[var(--brand-text)] truncate">
+                        {inv.invoice_number} &mdash; {inv.advertiser_name}
+                      </div>
+                      <div className="text-xs text-[var(--brand-text-muted)]">
+                        Due {fmtDate(inv.due_date)} &middot; {fmtCurrency(inv.total_due)}
+                      </div>
+                    </div>
+                    {badge && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: badge.bg, color: badge.text }}>
+                        {badge.label}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
     </div>
