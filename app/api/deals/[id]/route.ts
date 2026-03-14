@@ -1,5 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser, getDealById } from "@/lib/data/queries";
+import { getAuthenticatedUser, getDealWithRelations, getDealById, updateDeal, softDeleteDeal } from "@/lib/data/queries";
+import type { DealStatus } from "@/lib/data/types";
+
+// Valid status transitions
+const VALID_TRANSITIONS: Record<DealStatus, DealStatus[]> = {
+  proposed: ["negotiating", "approved", "cancelled"],
+  negotiating: ["approved", "cancelled"],
+  approved: ["io_sent", "cancelled"],
+  io_sent: ["signed", "cancelled"],
+  signed: ["live", "cancelled"],
+  live: ["completed", "cancelled"],
+  completed: [],
+  cancelled: [],
+};
 
 export async function GET(
   _request: NextRequest,
@@ -12,7 +25,7 @@ export async function GET(
     }
 
     const { id } = await params;
-    const deal = await getDealById(id);
+    const deal = await getDealWithRelations(id);
 
     if (!deal) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
@@ -22,5 +35,106 @@ export async function GET(
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: `Failed to fetch deal: ${message}` }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const existing = await getDealById(id);
+
+    if (!existing) {
+      return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+
+    // Validate status transition if status is being changed
+    if (body.status && body.status !== existing.status) {
+      const currentStatus = existing.status as DealStatus;
+      const newStatus = body.status as DealStatus;
+      const allowed = VALID_TRANSITIONS[currentStatus];
+
+      if (!allowed || !allowed.includes(newStatus)) {
+        return NextResponse.json(
+          {
+            error: `Invalid status transition: ${currentStatus} → ${newStatus}. Allowed: ${allowed?.join(", ") || "none (terminal state)"}`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // If financial terms change, recalculate
+    const updates = { ...body };
+    const guaranteed_downloads = Number(updates.guaranteed_downloads ?? existing.guaranteed_downloads);
+    const cpm_rate = Number(updates.cpm_rate ?? existing.cpm_rate);
+    const num_episodes = Number(updates.num_episodes ?? existing.num_episodes);
+
+    if (updates.guaranteed_downloads || updates.cpm_rate || updates.num_episodes) {
+      updates.net_per_episode = (guaranteed_downloads / 1000) * cpm_rate;
+      updates.total_net = updates.net_per_episode * num_episodes;
+
+      const gross_cpm = updates.gross_cpm ?? existing.gross_cpm;
+      if (gross_cpm) {
+        updates.gross_per_episode = (guaranteed_downloads / 1000) * Number(gross_cpm);
+        updates.total_gross = updates.gross_per_episode * num_episodes;
+      }
+    }
+
+    const deal = await updateDeal(id, updates);
+    if (!deal) {
+      return NextResponse.json({ error: "Failed to update deal" }, { status: 500 });
+    }
+
+    return NextResponse.json({ deal });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: `Failed to update deal: ${message}` }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const existing = await getDealById(id);
+
+    if (!existing) {
+      return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
+
+    // Terminal states cannot be cancelled again
+    if (existing.status === "completed" || existing.status === "cancelled") {
+      return NextResponse.json(
+        { error: `Cannot delete deal in ${existing.status} state` },
+        { status: 400 }
+      );
+    }
+
+    const deal = await softDeleteDeal(id);
+    if (!deal) {
+      return NextResponse.json({ error: "Failed to cancel deal" }, { status: 500 });
+    }
+
+    return NextResponse.json({ deal, message: "Deal cancelled (soft delete)" });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: `Failed to delete deal: ${message}` }, { status: 500 });
   }
 }

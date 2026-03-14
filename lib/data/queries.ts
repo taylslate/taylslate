@@ -13,6 +13,7 @@ import type {
   IOLineItem,
   Invoice,
   InvoiceLineItem,
+  InvoiceStatus,
   AgentDashboardStats,
 } from "./types";
 
@@ -344,6 +345,68 @@ export async function getNextInvoiceNumber(): Promise<string> {
   return `${prefix}0001`;
 }
 
+// ---- Deals (filtered queries) ----
+
+export async function getDealsFiltered(
+  userId: string,
+  filters: { status?: string; show_id?: string; brand_id?: string }
+): Promise<(Deal & { show_name?: string })[]> {
+  const supabase = await createClient();
+  let query = supabase
+    .from("deals")
+    .select("*, shows!inner(name)")
+    .or(`agent_id.eq.${userId},brand_id.eq.${userId},agency_id.eq.${userId}`)
+    .order("updated_at", { ascending: false });
+
+  if (filters.status) {
+    query = query.eq("status", filters.status);
+  }
+  if (filters.show_id) {
+    query = query.eq("show_id", filters.show_id);
+  }
+  if (filters.brand_id) {
+    query = query.eq("brand_id", filters.brand_id);
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return [];
+
+  return data.map((row: Record<string, unknown>) => {
+    const { shows, ...deal } = row as Record<string, unknown> & { shows: { name: string } };
+    return { ...deal, show_name: shows?.name } as Deal & { show_name?: string };
+  });
+}
+
+export async function getDealWithRelations(
+  id: string
+): Promise<(Deal & { show_name?: string; insertion_order?: InsertionOrder & { line_items: IOLineItem[] } }) | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("deals")
+    .select("*, shows!inner(name)")
+    .eq("id", id)
+    .single();
+  if (error || !data) return null;
+
+  const { shows, ...deal } = data as Record<string, unknown> & { shows: { name: string } };
+  const result: Deal & { show_name?: string; insertion_order?: InsertionOrder & { line_items: IOLineItem[] } } = {
+    ...deal,
+    show_name: shows?.name,
+  } as Deal & { show_name?: string };
+
+  // Fetch associated IO if one exists
+  const io = await getIOByDealId(id);
+  if (io) {
+    result.insertion_order = io;
+  }
+
+  return result;
+}
+
+export async function softDeleteDeal(id: string): Promise<Deal | null> {
+  return updateDeal(id, { status: "cancelled" } as Partial<Deal>);
+}
+
 // ---- Agent Stats ----
 
 export async function getAgentStats(agentId: string): Promise<AgentDashboardStats> {
@@ -421,4 +484,342 @@ export async function getAgentStats(agentId: string): Promise<AgentDashboardStat
     revenue_this_month: revenueThisMonth,
     revenue_outstanding: revenueOutstanding,
   };
+}
+
+// ---- Invoice Engine Queries ----
+
+/** Create an invoice from an IO, persisting both invoice and line items in Supabase */
+export async function createInvoiceFromIO(
+  ioId: string,
+  lineItemIds?: string[]
+): Promise<(Invoice & { line_items: InvoiceLineItem[] }) | null> {
+  const io = await getIOById(ioId);
+  if (!io) return null;
+
+  const deal = await getDealById(io.deal_id);
+  const agent = deal?.agent_id ? await getProfileById(deal.agent_id) : undefined;
+
+  // Filter to delivered line items
+  let eligibleItems = io.line_items.filter(
+    (li) => li.actual_post_date || li.verified
+  );
+
+  if (lineItemIds && lineItemIds.length > 0) {
+    eligibleItems = eligibleItems.filter((li) => lineItemIds.includes(li.id));
+  }
+
+  if (eligibleItems.length === 0) return null;
+
+  // Build invoice line items with make-good calculation
+  const invoiceLineItems: Omit<InvoiceLineItem, "id">[] = eligibleItems.map((li) => {
+    const actualDls = li.actual_downloads ?? li.guaranteed_downloads;
+    const underdeliveryPct =
+      li.guaranteed_downloads > 0
+        ? (li.guaranteed_downloads - actualDls) / li.guaranteed_downloads
+        : 0;
+    const makeGood = underdeliveryPct > (io.make_good_threshold ?? 0.1);
+
+    // Calculate rate based on price type
+    let rate = li.net_due;
+    if (li.price_type === "cpm" && li.actual_downloads != null) {
+      // CPM: pay for actual downloads delivered
+      rate = (li.actual_downloads / 1000) * ((li.net_due / li.guaranteed_downloads) * 1000);
+      rate = Math.round(rate * 100) / 100;
+    }
+
+    const postDateStr = new Date(li.actual_post_date ?? li.post_date).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    return {
+      io_line_item_id: li.id,
+      show_name: li.show_name,
+      post_date: li.actual_post_date ?? li.post_date,
+      description: `${li.placement.charAt(0).toUpperCase() + li.placement.slice(1)} ad – ${li.show_name} – ${postDateStr}`,
+      guaranteed_downloads: li.guaranteed_downloads,
+      actual_downloads: li.actual_downloads,
+      rate,
+      make_good: makeGood,
+    };
+  });
+
+  const subtotal = invoiceLineItems.reduce((s, li) => s + li.rate, 0);
+  const adjustments = invoiceLineItems
+    .filter((li) => li.make_good)
+    .reduce((s, li) => s - li.rate, 0);
+  const totalDue = Math.max(0, subtotal + adjustments);
+
+  // Determine billing parties
+  const billToName = io.agency_name ?? io.advertiser_name;
+  const billToEmail = io.send_invoices_to ?? io.agency_contact_email ?? io.advertiser_contact_email ?? "";
+
+  // Campaign period
+  let campaignPeriod = "—";
+  if (io.line_items.length > 0) {
+    const dates = io.line_items.map((li) => new Date(li.post_date)).sort((a, b) => a.getTime() - b.getTime());
+    const firstMonth = dates[0].toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    const lastMonth = dates[dates.length - 1].toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    campaignPeriod = firstMonth === lastMonth ? firstMonth : `${firstMonth} – ${lastMonth}`;
+  }
+
+  // Due date: Net 30 EOM
+  let dueDate: string;
+  const now = new Date();
+  if (io.payment_terms?.toLowerCase().includes("eom")) {
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+    dueDate = nextMonth.toISOString().split("T")[0];
+  } else {
+    const due = new Date(now);
+    due.setDate(due.getDate() + 30);
+    dueDate = due.toISOString().split("T")[0];
+  }
+
+  const invoiceNumber = await getNextInvoiceNumber();
+
+  const invoiceData: Omit<Invoice, "id" | "line_items" | "created_at" | "updated_at"> = {
+    invoice_number: invoiceNumber,
+    io_id: io.id,
+    io_number: io.io_number,
+    bill_to_name: billToName,
+    bill_to_email: billToEmail,
+    from_name: agent?.company_name ?? io.publisher_name,
+    from_email: agent?.email ?? io.publisher_contact_email,
+    from_address: io.publisher_address,
+    advertiser_name: io.advertiser_name,
+    campaign_period: campaignPeriod,
+    subtotal: Math.round(subtotal * 100) / 100,
+    adjustments: Math.round(adjustments * 100) / 100,
+    total_due: Math.round(totalDue * 100) / 100,
+    status: "draft" as InvoiceStatus,
+    due_date: dueDate,
+  };
+
+  return createInvoice(invoiceData, invoiceLineItems);
+}
+
+/** List invoices for a user (via IO -> deal relationship). Supports status and io_id filters. */
+export async function getInvoicesForUser(
+  userId: string,
+  filters?: { status?: InvoiceStatus; io_id?: string }
+): Promise<{
+  invoices: (Invoice & { line_items: InvoiceLineItem[] })[];
+  stats: {
+    total_outstanding: number;
+    total_paid_this_month: number;
+    count_by_status: Record<string, number>;
+  };
+}> {
+  const supabase = await createClient();
+
+  // Get all deal IDs for this user
+  const { data: userDeals } = await supabase
+    .from("deals")
+    .select("id")
+    .or(`agent_id.eq.${userId},brand_id.eq.${userId},agency_id.eq.${userId}`);
+
+  if (!userDeals || userDeals.length === 0) {
+    return {
+      invoices: [],
+      stats: { total_outstanding: 0, total_paid_this_month: 0, count_by_status: {} },
+    };
+  }
+
+  const dealIds = userDeals.map((d) => d.id);
+
+  // Get IO IDs for those deals
+  const { data: ios } = await supabase
+    .from("insertion_orders")
+    .select("id")
+    .in("deal_id", dealIds);
+
+  if (!ios || ios.length === 0) {
+    return {
+      invoices: [],
+      stats: { total_outstanding: 0, total_paid_this_month: 0, count_by_status: {} },
+    };
+  }
+
+  const ioIds = ios.map((io) => io.id);
+
+  // Query invoices
+  let query = supabase
+    .from("invoices")
+    .select("*")
+    .in("io_id", ioIds)
+    .order("created_at", { ascending: false });
+
+  if (filters?.status) {
+    query = query.eq("status", filters.status);
+  }
+  if (filters?.io_id) {
+    query = query.eq("io_id", filters.io_id);
+  }
+
+  const { data: invoices, error } = await query;
+  if (error || !invoices) {
+    return {
+      invoices: [],
+      stats: { total_outstanding: 0, total_paid_this_month: 0, count_by_status: {} },
+    };
+  }
+
+  // Fetch line items for each invoice
+  const invoiceIds = invoices.map((inv) => inv.id);
+  const { data: allLineItems } = await supabase
+    .from("invoice_line_items")
+    .select("*")
+    .in("invoice_id", invoiceIds)
+    .order("post_date", { ascending: true });
+
+  const lineItemsByInvoice = new Map<string, InvoiceLineItem[]>();
+  for (const li of (allLineItems ?? []) as (InvoiceLineItem & { invoice_id: string })[]) {
+    const existing = lineItemsByInvoice.get(li.invoice_id) ?? [];
+    existing.push(li);
+    lineItemsByInvoice.set(li.invoice_id, existing);
+  }
+
+  const result = invoices.map((inv) => ({
+    ...inv,
+    line_items: lineItemsByInvoice.get(inv.id) ?? [],
+  })) as (Invoice & { line_items: InvoiceLineItem[] })[];
+
+  // Compute stats (across ALL user invoices, not just filtered)
+  const { data: allInvoices } = await supabase
+    .from("invoices")
+    .select("status, total_due, paid_at")
+    .in("io_id", ioIds);
+
+  let totalOutstanding = 0;
+  let totalPaidThisMonth = 0;
+  const countByStatus: Record<string, number> = {};
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+
+  for (const inv of allInvoices ?? []) {
+    countByStatus[inv.status] = (countByStatus[inv.status] ?? 0) + 1;
+    if (inv.status === "sent" || inv.status === "overdue") {
+      totalOutstanding += inv.total_due ?? 0;
+    }
+    if (inv.status === "paid" && inv.paid_at && new Date(inv.paid_at) >= startOfMonth) {
+      totalPaidThisMonth += inv.total_due ?? 0;
+    }
+  }
+
+  return {
+    invoices: result,
+    stats: { total_outstanding: totalOutstanding, total_paid_this_month: totalPaidThisMonth, count_by_status: countByStatus },
+  };
+}
+
+/** Valid invoice status transitions */
+const INVOICE_STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["sent"],
+  sent: ["paid", "overdue", "disputed"],
+  overdue: ["paid", "disputed"],
+  disputed: ["sent", "cancelled"],
+};
+
+/** Update invoice status with transition validation */
+export async function updateInvoiceStatus(
+  id: string,
+  newStatus: InvoiceStatus,
+  extra?: { payment_method?: string }
+): Promise<(Invoice & { line_items: InvoiceLineItem[] }) | null> {
+  const supabase = await createClient();
+
+  // Get current invoice
+  const { data: current, error: fetchError } = await supabase
+    .from("invoices")
+    .select("status")
+    .eq("id", id)
+    .single();
+
+  if (fetchError || !current) return null;
+
+  const allowed = INVOICE_STATUS_TRANSITIONS[current.status];
+  if (!allowed || !allowed.includes(newStatus)) {
+    throw new Error(`Cannot transition invoice from "${current.status}" to "${newStatus}"`);
+  }
+
+  const updates: Record<string, unknown> = {
+    status: newStatus,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (newStatus === "sent") {
+    updates.sent_at = new Date().toISOString();
+  }
+  if (newStatus === "paid") {
+    updates.paid_at = new Date().toISOString();
+    if (extra?.payment_method) {
+      updates.payment_method = extra.payment_method;
+    }
+  }
+
+  const { error: updateError } = await supabase
+    .from("invoices")
+    .update(updates)
+    .eq("id", id);
+
+  if (updateError) return null;
+
+  return getInvoiceById(id);
+}
+
+/** Check IO line items for make-good triggers (>10% underdelivery) */
+export async function checkMakeGoods(
+  ioId: string
+): Promise<{ id: string; show_name: string; guaranteed: number; actual: number; pctBelow: number; reason: string }[]> {
+  const supabase = await createClient();
+
+  const { data: lineItems, error } = await supabase
+    .from("io_line_items")
+    .select("*")
+    .eq("io_id", ioId);
+
+  if (error || !lineItems) return [];
+
+  // Get IO threshold
+  const { data: io } = await supabase
+    .from("insertion_orders")
+    .select("make_good_threshold")
+    .eq("id", ioId)
+    .single();
+
+  const threshold = io?.make_good_threshold ?? 0.1;
+  const triggered: { id: string; show_name: string; guaranteed: number; actual: number; pctBelow: number; reason: string }[] = [];
+
+  for (const li of lineItems) {
+    if (li.actual_downloads == null || li.guaranteed_downloads <= 0) continue;
+
+    const pctBelow = (li.guaranteed_downloads - li.actual_downloads) / li.guaranteed_downloads;
+
+    if (pctBelow > threshold) {
+      const pctBelowRounded = Math.round(pctBelow * 100);
+      const reason = `Underdelivery: ${li.actual_downloads} vs ${li.guaranteed_downloads} (${pctBelowRounded}% below)`;
+
+      // Update the line item in the database
+      await supabase
+        .from("io_line_items")
+        .update({
+          make_good_triggered: true,
+          make_good_reason: reason,
+        })
+        .eq("id", li.id);
+
+      triggered.push({
+        id: li.id,
+        show_name: li.show_name,
+        guaranteed: li.guaranteed_downloads,
+        actual: li.actual_downloads,
+        pctBelow: pctBelowRounded,
+        reason,
+      });
+    }
+  }
+
+  return triggered;
 }
