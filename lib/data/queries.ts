@@ -8,6 +8,7 @@ import type {
   Profile,
   Show,
   ShowContact,
+  Platform,
   Deal,
   InsertionOrder,
   IOLineItem,
@@ -15,6 +16,7 @@ import type {
   InvoiceLineItem,
   InvoiceStatus,
   AgentDashboardStats,
+  AgentShowRelationship,
 } from "./types";
 
 // ---- Auth & Profiles ----
@@ -822,4 +824,351 @@ export async function checkMakeGoods(
   }
 
   return triggered;
+}
+
+// ---- Show Management Queries ----
+
+/** Generate a URL-safe slug from a show name */
+function generateSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/** Flatten nested Show contact into DB columns */
+function flattenShowForDB(show: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...show };
+  if (result.contact && typeof result.contact === "object") {
+    const contact = result.contact as Record<string, unknown>;
+    result.contact_name = contact.name ?? "";
+    result.contact_email = contact.email ?? "";
+    result.contact_method = contact.method ?? "email";
+    delete result.contact;
+  }
+  return result;
+}
+
+export async function createShow(
+  showData: Partial<Show> & { name: string; platform: Platform }
+): Promise<Show | null> {
+  const supabase = await createClient();
+  const slug = generateSlug(showData.name);
+
+  const dbRow = flattenShowForDB({
+    ...showData,
+    slug,
+    is_claimed: showData.is_claimed ?? false,
+    is_verified: showData.is_verified ?? false,
+  });
+
+  const { data, error } = await supabase
+    .from("shows")
+    .insert(dbRow)
+    .select()
+    .single();
+  if (error || !data) return null;
+  return transformShow(data);
+}
+
+export async function updateShow(
+  id: string,
+  updates: Partial<Show>
+): Promise<Show | null> {
+  const supabase = await createClient();
+
+  const dbUpdates = flattenShowForDB({
+    ...updates,
+    updated_at: new Date().toISOString(),
+  });
+
+  // Don't allow updating id
+  delete dbUpdates.id;
+
+  const { data, error } = await supabase
+    .from("shows")
+    .update(dbUpdates)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error || !data) return null;
+  return transformShow(data);
+}
+
+export async function getShowsFiltered(filters: {
+  search?: string;
+  platform?: string;
+  category?: string;
+  min_audience?: number;
+  max_audience?: number;
+  agent_id?: string;
+}): Promise<Show[]> {
+  const supabase = await createClient();
+
+  let showIds: string[] | null = null;
+
+  // If agent_id provided, scope to their shows
+  if (filters.agent_id) {
+    const { data: rels } = await supabase
+      .from("agent_show_relationships")
+      .select("show_id")
+      .eq("agent_id", filters.agent_id);
+    if (!rels || rels.length === 0) return [];
+    showIds = rels.map((r) => r.show_id);
+  }
+
+  let query = supabase
+    .from("shows")
+    .select("*")
+    .order("audience_size", { ascending: false });
+
+  if (showIds) {
+    query = query.in("id", showIds);
+  }
+  if (filters.search) {
+    query = query.ilike("name", `%${filters.search}%`);
+  }
+  if (filters.platform) {
+    query = query.eq("platform", filters.platform);
+  }
+  if (filters.category) {
+    query = query.contains("categories", [filters.category]);
+  }
+  if (filters.min_audience != null) {
+    query = query.gte("audience_size", filters.min_audience);
+  }
+  if (filters.max_audience != null) {
+    query = query.lte("audience_size", filters.max_audience);
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return data.map(transformShow);
+}
+
+export async function getAgentShowRelationship(
+  agentId: string,
+  showId: string
+): Promise<AgentShowRelationship | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("agent_show_relationships")
+    .select("*")
+    .eq("agent_id", agentId)
+    .eq("show_id", showId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as AgentShowRelationship;
+}
+
+export async function claimShow(
+  agentId: string,
+  showId: string,
+  commissionRate?: number
+): Promise<AgentShowRelationship | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("agent_show_relationships")
+    .insert({
+      agent_id: agentId,
+      show_id: showId,
+      commission_rate: commissionRate ?? null,
+      is_exclusive: false,
+    })
+    .select()
+    .single();
+  if (error || !data) return null;
+  return data as AgentShowRelationship;
+}
+
+export async function importShows(
+  shows: (Partial<Show> & { name: string; platform: Platform })[],
+  agentId: string
+): Promise<{ imported: Show[]; skipped: string[]; errors: string[] }> {
+  const supabase = await createClient();
+  const imported: Show[] = [];
+  const skipped: string[] = [];
+  const errors: string[] = [];
+
+  // Get existing shows for this agent to check duplicates
+  const { data: existingRels } = await supabase
+    .from("agent_show_relationships")
+    .select("show_id, shows!inner(name)")
+    .eq("agent_id", agentId);
+
+  const existingNames = new Set(
+    (existingRels ?? []).map((r: Record<string, unknown>) => {
+      const shows = r.shows as { name: string } | null;
+      return shows?.name?.toLowerCase() ?? "";
+    })
+  );
+
+  for (const showData of shows) {
+    if (existingNames.has(showData.name.toLowerCase())) {
+      skipped.push(showData.name);
+      continue;
+    }
+
+    const slug = generateSlug(showData.name);
+    const dbRow = flattenShowForDB({
+      ...showData,
+      slug,
+      is_claimed: true,
+      is_verified: false,
+    });
+
+    const { data: newShow, error: showError } = await supabase
+      .from("shows")
+      .insert(dbRow)
+      .select()
+      .single();
+
+    if (showError || !newShow) {
+      errors.push(`${showData.name}: ${showError?.message ?? "Unknown error"}`);
+      continue;
+    }
+
+    // Create agent relationship
+    const { error: relError } = await supabase
+      .from("agent_show_relationships")
+      .insert({
+        agent_id: agentId,
+        show_id: newShow.id,
+        is_exclusive: false,
+      });
+
+    if (relError) {
+      errors.push(`${showData.name}: relationship error: ${relError.message}`);
+    }
+
+    existingNames.add(showData.name.toLowerCase());
+    imported.push(transformShow(newShow));
+  }
+
+  return { imported, skipped, errors };
+}
+
+// ---- Enrichment Queries ----
+
+/**
+ * Partial update for enrichment that respects "don't overwrite agent data" rule.
+ * Only updates fields that are currently null/empty/default.
+ * NEVER overwrites: rate_card, audience_size (if > 0), cpm rates.
+ */
+export async function updateShowEnrichment(
+  id: string,
+  enrichmentData: Record<string, unknown>
+): Promise<Show | null> {
+  const supabase = await createClient();
+
+  // Load current show to check which fields already have data
+  const { data: current, error: fetchError } = await supabase
+    .from("shows")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (fetchError || !current) return null;
+
+  const updates: Record<string, unknown> = {};
+
+  // Protected fields — never overwrite if already set
+  const protectedIfSet = ["audience_size", "rate_card"];
+  // Fields that merge (arrays)
+  const mergeArrayFields = ["categories", "tags", "current_sponsors", "past_sponsors", "audience_interests", "data_sources"];
+
+  for (const [key, value] of Object.entries(enrichmentData)) {
+    if (value === undefined || value === null) continue;
+
+    // Protected: skip if current value is truthy
+    if (protectedIfSet.includes(key)) {
+      const currentVal = current[key];
+      if (key === "audience_size" && currentVal && currentVal > 0) continue;
+      if (key === "rate_card" && currentVal && Object.keys(currentVal).length > 0) continue;
+    }
+
+    // Array fields: merge, don't replace
+    if (mergeArrayFields.includes(key) && Array.isArray(value)) {
+      const existing = (current[key] as string[] | null) ?? [];
+      const existingLower = new Set(existing.map((s: string) => (typeof s === "string" ? s.toLowerCase() : s)));
+      const newItems = (value as string[]).filter(
+        (item) => !existingLower.has(typeof item === "string" ? item.toLowerCase() : item)
+      );
+      if (newItems.length > 0) {
+        updates[key] = [...existing, ...newItems];
+      }
+      continue;
+    }
+
+    // Simple fields: only update if current is empty/null/default
+    const currentVal = current[key];
+    const isEmpty =
+      currentVal === null ||
+      currentVal === undefined ||
+      currentVal === "" ||
+      currentVal === 0 ||
+      currentVal === "Unknown";
+
+    if (isEmpty) {
+      updates[key] = value;
+    }
+  }
+
+  // Always update these metadata fields
+  if (enrichmentData.data_sources) {
+    const existing = (current.data_sources as string[] | null) ?? [];
+    const newSources = (enrichmentData.data_sources as string[]).filter(
+      (s) => !existing.includes(s)
+    );
+    if (newSources.length > 0) {
+      updates.data_sources = [...existing, ...newSources];
+    }
+  }
+  updates.last_api_refresh = new Date().toISOString();
+  updates.updated_at = new Date().toISOString();
+
+  if (Object.keys(updates).length <= 2) {
+    // Only metadata fields, no actual enrichment
+    return transformShow(current);
+  }
+
+  const { data, error } = await supabase
+    .from("shows")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error || !data) return null;
+  return transformShow(data);
+}
+
+/**
+ * Get shows that need enrichment: last_api_refresh is null or older than 7 days.
+ * Scoped to an agent's shows.
+ */
+export async function getShowsNeedingEnrichment(agentId: string): Promise<Show[]> {
+  const supabase = await createClient();
+
+  // Get agent's show IDs
+  const { data: rels, error: relError } = await supabase
+    .from("agent_show_relationships")
+    .select("show_id")
+    .eq("agent_id", agentId);
+
+  if (relError || !rels || rels.length === 0) return [];
+
+  const showIds = rels.map((r) => r.show_id);
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const { data, error } = await supabase
+    .from("shows")
+    .select("*")
+    .in("id", showIds)
+    .or(`last_api_refresh.is.null,last_api_refresh.lt.${sevenDaysAgo.toISOString()}`)
+    .order("name", { ascending: true });
+
+  if (error || !data) return [];
+  return data.map(transformShow);
 }
