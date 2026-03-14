@@ -127,7 +127,8 @@ export class PodscanClient {
 
   private async request<T>(
     path: string,
-    params?: Record<string, string | number | boolean | undefined>
+    params?: Record<string, string | number | boolean | undefined>,
+    retries = 2
   ): Promise<T> {
     const url = new URL(`${PODSCAN_BASE_URL}${path}`);
     if (params) {
@@ -145,6 +146,14 @@ export class PodscanClient {
       },
       next: { revalidate: 3600 }, // Cache for 1 hour
     });
+
+    if (res.status === 429 && retries > 0) {
+      // Rate limited — wait and retry (Podscan trial: 10 req/min)
+      const retryAfter = res.headers.get("Retry-After");
+      const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 7000;
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      return this.request<T>(path, params, retries - 1);
+    }
 
     if (!res.ok) {
       const rateLimitRemaining = res.headers.get("X-RateLimit-Remaining");
@@ -498,4 +507,41 @@ export function getPodscanClient(): PodscanClient {
     _client = new PodscanClient();
   }
   return _client;
+}
+
+/**
+ * Safe version that returns null instead of throwing if the API key is missing.
+ */
+export function getPodscanClientSafe(): PodscanClient | null {
+  if (!process.env.PODSCAN_API_KEY) {
+    console.log("PODSCAN_API_KEY not configured — skipping Podscan enrichment");
+    return null;
+  }
+  return getPodscanClient();
+}
+
+// ---- Helper: getPodcastDetails ----
+
+/**
+ * Convenience wrapper that finds a podcast by name and returns
+ * full details including sponsors and contacts.
+ */
+export async function getPodcastDetails(client: PodscanClient, name: string): Promise<{
+  podcast: PodscanPodcast | null;
+  sponsors: PodscanEntity[];
+  hosts: PodscanEntity[];
+}> {
+  const podcast = await client.findPodcastByName(name);
+  if (!podcast) return { podcast: null, sponsors: [], hosts: [] };
+
+  const [sponsorResult, contactResult] = await Promise.allSettled([
+    client.getSponsorsForPodcast(podcast.podcast_id),
+    client.getShowContacts(podcast.podcast_id),
+  ]);
+
+  return {
+    podcast,
+    sponsors: sponsorResult.status === "fulfilled" ? sponsorResult.value : [],
+    hosts: contactResult.status === "fulfilled" ? contactResult.value.hosts : [],
+  };
 }
