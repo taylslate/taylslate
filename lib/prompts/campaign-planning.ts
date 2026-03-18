@@ -114,6 +114,8 @@ Return ONLY a valid JSON object with three arrays. No markdown, no explanation, 
 ## Important
 
 - ONLY recommend shows from the provided data. Never invent shows.
+- Some shows have estimated rate cards based on audience size (default industry CPMs). These are reasonable — use them as-is.
+- Shows with ids starting with "discovered-" are newly found from external APIs and may have less detailed data. Score them on available information — they are real shows.
 - Use the show's actual id field as show_id.
 - Podcast shows go in "recommendations". YouTube channels go in "youtube_recommendations". Never mix them.
 - **MATH CHECK:** For every podcast recommendation, allocated_budget MUST equal (audience_size / 1000) × estimated_cpm × num_episodes. Do not round or approximate — compute it exactly.

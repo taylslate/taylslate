@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { getAuthenticatedUser, getAllShows } from "@/lib/data/queries";
-import type { Campaign, ShowRecommendation, YouTubeRecommendation, ExpansionShow, Platform } from "@/lib/data/types";
+import { getAuthenticatedUser, getAllShows, createShow } from "@/lib/data/queries";
+import type { Campaign, Show, ShowRecommendation, YouTubeRecommendation, ExpansionShow, Platform } from "@/lib/data/types";
 import {
   CAMPAIGN_PLANNING_SYSTEM_PROMPT,
   buildCampaignUserPrompt,
   prepareShowsForPrompt,
 } from "@/lib/prompts/campaign-planning";
+import { discoverShows } from "@/lib/discovery";
 
 interface GenerateRequest {
   name: string;
@@ -46,18 +47,54 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Fetch shows from Supabase instead of seed data
-  const shows = await getAllShows();
-  if (shows.length === 0) {
-    return NextResponse.json({ error: "No shows available in the database" }, { status: 500 });
-  }
-
-  // Send ALL shows to Claude — the system prompt handles platform prioritization
-  // based on the user's selected platforms in the brief
+  // Fetch database shows + discover from Podscan/YouTube in parallel
   const validPlatforms = body.platforms as Platform[];
 
-  // Build prompts — full show database so Claude can cross-reference and make informed picks
-  const strippedShows = prepareShowsForPrompt(shows);
+  const [dbShows, discoveryResult] = await Promise.all([
+    getAllShows(),
+    discoverShows({
+      target_interests: body.target_interests || [],
+      keywords: body.keywords || [],
+      target_age_range: body.target_age_range,
+      target_gender: body.target_gender,
+      campaign_goals: body.campaign_goals,
+      platforms: body.platforms,
+    }).catch((err) => {
+      console.warn("[campaign/generate] Discovery failed, using DB only:", err);
+      return { discovered: [] as Show[], sources: { podscan: 0, youtube: 0 }, errors: [] as string[] };
+    }),
+  ]);
+
+  // Merge: DB shows take precedence over discovered duplicates
+  const dbShowNames = new Set(dbShows.map((s) => s.name.toLowerCase()));
+  const dbRssUrls = new Set(dbShows.filter((s) => s.rss_url).map((s) => s.rss_url!));
+  const dbYoutubeIds = new Set(dbShows.filter((s) => s.youtube_channel_id).map((s) => s.youtube_channel_id!));
+
+  const uniqueDiscovered = discoveryResult.discovered.filter((d) => {
+    if (dbShowNames.has(d.name.toLowerCase())) return false;
+    if (d.rss_url && dbRssUrls.has(d.rss_url)) return false;
+    if (d.youtube_channel_id && dbYoutubeIds.has(d.youtube_channel_id)) return false;
+    return true;
+  });
+
+  // Cap at 50 total shows for token efficiency. Prioritize: DB shows first,
+  // then discovered shows sorted by audience size.
+  const sortedDiscovered = uniqueDiscovered.sort((a, b) => b.audience_size - a.audience_size);
+  const maxDiscovered = Math.max(0, 50 - dbShows.length);
+  const allShows = [...dbShows, ...sortedDiscovered.slice(0, maxDiscovered)];
+
+  if (allShows.length === 0) {
+    return NextResponse.json({ error: "No shows available. Please add shows or check API keys." }, { status: 500 });
+  }
+
+  console.log(
+    `[campaign/generate] ${dbShows.length} DB shows + ${uniqueDiscovered.length} discovered ` +
+    `(${discoveryResult.sources.podscan} Podscan, ${discoveryResult.sources.youtube} YouTube). ` +
+    `Sending ${allShows.length} total to Claude.`
+  );
+
+  // Build prompts
+  const strippedShows = prepareShowsForPrompt(allShows);
   const showsJson = JSON.stringify(strippedShows, null, 2);
 
   const brief = {
@@ -155,8 +192,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build show lookup for cross-referencing
-    const showLookup = new Map(shows.map((s) => [s.id, s]));
+    // Build show lookup for cross-referencing (includes discovered shows)
+    const showLookup = new Map(allShows.map((s) => [s.id, s]));
 
     // Cross-reference podcast recommendations with real show data
     // Server-side enforcement: recalculate allocated_budget and impressions from
@@ -264,6 +301,33 @@ export async function POST(request: NextRequest) {
           reason: exp.reason,
         };
       });
+
+    // Auto-save recommended discovered shows to Supabase
+    // Only shows that Claude actually recommended get persisted — keeps DB clean.
+    const discoveredShowMap = new Map(uniqueDiscovered.map((s) => [s.id, s]));
+    const allRecs = [
+      ...recommendations,
+      ...youtubeRecommendations,
+      ...expansionOpportunities,
+    ];
+
+    for (const rec of allRecs) {
+      if (rec.show_id.startsWith("discovered-") && discoveredShowMap.has(rec.show_id)) {
+        const discoveredShow = discoveredShowMap.get(rec.show_id)!;
+        try {
+          // createShow expects Partial<Show> with nested contact
+          const { id: _id, ...showWithoutId } = discoveredShow;
+          const saved = await createShow(showWithoutId);
+          if (saved?.id) {
+            // Update the rec to use the real DB ID
+            rec.show_id = saved.id;
+          }
+        } catch (err) {
+          console.warn(`[campaign/generate] Failed to save discovered show "${discoveredShow.name}":`, err);
+          // Non-fatal — the recommendation still works with the temp ID
+        }
+      }
+    }
 
     // Build complete Campaign object
     const now = new Date().toISOString();

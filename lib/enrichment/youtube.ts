@@ -175,6 +175,40 @@ export class YouTubeClient {
   }
 
   /**
+   * Get details for multiple channels in a single API call.
+   * YouTube Data API natively supports comma-separated channel IDs.
+   */
+  async getMultipleChannelDetails(channelIds: string[]): Promise<YouTubeChannelDetails[]> {
+    if (channelIds.length === 0) return [];
+
+    const res = await this.request<{ items?: YouTubeChannel[] }>("/channels", {
+      part: "snippet,statistics,topicDetails",
+      id: channelIds.join(","),
+    });
+
+    return (res.items ?? []).map((channel) => {
+      const topicCategories = (channel.topicDetails?.topicCategories ?? []).map((url) => {
+        const parts = url.split("/");
+        return parts[parts.length - 1].replace(/_/g, " ");
+      });
+
+      return {
+        channelId: channel.id,
+        title: channel.snippet.title,
+        description: channel.snippet.description,
+        customUrl: channel.snippet.customUrl,
+        country: channel.snippet.country,
+        publishedAt: channel.snippet.publishedAt,
+        thumbnailUrl: channel.snippet.thumbnails.high?.url ?? channel.snippet.thumbnails.medium?.url,
+        subscriberCount: parseInt(channel.statistics.subscriberCount, 10) || 0,
+        videoCount: parseInt(channel.statistics.videoCount, 10) || 0,
+        totalViewCount: parseInt(channel.statistics.viewCount, 10) || 0,
+        topicCategories,
+      };
+    });
+  }
+
+  /**
    * Get view/like/comment counts for recent videos. Calculates average views.
    * audience_size for YouTube shows = average views per video.
    */
