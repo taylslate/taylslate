@@ -87,7 +87,8 @@ async function discoverFromPodscan(
         query,
         perPage: index === 0 ? 15 : 10,
         categoryIds: index === 1 && categoryIds.length > 0 ? categoryIds.join(",") : undefined,
-        hasSponsors: true,
+        // Don't filter by hasSponsors — we want to discover shows that might
+        // not have tracked sponsors yet but are still great ad vehicles
         orderBy: "best_match",
       }).catch((err) => {
         errors.push(`Podscan search "${query}": ${err instanceof Error ? err.message : "unknown error"}`);
@@ -102,8 +103,10 @@ async function discoverFromPodscan(
       for (const episode of result.data) {
         const podcast = episode.podcast;
         if (podcast && !podcastMap.has(podcast.podcast_id)) {
-          // Only include podcasts with meaningful audience data
-          if ((podcast.reach ?? 0) >= 1000) {
+          // Only include podcasts with some audience data
+          // reach is an object: { audience_size: number, ... }
+          const audienceSize = podcast.reach?.audience_size ?? 0;
+          if (audienceSize >= 500) {
             podcastMap.set(podcast.podcast_id, podcast);
           }
         }

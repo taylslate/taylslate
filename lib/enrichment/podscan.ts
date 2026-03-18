@@ -15,6 +15,21 @@ export interface PodscanPagination {
   last_page: number;
 }
 
+export interface PodscanReach {
+  audience_size?: number;
+  email?: string;
+  website?: string;
+  social_links?: string[];
+  itunes?: {
+    itunes_rating_average?: string;
+    itunes_rating_count?: string;
+  };
+  spotify?: {
+    spotify_rating_average?: string;
+    spotify_rating_count?: string;
+  };
+}
+
 export interface PodscanPodcast {
   podcast_id: string;
   podcast_guid?: string;
@@ -26,7 +41,7 @@ export interface PodscanPodcast {
   podcast_has_guests?: boolean;
   podcast_has_sponsors?: boolean;
   publisher_name?: string;
-  reach?: number;
+  reach?: PodscanReach;
   podcast_reach_score?: number | null;
   rss_url?: string;
   rss_url_normalized?: string;
@@ -186,13 +201,14 @@ export class PodscanClient {
     orderBy?: "best_match" | "created_at" | "posted_at" | "podcast_rating";
   }): Promise<{ data: PodscanEpisode[]; pagination: PodscanPagination }> {
     const res = await this.request<{
-      data: PodscanEpisode[];
+      episodes?: PodscanEpisode[];
+      data?: PodscanEpisode[];
       pagination: PodscanPagination;
     }>("/episodes/search", {
       query: options.query,
       per_page: options.perPage ?? 10,
       show_full_podcast: true,
-      exclude_transcript: true, // Save bandwidth — we just want podcast metadata
+      exclude_transcript: true,
       category_ids: options.categoryIds,
       podcast_language: options.podcastLanguage,
       min_podcast_audience_size: options.minAudienceSize,
@@ -201,7 +217,8 @@ export class PodscanClient {
       order_by: options.orderBy ?? "best_match",
       show_only_fully_processed: true,
     });
-    return res;
+    // Podscan API returns "episodes" key, not "data"
+    return { data: res.episodes ?? res.data ?? [], pagination: res.pagination };
   }
 
   /**

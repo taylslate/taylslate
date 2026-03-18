@@ -5,7 +5,7 @@
 // ============================================================
 
 import type { Show, ShowRateCard, ShowDemographics } from "@/lib/data/types";
-import type { PodscanPodcast } from "@/lib/enrichment/podscan";
+import type { PodscanPodcast, PodscanReach } from "@/lib/enrichment/podscan";
 import type { YouTubeChannelDetails, YouTubeRecentStats } from "@/lib/enrichment/youtube";
 
 /**
@@ -39,11 +39,27 @@ function getDefaultYouTubeFlatRate(subscriberCount: number): number {
 /**
  * Convert a Podscan podcast to a Taylslate Show.
  */
+/**
+ * Extract audience size from Podscan's reach object.
+ * reach can be: { audience_size: number, email, website, ... } or undefined
+ */
+function extractAudienceSize(reach?: PodscanReach): number {
+  if (!reach) return 0;
+  return reach.audience_size ?? 0;
+}
+
+/**
+ * Extract contact email from Podscan's reach object.
+ */
+function extractEmail(reach?: PodscanReach): string {
+  return reach?.email ?? "";
+}
+
 export function podscanPodcastToShow(
   podcast: PodscanPodcast,
   sponsors?: string[]
 ): Show {
-  const audienceSize = podcast.reach ?? 0;
+  const audienceSize = extractAudienceSize(podcast.reach);
   const now = new Date().toISOString();
 
   return {
@@ -59,7 +75,7 @@ export function podscanPodcastToShow(
     network: podcast.publisher_name ?? undefined,
     contact: {
       name: podcast.publisher_name ?? "",
-      email: "",
+      email: extractEmail(podcast.reach),
       method: "email",
     },
     agent_id: undefined,

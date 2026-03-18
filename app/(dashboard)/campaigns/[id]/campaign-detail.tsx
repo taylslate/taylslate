@@ -331,8 +331,8 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                             }`}>{show.fit_score}% fit</span>
                           </div>
                           <div className="flex items-center gap-2 mb-3">
-                            {show.categories.map((cat) => (
-                              <span key={cat} className="text-xs text-[var(--brand-text-muted)] bg-[var(--brand-surface)] px-2 py-0.5 rounded">{cat}</span>
+                            {(show.categories ?? []).map((cat, idx) => (
+                              <span key={`${cat}-${idx}`} className="text-xs text-[var(--brand-text-muted)] bg-[var(--brand-surface)] px-2 py-0.5 rounded">{String(cat)}</span>
                             ))}
                           </div>
                           <div className="flex items-center gap-6 text-sm">
@@ -344,8 +344,8 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                           </div>
                           <div className="flex items-center gap-2 mt-3">
                             <span className="text-xs text-[var(--brand-text-muted)]">Also sponsors:</span>
-                            {show.current_sponsors.map((sponsor) => (
-                              <span key={sponsor} className="text-xs bg-[var(--brand-orange)]/[0.08] text-[var(--brand-orange)] px-2 py-0.5 rounded font-medium">{sponsor}</span>
+                            {(show.current_sponsors ?? []).map((sponsor, idx) => (
+                              <span key={`${sponsor}-${idx}`} className="text-xs bg-[var(--brand-orange)]/[0.08] text-[var(--brand-orange)] px-2 py-0.5 rounded font-medium">{sponsor}</span>
                             ))}
                           </div>
                           {show.overlap_flag && (
@@ -408,8 +408,8 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                             }`}>{show.fit_score}% fit</span>
                           </div>
                           <div className="flex items-center gap-2 mb-3">
-                            {show.categories.map((cat) => (
-                              <span key={cat} className="text-xs text-[var(--brand-text-muted)] bg-[var(--brand-surface)] px-2 py-0.5 rounded">{cat}</span>
+                            {(show.categories ?? []).map((cat, idx) => (
+                              <span key={`${cat}-${idx}`} className="text-xs text-[var(--brand-text-muted)] bg-[var(--brand-surface)] px-2 py-0.5 rounded">{String(cat)}</span>
                             ))}
                           </div>
                           <div className="flex items-center gap-6 text-sm">
@@ -420,8 +420,8 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                           </div>
                           <div className="flex items-center gap-2 mt-3">
                             <span className="text-xs text-[var(--brand-text-muted)]">Also sponsors:</span>
-                            {show.current_sponsors.map((sponsor) => (
-                              <span key={sponsor} className="text-xs bg-[var(--brand-orange)]/[0.08] text-[var(--brand-orange)] px-2 py-0.5 rounded font-medium">{sponsor}</span>
+                            {(show.current_sponsors ?? []).map((sponsor, idx) => (
+                              <span key={`${sponsor}-${idx}`} className="text-xs bg-[var(--brand-orange)]/[0.08] text-[var(--brand-orange)] px-2 py-0.5 rounded font-medium">{sponsor}</span>
                             ))}
                           </div>
                           {show.overlap_flag && (
@@ -470,8 +470,8 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                   }`}>{show.fit_score}% fit</span>
                 </div>
                 <div className="flex items-center gap-2 mb-2">
-                  {show.categories.slice(0, 3).map((cat) => (
-                    <span key={cat} className="text-xs text-[var(--brand-text-muted)] bg-[var(--brand-surface)] px-1.5 py-0.5 rounded">{cat}</span>
+                  {(show.categories ?? []).slice(0, 3).map((cat, idx) => (
+                    <span key={`${cat}-${idx}`} className="text-xs text-[var(--brand-text-muted)] bg-[var(--brand-surface)] px-1.5 py-0.5 rounded">{String(cat)}</span>
                   ))}
                 </div>
                 <div className="flex items-center gap-4 text-xs text-[var(--brand-text-secondary)] mb-3">
