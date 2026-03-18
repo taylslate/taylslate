@@ -17,7 +17,16 @@ export default function GeneratedCampaignPage() {
       return;
     }
     try {
-      setCampaign(JSON.parse(stored));
+      const parsed = JSON.parse(stored);
+      setCampaign(parsed);
+
+      // If the campaign has a real Supabase UUID, redirect to the permanent URL
+      // UUIDs are 36 chars with dashes, temp IDs start with "campaign-gen-"
+      if (parsed.id && !parsed.id.startsWith("campaign-gen-")) {
+        localStorage.removeItem("taylslate_generated_campaign");
+        router.replace(`/campaigns/${parsed.id}`);
+        return;
+      }
     } catch {
       router.replace("/campaigns/new");
     }
@@ -33,12 +42,6 @@ export default function GeneratedCampaignPage() {
           <div className="grid grid-cols-4 gap-4 mt-6">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="h-24 bg-[var(--brand-border)] rounded-xl" />
-            ))}
-          </div>
-          <div className="h-12 w-80 bg-[var(--brand-border)] rounded-xl mt-6" />
-          <div className="space-y-3 mt-4">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-32 bg-[var(--brand-border)] rounded-xl" />
             ))}
           </div>
         </div>

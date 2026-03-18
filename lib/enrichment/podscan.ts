@@ -185,12 +185,46 @@ export class PodscanClient {
   // ---- Podcast Search ----
 
   /**
+   * Search for podcasts at the SHOW level — by name, topic, or characteristics.
+   * This is the right endpoint for discovering shows for campaign planning.
+   * Returns podcast objects directly (not episodes).
+   */
+  async discoverPodcasts(options: {
+    query?: string;
+    perPage?: number;
+    categoryIds?: string;
+    podcastLanguage?: string;
+    minAudienceSize?: number;
+    maxAudienceSize?: number;
+    hasSponsors?: boolean;
+    isActive?: boolean;
+    orderBy?: "best_match" | "audience_size" | "podcast_rating";
+  }): Promise<{ data: PodscanPodcast[]; pagination: PodscanPagination }> {
+    const res = await this.request<{
+      podcasts?: PodscanPodcast[];
+      data?: PodscanPodcast[];
+      pagination: PodscanPagination;
+    }>("/podcasts/search", {
+      query: options.query,
+      per_page: options.perPage ?? 25,
+      category_ids: options.categoryIds,
+      podcast_language: options.podcastLanguage ?? "en",
+      min_audience_size: options.minAudienceSize,
+      max_audience_size: options.maxAudienceSize,
+      has_sponsors: options.hasSponsors,
+      is_active: options.isActive ?? true,
+      order_by: options.orderBy ?? "audience_size",
+    });
+    return { data: res.podcasts ?? res.data ?? [], pagination: res.pagination };
+  }
+
+  /**
    * Search for podcasts by querying episode transcripts and metadata.
    * Returns episodes with full podcast data attached.
-   * This is the primary way to find podcasts in Podscan — there is no
-   * dedicated /podcasts/search endpoint.
+   * Use this for brand mention monitoring and transcript search —
+   * NOT for show discovery (use discoverPodcasts instead).
    */
-  async searchPodcasts(options: {
+  async searchEpisodes(options: {
     query: string;
     perPage?: number;
     categoryIds?: string;
@@ -219,6 +253,23 @@ export class PodscanClient {
     });
     // Podscan API returns "episodes" key, not "data"
     return { data: res.episodes ?? res.data ?? [], pagination: res.pagination };
+  }
+
+  /**
+   * @deprecated Use discoverPodcasts() for show discovery or searchEpisodes() for transcript search.
+   * Kept for backward compatibility.
+   */
+  async searchPodcasts(options: {
+    query: string;
+    perPage?: number;
+    categoryIds?: string;
+    podcastLanguage?: string;
+    minAudienceSize?: number;
+    maxAudienceSize?: number;
+    hasSponsors?: boolean;
+    orderBy?: "best_match" | "created_at" | "posted_at" | "podcast_rating";
+  }): Promise<{ data: PodscanEpisode[]; pagination: PodscanPagination }> {
+    return this.searchEpisodes(options);
   }
 
   /**

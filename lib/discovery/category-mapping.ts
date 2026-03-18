@@ -2,6 +2,9 @@
 // CATEGORY MAPPING
 // Maps Taylslate campaign brief interests to Podscan category
 // IDs and YouTube search terms for show discovery.
+//
+// Podscan: Uses category IDs for podcast-level search (not keywords)
+// YouTube: Uses interest terms as text search (YouTube API needs text)
 // ============================================================
 
 /**
@@ -31,6 +34,7 @@ const INTEREST_TO_PODSCAN: Record<string, string[]> = {
 
 /**
  * Maps interests to YouTube search modifiers for better channel discovery.
+ * YouTube API requires text-based queries (no category ID system like Podscan).
  */
 const INTEREST_TO_YOUTUBE_TERMS: Record<string, string[]> = {
   "Fitness & Wellness": ["fitness", "workout", "wellness", "health"],
@@ -55,6 +59,7 @@ const INTEREST_TO_YOUTUBE_TERMS: Record<string, string[]> = {
 
 /**
  * Convert campaign brief interests to Podscan category IDs.
+ * These are used for podcast-level search (discoverPodcasts endpoint).
  */
 export function mapInterestsToPodscanCategoryIds(interests: string[]): string[] {
   const ids = new Set<string>();
@@ -68,64 +73,33 @@ export function mapInterestsToPodscanCategoryIds(interests: string[]): string[] 
 }
 
 /**
- * Build optimized search queries from the campaign brief.
- * Returns 2-3 distinct queries for Podscan and 1 for YouTube.
+ * Build a YouTube search query from campaign brief interests + keywords.
+ * YouTube API needs text queries — combine interest terms with keywords
+ * for the best channel discovery results.
  */
-export function buildSearchQueries(brief: {
+export function buildYouTubeQuery(brief: {
   target_interests: string[];
   keywords: string[];
-  campaign_goals?: string;
-}): { podscanQueries: string[]; youtubeQuery: string } {
-  const queries: string[] = [];
+}): string {
+  const parts: string[] = [];
 
-  // Query 1: Keywords (most specific)
-  if (brief.keywords.length > 0) {
-    queries.push(brief.keywords.slice(0, 3).join(" "));
-  }
-
-  // Query 2: Interest-based
-  if (brief.target_interests.length > 0) {
-    // Pick top 2 interests and use their YouTube terms (more descriptive than category slugs)
-    const interestTerms = brief.target_interests
-      .slice(0, 2)
-      .flatMap((i) => (INTEREST_TO_YOUTUBE_TERMS[i] ?? []).slice(0, 2));
-    if (interestTerms.length > 0) {
-      const interestQuery = interestTerms.join(" ");
-      // Only add if different from query 1
-      if (!queries.includes(interestQuery)) {
-        queries.push(interestQuery);
-      }
+  // Add 1-2 terms per interest (max 2 interests)
+  for (const interest of brief.target_interests.slice(0, 2)) {
+    const terms = INTEREST_TO_YOUTUBE_TERMS[interest];
+    if (terms) {
+      parts.push(...terms.slice(0, 2));
     }
   }
 
-  // Query 3: Goals-based (only if we have fewer than 2 queries)
-  if (queries.length < 2 && brief.campaign_goals) {
-    // Extract first 4 meaningful words from goals
-    const goalWords = brief.campaign_goals
-      .replace(/[^a-zA-Z\s]/g, "")
-      .split(/\s+/)
-      .filter((w) => w.length > 3)
-      .slice(0, 4)
-      .join(" ");
-    if (goalWords && !queries.includes(goalWords)) {
-      queries.push(goalWords);
-    }
+  // Add keywords — useful for YouTube where text search matters more
+  // (e.g., "sauna" helps find wellness/biohacking YouTube channels)
+  parts.push(...brief.keywords.slice(0, 2));
+
+  // Fallback
+  if (parts.length === 0) {
+    return brief.target_interests[0] ?? "popular creator";
   }
 
-  // Fallback: if no queries at all, use a generic one from interests
-  if (queries.length === 0) {
-    queries.push(brief.target_interests[0] ?? "popular podcast");
-  }
-
-  // YouTube query: combine keywords + interest terms
-  const ytParts = [
-    ...brief.keywords.slice(0, 2),
-    ...brief.target_interests.slice(0, 2).flatMap((i) => (INTEREST_TO_YOUTUBE_TERMS[i] ?? []).slice(0, 1)),
-  ];
-  const youtubeQuery = ytParts.length > 0 ? ytParts.join(" ") : queries[0];
-
-  return {
-    podscanQueries: queries.slice(0, 3),
-    youtubeQuery,
-  };
+  // Deduplicate and join
+  return [...new Set(parts)].slice(0, 5).join(" ");
 }

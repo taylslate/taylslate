@@ -5,6 +5,27 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Campaign, OutreachDraft } from "@/lib/data";
 
+function ShowAvatar({ name, imageUrl }: { name: string; imageUrl?: string }) {
+  const [imgError, setImgError] = useState(false);
+
+  if (imageUrl && !imgError) {
+    return (
+      <img
+        src={imageUrl}
+        alt={name}
+        className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+        onError={() => setImgError(true)}
+      />
+    );
+  }
+
+  return (
+    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[var(--brand-blue)]/20 to-[var(--brand-teal)]/20 flex items-center justify-center flex-shrink-0">
+      <span className="text-sm font-bold text-[var(--brand-blue)]">{name?.charAt(0) ?? "?"}</span>
+    </div>
+  );
+}
+
 type Tab = "plan" | "outreach" | "adcopy";
 
 export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
@@ -317,9 +338,9 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                             </svg>
                           )}
                         </button>
+                        <ShowAvatar name={show.show_name} imageUrl={show.image_url} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-3 mb-2">
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--brand-blue)]/10 text-xs font-bold text-[var(--brand-blue)]">{index + 1}</span>
                             <h3 className="font-semibold text-[var(--brand-text)]">{show.show_name}</h3>
                             {show.network && (
                               <span className="text-xs text-[var(--brand-text-muted)] bg-[var(--brand-surface)] px-2 py-0.5 rounded">{show.network}</span>
@@ -394,9 +415,9 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                             </svg>
                           )}
                         </button>
+                        <ShowAvatar name={show.show_name} imageUrl={show.image_url} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-3 mb-2">
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--brand-blue)]/10 text-xs font-bold text-[var(--brand-blue)]">{index + 1}</span>
                             <h3 className="font-semibold text-[var(--brand-text)]">{show.show_name}</h3>
                             {show.network && (
                               <span className="text-xs text-[var(--brand-text-muted)] bg-[var(--brand-surface)] px-2 py-0.5 rounded">{show.network}</span>

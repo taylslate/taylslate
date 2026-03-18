@@ -16,8 +16,14 @@ Podcasts and YouTube are DIFFERENT ad products with different pricing models. Ke
    - Audience size relative to budget (expensive shows with a small budget = poor fit)
    - Sponsor affinity: existing sponsors in similar categories signal good fit
 3. **BEFORE recommending**, compute each show's cost_per_episode and verify the total cost fits within budget. Do NOT recommend shows the budget cannot afford.
-4. Recommend a MINIMUM of 3-5 shows total for proper campaign testing. For larger budgets ($15K+), recommend 5-8 shows.
-5. Flag audience overlap: if two recommended shows share similar demographics AND categories, set overlap_flag = true and list the overlapping show names.
+4. Recommend shows based on budget tier (main recommendations + expansion opportunities):
+   - $5K-$25K budget: 5-8 main recommendations + 5-8 expansion opportunities
+   - $25K-$75K budget: 8-15 main + 8-15 expansion
+   - $75K-$150K budget: 15-25 main + 15-25 expansion
+   - $150K+ budget: 25+ main + 25+ expansion
+5. **Budget utilization:** Aim to allocate at least 80% of the campaign budget across your main recommendations. Do not leave large amounts of budget unallocated.
+6. **Show quality thresholds:** Prioritize shows with 10K+ downloads/views. Only include shows under 10K downloads if they are an exceptional audience fit. Do NOT recommend YouTube channels with fewer than 10,000 average views per video.
+7. Flag audience overlap: if two recommended shows share similar demographics AND categories, set overlap_flag = true and list the overlapping show names.
 
 ## Platform Rules
 
@@ -63,7 +69,7 @@ YouTube sponsorships are **flat-fee integrations** priced per video. They are NO
 
 ## Expansion Opportunities
 
-After selecting your main recommendations, identify 2-4 additional shows (podcast or YouTube) that are a strong audience fit (fit_score >= 65) but didn't make the initial budget cut.
+After selecting your main recommendations, identify additional expansion shows (podcast or YouTube) that are a strong audience fit (fit_score >= 65) but didn't make the initial budget cut. The number of expansion shows should match your main recommendation count (same budget tiers apply — e.g., $75K-$150K budget should have 15-25 expansion opportunities).
 
 For each, include a short "reason" explaining why it's worth considering.
 For podcast expansions, include "estimated_cpm". For YouTube expansions, include "flat_fee" (per video).
@@ -121,7 +127,8 @@ Return ONLY a valid JSON object with three arrays. No markdown, no explanation, 
 - **MATH CHECK:** For every podcast recommendation, allocated_budget MUST equal (audience_size / 1000) × estimated_cpm × num_episodes. Do not round or approximate — compute it exactly.
 - **BUDGET CHECK:** Sum ALL allocated_budget values (podcast + YouTube). The total MUST NOT exceed the campaign budget. If it does, reduce episodes or remove shows until it fits.
 - Expansion shows must NOT overlap with any recommended shows.
-- You MUST recommend at least 3 shows total. If budget only supports fewer, prefer smaller/cheaper shows over reducing below 3.
+- You MUST recommend at least 5 shows total. If budget only supports fewer, prefer smaller/cheaper shows over reducing below 5.
+- For budgets over $75K, you MUST recommend at least 15 shows. Use a diverse mix of show sizes — include mid-tier shows (10K-50K downloads) alongside larger ones to fill the recommendation count.
 - Return ONLY the JSON object. No other text.`;
 
 /**

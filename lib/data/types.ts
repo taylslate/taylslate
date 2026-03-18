@@ -114,6 +114,10 @@ export interface Show {
   available_slots?: number; // open ad slots in next 30 days
   next_available_date?: string;
 
+  // Metadata
+  data_sources?: string[]; // e.g. ["seed"], ["discovery"], ["podscan"], ["agent_import"]
+  last_api_refresh?: string;
+
   created_at: string;
   updated_at: string;
 }
@@ -141,6 +145,7 @@ export interface ShowRecommendation {
   show_name: string;
   platform: Platform;
   network?: string;
+  image_url?: string;
   fit_score: number; // 0-100
   estimated_cpm: number;
   audience_size: number;
@@ -160,6 +165,7 @@ export interface YouTubeRecommendation {
   show_name: string;
   platform: "youtube";
   network?: string;
+  image_url?: string;
   fit_score: number; // 0-100
   audience_size: number; // avg views per video
   categories: string[];
@@ -178,6 +184,7 @@ export interface ExpansionShow {
   show_name: string;
   platform: Platform;
   network?: string;
+  image_url?: string;
   fit_score: number; // 0-100
   estimated_cpm?: number; // podcast only
   flat_fee?: number; // youtube only — per video

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { Deal, ShowRecommendation, YouTubeRecommendation } from "@/lib/data/types";
-import { getAuthenticatedUser, addDeals } from "@/lib/data/queries";
+import type { ShowRecommendation, YouTubeRecommendation } from "@/lib/data/types";
+import { getAuthenticatedUser, addDeals, createShow } from "@/lib/data/queries";
 
 export async function POST(request: NextRequest) {
   let body: {
@@ -22,24 +22,58 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { campaign_id, brand_id, recommendations, youtube_recommendations } = body;
+  const { campaign_id, recommendations, youtube_recommendations } = body;
+  const brand_id = user.id;
 
-  if (!campaign_id || !brand_id) {
-    return NextResponse.json({ error: "campaign_id and brand_id are required" }, { status: 400 });
+  if (!campaign_id) {
+    return NextResponse.json({ error: "campaign_id is required" }, { status: 400 });
   }
 
-  const now = new Date().toISOString();
-  const dealsToInsert: Omit<Deal, "created_at" | "updated_at">[] = [];
+  const dealsToInsert: Record<string, unknown>[] = [];
 
   // Create deals from podcast recommendations
-  for (const rec of recommendations) {
+  for (const rec of recommendations ?? []) {
+    let showId = rec.show_id;
+
+    // If this is a discovered show, save it to DB first to get a real UUID
+    if (showId.startsWith("discovered-")) {
+      try {
+        const saved = await createShow({
+          name: rec.show_name,
+          platform: rec.platform ?? "podcast",
+          audience_size: rec.audience_size,
+          categories: rec.categories ?? [],
+          rate_card: { midroll_cpm: rec.estimated_cpm },
+          image_url: rec.image_url,
+          contact: {
+            name: "",
+            email: rec.contact_email ?? "",
+            method: "email",
+          },
+          network: rec.network,
+          current_sponsors: rec.current_sponsors ?? [],
+          data_sources: ["discovery"],
+          is_claimed: false,
+          is_verified: false,
+        });
+        if (saved?.id) {
+          showId = saved.id;
+        } else {
+          console.warn(`[campaigns/deals] Failed to save discovered show: ${rec.show_name}`);
+          continue;
+        }
+      } catch (err) {
+        console.warn(`[campaigns/deals] Error saving discovered show ${rec.show_name}:`, err);
+        continue;
+      }
+    }
+
     const netPerEpisode = Math.round((rec.audience_size / 1000) * rec.estimated_cpm);
     const totalNet = netPerEpisode * rec.num_episodes;
 
     dealsToInsert.push({
-      id: `deal-campaign-${campaign_id}-${rec.show_id}`,
       campaign_id,
-      show_id: rec.show_id,
+      show_id: showId,
       brand_id,
       status: "proposed",
       num_episodes: rec.num_episodes,
@@ -64,11 +98,44 @@ export async function POST(request: NextRequest) {
   }
 
   // Create deals from YouTube recommendations
-  for (const rec of youtube_recommendations) {
+  for (const rec of youtube_recommendations ?? []) {
+    let showId = rec.show_id;
+
+    if (showId.startsWith("discovered-")) {
+      try {
+        const saved = await createShow({
+          name: rec.show_name,
+          platform: "youtube",
+          audience_size: rec.audience_size,
+          categories: rec.categories ?? [],
+          rate_card: { flat_rate: rec.flat_fee_per_video },
+          image_url: rec.image_url,
+          contact: {
+            name: "",
+            email: rec.contact_email ?? "",
+            method: "email",
+          },
+          network: rec.network,
+          current_sponsors: rec.current_sponsors ?? [],
+          data_sources: ["discovery"],
+          is_claimed: false,
+          is_verified: false,
+        });
+        if (saved?.id) {
+          showId = saved.id;
+        } else {
+          console.warn(`[campaigns/deals] Failed to save discovered YT show: ${rec.show_name}`);
+          continue;
+        }
+      } catch (err) {
+        console.warn(`[campaigns/deals] Error saving discovered YT show ${rec.show_name}:`, err);
+        continue;
+      }
+    }
+
     dealsToInsert.push({
-      id: `deal-campaign-${campaign_id}-${rec.show_id}`,
       campaign_id,
-      show_id: rec.show_id,
+      show_id: showId,
       brand_id,
       status: "proposed",
       num_episodes: rec.num_videos,
@@ -92,11 +159,16 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  if (dealsToInsert.length === 0) {
+    return NextResponse.json({ error: "No valid shows to create deals for." }, { status: 400 });
+  }
+
   try {
     const deals = await addDeals(dealsToInsert);
     return NextResponse.json({ deals, count: deals.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[campaigns/deals] Error:", message);
     return NextResponse.json({ error: `Failed to create deals: ${message}` }, { status: 500 });
   }
 }

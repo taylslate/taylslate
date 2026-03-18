@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { getAuthenticatedUser, getAllShows, createShow } from "@/lib/data/queries";
+import { getAuthenticatedUser, getAllShows, createCampaign } from "@/lib/data/queries";
 import type { Campaign, Show, ShowRecommendation, YouTubeRecommendation, ExpansionShow, Platform } from "@/lib/data/types";
 import {
   CAMPAIGN_PLANNING_SYSTEM_PROMPT,
@@ -77,10 +77,10 @@ export async function POST(request: NextRequest) {
     return true;
   });
 
-  // Cap at 50 total shows for token efficiency. Prioritize: DB shows first,
+  // Cap at 100 total shows for larger budgets. Prioritize: DB shows first,
   // then discovered shows sorted by audience size.
   const sortedDiscovered = uniqueDiscovered.sort((a, b) => b.audience_size - a.audience_size);
-  const maxDiscovered = Math.max(0, 50 - dbShows.length);
+  const maxDiscovered = Math.max(0, 100 - dbShows.length);
   const allShows = [...dbShows, ...sortedDiscovered.slice(0, maxDiscovered)];
 
   if (allShows.length === 0) {
@@ -224,6 +224,7 @@ export async function POST(request: NextRequest) {
           show_name: show.name,
           platform: show.platform,
           network: show.network,
+          image_url: show.image_url,
           categories: show.categories,
           current_sponsors: show.current_sponsors,
           audience_size: show.audience_size,
@@ -256,6 +257,7 @@ export async function POST(request: NextRequest) {
           show_name: show.name,
           platform: "youtube" as const,
           network: show.network,
+          image_url: show.image_url,
           categories: show.categories,
           current_sponsors: show.current_sponsors,
           audience_size: show.audience_size,
@@ -291,6 +293,7 @@ export async function POST(request: NextRequest) {
           show_name: show.name,
           platform: show.platform,
           network: show.network,
+          image_url: show.image_url,
           categories: show.categories,
           current_sponsors: show.current_sponsors,
           audience_size: show.audience_size,
@@ -302,34 +305,36 @@ export async function POST(request: NextRequest) {
         };
       });
 
-    // Auto-save recommended discovered shows to Supabase
-    // Only shows that Claude actually recommended get persisted — keeps DB clean.
-    const discoveredShowMap = new Map(uniqueDiscovered.map((s) => [s.id, s]));
-    const allRecs = [
-      ...recommendations,
-      ...youtubeRecommendations,
-      ...expansionOpportunities,
-    ];
+    // Discovered shows stay ephemeral — they live in the campaign JSONB only.
+    // Shows are only persisted to DB when a brand creates deals (handled in /api/campaigns/deals).
+    // Agent-rostered shows are already in DB and use real UUIDs.
 
-    for (const rec of allRecs) {
-      if (rec.show_id.startsWith("discovered-") && discoveredShowMap.has(rec.show_id)) {
-        const discoveredShow = discoveredShowMap.get(rec.show_id)!;
-        try {
-          // createShow expects Partial<Show> with nested contact
-          const { id: _id, ...showWithoutId } = discoveredShow;
-          const saved = await createShow(showWithoutId);
-          if (saved?.id) {
-            // Update the rec to use the real DB ID
-            rec.show_id = saved.id;
-          }
-        } catch (err) {
-          console.warn(`[campaign/generate] Failed to save discovered show "${discoveredShow.name}":`, err);
-          // Non-fatal — the recommendation still works with the temp ID
-        }
-      }
+    // Save campaign to Supabase
+    const savedCampaign = await createCampaign({
+      user_id: user.id,
+      name: body.name,
+      brief: brief as Record<string, unknown>,
+      budget_total: body.budget_total,
+      platforms: body.platforms,
+      status: "planned",
+      recommendations: recommendations as unknown[],
+      youtube_recommendations: youtubeRecommendations as unknown[],
+      expansion_opportunities: expansionOpportunities as unknown[],
+    });
+
+    if (savedCampaign) {
+      // Return saved campaign with real Supabase ID
+      return NextResponse.json({
+        campaign: {
+          ...savedCampaign,
+          recommendations,
+          youtube_recommendations: youtubeRecommendations.length > 0 ? youtubeRecommendations : undefined,
+          expansion_opportunities: expansionOpportunities.length > 0 ? expansionOpportunities : undefined,
+        },
+      });
     }
 
-    // Build complete Campaign object
+    // Fallback: return campaign without DB persistence
     const now = new Date().toISOString();
     const campaign: Campaign = {
       id: `campaign-gen-${Date.now()}`,

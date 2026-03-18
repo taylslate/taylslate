@@ -17,6 +17,8 @@ import type {
   InvoiceStatus,
   AgentDashboardStats,
   AgentShowRelationship,
+  Campaign,
+  CampaignStatus,
 } from "./types";
 
 // ---- Auth & Profiles ----
@@ -178,13 +180,16 @@ export async function updateDeal(id: string, updates: Partial<Deal>): Promise<De
   return data as Deal;
 }
 
-export async function addDeals(deals: Omit<Deal, "created_at" | "updated_at">[]): Promise<Deal[]> {
+export async function addDeals(deals: Record<string, unknown>[]): Promise<Deal[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("deals")
     .insert(deals)
     .select();
-  if (error || !data) return [];
+  if (error || !data) {
+    console.error("[addDeals] Error:", error?.message);
+    return [];
+  }
   return data as Deal[];
 }
 
@@ -1171,4 +1176,62 @@ export async function getShowsNeedingEnrichment(agentId: string): Promise<Show[]
 
   if (error || !data) return [];
   return data.map(transformShow);
+}
+
+// ---- Campaign Queries ----
+
+export async function createCampaign(campaign: {
+  user_id: string;
+  name: string;
+  brief: Record<string, unknown>;
+  budget_total: number;
+  platforms: string[];
+  status?: CampaignStatus;
+  recommendations: unknown[];
+  youtube_recommendations?: unknown[];
+  expansion_opportunities?: unknown[];
+}): Promise<Campaign | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("campaigns")
+    .insert({
+      user_id: campaign.user_id,
+      name: campaign.name,
+      brief: campaign.brief,
+      budget_total: campaign.budget_total,
+      platforms: campaign.platforms,
+      status: campaign.status ?? "planned",
+      recommendations: campaign.recommendations,
+      youtube_recommendations: campaign.youtube_recommendations ?? [],
+      expansion_opportunities: campaign.expansion_opportunities ?? [],
+    })
+    .select()
+    .single();
+  if (error || !data) {
+    console.error("[createCampaign] Error:", error?.message);
+    return null;
+  }
+  return data as Campaign;
+}
+
+export async function getCampaignsForUser(userId: string): Promise<Campaign[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error || !data) return [];
+  return data as Campaign[];
+}
+
+export async function getCampaignById(id: string): Promise<Campaign | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error || !data) return null;
+  return data as Campaign;
 }

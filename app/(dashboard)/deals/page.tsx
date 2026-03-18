@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getShowById, getIOByDeal, profiles } from "@/lib/data";
 import type { Deal, DealStatus } from "@/lib/data";
 
 // Kanban columns — approved/io_sent map into "signed"
@@ -22,22 +21,15 @@ const columnColors: Record<string, string> = {
   completed: "var(--brand-text-muted)",
 };
 
-function getBrandName(brandId: string): string {
-  return profiles.find((p) => p.id === brandId)?.company_name ?? "Unknown Brand";
-}
-
 function DealCard({
   deal,
   onDragStart,
 }: {
-  deal: Deal;
+  deal: Deal & { show_name?: string };
   onDragStart: (e: React.DragEvent, dealId: string) => void;
 }) {
-  const show = getShowById(deal.show_id);
-  const brandName = getBrandName(deal.brand_id);
-  const existingIO = getIOByDeal(deal.id);
   const showIOLink = ["approved", "io_sent", "signed", "live", "completed"].includes(deal.status);
-  const ioLabel = existingIO ? "View IO" : "Generate IO";
+  const ioLabel = "View IO";
   const flightStart = new Date(deal.flight_start).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const flightEnd = new Date(deal.flight_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
@@ -53,10 +45,9 @@ function DealCard({
           className="text-sm font-semibold text-[var(--brand-text)] truncate hover:text-[var(--brand-blue)] transition-colors"
           onClick={(e) => e.stopPropagation()}
         >
-          {show?.name ?? "Unknown Show"}
+          {deal.show_name ?? "Unknown Show"}
         </Link>
       </div>
-      <p className="text-xs text-[var(--brand-text-muted)] mb-2">{brandName}</p>
       <div className="flex items-center justify-between">
         <span className="text-xs text-[var(--brand-text-muted)]">
           {flightStart} – {flightEnd}
@@ -70,15 +61,6 @@ function DealCard({
           {deal.num_episodes} ep{deal.num_episodes !== 1 ? "s" : ""} · {deal.placement}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {["live", "completed"].includes(deal.status) && existingIO && existingIO.line_items.some((li) => li.actual_post_date || li.verified) && (
-            <Link
-              href="/invoices"
-              className="text-xs text-[var(--brand-teal)] hover:underline font-medium"
-              onClick={(e) => e.stopPropagation()}
-            >
-              Invoice
-            </Link>
-          )}
           {showIOLink && (
             <Link
               href={`/deals/${deal.id}/io`}
@@ -133,16 +115,43 @@ export default function DealsPage() {
     setDragOverColumn(null);
   }
 
-  function handleDrop(e: React.DragEvent, columnKey: string) {
+  async function handleDrop(e: React.DragEvent, columnKey: string) {
     e.preventDefault();
     const dealId = e.dataTransfer.getData("text/plain");
     const newStatus = columnDropStatus[columnKey];
+    const oldDeal = dealList.find((d) => d.id === dealId);
+    if (!oldDeal || oldDeal.status === newStatus) {
+      setDragOverColumn(null);
+      setDraggedDealId(null);
+      return;
+    }
 
+    // Optimistic update
     setDealList((prev) =>
       prev.map((d) => (d.id === dealId ? { ...d, status: newStatus } : d))
     );
     setDragOverColumn(null);
     setDraggedDealId(null);
+
+    // Persist to Supabase
+    try {
+      const res = await fetch(`/api/deals/${dealId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        // Rollback on failure
+        setDealList((prev) =>
+          prev.map((d) => (d.id === dealId ? { ...d, status: oldDeal.status } : d))
+        );
+      }
+    } catch {
+      // Rollback on network error
+      setDealList((prev) =>
+        prev.map((d) => (d.id === dealId ? { ...d, status: oldDeal.status } : d))
+      );
+    }
   }
 
   function handleDragEnd() {

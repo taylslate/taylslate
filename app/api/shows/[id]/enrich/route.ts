@@ -86,8 +86,9 @@ async function enrichPodcast(
     if (podcast) {
       const enrichmentData: Record<string, unknown> = {};
 
-      if (podcast.reach && podcast.reach > 0) {
-        enrichmentData.audience_size = podcast.reach;
+      const audienceSize = typeof podcast.reach === "object" ? podcast.reach?.audience_size : podcast.reach;
+      if (audienceSize && audienceSize > 0) {
+        enrichmentData.audience_size = audienceSize;
       }
       if (podcast.podcast_categories?.length) {
         enrichmentData.categories = podcast.podcast_categories;

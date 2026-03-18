@@ -69,7 +69,11 @@ export function podscanPodcastToShow(
     description: podcast.podcast_description ?? "",
     image_url: podcast.podcast_image_url ?? undefined,
 
-    categories: podcast.podcast_categories ?? [],
+    categories: (podcast.podcast_categories ?? []).map((c: unknown) =>
+      typeof c === "object" && c !== null && "category_name" in (c as Record<string, unknown>)
+        ? (c as { category_name: string }).category_name
+        : String(c)
+    ),
     tags: [],
 
     network: podcast.publisher_name ?? undefined,
@@ -82,7 +86,11 @@ export function podscanPodcastToShow(
 
     audience_size: audienceSize,
     demographics: {} as ShowDemographics,
-    audience_interests: podcast.podcast_categories ?? [],
+    audience_interests: (podcast.podcast_categories ?? []).map((c: unknown) =>
+      typeof c === "object" && c !== null && "category_name" in (c as Record<string, unknown>)
+        ? (c as { category_name: string }).category_name
+        : String(c)
+    ),
 
     rate_card: getDefaultPodcastRateCard(audienceSize),
     price_type: "cpm",
