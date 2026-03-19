@@ -78,13 +78,13 @@ async function seed() {
   await upsert("shows", showRows);
 
   // 3. Agent-Show Relationships
-  await upsert("agent_show_relationships", agentShowRelationships);
+  await upsert("agent_show_relationships", agentShowRelationships as unknown as Record<string, unknown>[]);
 
   // 4. Campaigns
-  await upsert("campaigns", campaigns);
+  await upsert("campaigns", campaigns as unknown as Record<string, unknown>[]);
 
   // 5. Deals
-  await upsert("deals", deals);
+  await upsert("deals", deals as unknown as Record<string, unknown>[]);
 
   // 6. Insertion Orders + Line Items
   for (const io of insertionOrders) {
