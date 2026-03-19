@@ -1,4 +1,4 @@
 export { discoverShows } from "./discover-shows";
 export type { DiscoveryBrief, DiscoveryResult } from "./discover-shows";
-export { buildYouTubeQuery, mapInterestsToPodscanCategoryIds } from "./category-mapping";
+export { buildYouTubeQuery, buildDiscoveryQueries, mapInterestsToPodscanCategoryIds, getAdjacentCategoryIds } from "./category-mapping";
 export { podscanPodcastToShow, youtubeChannelToShow } from "./format-discovered-show";

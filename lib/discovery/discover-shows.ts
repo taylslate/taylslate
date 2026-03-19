@@ -5,17 +5,17 @@
 // to database shows for seamless merging.
 //
 // STRATEGY:
-// 1. Search Podscan by CATEGORY + AUDIENCE SIZE (not keywords)
-//    → Returns shows whose audiences match the brand's target demo
+// 1. Search Podscan via /episodes/search with 5-6 diverse text queries,
+//    each filtered by category IDs. Extract unique podcasts from results.
 // 2. Search YouTube by interest terms (YouTube API needs keywords)
-// 3. Keywords from the brief are passed to Claude for scoring,
-//    NOT used as Podscan search terms
+// 3. Deduplicate across all queries by podcast_id
+// 4. Claude scores the final fit using brand context + keywords
 // ============================================================
 
 import type { Show } from "@/lib/data/types";
 import { getPodscanClientSafe, type PodscanPodcast } from "@/lib/enrichment/podscan";
 import { getYouTubeClientSafe } from "@/lib/enrichment/youtube";
-import { buildYouTubeQuery, mapInterestsToPodscanCategoryIds } from "./category-mapping";
+import { buildYouTubeQuery, buildDiscoveryQueries } from "./category-mapping";
 import { podscanPodcastToShow, youtubeChannelToShow } from "./format-discovered-show";
 
 export interface DiscoveryBrief {
@@ -34,18 +34,17 @@ export interface DiscoveryResult {
 }
 
 /** Minimum audience size for discovered shows */
-const MIN_PODCAST_AUDIENCE = 5000;
-const MIN_YOUTUBE_SUBSCRIBERS = 1000;
+const MIN_PODCAST_AUDIENCE = 1000;
+const MIN_YOUTUBE_AVG_VIEWS = 10000;
 
 /**
  * Discover shows from Podscan and YouTube APIs based on a campaign brief.
  *
- * Podscan: searched by CATEGORY + AUDIENCE SIZE, not by keywords.
+ * Podscan: 5-6 diverse queries via /episodes/search, extracting unique podcasts.
  * YouTube: searched by interest terms (YouTube API requires text queries).
- * Keywords from the brief go to Claude for fit scoring, not to API search.
  *
  * API budget per call:
- * - Podscan: 1-2 requests (category searches, well within 10/min limit)
+ * - Podscan: 5-6 requests (well within 10/min limit with staggering)
  * - YouTube: 1 search + 1 batch channel details + up to 3 video stats = ~5 requests
  */
 export async function discoverShows(brief: DiscoveryBrief): Promise<DiscoveryResult> {
@@ -55,20 +54,13 @@ export async function discoverShows(brief: DiscoveryBrief): Promise<DiscoveryRes
   const wantsPodcast = brief.platforms.includes("podcast");
   const wantsYoutube = brief.platforms.includes("youtube");
 
-  // Map interests → Podscan category IDs for podcast discovery
-  const categoryIds = mapInterestsToPodscanCategoryIds(brief.target_interests);
-
   // Build YouTube query from interests (YouTube API needs text, not category IDs)
   const youtubeQuery = buildYouTubeQuery(brief);
 
   // Run Podscan + YouTube discovery in parallel
   const [podcastShows, youtubeShows] = await Promise.all([
-    wantsPodcast || !wantsYoutube
-      ? discoverFromPodscan(categoryIds, brief, errors)
-      : Promise.resolve([]),
-    wantsYoutube || !wantsPodcast
-      ? discoverFromYoutube(youtubeQuery, errors)
-      : Promise.resolve([]),
+    wantsPodcast ? discoverFromPodscan(brief, errors) : Promise.resolve([]),
+    wantsYoutube ? discoverFromYoutube(youtubeQuery, errors) : Promise.resolve([]),
   ]);
 
   discovered.push(...podcastShows, ...youtubeShows);
@@ -81,18 +73,17 @@ export async function discoverShows(brief: DiscoveryBrief): Promise<DiscoveryRes
 }
 
 /**
- * Search Podscan for podcasts by CATEGORY and AUDIENCE SIZE.
+ * Search Podscan for podcasts using /episodes/search with diverse queries.
  *
- * This is the correct approach for campaign planning:
- * - A brand selling saunas needs health/fitness/wellness shows,
- *   not shows that once mentioned "sauna" in a transcript.
- * - Category + audience size finds the right AUDIENCES.
- * - Claude scores the actual fit using keywords + brand context.
+ * Why /episodes/search instead of /podcasts/search:
+ * - /podcasts/search is not available on all Podscan plans
+ * - /episodes/search with show_full_podcast=true returns full podcast data
+ * - Text queries find shows whose episodes discuss relevant topics
+ * - Category IDs filter to the right audience segments
  *
- * Makes 1-2 API calls depending on category breadth.
+ * Runs 5-6 queries in parallel, deduplicates by podcast_id.
  */
 async function discoverFromPodscan(
-  categoryIds: string[],
   brief: DiscoveryBrief,
   errors: string[]
 ): Promise<Show[]> {
@@ -102,64 +93,59 @@ async function discoverFromPodscan(
   const podcastMap = new Map<string, PodscanPodcast>();
 
   try {
-    if (categoryIds.length === 0 && brief.target_interests.length === 0) {
-      errors.push("No target interests selected for podcast discovery");
+    const queries = buildDiscoveryQueries(brief);
+
+    if (queries.length === 0) {
+      errors.push("No discovery queries generated — check interests and keywords");
       return [];
     }
 
-    const searchPromises: Promise<void>[] = [];
+    console.log(`[discovery] Running ${queries.length} Podscan queries...`);
 
-    // Search 1: Primary — shows in target categories that accept ads
-    if (categoryIds.length > 0) {
-      searchPromises.push(
-        client
-          .discoverPodcasts({
-            categoryIds: categoryIds.join(","),
-            minAudienceSize: MIN_PODCAST_AUDIENCE,
-            hasSponsors: true,
-            perPage: 25,
-            orderBy: "audience_size",
-          })
-          .then((result) => {
-            for (const podcast of result.data) {
-              if (!podcastMap.has(podcast.podcast_id)) {
-                podcastMap.set(podcast.podcast_id, podcast);
-              }
-            }
-          })
-          .catch((err) => {
-            errors.push(
-              `Podscan category search: ${err instanceof Error ? err.message : "unknown error"}`
-            );
-          })
-      );
-    }
+    // Run all queries in parallel
+    const searchPromises = queries.map((q, idx) =>
+      client
+        .searchEpisodes({
+          query: q.query,
+          categoryIds: q.categoryIds || undefined,
+          minAudienceSize: MIN_PODCAST_AUDIENCE,
+          hasSponsors: q.hasSponsors,
+          perPage: q.perPage,
+          orderBy: "best_match",
+        })
+        .then((result) => {
+          let added = 0;
+          for (const episode of result.data) {
+            // Extract podcast from episode — searchEpisodes with show_full_podcast=true
+            // nests the podcast object inside the episode
+            const podcast = episode.podcast;
+            const podcastId = podcast?.podcast_id ?? episode.podcast_id;
 
-    // Search 2: Broader — without has_sponsors filter
-    // Catches shows that are great fits but haven't had detected sponsors yet
-    if (categoryIds.length > 0) {
-      searchPromises.push(
-        client
-          .discoverPodcasts({
-            categoryIds: categoryIds.slice(0, 3).join(","),
-            minAudienceSize: MIN_PODCAST_AUDIENCE,
-            perPage: 15,
-            orderBy: "audience_size",
-          })
-          .then((result) => {
-            for (const podcast of result.data) {
-              if (!podcastMap.has(podcast.podcast_id)) {
-                podcastMap.set(podcast.podcast_id, podcast);
-              }
+            if (!podcastId || podcastMap.has(podcastId)) continue;
+
+            if (podcast) {
+              podcastMap.set(podcastId, podcast);
+              added++;
+            } else if (episode.podcast_name) {
+              // Fallback: build a minimal podcast record from episode fields
+              podcastMap.set(podcastId, {
+                podcast_id: podcastId,
+                podcast_name: episode.podcast_name,
+                podcast_url: episode.podcast_url,
+                podcast_description: episode.episode_description,
+                podcast_image_url: episode.episode_image_url,
+              });
+              added++;
             }
-          })
-          .catch((err) => {
-            errors.push(
-              `Podscan broad search: ${err instanceof Error ? err.message : "unknown error"}`
-            );
-          })
-      );
-    }
+          }
+          console.log(`[discovery] Query ${idx + 1} "${q.query.slice(0, 40)}..." → ${result.data.length} episodes, ${added} new podcasts`);
+        })
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : "unknown error";
+          console.warn(`[discovery] Query ${idx + 1} failed: ${msg}`);
+          errors.push(`Podscan query "${q.query.slice(0, 30)}": ${msg}`);
+        })
+    );
 
     await Promise.all(searchPromises);
   } catch (err) {
@@ -168,11 +154,17 @@ async function discoverFromPodscan(
     );
   }
 
+  console.log(`[discovery] Total unique podcasts found: ${podcastMap.size}`);
+
   // Filter: ensure minimum audience size
   const filtered = Array.from(podcastMap.values()).filter((p) => {
     const audienceSize = p.reach?.audience_size ?? 0;
-    return audienceSize >= MIN_PODCAST_AUDIENCE;
+    // For shows without audience data, still include them — Claude will filter by fit
+    // Only exclude shows we KNOW are too small
+    return audienceSize >= MIN_PODCAST_AUDIENCE || audienceSize === 0;
   });
+
+  console.log(`[discovery] After audience filter (>=${MIN_PODCAST_AUDIENCE}): ${filtered.length} podcasts`);
 
   return filtered.map((p) => podscanPodcastToShow(p));
 }
@@ -190,7 +182,7 @@ async function discoverFromYoutube(
   if (!client) return [];
 
   try {
-    const searchResults = await client.searchChannels(query, 10);
+    const searchResults = await client.searchChannels(query, 20);
     if (searchResults.length === 0) return [];
 
     const channelIds = searchResults.map((r) => r.channelId);
@@ -214,7 +206,13 @@ async function discoverFromYoutube(
     }
 
     return channelDetails
-      .filter((ch) => ch.subscriberCount >= MIN_YOUTUBE_SUBSCRIBERS)
+      .filter((ch) => {
+        // Use avg views if available, otherwise estimate from total views / video count
+        const stats = statsMap.get(ch.channelId);
+        const avgViews = stats?.averageViews ??
+          Math.round(ch.totalViewCount / Math.max(ch.videoCount, 1));
+        return avgViews >= MIN_YOUTUBE_AVG_VIEWS;
+      })
       .map((ch) => youtubeChannelToShow(ch, statsMap.get(ch.channelId) ?? undefined));
   } catch (err) {
     errors.push(`YouTube discovery failed: ${err instanceof Error ? err.message : "unknown error"}`);
