@@ -34,8 +34,16 @@ export interface DiscoveryResult {
 }
 
 /** Minimum audience size for discovered shows */
-const MIN_PODCAST_AUDIENCE = 1000;
+const MIN_PODCAST_AUDIENCE = 5000;
 const MIN_YOUTUBE_AVG_VIEWS = 10000;
+const MIN_YOUTUBE_VIDEO_COUNT = 20;
+
+/** Keywords that indicate a YouTube channel is a brand/company, not a creator */
+const BRAND_CHANNEL_KEYWORDS = [
+  "shop", "store", "buy now", "official website", "our products",
+  "order now", "free shipping", "discount code", "use code",
+  "shop now", "our company", "founded in", "we manufacture",
+];
 
 /**
  * Discover shows from Podscan and YouTube APIs based on a campaign brief.
@@ -207,6 +215,14 @@ async function discoverFromYoutube(
 
     return channelDetails
       .filter((ch) => {
+        // Filter out channels with too few videos — real creators have substantial libraries
+        if (ch.videoCount < MIN_YOUTUBE_VIDEO_COUNT) return false;
+
+        // Filter out brand/company channels by checking description for commercial keywords
+        const descLower = (ch.description ?? "").toLowerCase();
+        const isBrandChannel = BRAND_CHANNEL_KEYWORDS.some((kw) => descLower.includes(kw));
+        if (isBrandChannel) return false;
+
         // Use avg views if available, otherwise estimate from total views / video count
         const stats = statsMap.get(ch.channelId);
         const avgViews = stats?.averageViews ??

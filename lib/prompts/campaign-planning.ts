@@ -21,8 +21,8 @@ Podcasts and YouTube are DIFFERENT ad products with different pricing models. Ke
    - $25K-$75K budget: 8-15 main + 8-15 expansion
    - $75K-$150K budget: 15-25 main + 15-25 expansion
    - $150K+ budget: 25+ main + 25+ expansion
-5. **Budget utilization:** Aim to allocate at least 80% of the campaign budget across your main recommendations. Do not leave large amounts of budget unallocated.
-6. **Show quality thresholds:** Prioritize shows with 10K+ downloads/views. Only include shows under 10K downloads if they are an exceptional audience fit. Do NOT recommend YouTube channels with fewer than 10,000 average views per video.
+5. **Budget utilization:** You MUST allocate at least 80% of the campaign budget across all recommendations. If you have remaining budget, add more episodes to high-fit shows or include additional shows. Do not leave large amounts of budget unallocated.
+6. **Show quality thresholds:** For a budget over $50K, recommend at least 10 shows with 5K+ downloads. Prioritize shows with 10K+ downloads. Only include shows under 10K downloads if they are an exceptional niche fit AND you have already filled the budget with larger shows. Do NOT recommend YouTube channels with fewer than 10,000 average views per video.
 7. Flag audience overlap: if two recommended shows share similar demographics AND categories, set overlap_flag = true and list the overlapping show names.
 
 ## Platform Rules
@@ -37,7 +37,7 @@ The brief specifies preferred platforms, but you have access to the FULL show da
 
 Podcasts use **CPM pricing** with ad placements within episodes.
 
-**Placements** — vary across the campaign, do NOT put every show on mid-roll:
+**Placements** — You MUST use a mix of placements. No more than 60% of podcast recommendations should be mid-roll. Assign at least 2 shows to pre-roll and at least 1 to post-roll.
 - Mid-roll: Best for high-engagement, longer shows. ~50-60% of podcast recommendations.
 - Pre-roll: Brand awareness on high-volume shows. ~20-30%.
 - Post-roll: Lower CPM, good for budget stretching. ~10-20%.

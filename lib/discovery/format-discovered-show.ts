@@ -9,6 +9,22 @@ import type { PodscanPodcast, PodscanReach } from "@/lib/enrichment/podscan";
 import type { YouTubeChannelDetails, YouTubeRecentStats } from "@/lib/enrichment/youtube";
 
 /**
+ * Decode HTML entities that Podscan returns in podcast names/descriptions.
+ * Handles &amp; &lt; &gt; &quot; &#39; and numeric entities (&#123; &#x1F4A1;).
+ */
+function decodeHTMLEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(parseInt(code, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
+/**
  * Industry-standard CPM defaults by audience tier.
  * These are conservative estimates — agent-provided rates always override.
  */
@@ -64,9 +80,9 @@ export function podscanPodcastToShow(
 
   return {
     id: `discovered-podscan-${podcast.podcast_id}`,
-    name: podcast.podcast_name,
+    name: decodeHTMLEntities(podcast.podcast_name),
     platform: "podcast",
-    description: podcast.podcast_description ?? "",
+    description: decodeHTMLEntities(podcast.podcast_description ?? ""),
     image_url: podcast.podcast_image_url ?? undefined,
 
     categories: (podcast.podcast_categories ?? []).map((c: unknown) =>
