@@ -4,10 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 const interestOptions = [
-  "Fitness & Wellness", "Technology", "Business & Finance", "Entertainment",
-  "Sports", "Parenting & Family", "Food & Cooking", "Travel", "Education",
-  "Health & Medicine", "Gaming", "Fashion & Beauty", "Politics & News",
-  "Science", "True Crime", "Comedy", "Music", "Self-Improvement",
+  "Health & Wellness", "Business & Finance", "Technology", "Entertainment",
+  "Sports", "True Crime", "Comedy", "Education", "Parenting & Family",
+  "Self-Improvement",
 ];
 
 export default function NewCampaignPage() {

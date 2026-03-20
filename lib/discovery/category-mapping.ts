@@ -14,23 +14,15 @@ import type { DiscoveryBrief } from "./discover-shows";
  * category IDs. These are the actual ct_* IDs from Podscan's /categories endpoint.
  */
 const INTEREST_TO_PODSCAN: Record<string, string[]> = {
-  "Fitness & Wellness": ["ct_akrev35b2454ypql", "ct_ox4amd5dkpneyq2r", "ct_3krv4dnrkq579l6o"], // health, fitness, wellness
+  "Health & Wellness": ["ct_akrev35b2454ypql", "ct_ox4amd5dkpneyq2r", "ct_3krv4dnrkq579l6o", "ct_rmxeo6n6aowvqpzj", "ct_o9mjlawx3owkdy3r"], // health, fitness, wellness, medicine, mental
   "Technology": ["ct_3krv4dnrrqn79l6o"], // technology
   "Business & Finance": ["ct_o9mjlawx3owkdy3r", "ct_7v9m4lnk9wx6jkap", "ct_m68b3l5qo8nx7k4r"], // business, investing, entrepreneurship
   "Entertainment": ["ct_rzemq35l4jn9x27d", "ct_6zvjgq5arjw8drle", "ct_akrev35bv9w4ypql"], // tv, leisure, film
   "Sports": ["ct_6vqzjd529vn8xlep"], // sports
   "Parenting & Family": ["ct_7v9m4lnkd95x6jka", "ct_pr6a94ngra5ez2dk", "ct_6vqzjd52avw8xlep"], // kids, family, parenting
-  "Food & Cooking": ["ct_ox4amd5dp5eyq2rl", "ct_lxbp9dwoxkwaeom7"], // food, cooking
-  "Travel": ["ct_7v9m4lnkr9wx6jka", "ct_m68b3l5q285x7k4r"], // travel, places
   "Education": ["ct_6olr4e5edkwb7yj2", "ct_adpvjb57v657k6qe"], // education, learning
-  "Health & Medicine": ["ct_akrev35b2454ypql", "ct_rmxeo6n6aowvqpzj", "ct_o9mjlawx3owkdy3r"], // health, medicine, mental
-  "Gaming": ["ct_adpvjb57e6n7k6qe", "ct_rzemq35l6459x27d"], // games, video-games
-  "Fashion & Beauty": ["ct_rzemq35lo459x27d", "ct_akrev35b4w4ypql9"], // fashion, beauty (from arts subcats)
-  "Politics & News": ["ct_2v89gony7jnrqj3d", "ct_m68b3l5q68nx7k4r", "ct_8kgrblw8aoneo36z"], // news, politics, government
-  "Science": ["ct_3pk7q259ebwvr4bx", "ct_zqbe76njjpnyjx43"], // science, natural
   "True Crime": ["ct_lxbp9dwoak5aeom7"], // true crime
   "Comedy": ["ct_z9majpn4brwo73bx"], // comedy
-  "Music": ["ct_akrev35bm4w4ypql"], // music (from leisure)
   "Self-Improvement": ["ct_zqbe76njppnyjx43", "ct_rzemq35ldjn9x27d"], // self-improvement, personal-development
 };
 
@@ -40,25 +32,31 @@ const INTEREST_TO_PODSCAN: Record<string, string[]> = {
  * This ensures a $120K sauna brand gets health, wellness, biohacking,
  * recovery, fitness shows — not just literal sauna podcasts.
  */
+/**
+ * Podscan category IDs for removed interests — still accessible via adjacent search.
+ * These aren't selectable in the UI but their IDs enrich discovery for related interests.
+ */
+const REMOVED_CATEGORY_IDS: Record<string, string[]> = {
+  "Food & Cooking": ["ct_ox4amd5dp5eyq2rl", "ct_lxbp9dwoxkwaeom7"],
+  "Travel": ["ct_7v9m4lnkr9wx6jka", "ct_m68b3l5q285x7k4r"],
+  "Gaming": ["ct_adpvjb57e6n7k6qe", "ct_rzemq35l6459x27d"],
+  "Fashion & Beauty": ["ct_rzemq35lo459x27d", "ct_akrev35b4w4ypql9"],
+  "Politics & News": ["ct_2v89gony7jnrqj3d", "ct_m68b3l5q68nx7k4r", "ct_8kgrblw8aoneo36z"],
+  "Science": ["ct_3pk7q259ebwvr4bx", "ct_zqbe76njjpnyjx43"],
+  "Music": ["ct_akrev35bm4w4ypql"],
+};
+
 const ADJACENT_INTERESTS: Record<string, string[]> = {
-  "Fitness & Wellness": ["Self-Improvement", "Science", "Health & Medicine"],
+  "Health & Wellness": ["Self-Improvement", "Science", "Food & Cooking"],
   "Technology": ["Business & Finance", "Science", "Education"],
   "Business & Finance": ["Technology", "Self-Improvement", "Education"],
   "Entertainment": ["Comedy", "Music", "True Crime"],
-  "Sports": ["Fitness & Wellness", "Health & Medicine"],
-  "Parenting & Family": ["Health & Medicine", "Education", "Self-Improvement"],
-  "Food & Cooking": ["Health & Medicine", "Travel", "Science"],
-  "Travel": ["Entertainment", "Food & Cooking", "Self-Improvement"],
+  "Sports": ["Health & Wellness", "Self-Improvement"],
+  "Parenting & Family": ["Health & Wellness", "Education", "Self-Improvement"],
   "Education": ["Science", "Technology", "Self-Improvement"],
-  "Health & Medicine": ["Fitness & Wellness", "Science", "Self-Improvement"],
-  "Gaming": ["Technology", "Entertainment"],
-  "Fashion & Beauty": ["Entertainment", "Self-Improvement"],
-  "Politics & News": ["Business & Finance", "Education"],
-  "Science": ["Technology", "Health & Medicine", "Education"],
   "True Crime": ["Entertainment", "Politics & News"],
   "Comedy": ["Entertainment"],
-  "Music": ["Entertainment", "Comedy"],
-  "Self-Improvement": ["Fitness & Wellness", "Business & Finance", "Health & Medicine"],
+  "Self-Improvement": ["Health & Wellness", "Business & Finance", "Education"],
 };
 
 /**
@@ -66,24 +64,24 @@ const ADJACENT_INTERESTS: Record<string, string[]> = {
  * for Podscan's /episodes/search endpoint.
  */
 const INTEREST_SEARCH_TERMS: Record<string, string[]> = {
-  "Fitness & Wellness": ["fitness", "workout", "wellness", "health", "recovery", "biohacking"],
+  "Health & Wellness": ["fitness", "workout", "wellness", "health", "recovery", "biohacking", "nutrition", "mental health", "longevity", "supplements"],
   "Technology": ["tech", "software", "AI", "gadgets", "startups"],
   "Business & Finance": ["business", "finance", "investing", "entrepreneurship", "marketing"],
   "Entertainment": ["entertainment", "pop culture", "movies", "tv shows", "celebrity"],
   "Sports": ["sports", "athletics", "training", "coaching"],
   "Parenting & Family": ["parenting", "family", "kids", "motherhood", "fatherhood"],
+  "Education": ["education", "learning", "teaching", "knowledge"],
+  "True Crime": ["true crime", "crime", "mystery", "investigation", "forensics"],
+  "Comedy": ["comedy", "humor", "stand up", "funny"],
+  "Self-Improvement": ["self improvement", "motivation", "productivity", "mindset", "habits"],
+  // Removed interests — still used for adjacent term lookups
   "Food & Cooking": ["cooking", "food", "recipes", "nutrition", "chef"],
   "Travel": ["travel", "adventure", "explore", "destinations"],
-  "Education": ["education", "learning", "teaching", "knowledge"],
-  "Health & Medicine": ["health", "medical", "nutrition", "mental health", "longevity", "supplements"],
   "Gaming": ["gaming", "video games", "esports", "streaming"],
   "Fashion & Beauty": ["fashion", "beauty", "style", "skincare", "makeup"],
   "Politics & News": ["news", "politics", "current events", "policy"],
   "Science": ["science", "research", "neuroscience", "biology", "physics"],
-  "True Crime": ["true crime", "crime", "mystery", "investigation", "forensics"],
-  "Comedy": ["comedy", "humor", "stand up", "funny"],
   "Music": ["music", "musician", "songs", "artist", "producer"],
-  "Self-Improvement": ["self improvement", "motivation", "productivity", "mindset", "habits"],
 };
 
 /**
@@ -91,23 +89,15 @@ const INTEREST_SEARCH_TERMS: Record<string, string[]> = {
  * YouTube API requires text-based queries (no category ID system like Podscan).
  */
 const INTEREST_TO_YOUTUBE_TERMS: Record<string, string[]> = {
-  "Fitness & Wellness": ["fitness", "workout", "wellness", "health"],
+  "Health & Wellness": ["fitness", "workout", "wellness", "health", "nutrition"],
   "Technology": ["tech", "technology", "gadgets", "software"],
   "Business & Finance": ["business", "finance", "investing", "entrepreneurship"],
   "Entertainment": ["entertainment", "pop culture", "movies", "tv"],
   "Sports": ["sports", "athletics", "training"],
   "Parenting & Family": ["parenting", "family", "kids", "mom", "dad"],
-  "Food & Cooking": ["cooking", "food", "recipes", "chef"],
-  "Travel": ["travel", "adventure", "explore"],
   "Education": ["education", "learning", "tutorial", "how to"],
-  "Health & Medicine": ["health", "medical", "nutrition", "mental health"],
-  "Gaming": ["gaming", "video games", "esports"],
-  "Fashion & Beauty": ["fashion", "beauty", "style", "makeup"],
-  "Politics & News": ["news", "politics", "current events"],
-  "Science": ["science", "research", "space", "physics"],
   "True Crime": ["true crime", "crime", "mystery", "investigation"],
   "Comedy": ["comedy", "funny", "humor", "stand up"],
-  "Music": ["music", "musician", "songs", "artist"],
   "Self-Improvement": ["self improvement", "motivation", "productivity", "mindset"],
 };
 
@@ -138,7 +128,8 @@ export function getAdjacentCategoryIds(interests: string[]): string[] {
     for (const adj of adjacent) {
       // Only include adjacent categories not already in the user's selection
       if (!selectedSet.has(adj)) {
-        const mapped = INTEREST_TO_PODSCAN[adj];
+        // Check primary map first, then removed categories
+        const mapped = INTEREST_TO_PODSCAN[adj] ?? REMOVED_CATEGORY_IDS[adj];
         if (mapped) {
           for (const id of mapped) ids.add(id);
         }
