@@ -48,6 +48,32 @@ export async function getProfileById(id: string): Promise<Profile | null> {
   return getUserProfile(id);
 }
 
+/**
+ * Ensure a profile row exists for the authenticated user.
+ * Creates a minimal brand profile if one doesn't exist (handles FK constraints).
+ */
+export async function ensureProfile(user: { id: string; email?: string }): Promise<Profile> {
+  const existing = await getUserProfile(user.id);
+  if (existing) return existing;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .insert({
+      id: user.id,
+      email: user.email ?? "",
+      full_name: "",
+      role: "brand",
+      tier: "free",
+    })
+    .select()
+    .single();
+  if (error || !data) {
+    throw new Error(`Failed to create profile: ${error?.message ?? "unknown"}`);
+  }
+  return data as Profile;
+}
+
 // ---- Shows ----
 
 /** Transform flat DB row into Show with nested contact object */

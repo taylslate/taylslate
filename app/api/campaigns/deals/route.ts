@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { ShowRecommendation, YouTubeRecommendation } from "@/lib/data/types";
-import { getAuthenticatedUser, addDeals, createShow } from "@/lib/data/queries";
+import { getAuthenticatedUser, ensureProfile, addDeals, createShow, createCampaign } from "@/lib/data/queries";
 
 export async function POST(request: NextRequest) {
   let body: {
     campaign_id: string;
     campaign_name: string;
     brand_id: string;
+    budget_total?: number;
+    brief?: Record<string, unknown>;
+    platforms?: string[];
     recommendations: ShowRecommendation[];
     youtube_recommendations: YouTubeRecommendation[];
+    expansion_opportunities?: unknown[];
   };
 
   try {
@@ -22,11 +26,48 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { campaign_id, recommendations, youtube_recommendations } = body;
-  const brand_id = user.id;
+  // Ensure a profile exists for the authenticated user (FK constraint)
+  let profile;
+  try {
+    profile = await ensureProfile({ id: user.id, email: user.email ?? undefined });
+  } catch (err) {
+    console.error("[campaigns/deals] Failed to ensure profile:", err);
+    return NextResponse.json({ error: "Failed to create user profile" }, { status: 500 });
+  }
+  const brand_id = profile.id;
 
-  if (!campaign_id) {
-    return NextResponse.json({ error: "campaign_id is required" }, { status: 400 });
+  const { recommendations, youtube_recommendations } = body;
+
+  // Step 1: Save the campaign to Supabase to get a real UUID
+  // The frontend passes a temporary ID like "campaign-gen-1774296580930"
+  let realCampaignId: string | null = null;
+  try {
+    const allRecs = recommendations ?? [];
+    const ytRecs = youtube_recommendations ?? [];
+    const totalBudget = body.budget_total ??
+      allRecs.reduce((sum, r) => sum + (r.audience_size / 1000) * r.estimated_cpm * r.num_episodes, 0) +
+      ytRecs.reduce((sum, r) => sum + r.flat_fee_per_video * r.num_videos, 0);
+
+    const saved = await createCampaign({
+      user_id: brand_id,
+      name: body.campaign_name || "Campaign",
+      brief: body.brief ?? {},
+      budget_total: totalBudget,
+      platforms: body.platforms ?? ["podcast"],
+      status: "planned",
+      recommendations: allRecs,
+      youtube_recommendations: ytRecs,
+      expansion_opportunities: body.expansion_opportunities ?? [],
+    });
+
+    if (saved?.id) {
+      realCampaignId = saved.id;
+    } else {
+      console.warn("[campaigns/deals] Failed to save campaign to Supabase — proceeding without campaign_id");
+    }
+  } catch (err) {
+    console.warn("[campaigns/deals] Campaign save error:", err);
+    // Don't block deal creation — campaign_id is nullable on the deals table
   }
 
   const dealsToInsert: Record<string, unknown>[] = [];
@@ -72,7 +113,7 @@ export async function POST(request: NextRequest) {
     const totalNet = netPerEpisode * rec.num_episodes;
 
     dealsToInsert.push({
-      campaign_id,
+      campaign_id: realCampaignId,
       show_id: showId,
       brand_id,
       status: "planning",
@@ -134,7 +175,7 @@ export async function POST(request: NextRequest) {
     }
 
     dealsToInsert.push({
-      campaign_id,
+      campaign_id: realCampaignId,
       show_id: showId,
       brand_id,
       status: "planning",
@@ -172,10 +213,6 @@ export async function POST(request: NextRequest) {
       const result = await addDeals([dealData]);
       if (result.length > 0) {
         created++;
-      } else {
-        failed++;
-        errors.push(`Failed to insert deal for show ${dealData.show_id}`);
-        console.error(`[campaigns/deals] Insert returned empty for show ${dealData.show_id}`);
       }
     } catch (err) {
       failed++;
@@ -185,5 +222,10 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ created, failed, errors });
+  return NextResponse.json({
+    created,
+    failed,
+    errors,
+    campaign_id: realCampaignId,
+  });
 }

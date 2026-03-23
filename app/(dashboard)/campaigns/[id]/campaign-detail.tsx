@@ -104,8 +104,12 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
           campaign_id: campaign.id,
           campaign_name: campaign.name,
           brand_id: campaign.user_id,
+          budget_total: campaign.budget_total,
+          brief: campaign.brief,
+          platforms: campaign.platforms,
           recommendations: selectedPodcastRecs,
           youtube_recommendations: selectedYouTubeRecs,
+          expansion_opportunities: campaign.expansion_opportunities ?? [],
         }),
       });
       const data = await res.json();
