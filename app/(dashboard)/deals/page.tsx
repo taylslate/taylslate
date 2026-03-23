@@ -4,34 +4,37 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { Deal, DealStatus } from "@/lib/data";
 
-// Kanban columns — approved/io_sent map into "signed"
-const pipelineColumns: { key: string; label: string; statuses: DealStatus[] }[] = [
-  { key: "proposed", label: "Proposed", statuses: ["proposed"] },
-  { key: "negotiating", label: "Negotiating", statuses: ["negotiating"] },
-  { key: "signed", label: "Signed", statuses: ["approved", "io_sent", "signed"] },
-  { key: "live", label: "Live", statuses: ["live"] },
-  { key: "completed", label: "Completed", statuses: ["completed"] },
+const pipelineColumns: { key: DealStatus; label: string; color: string }[] = [
+  { key: "planning", label: "Planning", color: "var(--brand-blue)" },
+  { key: "io_sent", label: "IO Sent", color: "var(--brand-warning)" },
+  { key: "live", label: "Live", color: "var(--brand-success)" },
+  { key: "completed", label: "Completed", color: "var(--brand-text-muted)" },
 ];
 
-const columnColors: Record<string, string> = {
-  proposed: "var(--brand-blue)",
-  negotiating: "var(--brand-warning)",
-  signed: "var(--brand-success)",
-  live: "var(--brand-success)",
-  completed: "var(--brand-text-muted)",
+const statusBadgeStyles: Record<DealStatus, { bg: string; text: string }> = {
+  planning: { bg: "rgba(59,130,246,0.1)", text: "var(--brand-blue)" },
+  io_sent: { bg: "rgba(245,158,11,0.1)", text: "var(--brand-warning)" },
+  live: { bg: "rgba(34,197,94,0.1)", text: "var(--brand-success)" },
+  completed: { bg: "rgba(107,114,128,0.1)", text: "var(--brand-text-muted)" },
+};
+
+const statusLabels: Record<DealStatus, string> = {
+  planning: "Planning",
+  io_sent: "IO Sent",
+  live: "Live",
+  completed: "Completed",
 };
 
 function DealCard({
   deal,
   onDragStart,
 }: {
-  deal: Deal & { show_name?: string };
+  deal: Deal & { show_name?: string; image_url?: string };
   onDragStart: (e: React.DragEvent, dealId: string) => void;
 }) {
-  const showIOLink = ["approved", "io_sent", "signed", "live", "completed"].includes(deal.status);
-  const ioLabel = "View IO";
-  const flightStart = new Date(deal.flight_start).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const flightEnd = new Date(deal.flight_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const showName = deal.show_name ?? "Unknown Show";
+  const initial = showName.charAt(0).toUpperCase();
+  const badge = statusBadgeStyles[deal.status];
 
   return (
     <div
@@ -39,38 +42,72 @@ function DealCard({
       onDragStart={(e) => onDragStart(e, deal.id)}
       className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] hover:border-[var(--brand-blue)]/30 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing"
     >
-      <div className="flex items-center justify-between mb-2">
-        <Link
-          href={`/deals/${deal.id}`}
-          className="text-sm font-semibold text-[var(--brand-text)] truncate hover:text-[var(--brand-blue)] transition-colors"
-          onClick={(e) => e.stopPropagation()}
+      {/* Show name + image */}
+      <div className="flex items-center gap-3 mb-3">
+        {deal.image_url ? (
+          <img
+            src={deal.image_url}
+            alt={showName}
+            className="w-9 h-9 rounded-lg object-cover flex-shrink-0"
+          />
+        ) : (
+          <div
+            className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 text-white text-sm font-bold"
+            style={{
+              background: "linear-gradient(135deg, var(--brand-blue), var(--brand-teal))",
+            }}
+          >
+            {initial}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/deals/${deal.id}`}
+            className="text-sm font-semibold text-[var(--brand-text)] truncate block hover:text-[var(--brand-blue)] transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {showName}
+          </Link>
+          {((deal as unknown as Record<string, unknown>).brand_name as string) ? (
+            <span className="text-xs text-[var(--brand-text-muted)] truncate block">
+              {(deal as unknown as Record<string, unknown>).brand_name as string}
+            </span>
+          ) : null}
+        </div>
+        <span
+          className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
+          style={{ backgroundColor: badge.bg, color: badge.text }}
         >
-          {deal.show_name ?? "Unknown Show"}
-        </Link>
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-[var(--brand-text-muted)]">
-          {flightStart} – {flightEnd}
+          {statusLabels[deal.status]}
         </span>
+      </div>
+
+      {/* Budget + CPM */}
+      <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-semibold text-[var(--brand-text)]">
           ${deal.total_net.toLocaleString()}
         </span>
+        <span className="text-xs text-[var(--brand-text-muted)]">
+          {deal.price_type === "flat_rate"
+            ? "Flat fee"
+            : `$${deal.cpm_rate} CPM`}
+        </span>
       </div>
-      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-[var(--brand-border)]">
+
+      {/* Episodes + Placement */}
+      <div className="flex items-center gap-2 pt-2 border-t border-[var(--brand-border)]">
         <span className="text-xs text-[var(--brand-text-muted)]">
           {deal.num_episodes} ep{deal.num_episodes !== 1 ? "s" : ""} · {deal.placement}
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          {showIOLink && (
-            <Link
-              href={`/deals/${deal.id}/io`}
-              className="text-xs text-[var(--brand-blue)] hover:underline font-medium"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {ioLabel}
-            </Link>
-          )}
-        </div>
+        {["io_sent", "live", "completed"].includes(deal.status) && (
+          <Link
+            href={`/deals/${deal.id}/io`}
+            className="ml-auto text-xs text-[var(--brand-blue)] hover:underline font-medium"
+            onClick={(e) => e.stopPropagation()}
+          >
+            View IO
+          </Link>
+        )}
       </div>
     </div>
   );
@@ -89,15 +126,6 @@ export default function DealsPage() {
       .catch(() => {})
       .finally(() => setIsLoading(false));
   }, []);
-
-  // Map column key to the primary status to set when dropping
-  const columnDropStatus: Record<string, DealStatus> = {
-    proposed: "proposed",
-    negotiating: "negotiating",
-    signed: "signed",
-    live: "live",
-    completed: "completed",
-  };
 
   function handleDragStart(e: React.DragEvent, dealId: string) {
     e.dataTransfer.setData("text/plain", dealId);
@@ -118,7 +146,7 @@ export default function DealsPage() {
   async function handleDrop(e: React.DragEvent, columnKey: string) {
     e.preventDefault();
     const dealId = e.dataTransfer.getData("text/plain");
-    const newStatus = columnDropStatus[columnKey];
+    const newStatus = columnKey as DealStatus;
     const oldDeal = dealList.find((d) => d.id === dealId);
     if (!oldDeal || oldDeal.status === newStatus) {
       setDragOverColumn(null);
@@ -133,7 +161,6 @@ export default function DealsPage() {
     setDragOverColumn(null);
     setDraggedDealId(null);
 
-    // Persist to Supabase
     try {
       const res = await fetch(`/api/deals/${dealId}`, {
         method: "PATCH",
@@ -141,13 +168,11 @@ export default function DealsPage() {
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) {
-        // Rollback on failure
         setDealList((prev) =>
           prev.map((d) => (d.id === dealId ? { ...d, status: oldDeal.status } : d))
         );
       }
     } catch {
-      // Rollback on network error
       setDealList((prev) =>
         prev.map((d) => (d.id === dealId ? { ...d, status: oldDeal.status } : d))
       );
@@ -159,9 +184,7 @@ export default function DealsPage() {
     setDraggedDealId(null);
   }
 
-  // Exclude cancelled from kanban
-  const visibleDeals = dealList.filter((d) => d.status !== "cancelled");
-  const totalValue = visibleDeals.reduce((s, d) => s + d.total_net, 0);
+  const totalValue = dealList.reduce((s, d) => s + d.total_net, 0);
 
   if (isLoading) {
     return (
@@ -211,7 +234,7 @@ export default function DealsPage() {
       {/* Summary Bar */}
       <div className="flex items-center gap-6 mb-6 p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
         <div>
-          <div className="text-lg font-bold text-[var(--brand-text)]">{visibleDeals.length}</div>
+          <div className="text-lg font-bold text-[var(--brand-text)]">{dealList.length}</div>
           <div className="text-xs text-[var(--brand-text-muted)]">Total Deals</div>
         </div>
         <div className="w-px h-8 bg-[var(--brand-border)]" />
@@ -221,12 +244,12 @@ export default function DealsPage() {
         </div>
         <div className="w-px h-8 bg-[var(--brand-border)]" />
         {pipelineColumns.map((col) => {
-          const count = visibleDeals.filter((d) => col.statuses.includes(d.status)).length;
+          const count = dealList.filter((d) => d.status === col.key).length;
           return (
             <div key={col.key} className="flex items-center gap-2">
               <div
                 className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: columnColors[col.key] }}
+                style={{ backgroundColor: col.color }}
               />
               <span className="text-xs text-[var(--brand-text-muted)]">
                 {col.label}: <span className="font-semibold text-[var(--brand-text)]">{count}</span>
@@ -237,10 +260,10 @@ export default function DealsPage() {
       </div>
 
       {/* Kanban Board */}
-      {visibleDeals.length > 0 ? (
-        <div className="grid grid-cols-5 gap-4">
+      {dealList.length > 0 ? (
+        <div className="grid grid-cols-4 gap-4">
           {pipelineColumns.map((col) => {
-            const columnDeals = visibleDeals.filter((d) => col.statuses.includes(d.status));
+            const columnDeals = dealList.filter((d) => d.status === col.key);
             const columnValue = columnDeals.reduce((s, d) => s + d.total_net, 0);
             const isOver = dragOverColumn === col.key;
 
@@ -250,6 +273,7 @@ export default function DealsPage() {
                 onDragOver={(e) => handleDragOver(e, col.key)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, col.key)}
+                onDragEnd={handleDragEnd}
                 className={`flex flex-col rounded-xl border transition-colors min-h-[400px] ${
                   isOver
                     ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.03]"
@@ -262,7 +286,7 @@ export default function DealsPage() {
                     <div className="flex items-center gap-2">
                       <div
                         className="w-2.5 h-2.5 rounded-full"
-                        style={{ backgroundColor: columnColors[col.key] }}
+                        style={{ backgroundColor: col.color }}
                       />
                       <span className="text-sm font-semibold text-[var(--brand-text)]">
                         {col.label}

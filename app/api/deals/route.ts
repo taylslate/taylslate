@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
       campaign_id: body.campaign_id as string | undefined,
       agent_id: body.agent_id as string | undefined,
       agency_id: body.agency_id as string | undefined,
-      status: "proposed" as DealStatus,
+      status: "planning" as DealStatus,
       num_episodes,
       placement: body.placement as Placement,
       ad_format: body.ad_format as AdFormat,

@@ -113,8 +113,16 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
         setDealsError(data.error || "Failed to create deals");
         return;
       }
-      setDealsCreated(true);
-      setDealsCount(data.count);
+      if (data.created > 0) {
+        setDealsCreated(true);
+        setDealsCount(data.created);
+        if (data.failed > 0) {
+          setDealsError(`${data.failed} show(s) failed to create deals. ${data.errors?.join(', ') || ''}`);
+        }
+        setTimeout(() => router.push("/deals"), 1500);
+      } else {
+        setDealsError("No deals were created");
+      }
     } catch {
       setDealsError("Network error. Please try again.");
     } finally {

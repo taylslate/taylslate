@@ -226,15 +226,7 @@ export interface OutreachDraft {
 // A deal is the relationship between a brand/agency and a show for a campaign.
 // When approved, it generates an IO.
 
-export type DealStatus =
-  | "proposed" // brand/agent created the deal
-  | "negotiating" // terms being discussed
-  | "approved" // both sides agreed, IO ready to generate
-  | "io_sent" // IO generated and sent for signature
-  | "signed" // IO signed by both parties
-  | "live" // campaign is running
-  | "completed" // all episodes delivered
-  | "cancelled";
+export type DealStatus = "planning" | "io_sent" | "live" | "completed";
 
 export interface Deal {
   id: string;

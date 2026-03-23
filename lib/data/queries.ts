@@ -410,8 +410,10 @@ export async function getDealWithRelations(
   return result;
 }
 
-export async function softDeleteDeal(id: string): Promise<Deal | null> {
-  return updateDeal(id, { status: "cancelled" } as Partial<Deal>);
+export async function deleteDeal(id: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("deals").delete().eq("id", id);
+  return !error;
 }
 
 // ---- Agent Stats ----
@@ -430,7 +432,7 @@ export async function getAgentStats(agentId: string): Promise<AgentDashboardStat
     .from("deals")
     .select("*", { count: "exact", head: true })
     .eq("agent_id", agentId)
-    .in("status", ["proposed", "negotiating", "approved", "io_sent", "signed", "live"]);
+    .in("status", ["planning", "io_sent", "live"]);
 
   // Pending invoices (via IO -> deal)
   const { data: agentDeals } = await supabase

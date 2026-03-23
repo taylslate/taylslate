@@ -51,10 +51,10 @@ export async function POST(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Deal must be in approved status (or negotiating for flexibility)
-    if (!["approved", "negotiating"].includes(deal.status)) {
+    // Deal must be in planning status to generate an IO
+    if (deal.status !== "planning") {
       return NextResponse.json(
-        { error: `Cannot generate IO for deal in "${deal.status}" status. Must be "approved" or "negotiating".` },
+        { error: `Cannot generate IO for deal in "${deal.status}" status. Must be "planning".` },
         { status: 400 }
       );
     }

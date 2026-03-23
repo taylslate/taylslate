@@ -622,7 +622,7 @@ export const deals: Deal[] = [
     brand_id: "user-brand-001",
     agent_id: "user-agent-001",
     agency_id: "user-agency-001",
-    status: "signed",
+    status: "io_sent",
     num_episodes: 3,
     placement: "mid-roll",
     ad_format: "personal_experience",
@@ -652,7 +652,7 @@ export const deals: Deal[] = [
     show_id: "show-008",
     brand_id: "user-brand-002",
     agent_id: "user-agent-001",
-    status: "negotiating",
+    status: "planning",
     num_episodes: 4,
     placement: "mid-roll",
     ad_format: "personal_experience",
@@ -679,7 +679,7 @@ export const deals: Deal[] = [
     show_id: "show-011",
     brand_id: "user-brand-001",
     agent_id: "user-agent-001",
-    status: "proposed",
+    status: "planning",
     num_episodes: 2,
     placement: "mid-roll",
     ad_format: "personal_experience",
@@ -1124,7 +1124,7 @@ export function getAgentStats(agentId: string) {
   const agentShows = getShowsByAgent(agentId);
   const agentDeals = getDealsByAgent(agentId);
   const activeDeals = agentDeals.filter((d) =>
-    ["proposed", "negotiating", "approved", "io_sent", "signed", "live"].includes(d.status)
+    ["planning", "io_sent", "live"].includes(d.status)
   );
   const agentInvoices = invoices.filter((inv) => {
     const io = insertionOrders.find((io) => io.id === inv.io_id);

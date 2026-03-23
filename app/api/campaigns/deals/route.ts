@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       campaign_id,
       show_id: showId,
       brand_id,
-      status: "proposed",
+      status: "planning",
       num_episodes: rec.num_episodes,
       placement: rec.placement,
       ad_format: "host_read",
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
       campaign_id,
       show_id: showId,
       brand_id,
-      status: "proposed",
+      status: "planning",
       num_episodes: rec.num_videos,
       placement: "mid-roll",
       ad_format: "integration",
@@ -163,12 +163,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No valid shows to create deals for." }, { status: 400 });
   }
 
-  try {
-    const deals = await addDeals(dealsToInsert);
-    return NextResponse.json({ deals, count: deals.length });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("[campaigns/deals] Error:", message);
-    return NextResponse.json({ error: `Failed to create deals: ${message}` }, { status: 500 });
+  let created = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  for (const dealData of dealsToInsert) {
+    try {
+      const result = await addDeals([dealData]);
+      if (result.length > 0) {
+        created++;
+      } else {
+        failed++;
+        errors.push(`Failed to insert deal for show ${dealData.show_id}`);
+        console.error(`[campaigns/deals] Insert returned empty for show ${dealData.show_id}`);
+      }
+    } catch (err) {
+      failed++;
+      const message = err instanceof Error ? err.message : "Unknown error";
+      errors.push(`Show ${dealData.show_id}: ${message}`);
+      console.error(`[campaigns/deals] Error for show ${dealData.show_id}:`, message);
+    }
   }
+
+  return NextResponse.json({ created, failed, errors });
 }

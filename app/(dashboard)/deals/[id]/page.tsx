@@ -16,25 +16,17 @@ const seedDeals = getDealsByAgent(agentId);
 const agentShows = getShowsByAgent(agentId);
 
 const statusOptions: { value: DealStatus; label: string }[] = [
-  { value: "proposed", label: "Proposed" },
-  { value: "negotiating", label: "Negotiating" },
-  { value: "approved", label: "Approved" },
+  { value: "planning", label: "Planning" },
   { value: "io_sent", label: "IO Sent" },
-  { value: "signed", label: "Signed" },
   { value: "live", label: "Live" },
   { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
 ];
 
 const statusStyles: Record<string, string> = {
-  proposed: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
-  negotiating: "bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]",
-  approved: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-  io_sent: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
-  signed: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
+  planning: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
+  io_sent: "bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]",
   live: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
   completed: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
-  cancelled: "bg-[var(--brand-error)]/10 text-[var(--brand-error)]",
 };
 
 function getBrandName(brandId: string): string {
@@ -69,7 +61,7 @@ export default function DealDetailPage({ params }: { params: Promise<{ id: strin
   // Edit form state
   const [editBrandName, setEditBrandName] = useState("");
   const [editShowId, setEditShowId] = useState("");
-  const [editStatus, setEditStatus] = useState<DealStatus>("proposed");
+  const [editStatus, setEditStatus] = useState<DealStatus>("planning");
   const [editPlacement, setEditPlacement] = useState<Placement>("mid-roll");
   const [editPriceType, setEditPriceType] = useState<PriceType>("cpm");
   const [editCpmRate, setEditCpmRate] = useState<number | "">("");
@@ -105,7 +97,7 @@ export default function DealDetailPage({ params }: { params: Promise<{ id: strin
   const show = getShowById(deal.show_id);
   const brandName = getBrandName(deal.brand_id);
   const existingIO = getIOByDeal(deal.id);
-  const showIOLink = ["approved", "io_sent", "signed", "live", "completed"].includes(deal.status);
+  const showIOLink = ["io_sent", "live", "completed"].includes(deal.status);
 
   const startEdit = () => {
     setEditBrandName(brandName);

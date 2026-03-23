@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser, getDealWithRelations, getDealById, updateDeal, softDeleteDeal } from "@/lib/data/queries";
+import { getAuthenticatedUser, getDealWithRelations, getDealById, updateDeal, deleteDeal } from "@/lib/data/queries";
 import type { DealStatus } from "@/lib/data/types";
+
+const VALID_STATUSES: DealStatus[] = ["planning", "io_sent", "live", "completed"];
 
 // Valid status transitions
 const VALID_TRANSITIONS: Record<DealStatus, DealStatus[]> = {
-  proposed: ["negotiating", "approved", "cancelled"],
-  negotiating: ["approved", "cancelled"],
-  approved: ["io_sent", "cancelled"],
-  io_sent: ["signed", "cancelled"],
-  signed: ["live", "cancelled"],
-  live: ["completed", "cancelled"],
+  planning: ["io_sent"],
+  io_sent: ["live"],
+  live: ["completed"],
   completed: [],
-  cancelled: [],
 };
 
 export async function GET(
@@ -60,10 +58,17 @@ export async function PATCH(
     // Validate status transition if status is being changed
     if (body.status && body.status !== existing.status) {
       const currentStatus = existing.status as DealStatus;
-      const newStatus = body.status as DealStatus;
+      const newStatus = body.status as string;
+
+      if (!VALID_STATUSES.includes(newStatus as DealStatus)) {
+        return NextResponse.json(
+          { error: `Invalid status: ${newStatus}. Valid statuses: ${VALID_STATUSES.join(", ")}` },
+          { status: 400 }
+        );
+      }
       const allowed = VALID_TRANSITIONS[currentStatus];
 
-      if (!allowed || !allowed.includes(newStatus)) {
+      if (!allowed || !allowed.includes(newStatus as DealStatus)) {
         return NextResponse.json(
           {
             error: `Invalid status transition: ${currentStatus} → ${newStatus}. Allowed: ${allowed?.join(", ") || "none (terminal state)"}`,
@@ -119,20 +124,20 @@ export async function DELETE(
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
-    // Terminal states cannot be cancelled again
-    if (existing.status === "completed" || existing.status === "cancelled") {
+    // Completed deals cannot be deleted
+    if (existing.status === "completed") {
       return NextResponse.json(
-        { error: `Cannot delete deal in ${existing.status} state` },
+        { error: "Cannot delete a completed deal" },
         { status: 400 }
       );
     }
 
-    const deal = await softDeleteDeal(id);
-    if (!deal) {
-      return NextResponse.json({ error: "Failed to cancel deal" }, { status: 500 });
+    const success = await deleteDeal(id);
+    if (!success) {
+      return NextResponse.json({ error: "Failed to delete deal" }, { status: 500 });
     }
 
-    return NextResponse.json({ deal, message: "Deal cancelled (soft delete)" });
+    return NextResponse.json({ message: "Deal deleted" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: `Failed to delete deal: ${message}` }, { status: 500 });
