@@ -186,9 +186,13 @@ export async function addDeals(deals: Record<string, unknown>[]): Promise<Deal[]
     .from("deals")
     .insert(deals)
     .select();
-  if (error || !data) {
-    console.error("[addDeals] Error:", error?.message);
-    return [];
+  if (error) {
+    console.error("[addDeals] Supabase error:", error.message, error.details, error.hint);
+    throw new Error(`Deal insert failed: ${error.message}`);
+  }
+  if (!data || data.length === 0) {
+    console.error("[addDeals] Insert returned no data (possible RLS or constraint issue)");
+    throw new Error("Deal insert returned no data");
   }
   return data as Deal[];
 }
