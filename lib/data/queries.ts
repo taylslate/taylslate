@@ -899,10 +899,35 @@ export async function createShow(
     is_verified: showData.is_verified ?? false,
   });
 
+  // Remove id field if present — let Supabase generate UUID
+  delete dbRow.id;
+
   const { data, error } = await supabase
     .from("shows")
     .insert(dbRow)
     .select()
+    .single();
+
+  if (error) {
+    // If slug conflict, look up the existing show and return it
+    if (error.code === "23505" && error.message?.includes("slug")) {
+      console.log(`[createShow] Show with slug "${slug}" already exists, returning existing`);
+      return getShowBySlug(slug);
+    }
+    console.error("[createShow] Error:", error.message, error.details, error.hint, "Row:", JSON.stringify(dbRow).slice(0, 500));
+    return null;
+  }
+  if (!data) return null;
+  return transformShow(data);
+}
+
+/** Look up a show by its slug */
+export async function getShowBySlug(slug: string): Promise<Show | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("shows")
+    .select("*")
+    .eq("slug", slug)
     .single();
   if (error || !data) return null;
   return transformShow(data);

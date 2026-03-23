@@ -38,6 +38,11 @@ export async function POST(request: NextRequest) {
 
   const { recommendations, youtube_recommendations } = body;
 
+  console.log(`[campaigns/deals] Received ${recommendations?.length ?? 0} podcast recs, ${youtube_recommendations?.length ?? 0} YouTube recs`);
+  if (recommendations?.length) {
+    console.log(`[campaigns/deals] First podcast rec: ${JSON.stringify({ show_id: recommendations[0].show_id, show_name: recommendations[0].show_name, platform: recommendations[0].platform })}`);
+  }
+
   // Step 1: Save the campaign to Supabase to get a real UUID
   // The frontend passes a temporary ID like "campaign-gen-1774296580930"
   let realCampaignId: string | null = null;
@@ -98,15 +103,18 @@ export async function POST(request: NextRequest) {
           is_verified: false,
         });
         if (saved?.id) {
+          console.log(`[campaigns/deals] Saved discovered podcast show "${rec.show_name}" → UUID ${saved.id}`);
           showId = saved.id;
         } else {
-          console.warn(`[campaigns/deals] Failed to save discovered show: ${rec.show_name}`);
+          console.warn(`[campaigns/deals] Failed to save discovered show: ${rec.show_name} (createShow returned null)`);
           continue;
         }
       } catch (err) {
         console.warn(`[campaigns/deals] Error saving discovered show ${rec.show_name}:`, err);
         continue;
       }
+    } else {
+      console.log(`[campaigns/deals] Using existing show ID for "${rec.show_name}": ${showId}`);
     }
 
     const netPerEpisode = Math.round((rec.audience_size / 1000) * rec.estimated_cpm);
@@ -199,6 +207,8 @@ export async function POST(request: NextRequest) {
       flight_end: new Date(Date.now() + 120 * 86400000).toISOString().split("T")[0],
     });
   }
+
+  console.log(`[campaigns/deals] ${dealsToInsert.length} deals to insert (from ${recommendations?.length ?? 0} podcast + ${youtube_recommendations?.length ?? 0} YouTube recs)`);
 
   if (dealsToInsert.length === 0) {
     return NextResponse.json({ error: "No valid shows to create deals for." }, { status: 400 });
