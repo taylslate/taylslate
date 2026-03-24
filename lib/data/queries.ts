@@ -4,6 +4,7 @@
 // ============================================================
 
 import { createClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import type {
   Profile,
   Show,
@@ -889,7 +890,7 @@ function flattenShowForDB(show: Record<string, unknown>): Record<string, unknown
 export async function createShow(
   showData: Partial<Show> & { name: string; platform: Platform }
 ): Promise<Show | null> {
-  const supabase = await createClient();
+  // Use admin client to bypass RLS — shows table lacks INSERT policy for anon users
   const slug = generateSlug(showData.name);
 
   const dbRow = flattenShowForDB({
@@ -902,7 +903,9 @@ export async function createShow(
   // Remove id field if present — let Supabase generate UUID
   delete dbRow.id;
 
-  const { data, error } = await supabase
+  console.log(`[createShow] Inserting show "${showData.name}" (platform: ${showData.platform}, slug: ${slug})`);
+
+  const { data, error } = await supabaseAdmin
     .from("shows")
     .insert(dbRow)
     .select()
@@ -914,7 +917,7 @@ export async function createShow(
       console.log(`[createShow] Show with slug "${slug}" already exists, returning existing`);
       return getShowBySlug(slug);
     }
-    console.error("[createShow] Error:", error.message, error.details, error.hint, "Row:", JSON.stringify(dbRow).slice(0, 500));
+    console.error("[createShow] Error:", error.code, error.message, error.details, error.hint, "Row:", JSON.stringify(dbRow).slice(0, 500));
     return null;
   }
   if (!data) return null;

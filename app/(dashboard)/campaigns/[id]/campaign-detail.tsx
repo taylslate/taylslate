@@ -94,8 +94,14 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
     setIsCreatingDeals(true);
     setDealsError(null);
     try {
+      console.log("[handleCreateDeals] All recommendations:", recommendations.map((r) => ({ show_id: r.show_id, show_name: r.show_name, platform: r.platform })));
+      console.log("[handleCreateDeals] All YouTube recs:", youtubeRecs.map((r) => ({ show_id: r.show_id, show_name: r.show_name })));
+      console.log("[handleCreateDeals] selectedShows:", selectedShows);
+
       const selectedPodcastRecs = recommendations.filter((r) => selectedShows.includes(r.show_id));
       const selectedYouTubeRecs = youtubeRecs.filter((r) => selectedShows.includes(r.show_id));
+
+      console.log("[handleCreateDeals] Filtered podcast recs:", selectedPodcastRecs.length, "YouTube recs:", selectedYouTubeRecs.length);
 
       const res = await fetch("/api/campaigns/deals", {
         method: "POST",
