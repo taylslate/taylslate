@@ -174,13 +174,16 @@ export async function getAllDealsForUser(userId: string): Promise<Deal[]> {
 }
 
 export async function getDealById(id: string): Promise<Deal | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("deals")
     .select("*")
     .eq("id", id)
     .single();
-  if (error || !data) return null;
+  if (error) {
+    console.error("[getDealById] Supabase error for deal", id, ":", error.message, error.code);
+    return null;
+  }
+  if (!data) return null;
   return data as Deal;
 }
 
@@ -196,14 +199,17 @@ export async function createDeal(deal: Omit<Deal, "id" | "created_at" | "updated
 }
 
 export async function updateDeal(id: string, updates: Partial<Deal>): Promise<Deal | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("deals")
     .update(updates)
     .eq("id", id)
     .select()
     .single();
-  if (error || !data) return null;
+  if (error) {
+    console.error("[updateDeal] Supabase error for deal", id, ":", error.message, error.code);
+    return null;
+  }
+  if (!data) return null;
   return data as Deal;
 }
 
@@ -227,17 +233,20 @@ export async function addDeals(deals: Record<string, unknown>[]): Promise<Deal[]
 // ---- Insertion Orders ----
 
 export async function getIOByDealId(dealId: string): Promise<(InsertionOrder & { line_items: IOLineItem[] }) | null> {
-  const supabase = await createClient();
-  const { data: ioData, error: ioError } = await supabase
+  const { data: ioData, error: ioError } = await supabaseAdmin
     .from("insertion_orders")
     .select("*")
     .eq("deal_id", dealId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (ioError || !ioData) return null;
+  if (ioError) {
+    console.error("[getIOByDealId] Supabase error for deal", dealId, ":", ioError.message);
+    return null;
+  }
+  if (!ioData) return null;
 
-  const { data: lineItems, error: liError } = await supabase
+  const { data: lineItems, error: liError } = await supabaseAdmin
     .from("io_line_items")
     .select("*")
     .eq("io_id", ioData.id)
@@ -418,13 +427,16 @@ export async function getDealsFiltered(
 export async function getDealWithRelations(
   id: string
 ): Promise<(Deal & { show_name?: string; brand_name?: string; insertion_order?: InsertionOrder & { line_items: IOLineItem[] } }) | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("deals")
     .select("*, shows!inner(name), profiles!deals_brand_id_fkey(company_name, full_name)")
     .eq("id", id)
     .single();
-  if (error || !data) return null;
+  if (error) {
+    console.error("[getDealWithRelations] Supabase error for deal", id, ":", error.message, error.code);
+    return null;
+  }
+  if (!data) return null;
 
   const { shows, profiles, ...deal } = data as Record<string, unknown> & { shows: { name: string }; profiles: { company_name?: string; full_name?: string } | null };
   const result: Deal & { show_name?: string; brand_name?: string; insertion_order?: InsertionOrder & { line_items: IOLineItem[] } } = {
@@ -443,8 +455,10 @@ export async function getDealWithRelations(
 }
 
 export async function deleteDeal(id: string): Promise<boolean> {
-  const supabase = await createClient();
-  const { error } = await supabase.from("deals").delete().eq("id", id);
+  const { error } = await supabaseAdmin.from("deals").delete().eq("id", id);
+  if (error) {
+    console.error("[deleteDeal] Supabase error for deal", id, ":", error.message, error.code);
+  }
   return !error;
 }
 

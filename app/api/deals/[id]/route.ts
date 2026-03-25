@@ -23,12 +23,16 @@ export async function GET(
     }
 
     const { id } = await params;
+    console.log(`[GET /api/deals/${id}] user=${user.id} email=${user.email}`);
+
     const deal = await getDealWithRelations(id);
 
     if (!deal) {
+      console.error(`[GET /api/deals/${id}] Deal not found for user ${user.id}`);
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
+    console.log(`[GET /api/deals/${id}] Found deal: brand_id=${deal.brand_id} agent_id=${deal.agent_id} show=${deal.show_name}`);
     return NextResponse.json({ deal });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
