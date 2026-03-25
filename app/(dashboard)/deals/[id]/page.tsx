@@ -1,19 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import {
-  getDealsByAgent,
-  getShowsByAgent,
-  getShowById,
-  getIOByDeal,
-  profiles,
-} from "@/lib/data";
-import type { Deal, DealStatus, Placement, PriceType } from "@/lib/data";
-
-const agentId = "user-agent-001";
-const seedDeals = getDealsByAgent(agentId);
-const agentShows = getShowsByAgent(agentId);
+import { useRouter } from "next/navigation";
+import type { Deal, DealStatus, Placement, PriceType } from "@/lib/data/types";
 
 const statusOptions: { value: DealStatus; label: string }[] = [
   { value: "planning", label: "Planning" },
@@ -29,38 +19,26 @@ const statusStyles: Record<string, string> = {
   completed: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
 };
 
-function getBrandName(brandId: string): string {
-  return profiles.find((p) => p.id === brandId)?.company_name ?? "Unknown";
-}
-
 const inputClass =
   "w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all";
 const readOnlyClass =
   "w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)]/60 text-sm text-[var(--brand-text-secondary)]";
 
-export default function DealDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  // Unwrap params in a client component — use React.use() pattern
-  const { id } = params as unknown as { id: string };
-  const seedDeal = seedDeals.find((d) => d.id === id);
+type DealWithRelations = Deal & { show_name?: string; brand_name?: string; insertion_order?: unknown };
 
-  const [deal, setDeal] = useState<Deal | undefined>(seedDeal);
-  const [isLoading, setIsLoading] = useState(!seedDeal);
+export default function DealDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = params as unknown as { id: string };
+  const router = useRouter();
+
+  const [deal, setDeal] = useState<DealWithRelations | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-
-  // Fetch from API if not in seed data
-  useEffect(() => {
-    if (seedDeal) return;
-    fetch(`/api/deals/${id}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => { if (data?.deal) setDeal(data.deal); })
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
-  }, [id, seedDeal]);
+  const [hasIO, setHasIO] = useState(false);
+  const [isGeneratingIO, setIsGeneratingIO] = useState(false);
 
   // Edit form state
-  const [editBrandName, setEditBrandName] = useState("");
-  const [editShowId, setEditShowId] = useState("");
   const [editStatus, setEditStatus] = useState<DealStatus>("planning");
   const [editPlacement, setEditPlacement] = useState<Placement>("mid-roll");
   const [editPriceType, setEditPriceType] = useState<PriceType>("cpm");
@@ -72,6 +50,43 @@ export default function DealDetailPage({ params }: { params: Promise<{ id: strin
   const [editFlightEnd, setEditFlightEnd] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
+  const fetchDeal = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/deals/${id}`);
+      if (!res.ok) {
+        setError(res.status === 404 ? "Deal not found" : "Failed to load deal");
+        return;
+      }
+      const data = await res.json();
+      if (data?.deal) {
+        setDeal(data.deal);
+        // Check if IO exists from the relation data
+        if (data.deal.insertion_order) {
+          setHasIO(true);
+        }
+      }
+    } catch {
+      setError("Failed to load deal");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id]);
+
+  // Check IO existence separately (in case relation didn't include it)
+  const checkIO = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/deals/${id}/io`);
+      setHasIO(res.ok);
+    } catch {
+      // IO doesn't exist
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchDeal();
+    checkIO();
+  }, [fetchDeal, checkIO]);
+
   if (isLoading) {
     return (
       <div className="p-8 max-w-3xl">
@@ -82,26 +97,22 @@ export default function DealDetailPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  if (!deal) {
+  if (error || !deal) {
     return (
       <div className="p-8 max-w-3xl">
         <Link href="/deals" className="flex items-center gap-1.5 text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors mb-4">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
           All Deals
         </Link>
-        <h1 className="text-2xl font-bold text-[var(--brand-text)]">Deal not found</h1>
+        <h1 className="text-2xl font-bold text-[var(--brand-text)]">{error || "Deal not found"}</h1>
       </div>
     );
   }
 
-  const show = getShowById(deal.show_id);
-  const brandName = getBrandName(deal.brand_id);
-  const existingIO = getIOByDeal(deal.id);
-  const showIOLink = ["io_sent", "live", "completed"].includes(deal.status);
+  const showName = deal.show_name ?? "Unknown Show";
+  const brandName = deal.brand_name ?? "Unknown Brand";
 
   const startEdit = () => {
-    setEditBrandName(brandName);
-    setEditShowId(deal.show_id);
     setEditStatus(deal.status);
     setEditPlacement(deal.placement);
     setEditPriceType(deal.price_type);
@@ -117,43 +128,83 @@ export default function DealDetailPage({ params }: { params: Promise<{ id: strin
 
   const handleSave = async () => {
     setIsSaving(true);
-    await new Promise((r) => setTimeout(r, 800));
+    try {
+      const cpm = editPriceType === "cpm" ? Number(editCpmRate) || deal.cpm_rate : 0;
+      const downloads = Number(editGuaranteedDownloads) || deal.guaranteed_downloads;
+      const episodes = Number(editNumEpisodes) || deal.num_episodes;
 
-    const editShow = getShowById(editShowId);
-    const cpm = editPriceType === "cpm" ? Number(editCpmRate) || deal.cpm_rate : 0;
-    const downloads = Number(editGuaranteedDownloads) || deal.guaranteed_downloads;
-    const episodes = Number(editNumEpisodes) || deal.num_episodes;
-    const netPerEp =
-      editPriceType === "cpm"
-        ? (downloads / 1000) * cpm
-        : Number(editFlatRate) || deal.net_per_episode;
+      const updates: Record<string, unknown> = {
+        status: editStatus,
+        placement: editPlacement,
+        price_type: editPriceType,
+        cpm_rate: cpm,
+        guaranteed_downloads: downloads,
+        num_episodes: episodes,
+        flight_start: editFlightStart,
+        flight_end: editFlightEnd,
+        notes: editNotes || null,
+      };
 
-    setDeal({
-      ...deal,
-      show_id: editShowId,
-      status: editStatus,
-      placement: editPlacement,
-      price_type: editPriceType,
-      cpm_rate: cpm,
-      guaranteed_downloads: downloads,
-      num_episodes: episodes,
-      net_per_episode: netPerEp,
-      total_net: netPerEp * episodes,
-      flight_start: editFlightStart,
-      flight_end: editFlightEnd,
-      notes: editNotes || undefined,
-      updated_at: new Date().toISOString(),
-    });
+      if (editPriceType === "flat_rate") {
+        updates.net_per_episode = Number(editFlatRate) || deal.net_per_episode;
+        updates.total_net = (updates.net_per_episode as number) * episodes;
+      }
 
-    setIsEditing(false);
-    setIsSaving(false);
+      const res = await fetch(`/api/deals/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to save changes");
+        return;
+      }
+
+      // Refresh deal from API
+      const refreshRes = await fetch(`/api/deals/${id}`);
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        if (data?.deal) setDeal(data.deal);
+      }
+
+      setIsEditing(false);
+    } catch {
+      alert("Failed to save changes");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancel = () => {
     setIsEditing(false);
   };
 
-  // Computed
+  const handleGenerateIO = async () => {
+    setIsGeneratingIO(true);
+    try {
+      const res = await fetch(`/api/deals/${id}/io/generate`, { method: "POST" });
+      if (res.status === 201) {
+        router.push(`/deals/${id}/io`);
+        return;
+      }
+      if (res.status === 409) {
+        // IO already exists
+        setHasIO(true);
+        router.push(`/deals/${id}/io`);
+        return;
+      }
+      const data = await res.json();
+      alert(data.error || "Failed to generate IO");
+    } catch {
+      alert("Failed to generate IO");
+    } finally {
+      setIsGeneratingIO(false);
+    }
+  };
+
+  // Computed edit values
   const editNetPerEp =
     editPriceType === "cpm" && editCpmRate && editGuaranteedDownloads
       ? ((editGuaranteedDownloads as number) / 1000) * (editCpmRate as number)
@@ -181,7 +232,7 @@ export default function DealDetailPage({ params }: { params: Promise<{ id: strin
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">
-              {show?.name ?? "Unknown Show"}
+              {showName}
             </h1>
             <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
               {brandName} &middot; {deal.num_episodes} episode{deal.num_episodes !== 1 ? "s" : ""} &middot; {deal.placement}
@@ -220,21 +271,16 @@ export default function DealDetailPage({ params }: { params: Promise<{ id: strin
             </select>
           </div>
 
-          {/* Show */}
+          {/* Show (read-only in edit mode) */}
           <div>
             <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Show</label>
-            <select value={editShowId} onChange={(e) => setEditShowId(e.target.value)} className={inputClass}>
-              {agentShows.map((s) => (
-                <option key={s.id} value={s.id}>{s.name} — {s.audience_size.toLocaleString()} avg downloads</option>
-              ))}
-            </select>
+            <div className={readOnlyClass}>{showName}</div>
           </div>
 
-          {/* Brand */}
+          {/* Brand (read-only in edit mode) */}
           <div>
             <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Brand / Advertiser</label>
-            <input type="text" value={editBrandName} onChange={(e) => setEditBrandName(e.target.value)} className={inputClass} />
-            <p className="text-xs text-[var(--brand-text-muted)] mt-1">Display name only — billing profile unchanged</p>
+            <div className={readOnlyClass}>{brandName}</div>
           </div>
 
           {/* Placement */}
@@ -419,7 +465,7 @@ export default function DealDetailPage({ params }: { params: Promise<{ id: strin
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Show</label>
-                <div className={readOnlyClass}>{show?.name ?? "Unknown"}</div>
+                <div className={readOnlyClass}>{showName}</div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Brand</label>
@@ -501,7 +547,7 @@ export default function DealDetailPage({ params }: { params: Promise<{ id: strin
 
           {/* Actions */}
           <div className="flex items-center gap-3 pt-4 border-t border-[var(--brand-border)]">
-            {showIOLink && (
+            {hasIO ? (
               <Link
                 href={`/deals/${deal.id}/io`}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors"
@@ -510,9 +556,33 @@ export default function DealDetailPage({ params }: { params: Promise<{ id: strin
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
                 </svg>
-                {existingIO ? "View IO" : "Generate IO"}
+                View IO
               </Link>
-            )}
+            ) : deal.status === "planning" ? (
+              <button
+                onClick={handleGenerateIO}
+                disabled={isGeneratingIO}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {isGeneratingIO ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Generating IO...
+                  </>
+                ) : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    Generate IO
+                  </>
+                )}
+              </button>
+            ) : null}
             <button
               onClick={startEdit}
               className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)] hover:text-[var(--brand-blue)] transition-all"

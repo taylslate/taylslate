@@ -417,20 +417,21 @@ export async function getDealsFiltered(
 
 export async function getDealWithRelations(
   id: string
-): Promise<(Deal & { show_name?: string; insertion_order?: InsertionOrder & { line_items: IOLineItem[] } }) | null> {
+): Promise<(Deal & { show_name?: string; brand_name?: string; insertion_order?: InsertionOrder & { line_items: IOLineItem[] } }) | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("deals")
-    .select("*, shows!inner(name)")
+    .select("*, shows!inner(name), profiles!deals_brand_id_fkey(company_name, full_name)")
     .eq("id", id)
     .single();
   if (error || !data) return null;
 
-  const { shows, ...deal } = data as Record<string, unknown> & { shows: { name: string } };
-  const result: Deal & { show_name?: string; insertion_order?: InsertionOrder & { line_items: IOLineItem[] } } = {
+  const { shows, profiles, ...deal } = data as Record<string, unknown> & { shows: { name: string }; profiles: { company_name?: string; full_name?: string } | null };
+  const result: Deal & { show_name?: string; brand_name?: string; insertion_order?: InsertionOrder & { line_items: IOLineItem[] } } = {
     ...deal,
     show_name: shows?.name,
-  } as Deal & { show_name?: string };
+    brand_name: profiles?.company_name ?? profiles?.full_name ?? undefined,
+  } as Deal & { show_name?: string; brand_name?: string };
 
   // Fetch associated IO if one exists
   const io = await getIOByDealId(id);

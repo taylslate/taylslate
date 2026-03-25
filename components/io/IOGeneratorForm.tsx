@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { Deal, Show, InsertionOrder, Profile, IOLineItem, Placement, PriceType } from "@/lib/data";
+import type { Deal, Show, InsertionOrder, Profile, IOLineItem, Placement, PriceType } from "@/lib/data/types";
 
 interface IOGeneratorFormProps {
   deal: Deal;
