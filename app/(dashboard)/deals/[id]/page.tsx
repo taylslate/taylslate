@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Deal, DealStatus, Placement, PriceType } from "@/lib/data/types";
@@ -27,7 +27,7 @@ const readOnlyClass =
 type DealWithRelations = Deal & { show_name?: string; brand_name?: string; insertion_order?: unknown };
 
 export default function DealDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = params as unknown as { id: string };
+  const { id } = use(params);
   const router = useRouter();
 
   const [deal, setDeal] = useState<DealWithRelations | undefined>(undefined);
