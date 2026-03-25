@@ -1,28 +1,23 @@
 "use client";
 
-import { useState } from "react";
-import {
-  getInvoicesByAgent,
-  getAgentStats,
-  getDealsByAgent,
-  getIOByDeal,
-  insertionOrders,
-  type InvoiceStatus,
-  type Invoice,
-  type InsertionOrder,
-} from "@/lib/data";
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
+import type { InvoiceStatus, Invoice, InvoiceLineItem, InsertionOrder } from "@/lib/data/types";
 
-const agentId = "user-agent-001";
-const agentInvoices = getInvoicesByAgent(agentId);
-const stats = getAgentStats(agentId);
+interface InvoiceWithLineItems extends Invoice {
+  line_items: InvoiceLineItem[];
+}
 
-// Find IOs with delivered line items that could be invoiced
-const agentDeals = getDealsByAgent(agentId);
-const invoiceableIOs: InsertionOrder[] = agentDeals
-  .filter((d) => ["live", "completed"].includes(d.status))
-  .map((d) => getIOByDeal(d.id))
-  .filter((io): io is InsertionOrder => !!io)
-  .filter((io) => io.line_items.some((li) => li.actual_post_date || li.verified));
+interface InvoiceStats {
+  total_outstanding: number;
+  total_paid_this_month: number;
+  count_by_status: Record<string, number>;
+}
+
+interface Deal {
+  id: string;
+  status: string;
+}
 
 const statusStyles: Record<InvoiceStatus, string> = {
   draft: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
@@ -43,7 +38,16 @@ const statusLabels: Record<InvoiceStatus, string> = {
 };
 
 export default function InvoicesPage() {
-  const hasInvoices = agentInvoices.length > 0;
+  const [invoices, setInvoices] = useState<InvoiceWithLineItems[]>([]);
+  const [stats, setStats] = useState<InvoiceStats>({
+    total_outstanding: 0,
+    total_paid_this_month: 0,
+    count_by_status: {},
+  });
+  const [invoiceableIOs, setInvoiceableIOs] = useState<InsertionOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [selectedIOId, setSelectedIOId] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -57,6 +61,60 @@ export default function InvoicesPage() {
   const [sendingInvoiceId, setSendingInvoiceId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ success: boolean; to?: string; toName?: string; error?: string } | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Fetch invoices and deals in parallel
+      const [invoicesRes, dealsRes] = await Promise.all([
+        fetch("/api/invoices"),
+        fetch("/api/deals"),
+      ]);
+
+      if (!invoicesRes.ok) throw new Error("Failed to load invoices");
+      const invoicesData = await invoicesRes.json();
+      setInvoices(invoicesData.invoices ?? []);
+      setStats(invoicesData.stats ?? { total_outstanding: 0, total_paid_this_month: 0, count_by_status: {} });
+
+      if (dealsRes.ok) {
+        const dealsData = await dealsRes.json();
+        const activeDeals = (dealsData.deals ?? []).filter(
+          (d: Deal) => d.status === "live" || d.status === "completed"
+        );
+
+        // Fetch IOs for active deals in parallel
+        const ioResults = await Promise.all(
+          activeDeals.map(async (deal: Deal) => {
+            try {
+              const res = await fetch(`/api/deals/${deal.id}/io`);
+              if (!res.ok) return null;
+              const data = await res.json();
+              return data.io as InsertionOrder | null;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        // Filter for IOs with delivered line items
+        const ios = ioResults
+          .filter((io): io is InsertionOrder => !!io)
+          .filter((io) =>
+            io.line_items.some((li) => li.actual_post_date || li.verified)
+          );
+        setInvoiceableIOs(ios);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleGenerate = async () => {
     if (!selectedIOId) return;
@@ -75,6 +133,8 @@ export default function InvoicesPage() {
         return;
       }
       setGeneratedInvoice(data.invoice);
+      // Refresh invoice list after generation
+      fetchData();
     } catch {
       setGenerateError("Network error. Please try again.");
     } finally {
@@ -130,7 +190,7 @@ export default function InvoicesPage() {
   };
 
   // Open send confirmation for an existing invoice (by ID)
-  const handleSendExisting = (invoice: Invoice) => {
+  const handleSendExisting = (invoice: InvoiceWithLineItems) => {
     setSendingInvoice(null);
     setSendingInvoiceId(invoice.id);
     setSendResult(null);
@@ -146,9 +206,9 @@ export default function InvoicesPage() {
     setShowSendConfirm(true);
   };
 
-  // The invoice being sent — either from seed data or generated
+  // The invoice being sent — either from list or generated
   const invoiceToSend = sendingInvoiceId
-    ? agentInvoices.find((inv) => inv.id === sendingInvoiceId) ?? null
+    ? invoices.find((inv) => inv.id === sendingInvoiceId) ?? null
     : sendingInvoice;
 
   const handleSendEmail = async () => {
@@ -171,6 +231,8 @@ export default function InvoicesPage() {
         setSendResult({ success: false, error: data.error });
       } else {
         setSendResult({ success: true, to: data.to, toName: data.toName });
+        // Refresh after sending (status may change)
+        fetchData();
       }
     } catch {
       setSendResult({ success: false, error: "Network error. Please try again." });
@@ -179,6 +241,64 @@ export default function InvoicesPage() {
       setShowSendConfirm(false);
     }
   };
+
+  const pendingCount = (stats.count_by_status["sent"] ?? 0) + (stats.count_by_status["draft"] ?? 0);
+
+  if (loading) {
+    return (
+      <div className="p-8 max-w-5xl">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Invoices</h1>
+            <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+              Track invoices and payments for your shows.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 mb-8">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] animate-pulse">
+              <div className="h-3 w-20 bg-[var(--brand-border)] rounded mb-2" />
+              <div className="h-6 w-16 bg-[var(--brand-border)] rounded" />
+            </div>
+          ))}
+        </div>
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] animate-pulse">
+              <div className="h-4 w-48 bg-[var(--brand-border)] rounded" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 max-w-5xl">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Invoices</h1>
+            <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+              Track invoices and payments for your shows.
+            </p>
+          </div>
+        </div>
+        <div className="p-6 bg-[var(--brand-error)]/[0.06] border border-[var(--brand-error)]/20 rounded-xl text-center">
+          <p className="text-sm text-[var(--brand-error)] font-medium">{error}</p>
+          <button
+            onClick={fetchData}
+            className="mt-3 px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const hasInvoices = invoices.length > 0;
 
   return (
     <div className="p-8 max-w-5xl">
@@ -210,26 +330,28 @@ export default function InvoicesPage() {
       <div className="grid grid-cols-3 gap-4 mb-8">
         <div className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
           <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Outstanding</div>
-          <div className="text-xl font-bold text-[var(--brand-text)]">${stats.revenue_outstanding.toLocaleString()}</div>
+          <div className="text-xl font-bold text-[var(--brand-text)]">${stats.total_outstanding.toLocaleString()}</div>
         </div>
         <div className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
           <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Paid This Month</div>
-          <div className="text-xl font-bold text-[var(--brand-success)]">${stats.revenue_this_month.toLocaleString()}</div>
+          <div className="text-xl font-bold text-[var(--brand-success)]">${stats.total_paid_this_month.toLocaleString()}</div>
         </div>
         <div className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
           <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Pending</div>
-          <div className="text-xl font-bold text-[var(--brand-text)]">{stats.pending_invoices}</div>
+          <div className="text-xl font-bold text-[var(--brand-text)]">{pendingCount}</div>
         </div>
       </div>
 
       {hasInvoices ? (
         <div className="space-y-3">
-          {agentInvoices.map((invoice) => {
+          {invoices.map((invoice) => {
             const dueDate = new Date(invoice.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+            const showNames = invoice.line_items?.map((li) => li.show_name).filter((v, i, a) => a.indexOf(v) === i).join(", ");
 
             return (
-              <div
+              <Link
                 key={invoice.id}
+                href={`/invoices/${invoice.id}`}
                 className="flex items-center justify-between p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] hover:border-[var(--brand-blue)]/30 hover:shadow-sm transition-all group"
               >
                 <div className="flex items-center gap-4">
@@ -246,7 +368,7 @@ export default function InvoicesPage() {
                     <h3 className="font-semibold text-[var(--brand-text)]">{invoice.invoice_number}</h3>
                     <div className="flex items-center gap-3 mt-1">
                       <span className="text-xs text-[var(--brand-text-muted)]">{invoice.advertiser_name}</span>
-                      <span className="text-xs text-[var(--brand-text-muted)]">{invoice.campaign_period}</span>
+                      {showNames && <span className="text-xs text-[var(--brand-text-muted)]">{showNames}</span>}
                       <span className="text-xs text-[var(--brand-text-muted)]">Due {dueDate}</span>
                     </div>
                   </div>
@@ -254,7 +376,7 @@ export default function InvoicesPage() {
                 <div className="flex items-center gap-5">
                   <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
-                      onClick={() => handleDownloadExisting(invoice.id)}
+                      onClick={(e) => { e.preventDefault(); handleDownloadExisting(invoice.id); }}
                       disabled={isDownloading === invoice.id}
                       className="flex items-center gap-1.5 text-xs text-[var(--brand-blue)] hover:underline font-medium disabled:opacity-50"
                     >
@@ -266,7 +388,7 @@ export default function InvoicesPage() {
                       {isDownloading === invoice.id ? "..." : "PDF"}
                     </button>
                     <button
-                      onClick={() => handleSendExisting(invoice)}
+                      onClick={(e) => { e.preventDefault(); handleSendExisting(invoice); }}
                       className="flex items-center gap-1.5 text-xs text-[var(--brand-teal)] hover:underline font-medium"
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -284,7 +406,7 @@ export default function InvoicesPage() {
                     {statusLabels[invoice.status]}
                   </span>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>
@@ -341,7 +463,7 @@ export default function InvoicesPage() {
                 {selectedIOId && (
                   <div className="p-3 rounded-lg bg-[var(--brand-surface)] border border-[var(--brand-border)] mb-4">
                     {(() => {
-                      const io = insertionOrders.find((o) => o.id === selectedIOId);
+                      const io = invoiceableIOs.find((o) => o.id === selectedIOId);
                       if (!io) return null;
                       const delivered = io.line_items.filter((li) => li.actual_post_date || li.verified);
                       return (

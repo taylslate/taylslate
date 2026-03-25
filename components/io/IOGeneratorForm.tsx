@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Deal, Show, InsertionOrder, Profile, IOLineItem, Placement, PriceType } from "@/lib/data/types";
 
 interface IOGeneratorFormProps {
@@ -73,6 +74,7 @@ const readOnlyClass =
   "w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)]/60 text-sm text-[var(--brand-text-secondary)] cursor-default";
 
 export default function IOGeneratorForm({ deal, show, existingIO, brand, agency, agent }: IOGeneratorFormProps) {
+  const router = useRouter();
   const hasExistingIO = !!existingIO;
   const [isEditing, setIsEditing] = useState(!hasExistingIO);
 
@@ -108,6 +110,14 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
   const [isSending, setIsSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ success: boolean; to?: string; toName?: string; error?: string } | null>(null);
   const [showSendConfirm, setShowSendConfirm] = useState(false);
+
+  // Delivery tracking state
+  const [deliveryEditing, setDeliveryEditing] = useState<Record<string, boolean>>({});
+  const [deliveryFields, setDeliveryFields] = useState<Record<string, { actual_downloads: number; episode_url: string }>>({});
+  const [isSavingDelivery, setIsSavingDelivery] = useState(false);
+  const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
   const totalDownloads = lineItems.reduce((sum, li) => sum + li.guaranteed_downloads, 0);
   const totalGross = lineItems.reduce((sum, li) => sum + li.gross_rate, 0);
@@ -240,6 +250,134 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
       setShowSendConfirm(false);
     }
   };
+
+  // Delivery tracking handlers
+  const handleMarkAsDelivered = (item: IOLineItem) => {
+    setDeliveryEditing((prev) => ({ ...prev, [item.id]: true }));
+    setDeliveryFields((prev) => ({
+      ...prev,
+      [item.id]: {
+        actual_downloads: item.actual_downloads ?? item.guaranteed_downloads,
+        episode_url: item.episode_url ?? "",
+      },
+    }));
+    // Update the line item in local state immediately
+    setLineItems((prev) =>
+      prev.map((li) =>
+        li.id === item.id
+          ? {
+              ...li,
+              actual_post_date: li.actual_post_date ?? new Date().toISOString().split("T")[0],
+              verified: true,
+              actual_downloads: li.actual_downloads ?? li.guaranteed_downloads,
+            }
+          : li
+      )
+    );
+  };
+
+  const handleCancelDelivery = (itemId: string) => {
+    setDeliveryEditing((prev) => ({ ...prev, [itemId]: false }));
+    // Revert local state if this item wasn't previously verified
+    const original = existingIO?.line_items?.find((li) => li.id === itemId);
+    if (original && !original.verified) {
+      setLineItems((prev) =>
+        prev.map((li) =>
+          li.id === itemId
+            ? { ...li, actual_post_date: original.actual_post_date, verified: false, actual_downloads: original.actual_downloads }
+            : li
+        )
+      );
+    }
+  };
+
+  const handleSaveDelivery = async (itemId: string) => {
+    setIsSavingDelivery(true);
+    setDeliveryError(null);
+    try {
+      const fields = deliveryFields[itemId];
+      const item = lineItems.find((li) => li.id === itemId);
+      if (!fields || !item) return;
+
+      const res = await fetch(`/api/deals/${deal.id}/io`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          line_items: [
+            {
+              id: itemId,
+              actual_post_date: item.actual_post_date ?? new Date().toISOString().split("T")[0],
+              actual_downloads: fields.actual_downloads,
+              episode_url: fields.episode_url,
+              verified: true,
+            },
+          ],
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to save delivery data");
+      }
+
+      const { io: updatedIO } = await res.json();
+
+      // Update local line items from server response
+      if (updatedIO?.line_items) {
+        setLineItems(updatedIO.line_items);
+      } else {
+        // Fallback: update local state
+        setLineItems((prev) =>
+          prev.map((li) =>
+            li.id === itemId
+              ? { ...li, actual_downloads: fields.actual_downloads, episode_url: fields.episode_url, verified: true }
+              : li
+          )
+        );
+      }
+
+      setDeliveryEditing((prev) => ({ ...prev, [itemId]: false }));
+
+      // Check if all line items are now verified — auto-complete deal
+      const allItems = updatedIO?.line_items ?? lineItems;
+      const allVerified = allItems.every((li: IOLineItem) => li.verified);
+      if (allVerified) {
+        await fetch(`/api/deals/${deal.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "completed" }),
+        });
+      }
+    } catch (err) {
+      setDeliveryError(err instanceof Error ? err.message : "Failed to save delivery");
+    } finally {
+      setIsSavingDelivery(false);
+    }
+  };
+
+  const handleGenerateInvoice = async () => {
+    if (!existingIO?.id) return;
+    setIsGeneratingInvoice(true);
+    setInvoiceError(null);
+    try {
+      const res = await fetch("/api/invoices/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ io_id: existingIO.id }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to generate invoice");
+      }
+      router.push("/invoices");
+    } catch (err) {
+      setInvoiceError(err instanceof Error ? err.message : "Failed to generate invoice");
+    } finally {
+      setIsGeneratingInvoice(false);
+    }
+  };
+
+  const hasDeliveredItems = lineItems.some((li) => li.verified);
 
   return (
     <div className="p-8 max-w-4xl">
@@ -584,6 +722,131 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                   {item.pixel_required && <span className="text-[var(--brand-blue)]">Pixel</span>}
                 </div>
               )}
+
+              {/* Delivery Tracking */}
+              {hasExistingIO && !isEditing && (
+                <div className="mt-3 pt-3 border-t border-[var(--brand-border)]/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-[var(--brand-text-muted)] uppercase tracking-wider">Delivery</span>
+                      {item.verified ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--brand-success)]/10 text-[var(--brand-success)]">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 6 9 17l-5-5" />
+                          </svg>
+                          Delivered
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]">
+                          Pending
+                        </span>
+                      )}
+                    </div>
+                    {!item.verified && !deliveryEditing[item.id] && (
+                      <button
+                        type="button"
+                        onClick={() => handleMarkAsDelivered(item)}
+                        className="text-xs font-medium text-[var(--brand-blue)] hover:text-[var(--brand-blue-light)] transition-colors"
+                      >
+                        Mark as Delivered
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Delivery edit fields */}
+                  {deliveryEditing[item.id] && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelClass}>Actual Downloads</label>
+                          <input
+                            type="number"
+                            value={deliveryFields[item.id]?.actual_downloads ?? item.guaranteed_downloads}
+                            onChange={(e) =>
+                              setDeliveryFields((prev) => ({
+                                ...prev,
+                                [item.id]: { ...prev[item.id], actual_downloads: Number(e.target.value) },
+                              }))
+                            }
+                            min="0"
+                            className={inputClass}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Episode URL</label>
+                          <input
+                            type="text"
+                            value={deliveryFields[item.id]?.episode_url ?? ""}
+                            onChange={(e) =>
+                              setDeliveryFields((prev) => ({
+                                ...prev,
+                                [item.id]: { ...prev[item.id], episode_url: e.target.value },
+                              }))
+                            }
+                            placeholder="https://..."
+                            className={inputClass}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveDelivery(item.id)}
+                          disabled={isSavingDelivery}
+                          className="px-3 py-1.5 rounded-lg bg-[var(--brand-success)] hover:bg-[var(--brand-success)]/90 text-white text-xs font-medium transition-colors disabled:opacity-50"
+                        >
+                          {isSavingDelivery ? "Saving..." : "Save Delivery"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCancelDelivery(item.id)}
+                          className="px-3 py-1.5 rounded-lg border border-[var(--brand-border)] text-xs font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Delivery summary (when already verified and not editing) */}
+                  {item.verified && !deliveryEditing[item.id] && (
+                    <div className="grid grid-cols-3 gap-3 text-xs">
+                      <div>
+                        <span className="text-[var(--brand-text-muted)]">Actual DLs: </span>
+                        <span className={`font-medium ${
+                          (item.actual_downloads ?? 0) >= item.guaranteed_downloads
+                            ? "text-[var(--brand-success)]"
+                            : "text-[var(--brand-warning)]"
+                        }`}>
+                          {(item.actual_downloads ?? 0).toLocaleString()}
+                          {" / "}
+                          {item.guaranteed_downloads.toLocaleString()}
+                        </span>
+                      </div>
+                      {item.actual_post_date && (
+                        <div>
+                          <span className="text-[var(--brand-text-muted)]">Aired: </span>
+                          <span className="font-medium text-[var(--brand-text)]">
+                            {new Date(item.actual_post_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                        </div>
+                      )}
+                      {item.episode_url && (
+                        <div className="truncate">
+                          <a
+                            href={item.episode_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[var(--brand-blue)] hover:underline"
+                          >
+                            View Episode
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -779,7 +1042,48 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
           </svg>
           Send via Email
         </button>
+        {hasExistingIO && hasDeliveredItems && (
+          <button
+            onClick={handleGenerateInvoice}
+            disabled={isGeneratingInvoice}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+            </svg>
+            {isGeneratingInvoice ? "Generating..." : "Generate Invoice"}
+          </button>
+        )}
       </div>
+
+      {/* Delivery / Invoice error messages */}
+      {deliveryError && (
+        <div className="mt-4 p-3 rounded-xl bg-[var(--brand-error)]/[0.06] border border-[var(--brand-error)]/20">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-[var(--brand-error)]">{deliveryError}</p>
+            <button onClick={() => setDeliveryError(null)} className="p-1 text-[var(--brand-text-muted)] hover:text-[var(--brand-text)]">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+      {invoiceError && (
+        <div className="mt-4 p-3 rounded-xl bg-[var(--brand-error)]/[0.06] border border-[var(--brand-error)]/20">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-[var(--brand-error)]">{invoiceError}</p>
+            <button onClick={() => setInvoiceError(null)} className="p-1 text-[var(--brand-text-muted)] hover:text-[var(--brand-text)]">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Send confirmation modal */}
       {showSendConfirm && (
