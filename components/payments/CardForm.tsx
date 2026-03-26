@@ -4,7 +4,13 @@ import { useState, useEffect } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+let stripePromise: ReturnType<typeof loadStripe> | null = null;
+function getStripe() {
+  if (!stripePromise) {
+    stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+  }
+  return stripePromise;
+}
 
 interface PaymentMethod {
   id: string;
@@ -182,7 +188,7 @@ export default function CardForm() {
       )}
 
       {showAddForm && clientSecret ? (
-        <Elements stripe={stripePromise} options={{ clientSecret }}>
+        <Elements stripe={getStripe()} options={{ clientSecret }}>
           <AddCardForm clientSecret={clientSecret} onSuccess={handleAddSuccess} />
         </Elements>
       ) : (
