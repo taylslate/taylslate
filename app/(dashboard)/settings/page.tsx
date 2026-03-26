@@ -1,6 +1,39 @@
-import Link from "next/link";
+"use client";
+
+import { useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
+import ConnectOnboarding from "@/components/payments/ConnectOnboarding";
+import CardForm from "@/components/payments/CardForm";
+
+type UserRole = "brand" | "agency" | "agent" | "show";
 
 export default function SettingsPage() {
+  const [role, setRole] = useState<UserRole | null>(null);
+  const [email, setEmail] = useState("user@example.com");
+
+  useEffect(() => {
+    async function loadProfile() {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setEmail(user.email || "user@example.com");
+        // Fetch profile to get role
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .single();
+        if (profile) {
+          setRole(profile.role as UserRole);
+        }
+      }
+    }
+    loadProfile();
+  }, []);
+
+  const showPayoutSection = role === "show" || role === "agent";
+  const showPaymentMethodSection = role === "brand" || role === "agency";
+
   return (
     <div className="p-8 max-w-2xl">
       <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight mb-1">Settings</h1>
@@ -34,7 +67,7 @@ export default function SettingsPage() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Email</label>
-            <input type="email" disabled value="user@example.com"
+            <input type="email" disabled value={email}
               className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[var(--brand-text-muted)] text-sm" />
           </div>
           <div>
@@ -44,6 +77,9 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {showPayoutSection && <ConnectOnboarding />}
+      {showPaymentMethodSection && <CardForm />}
 
       <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
         <div className="flex items-center justify-between mb-2">
