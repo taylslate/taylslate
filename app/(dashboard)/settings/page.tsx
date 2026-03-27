@@ -10,6 +10,7 @@ type UserRole = "brand" | "agency" | "agent" | "show";
 export default function SettingsPage() {
   const [role, setRole] = useState<UserRole | null>(null);
   const [email, setEmail] = useState("user@example.com");
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   useEffect(() => {
     async function loadProfile() {
@@ -17,7 +18,6 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setEmail(user.email || "user@example.com");
-        // Fetch profile to get role
         const { data: profile } = await supabase
           .from("profiles")
           .select("role")
@@ -27,6 +27,7 @@ export default function SettingsPage() {
           setRole(profile.role as UserRole);
         }
       }
+      setProfileLoaded(true);
     }
     loadProfile();
   }, []);
@@ -78,8 +79,21 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {showPayoutSection && <ConnectOnboarding />}
-      {showPaymentMethodSection && <CardForm />}
+      {!profileLoaded ? (
+        <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
+          <h2 className="font-semibold text-[var(--brand-text)] mb-4">Payment Settings</h2>
+          <p className="text-sm text-[var(--brand-text-muted)]">Loading...</p>
+        </div>
+      ) : showPayoutSection ? (
+        <ConnectOnboarding />
+      ) : showPaymentMethodSection ? (
+        <CardForm />
+      ) : (
+        <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
+          <h2 className="font-semibold text-[var(--brand-text)] mb-4">Payment Settings</h2>
+          <p className="text-sm text-[var(--brand-text-muted)]">Set your account role in your profile to enable payment settings.</p>
+        </div>
+      )}
 
       <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
         <div className="flex items-center justify-between mb-2">
