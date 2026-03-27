@@ -1,24 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { loadStripe } from "@stripe/stripe-js";
+import { loadStripe, Stripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
-
-const STRIPE_PK = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
-
-let stripePromise: ReturnType<typeof loadStripe> | null = null;
-function getStripe() {
-  if (!stripePromise) {
-    if (!STRIPE_PK) {
-      console.error(
-        "[CardForm] NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set. " +
-        "Check .env.local and Vercel environment variables."
-      );
-    }
-    stripePromise = loadStripe(STRIPE_PK);
-  }
-  return stripePromise;
-}
 
 interface PaymentMethod {
   id: string;
@@ -99,6 +83,7 @@ export default function CardForm() {
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [stripeInstance, setStripeInstance] = useState<Promise<Stripe | null> | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -122,8 +107,20 @@ export default function CardForm() {
   async function handleAddCard() {
     setError(null);
     try {
+      // Fetch the publishable key from the server at runtime
+      // (NEXT_PUBLIC_* vars can be empty if not set at build time)
+      if (!stripeInstance) {
+        const configRes = await fetch("/api/stripe/config");
+        if (!configRes.ok) throw new Error("Stripe is not configured");
+        const { publishableKey } = await configRes.json();
+        setStripeInstance(loadStripe(publishableKey));
+      }
+
       const res = await fetch("/api/stripe/payment-method/setup-intent", { method: "POST" });
-      if (!res.ok) throw new Error("Failed to create setup intent");
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to create setup intent");
+      }
       const { clientSecret: secret } = await res.json();
       setClientSecret(secret);
       setShowAddForm(true);
@@ -195,8 +192,8 @@ export default function CardForm() {
         <p className="text-sm text-[var(--brand-text-muted)] mb-4">No payment methods on file.</p>
       )}
 
-      {showAddForm && clientSecret ? (
-        <Elements stripe={getStripe()} options={{ clientSecret }}>
+      {showAddForm && clientSecret && stripeInstance ? (
+        <Elements stripe={stripeInstance} options={{ clientSecret }}>
           <AddCardForm clientSecret={clientSecret} onSuccess={handleAddSuccess} />
         </Elements>
       ) : (
