@@ -26,7 +26,17 @@ export async function POST(request: NextRequest) {
 
     let customerId = profile.stripe_customer_id;
 
-    // Auto-create Stripe customer if one doesn't exist
+    // Validate existing customer — may be from a different Stripe mode (live vs test)
+    if (customerId) {
+      try {
+        await stripe.customers.retrieve(customerId);
+      } catch {
+        console.warn(`[setup-intent] Stale stripe_customer_id ${customerId}, recreating`);
+        customerId = null;
+      }
+    }
+
+    // Create Stripe customer if missing or stale
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: profile.email,
