@@ -4,10 +4,18 @@ import { useState, useEffect } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 
+const STRIPE_PK = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
+
 let stripePromise: ReturnType<typeof loadStripe> | null = null;
 function getStripe() {
   if (!stripePromise) {
-    stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+    if (!STRIPE_PK) {
+      console.error(
+        "[CardForm] NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set. " +
+        "Check .env.local and Vercel environment variables."
+      );
+    }
+    stripePromise = loadStripe(STRIPE_PK);
   }
   return stripePromise;
 }
