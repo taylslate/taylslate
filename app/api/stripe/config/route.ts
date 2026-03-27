@@ -5,9 +5,20 @@ import { NextResponse } from "next/server";
 // set in the build environment. This endpoint reads from the runtime
 // environment so the key is always current.
 export async function GET() {
-  const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
+  // Check both names — NEXT_PUBLIC_* may not be available as a runtime
+  // env var in Vercel serverless functions (it's a build-time concept).
+  // Users should set STRIPE_PUBLISHABLE_KEY in Vercel env vars as well,
+  // or the NEXT_PUBLIC_ version will work if Vercel propagates it.
+  const publishableKey =
+    process.env.STRIPE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
+    "";
+
   if (!publishableKey) {
-    console.error("[stripe/config] NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set");
+    console.error(
+      "[stripe/config] Neither STRIPE_PUBLISHABLE_KEY nor NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is set. " +
+      "Add STRIPE_PUBLISHABLE_KEY to your Vercel environment variables."
+    );
     return NextResponse.json(
       { error: "Stripe publishable key not configured" },
       { status: 500 }
