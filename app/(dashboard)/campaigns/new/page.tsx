@@ -49,7 +49,8 @@ export default function NewCampaignPage() {
     };
 
     try {
-      const res = await fetch("/api/campaigns/generate", {
+      // Wave 6: Call scoring engine instead of Claude generation
+      const res = await fetch("/api/campaigns/score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -63,8 +64,8 @@ export default function NewCampaignPage() {
         return;
       }
 
-      localStorage.setItem("taylslate_generated_campaign", JSON.stringify(data.campaign));
-      router.push("/campaigns/generated");
+      // Navigate to the discovery list for the new campaign
+      router.push(`/campaigns/${data.campaign_id}`);
     } catch {
       setError("Network error. Please check your connection and try again.");
       setIsSubmitting(false);
@@ -198,11 +199,11 @@ export default function NewCampaignPage() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                Analyzing shows and building your media plan...
+                Discovering and scoring shows...
               </>
             ) : (
               <>
-                Generate Media Plan
+                Discover Shows
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M5 12h14M12 5l7 7-7 7" />
                 </svg>

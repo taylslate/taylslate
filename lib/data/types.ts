@@ -203,11 +203,53 @@ export interface Campaign {
   budget_total: number;
   platforms: Platform[];
   status: CampaignStatus;
-  recommendations: ShowRecommendation[]; // podcast recommendations
+  recommendations: ShowRecommendation[]; // podcast recommendations (legacy)
   youtube_recommendations?: YouTubeRecommendation[];
   expansion_opportunities?: ExpansionShow[];
+  // Wave 6: Scoring engine output
+  scored_shows?: ScoredShowRecord[]; // JSONB from scoring engine
+  selected_show_ids?: string[];      // podcast IDs the brand checked
+  scoring_meta?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+/** Serializable subset of ScoredShow for JSONB storage */
+export interface ScoredShowRecord {
+  podcastId: string;
+  name: string;
+  description: string;
+  imageUrl: string | null;
+  websiteUrl: string | null;
+  rssUrl: string | null;
+  categories: string[];
+  publisherName: string | null;
+  language: string | null;
+  episodeCount: number;
+  lastPostedAt: string | null;
+  contactEmail: string | null;
+  audienceSize: number;
+  prsScore: number | null;
+  compositeScore: number;
+  dimensionScores: {
+    audienceFit: number | null;
+    adEngagement: number | null;
+    sponsorRetention: number | null;
+    reach: number;
+  };
+  estimatedCpm: number;
+  demographics: {
+    genderSkew: string | null;
+    dominantAge: string | null;
+    purchasingPower: string | null;
+  } | null;
+  sponsorCount: number;
+  adEngagementRate: number | null;
+  brandSafety: {
+    maxRiskLevel: string;
+    recommendation: string;
+  } | null;
+  source: "category_leaders" | "search" | "discover";
 }
 
 // ---- Outreach Drafts ----

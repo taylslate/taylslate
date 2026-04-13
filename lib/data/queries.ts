@@ -1310,3 +1310,44 @@ export async function getCampaignById(id: string): Promise<Campaign | null> {
   if (error || !data) return null;
   return data as Campaign;
 }
+
+export async function updateCampaignScoredShows(
+  campaignId: string,
+  scoredShows: unknown[],
+  scoringMeta: Record<string, unknown>
+): Promise<boolean> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("campaigns")
+    .update({
+      scored_shows: scoredShows,
+      scoring_meta: scoringMeta,
+      status: "planned",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", campaignId);
+  if (error) {
+    console.error("[updateCampaignScoredShows] Error:", error.message);
+    return false;
+  }
+  return true;
+}
+
+export async function updateCampaignSelections(
+  campaignId: string,
+  selectedShowIds: string[]
+): Promise<boolean> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("campaigns")
+    .update({
+      selected_show_ids: selectedShowIds,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", campaignId);
+  if (error) {
+    console.error("[updateCampaignSelections] Error:", error.message);
+    return false;
+  }
+  return true;
+}
