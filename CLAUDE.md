@@ -1,6 +1,6 @@
 # CLAUDE.md — Taylslate Project Context
 
-*Last updated: March 3, 2026*
+*Last updated: April 13, 2026*
 
 **For deep strategic context, competitive research, and domain knowledge, see `TAYLSLATE_CONTEXT.md` in this project folder.**
 
@@ -10,7 +10,7 @@
 
 Taylslate is the **infrastructure layer for creator sponsorship advertising** — podcasts, YouTube, and eventually wherever host-endorsed advertising lives. It replaces the manual, weeks-long process of campaign planning, deal negotiation, insertion order management, delivery tracking, invoicing, and payment with one AI-powered platform.
 
-**The one-liner:** "Plan your campaign. Send your IOs. Get paid. All in one place."
+**The one-liner:** "Discover your shows. Build your plan. Send your IOs. Ads run. We verify. You get paid."
 
 **The thesis:** Creator sponsorship is a $6B+ market growing 20%+ annually, but the buying process is stuck in 2015. Digital media has programmatic infrastructure. Creator sponsorship has email threads, Word docs, and 90-day payment terms. Taylslate closes that gap.
 
@@ -20,95 +20,61 @@ The most valuable data in podcast advertising — real CPM rates, verified downl
 
 **Monaco.com analogy:** Monaco replaced 5-8 fragmented sales tools with one AI-native system of record where intelligence compounds with usage. Taylslate does the same for creator sponsorship transactions.
 
-## User Types
+## Target User (April 2026 Shift)
 
-- **Brands / Advertisers:** Mid-market brands ($10K-$50K budgets) entering or expanding in podcast/YouTube ads. Want fast campaign planning, transparent pricing, audience fit confidence.
-- **Agencies & Buyers:** Small to mid-size media buying agencies managing multiple brand clients. Need IO generation at scale, delivery tracking, invoicing.
-- **Sales Agents / Talent Managers:** Represent multiple podcasts and YouTube channels. Manage ad inventory, negotiate with brands, handle invoicing and payment. **First target user for MVP validation.**
-- **Shows / Creators:** Podcast hosts and YouTube creators selling ad inventory. Want brand deals, fair pricing, fast payment. Shows under 10K downloads are systematically ignored by agencies.
+**Primary:** Brands new to podcast advertising. These brands have budget, they know podcast ads work, but they don't know how to buy them. They need market education alongside the transaction infrastructure.
 
-## Revenue Model
+**Secondary:** Sales agents and talent managers representing multiple shows (original MVP target, still a valid user type).
 
-**Two revenue streams only. Clean and transparent.**
+**Late adopters (not early targets):** Agencies. They have workflow inertia — existing IO templates, existing spreadsheets, existing relationships. They won't import everything into Taylslate on day one. We serve them eventually, but we don't optimize GTM around them.
 
-### 1. SaaS Subscriptions
-| Plan | Price | Target |
-|------|-------|--------|
-| Starter | $49/mo | Individual buyers, 5 campaigns/mo |
-| Growth | $149/mo | Growing brands, IO gen, invoicing |
-| Business | $349/mo | Agencies & teams, payment facilitation, priority |
+**Not the target:** Brands already spending in the space. They have agency relationships and established processes. They're the hardest to convert and the least valuable early.
 
-### 2. Early Payment Fee (2.5%)
-- Shows/creators opt in to receive payment in 7 days instead of waiting Net 30 EOM (realistically 60-90 days from agencies)
-- 2.5% of invoice amount deducted from payout
-- Example: $875 IO → show receives $853.12 in 7 days instead of $875 in 3 months
-- Market rate — Tipalti NetNow charges similar, invoice factoring is 1-3%
+## Product Flow — Discovery List, Not Auto-Plan
 
-### Payment Flow (Stripe Connect)
-- **Brand pays in:** ACH preferred (0.8% capped at $5). Card available but brand pays the processing fee on top of IO amount. Fees are pass-through, clearly itemized on invoice.
-- **Taylslate pays out:** ACH only. $0.25 per payout — we absorb this.
-- **Stripe fees are NOT our revenue or cost.** They are passed through to whoever triggers them (brand on inbound). Listed transparently on the site, same model as Supercast.
-- **We do not mark up Stripe fees.** We don't make money on payment processing. We make money on SaaS + early payment fees.
-- **Stripe Connect is the long-term choice.** No Tipalti. We build the early payment logic ourselves.
+This is the key product shift from the original spec. The original flow had AI generating a complete media plan. The new flow separates discovery from planning.
 
-### What This Looks Like on Paper
-**Creator payout statement:**
-- IO amount: $875.00
-- Early payment fee (2.5%): -$21.88
-- Net payout: $853.12
+**Step 1 — Brief:** Brand inputs URL, budget, target audience, campaign goals.
 
-**Brand payment receipt:**
-- IO amount: $875.00
-- Processing fee (if card): +$25.69
-- Total charged: $900.69
+**Step 2 — Discovery list:** AI returns a scored list of 50-100 shows ranked by fit. Each show displays: audience size, estimated CPM, demographic profile, sponsor retention signal, ad engagement rate (when available), brand safety context, and a composite fit score. Brand browses, filters by category, sorts by fit / audience / CPM / engagement.
 
-## Build Strategy
+**Step 3 — Selection:** Brand selects shows via checkbox. Running totals display as they select (total impressions, estimated spend, show count).
 
-### Phase 1: Sales Agent MVP (Current Priority)
-Target: Sales agent managing multiple shows. Make his life easier TODAY.
+**Step 4 — Plan builder:** Selected shows become line items. Brand configures default placement (pre/mid/post-roll), episodes per show, and spacing (weekly/biweekly/monthly). Platform calculates spot prices, blended CPM, and total spend using domain logic.
 
-**Build:**
-- New deal creation flow (brand + show + terms → clean IO generated)
-- Invoice generation from completed IOs
-- Deal pipeline view (all active deals, status tracking)
-- Show roster management
+**Step 5 — IO generation:** One click generates industry-standard IOs for every show in the plan, pre-filled with all standard terms. Ready for e-signature.
 
-**Goal:** Get the sales agent using it daily. His feedback shapes everything.
+**Step 6 — Verification and payment:** Ads run, delivery verified (Podscribe or RSS/transcript scanning), invoices auto-generated, payment facilitated through Stripe Connect.
 
-### Phase 2: Monaco-Style Launch
-Target: Mid-market brands. The demo that makes people share.
+**Why this flow:** First-time brand buyers don't trust an AI to make the final decision. They need to see the landscape to develop intuition, which is also the market education our GTM requires. The discovery list itself teaches them about the space — CPM ranges, audience sizes, the value of smaller shows.
 
-**Build:**
-- Brand brief intake (URL + budget + audience)
-- AI campaign planning engine (Claude API with domain expertise system prompt)
-- Show database (100-150 shows seeded from founder knowledge, enriched with Rephonic/Podscan)
-- IO auto-generation from approved campaign plan
-- Outreach automation (AI-drafted emails to shows)
+## Recommendation Engine
 
-**Goal:** "Your entire campaign is live before your coffee gets cold."
+The scoring engine combines three Podscan data sources and scores every candidate show across four dimensions.
 
-### Phase 3: Full Transaction Platform
-Both sides connected, flywheel spinning.
+**Data sources:**
+- **Category Leaders** (`POST /category-leaders/search`) — Top shows per IAB/chart/self-reported category, ranked by Podscan Reach Score. Professional plan returns up to 500 shows per category.
+- **Podcast Search** (`GET /podcasts/search`) — Filtered search with audience size, category, and sponsor filters.
+- **Discover** (`GET /podcasts/{id}/discover`) — Vector similarity across content, demographics, and commercial dimensions. Used to fan out from strong matches and find adjacent shows the brand wouldn't have found otherwise.
 
-**Build:**
-- Stripe Connect integration for marketplace payments
-- Early payment opt-in for creators
-- Delivery verification (Podscribe integration preferred, fallback RSS/transcript scanning)
-- Auto-invoicing triggered by verified delivery
-- Campaign dashboard (real-time status across all deals)
+**Scoring weights (default):**
+- Audience fit: 40% — demographics match, age/gender skew, purchasing power, professional industry
+- Ad engagement: 30% — mid-roll engagement rate, completion rate, placement details (requires listener engagement add-on)
+- Sponsor retention: 20% — repeat advertisers and episode counts from `/podcasts/{id}/analysis` (proxy for conversion)
+- Reach / PRS: 10% — audience size and chart position
 
-### Phase 4: Scale
-- MCP server / Claude Code skills for agent-native workflows
-- Cross-channel expansion (Meta, TikTok, Google ad planning)
-- Predictive performance scoring from proprietary transaction data
-- Expanded show database through transaction data and API enrichment
+**Brand safety:** Displayed as context on every show (GARM risk levels from `/podcasts/{id}/brand-safety`) but never used to exclude shows from results. A true crime podcast might flag medium risk but convert well for a security brand — the brand decides.
+
+**Listener engagement add-on:** Paid Podscan add-on ($100/month). To be enabled when Wave 5 (scoring engine) is wired up. Until then, the engagement endpoint returns 403 and that dimension is weighted to zero with remaining dimensions redistributed.
+
+**Key product rule:** Never optimize away the small, high-fit show. A 5K-download show with 95% audience fit should surface next to a 450K-download show with 80% fit. That variance is the Taylslate thesis in action — serving shows agencies ignore with data to back them up.
 
 ## Architecture Philosophy
 
 **Agent-native design.** The web app is the on-ramp. The API is the real product.
 
 1. **Database and API** — structured data layer that persists across agent sessions
-2. **Domain logic engine** — IO formatting rules, CPM calculations, make-good thresholds, invoice generation
+2. **Domain logic engine** — IO formatting rules, CPM calculations, make-good thresholds, invoice generation, plan building
 3. **Aggregated intelligence layer** — grows with every transaction
 4. **Packaged skills / MCP server** — so AI agents can interact with Taylslate's data and logic
 5. **Lightweight web UI** — for onboarding, review, and approval
@@ -117,19 +83,18 @@ Both sides connected, flywheel spinning.
 
 **Integration philosophy:** Don't build bespoke integrations to every platform. Build a clean API that agents can bridge. Exception: Podscribe integration is worth building directly (verification data connected to IO terms is core value prop).
 
-**Payment infrastructure:** Stripe Connect. Build the early payment logic ourselves. If we go Stripe Connect, we're staying there.
-
 ## Tech Stack
 
 - **Framework:** Next.js (App Router) with TypeScript
 - **Styling:** Tailwind CSS 4 with custom CSS variables (see `app/globals.css` for design tokens)
-- **Database:** Supabase (Postgres + Auth) — not yet connected, using local seed data
+- **Database:** Supabase (Postgres + Auth) — connected, active
 - **Deployment:** Vercel
-- **AI:** Claude API (campaign planning, outreach drafting, data extraction)
-- **Payments:** Stripe Connect for marketplace payments (brand → Taylslate → show)
+- **AI:** Claude API (scoring brand briefs, drafting outreach, extracting data from uploaded IOs)
+- **Payments:** Stripe Connect for marketplace payments (Express accounts, card-on-file via SetupIntent)
+- **Show data:** Podscan API (Professional plan) — primary data source for recommendations and enrichment
 - **Verification (planned):** Podscribe API integration or RSS/transcript scanning
 - **E-signature (planned):** DocuSign, BoldSign, or equivalent
-- **Show data enrichment (planned):** Rephonic API (primary) or Podscan API
+- **Email:** Resend for transactional email
 
 ## Project Structure
 
@@ -139,56 +104,103 @@ app/
   globals.css                       # Design tokens (--brand-blue, --brand-surface, etc.)
   (dashboard)/
     layout.tsx                      # Authenticated layout with sidebar
-    campaigns/                      # Brand-side campaign planning (built)
+    campaigns/                      # Brand-side campaign flow
       page.tsx                      # Campaign list
       new/page.tsx                  # Campaign brief form
-      [id]/page.tsx                 # Campaign results (recommendations, outreach, ad copy)
+      [id]/
+        page.tsx                    # Discovery list (scored shows, checkboxes, plan summary)
+        plan/page.tsx               # Plan builder (selected shows → line items → totals)
     settings/page.tsx               # Account & subscription settings
 components/
   layout/Sidebar.tsx                # Main navigation sidebar
+  discovery/                        # Discovery list components
+  plan/                             # Plan builder components
 lib/
   data/
     types.ts                        # ALL TypeScript types for the platform
     seed.ts                         # Realistic mock data (18 shows, deals, IOs, invoices)
+    queries.ts                      # Supabase query functions
     index.ts                        # Barrel export
-  supabase/                         # Supabase client config (client, server, admin)
+  podscan/                          # Podscan API client layer (Wave 4)
+    client.ts                       # Base client with auth + rate limiting
+    category-leaders.ts             # POST /category-leaders/search
+    discover.ts                     # GET /podcasts/{id}/discover
+    demographics.ts                 # GET /podcasts/{id}/demographics
+    analysis.ts                     # GET /podcasts/{id}/analysis
+    engagement.ts                   # GET /episodes/{id}/engagement (add-on required)
+    brand-safety.ts                 # GET /podcasts/{id}/brand-safety
+    search.ts                       # GET /podcasts/search
+    types.ts                        # Podscan response types
+  scoring/                          # Scoring engine (Wave 5)
+    index.ts                        # Main scoring orchestrator
+    dimensions/
+      audience-fit.ts               # Demographics match scoring
+      ad-engagement.ts              # Engagement data scoring
+      sponsor-retention.ts          # Sponsor repeat-buy scoring
+      reach.ts                      # PRS / audience size scoring
+    weights.ts                      # Default weights + redistribution logic
+  supabase/                         # Supabase client config
 ```
 
 ## Data Schema
 
 Complete type system in `lib/data/types.ts`. Key entities:
 
-- **Show** — podcast or YouTube channel with audience data, rate cards, demographics, sponsor history
-- **Deal** — relationship between brand and show, tracks full negotiation lifecycle (proposed → signed → live → completed)
-- **InsertionOrder** — the contract, with per-episode line items (post date, downloads, placement, CPM, gross rate, net due, make-good tracking). Modeled on real VeritoneOne IO template.
+- **Show** — podcast or YouTube channel with audience data, rate cards, demographics, sponsor history, engagement data
+- **Campaign** — brand-side campaign brief + AI-generated scored show list (stored as ephemeral recommendation JSONB, not persisted to shows table)
+- **CampaignSelection** — which shows the brand checked from the discovery list
+- **MediaPlan** — line items built from selected shows, with placement, episodes, spacing, pricing
+- **Deal** — relationship between brand and show, created when media plan is approved and IO is generated
+- **InsertionOrder** — the contract, with per-episode line items. Modeled on real VeritoneOne IO template.
 - **Invoice** — monthly billing document referencing IO line items
-- **Campaign** — brand-side campaign brief + AI-generated show recommendations
 - **Profile** — user with role (brand, agency, agent, show) and subscription tier
-- **AgentShowRelationship** — which agent represents which shows, with commission rates
+- **AgentShowRelationship** — which agent represents which shows
 
-## Seed Data
+**Architecture rule — discovered shows are ephemeral.** A scored list of 50-100 shows lives in the campaign recommendation JSONB, not the shows table. Only when a deal is created does a show record get persisted (or created if it doesn't exist). The shows table is agent inventory, not a Podscan mirror.
 
-`lib/data/seed.ts` contains:
-- 18 shows (14 podcasts + 4 YouTube channels), including 7 smaller shows (<20K downloads) that the agent represents
-- 4 user profiles (brand, agent, agency, second brand)
-- 4 deals at different lifecycle stages
-- 2 complete insertion orders with line items
-- 2 invoices (one paid, one sent)
-- Helper functions: `getShowById()`, `getShowsByAgent()`, `getDealsByAgent()`, `getIOByDeal()`, `getAgentStats()`, etc.
+## Build Sequence
+
+**Completed:**
+- Supabase schema and RLS policies
+- Auth (email/password + OAuth callback, middleware)
+- Deal lifecycle (create, update, delete, list)
+- IO generation (PDF, email send via Resend, VeritoneOne format)
+- Invoice generation with make-good detection
+- Show roster (CRUD, CSV import, enrichment stubs)
+- Onboarding flow with role selection
+
+**In progress:**
+- Piece 5 (current)
+
+**Next waves (post-current direction shift):**
+
+**Wave 4 — Podscan integration layer:** Build `lib/podscan/` with typed clients for Category Leaders, Discover, Demographics, Analysis, Brand Safety, Podcast Search, Rankings, and Engagement. Rate limit handling (5K/day, 120/min on Professional). Engagement endpoint built but throws graceful "not enabled" error until add-on is turned on at Wave 5.
+
+**Wave 5 — Scoring engine:** Build `lib/scoring/` with the four-dimension scoring. Takes a brand brief and returns a ranked list of 50-100 candidate shows with fit scores. Enable listener engagement add-on at this point.
+
+**Wave 6 — Discovery list UI:** Replace current campaign results page with the scored list view. Filters, sort, checkboxes, running plan summary. Persist selections to a campaign record in Supabase.
+
+**Wave 7 — Media plan builder:** New screen after discovery. Selected shows become line items. Placement config, episode config, spacing, pricing. Feeds into existing IO generation flow.
+
+**Later:**
+- Podscribe integration for verification
+- MCP server for agent access
+- YouTube expansion
+- Cross-channel (Meta, TikTok, Google) budget allocation
 
 ## Podcast Advertising Domain Knowledge
 
 - **CPM pricing:** Ad Spot Price = (Downloads ÷ 1,000) × CPM Rate. Range: $15–$50.
-- **Placements:** Pre-roll, mid-roll (standard), post-roll. Mid-roll commands highest rates.
+- **Placements:** Pre-roll (10% premium), mid-roll (standard), post-roll (25% discount).
 - **Price types:** CPM-based (pay per actual download) or Flat Rate (fixed price with make-good if underdelivery >10%).
 - **IO structure:** Per-episode line items with: format, post date, guaranteed downloads, show name, placement, scripted Y/N, personal experience Y/N, reader type, evergreen/dated, pixel Y/N, gross rate, gross CPM, price type, net due.
 - **IO standard terms:** Competitor exclusivity (90 days), ROFR (30 days), make-good clause (>10% underdelivery), 45-day download tracking, FTC compliance, cancellation (14 days notice), morality/take-down clauses, Net 30 EOM payment.
-- **Agency markup:** Agencies mark up CPM to brands (e.g., show's $25 CPM → agency charges $29.41 ~15%). Show never sees full rate.
+- **Agency markup:** Agencies mark up CPM to brands (e.g., show's $25 CPM → agency charges $29.41 ~15%). Show never sees full rate. Taylslate's all-in 8% fee (Taylslate absorbs Stripe fees) is the transparent alternative.
 - **Payment flow pain:** Shows must manually invoice agencies monthly. Net 30 EOM terms, but agencies routinely pay Net 60–75+. Show running a January ad may not see payment until April.
 - **YouTube:** Flat-fee pricing (not CPM). $2K–$20K based on cultural significance. Content is evergreen.
 - **Ad copy philosophy:** 3-5 bullet point talking points, not full scripts. Host authenticity is the value. No pre-approval review — verification is post-publication (Podscribe).
-- **Ad types:** Host-read baked-in (permanent in episode) and dynamic insertion (DI, stitched at playback via hosting platform). Same IO structure for both. Taylslate doesn't handle ad delivery — that's the hosting platform's job (Megaphone, Libsyn, Art19). We own everything before (planning, IO, e-sig) and after (verification, invoicing, payment).
 - **VeritoneOne IO template** is in project files — use as the format standard.
+- **Never release show payouts until inbound brand payment settles.** Eliminates float risk.
 
 ## Design System
 
@@ -207,40 +219,23 @@ Dashboard uses light theme. Landing page uses dark theme.
 ## Conventions
 
 - Use `var(--brand-*)` CSS variables for all colors, not hardcoded values
-- Pages import seed data from `@/lib/data` until Supabase is connected
+- Pages import from Supabase via `lib/data/queries.ts` — seed data is only for development fallbacks now
 - Keep components in `components/` organized by feature
 - File naming: lowercase with hyphens for files, PascalCase for components
 - All monetary values in USD, stored as numbers (not strings)
 - Dates stored as ISO strings, displayed with `toLocaleDateString()`
 - Build clean API endpoints from day one — the web UI is one of several future interfaces
 - Schemas and forms must match real-world industry documents and processes
-
-## Git Convention
-
-- **Auto-commit after each completed feature.** When you finish a feature, bug fix, or meaningful unit of work, create a commit with a descriptive message and push to main.
-- Commit messages should be concise and describe the "what" and "why" — e.g., `Add Podscan enrichment client and /api/shows/[id]/enrich endpoint`
-- Push to `main` immediately after committing. We ship continuously.
-- Do not batch unrelated changes into one commit. One feature = one commit.
-- If a feature spans multiple files, that's fine — commit them together as one logical unit.
+- Auto-commit with descriptive messages and push to main after each completed feature
 
 ## Competitive Context (Quick Reference)
 
-- **LiveRead.io** — IO/invoice management, real integrations (Megaphone, Bill.com, BoldSign), but no AI, no discovery, no campaign planning. Operations only. Manages deals that already exist. We create them.
-- **Gumball.fm** — Host-read ad marketplace (Headgum). 150+ shows, $10M Series A. Limited to own network inventory. 10K download minimum.
-- **Podscribe** — Verification and attribution (IAB-certified). Industry standard. No IO/deal/payment data. Integrate, don't compete. Bridge between "what happened" (Podscribe) and "what was agreed to / what was paid" (Taylslate).
-- **Traditional agencies (VeritoneOne, Ad Results Media)** — 15-20% markup, manual processes, ignore small shows. Taylslate is 10x faster, no markup.
+- **LiveRead.io** — IO/invoice management, real integrations, but no AI, no discovery, no campaign planning. Operations only.
+- **Gumball.fm** — Host-read ad marketplace (Headgum). 150+ shows, $10M Series A. Limited to own network inventory.
+- **Podscribe** — Verification and attribution (IAB-certified). Industry standard. No IO/deal/payment data. Integrate, don't compete.
+- **Traditional agencies (VeritoneOne, Ad Results Media)** — 15-20% markup, manual processes, ignore small shows. Taylslate is 10x faster, transparent 8% fee.
 
 See `TAYLSLATE_CONTEXT.md` for full competitive analysis.
-
-## Financial Model
-
-See `taylslate_financial_model_v3.xlsx` in project files. Key assumptions:
-- SaaS tiers: $49 / $149 / $349
-- Early payment fee: 2.5% on opt-in fast payouts
-- Stripe fees: pass-through to brand (not our cost/revenue)
-- Base scenario M24: $3.1M ARR, $260K/mo revenue, 97% margins
-- Monaco Pop scenario M24: $78.7M ARR, $6.6M/mo revenue, $756M cumulative GMV
-- Month 24 valuations range from $19M (base conservative) to $1.97B (Monaco aggressive)
 
 ## Founder Working Style
 
@@ -249,7 +244,7 @@ See `taylslate_financial_model_v3.xlsx` in project files. Key assumptions:
 - Values authentic industry modeling — schemas must match real-world documents
 - Uses Claude Code for building (disable worktree, work on main)
 - Uses Claude desktop app for strategy and planning conversations
+- Agent teams (parallel sessions with separated file scopes) for larger builds, single sessions for tightly coupled changes
 - Comfortable with GitHub, terminal, Vercel deployment
 - Think as a co-founder, not just an assistant
 - Motivated by bold launches, not incremental releases
-- Works at Supercast.com — familiar with Stripe Connect, creator payment models, platform fee structures
