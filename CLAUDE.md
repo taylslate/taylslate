@@ -170,17 +170,19 @@ Complete type system in `lib/data/types.ts`. Key entities:
 - Onboarding flow with role selection
 
 **In progress:**
-- Piece 5 (current)
+- Wave 6 — Discovery list UI (next up)
 
-**Next waves (post-current direction shift):**
-
-**Wave 4 — Podscan integration layer:** Build `lib/podscan/` with typed clients for Category Leaders, Discover, Demographics, Analysis, Brand Safety, Podcast Search, Rankings, and Engagement. Rate limit handling (5K/day, 120/min on Professional). Engagement endpoint built but throws graceful "not enabled" error until add-on is turned on at Wave 5.
-
-**Wave 5 — Scoring engine:** Build `lib/scoring/` with the four-dimension scoring. Takes a brand brief and returns a ranked list of 50-100 candidate shows with fit scores. Enable listener engagement add-on at this point.
+**Next waves:**
 
 **Wave 6 — Discovery list UI:** Replace current campaign results page with the scored list view. Filters, sort, checkboxes, running plan summary. Persist selections to a campaign record in Supabase.
 
 **Wave 7 — Media plan builder:** New screen after discovery. Selected shows become line items. Placement config, episode config, spacing, pricing. Feeds into existing IO generation flow.
+
+**Recently completed:**
+
+**Wave 4 — Podscan integration layer (DONE):** `lib/podscan/` with typed clients for Category Leaders, Discover, Demographics, Analysis, Brand Safety, Podcast Search, Rankings, and Engagement. Rate limit handling for Professional plan (5K/day, 120/min). Engagement endpoint returns graceful 403 when add-on disabled.
+
+**Wave 5 — Scoring engine (DONE):** `lib/scoring/` with the four-dimension scoring (audience fit 40%, ad engagement 30%, sponsor retention 20%, reach 10%). Listener engagement add-on enabled. Returns ranked list of 50-100 candidate shows.
 
 **Later:**
 - Podscribe integration for verification
@@ -226,7 +228,7 @@ Dashboard uses light theme. Landing page uses dark theme.
 - Dates stored as ISO strings, displayed with `toLocaleDateString()`
 - Build clean API endpoints from day one — the web UI is one of several future interfaces
 - Schemas and forms must match real-world industry documents and processes
-- Auto-commit with descriptive messages and push to main after each completed feature
+- **Git workflow (REQUIRED):** After completing any wave, feature, or substantial change, ALWAYS run `git add . && git commit -m "<descriptive message>" && git push` without being asked. Do not stop at "the code is built" — the work isn't done until it's pushed to main. This applies to every Claude Code session, every wave, every feature. No exceptions.
 
 ## Competitive Context (Quick Reference)
 
