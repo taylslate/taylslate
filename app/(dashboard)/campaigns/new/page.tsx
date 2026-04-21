@@ -3,24 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-const interestOptions = [
-  "Health & Wellness", "Business & Finance", "Technology", "Entertainment",
-  "Sports", "True Crime", "Comedy", "Education", "Parenting & Family",
-  "Self-Improvement",
-];
-
 export default function NewCampaignPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["podcast"]);
-
-  const toggleInterest = (interest: string) => {
-    setSelectedInterests((prev) =>
-      prev.includes(interest) ? prev.filter((i) => i !== interest) : [...prev, interest]
-    );
-  };
 
   const togglePlatform = (platform: string) => {
     setSelectedPlatforms((prev) =>
@@ -34,22 +21,23 @@ export default function NewCampaignPage() {
     setError(null);
 
     const formData = new FormData(e.currentTarget);
-    const keywordsRaw = (formData.get("keywords") as string) || "";
+    const briefText = (formData.get("brief_text") as string)?.trim();
+
+    if (!briefText) {
+      setError("Please describe your ideal campaign.");
+      setIsSubmitting(false);
+      return;
+    }
 
     const body = {
       name: formData.get("name") as string,
       brand_url: (formData.get("brand_url") as string) || undefined,
       budget_total: Number(formData.get("budget_total")),
       platforms: selectedPlatforms,
-      target_age_range: (formData.get("age_range") as string) || undefined,
-      target_gender: (formData.get("gender") as string) || undefined,
-      target_interests: selectedInterests,
-      keywords: keywordsRaw ? keywordsRaw.split(",").map((k) => k.trim()).filter(Boolean) : [],
-      campaign_goals: (formData.get("campaign_goals") as string) || undefined,
+      brief_text: briefText,
     };
 
     try {
-      // Wave 6: Call scoring engine instead of Claude generation
       const res = await fetch("/api/campaigns/score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -64,7 +52,6 @@ export default function NewCampaignPage() {
         return;
       }
 
-      // Navigate to the discovery list for the new campaign
       router.push(`/campaigns/${data.campaign_id}`);
     } catch {
       setError("Network error. Please check your connection and try again.");
@@ -126,50 +113,12 @@ export default function NewCampaignPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Age Range</label>
-            <select name="age_range" className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all">
-              <option value="">Any age</option>
-              <option value="18-24">18-24</option>
-              <option value="25-34">25-34</option>
-              <option value="35-44">35-44</option>
-              <option value="45-54">45-54</option>
-              <option value="55+">55+</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Gender</label>
-            <select name="gender" className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all">
-              <option value="">Any gender</option>
-              <option value="female">Female</option>
-              <option value="male">Male</option>
-            </select>
-          </div>
-        </div>
-
         <div>
-          <label className="block text-sm font-medium text-[var(--brand-text)] mb-2">Audience Interests</label>
-          <div className="flex flex-wrap gap-2">
-            {interestOptions.map((interest) => (
-              <button key={interest} type="button" onClick={() => toggleInterest(interest)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                  selectedInterests.includes(interest)
-                    ? "bg-[var(--brand-blue)] text-white"
-                    : "bg-[var(--brand-surface-elevated)] border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)]/40 hover:text-[var(--brand-blue)]"
-                }`}>
-                {interest}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-[var(--brand-text-muted)] mt-2">Select all that apply to your target customer.</p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Keywords</label>
-          <input type="text" name="keywords" placeholder="e.g., supplements, protein, DTC, health"
-            className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all" />
-          <p className="text-xs text-[var(--brand-text-muted)] mt-1.5">Comma-separated. These help us find shows that talk about topics relevant to your brand.</p>
+          <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Describe your ideal campaign</label>
+          <textarea name="brief_text" required rows={7}
+            placeholder="e.g. We sell portable saunas and want to reach men 30-45 interested in wellness, recovery, and biohacking. Goal is to drive direct sales through promo codes."
+            className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none" />
+          <p className="text-xs text-[var(--brand-text-muted)] mt-1.5">Write in plain English — what you sell, who you want to reach, and your campaign goals. We&apos;ll translate that into search filters automatically.</p>
         </div>
 
         <div>
@@ -180,14 +129,6 @@ export default function NewCampaignPage() {
               className="w-full pl-8 pr-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all" />
           </div>
           <p className="text-xs text-[var(--brand-text-muted)] mt-1.5">Minimum $1,000. We recommend at least $5,000 for meaningful testing across 3-5 shows.</p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">
-            Campaign Goals <span className="text-[var(--brand-text-muted)] font-normal ml-1">(optional)</span>
-          </label>
-          <textarea name="campaign_goals" rows={3} placeholder="e.g., Drive DTC conversions for our new protein powder line targeting active women 25-34"
-            className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none" />
         </div>
 
         <div className="border-t border-[var(--brand-border)] pt-6">

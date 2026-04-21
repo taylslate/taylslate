@@ -187,9 +187,12 @@ export async function scoreShows(
     }
   }
 
-  // Filter by minimum audience and cap candidates
-  let candidates = Array.from(candidateMap.values())
+  // Filter by minimum audience, English-only language, and cap candidates.
+  // language === null is kept (category-leaders response omits it; API doesn't
+  // support a language filter there, so we can't distinguish English from not).
+  const candidates = Array.from(candidateMap.values())
     .filter((c) => c.audienceSize >= minAudience || c.audienceSize === 0)
+    .filter((c) => !c.language || c.language.toLowerCase().startsWith("en"))
     .slice(0, maxCandidates);
 
   console.log(`[scoring] ${candidates.length} candidates after dedup and filtering (${sourceCounts.categoryLeaders} leaders, ${sourceCounts.search} search, ${sourceCounts.discover} discover)`);
