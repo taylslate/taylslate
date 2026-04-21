@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { getAuthenticatedUser, createCampaign, updateCampaignScoredShows } from "@/lib/data/queries";
+import { getAuthenticatedUser, ensureProfile, createCampaign, updateCampaignScoredShows } from "@/lib/data/queries";
 import type { CampaignBrief, ScoredShowRecord } from "@/lib/data/types";
 import { scoreShows, type ScoredShow } from "@/lib/scoring";
 import {
@@ -139,6 +139,14 @@ export async function POST(request: NextRequest) {
   const user = await getAuthenticatedUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Ensure a profile exists before inserting a campaign (campaigns.user_id FK).
+  try {
+    await ensureProfile({ id: user.id, email: user.email ?? undefined });
+  } catch (err) {
+    console.error("[campaign/score] ensureProfile failed:", err);
+    return NextResponse.json({ error: "Failed to initialize user profile" }, { status: 500 });
   }
 
   // Parse the free-form brief through Claude when provided; fall back to the
