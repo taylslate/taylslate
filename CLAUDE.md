@@ -229,6 +229,12 @@ Dashboard uses light theme. Landing page uses dark theme.
 - Build clean API endpoints from day one — the web UI is one of several future interfaces
 - Schemas and forms must match real-world industry documents and processes
 - **Git workflow (REQUIRED):** After completing any wave, feature, or substantial change, ALWAYS run `git add . && git commit -m "<descriptive message>" && git push` without being asked. Do not stop at "the code is built" — the work isn't done until it's pushed to main. This applies to every Claude Code session, every wave, every feature. No exceptions.
+- **Testing (REQUIRED):** After completing any feature, write at least one API route test or unit test verifying the core behavior. Tests go in `__tests__/` mirroring the source structure. Use Vitest. For API routes, test with real HTTP requests against the dev server using the test account. For scoring/pricing logic, write pure unit tests with no external dependencies. Every wave must ship with tests that verify the key behavior — if the tests don't pass, the wave isn't done.
+- **Interactive verification (REQUIRED):** Use the test account (credentials in env or provided in session) to log into the app and verify UI features work end-to-end in the browser before marking a wave complete. Do not rely solely on typecheck/lint passing — compile clean does not mean feature works.
+
+## Test Account
+
+A test account exists in Supabase for Claude Code to use during interactive verification. Credentials will be provided at the start of each session. Use this account to log in, create campaigns, test flows, and verify UI behavior. Never use the founder's personal account for testing.
 
 ## Competitive Context (Quick Reference)
 
