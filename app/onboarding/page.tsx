@@ -199,6 +199,12 @@ export default function OnboardingPage() {
 
     setSelectedRole(roleId);
 
+    // Brands go straight into the Wave 8 conversational onboarding.
+    if (roleId === "brand") {
+      router.push("/onboarding/brand/welcome");
+      return;
+    }
+
     if (roleId === "agent") {
       setStep(2);
     } else {

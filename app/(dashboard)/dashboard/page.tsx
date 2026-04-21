@@ -14,6 +14,7 @@ interface DashboardData {
   revenueOutstanding: number;
   pipelineValue: number;
   overdueCount: number;
+  campaignCount: number;
   recentDeals: (Deal & { show_name?: string })[];
   recentInvoices: { id: string; invoice_number: string; advertiser_name: string; total_due: number; status: string; due_date: string }[];
 }
@@ -52,10 +53,11 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchDashboard() {
       try {
-        const [showsRes, dealsRes, invoicesRes] = await Promise.all([
+        const [showsRes, dealsRes, invoicesRes, campaignsRes] = await Promise.all([
           fetch("/api/shows").then((r) => r.ok ? r.json() : []).catch(() => []),
           fetch("/api/deals").then((r) => r.ok ? r.json() : { deals: [] }).catch(() => ({ deals: [] })),
           fetch("/api/invoices").then((r) => r.ok ? r.json() : { invoices: [], stats: {} }).catch(() => ({ invoices: [], stats: {} })),
+          fetch("/api/campaigns").then((r) => r.ok ? r.json() : { campaigns: [] }).catch(() => ({ campaigns: [] })),
         ]);
 
         const shows: Show[] = Array.isArray(showsRes) ? showsRes : [];
@@ -75,6 +77,10 @@ export default function DashboardPage() {
           inv.status === "sent" && new Date(inv.due_date as string) < now
         );
 
+        const campaignList = Array.isArray(campaignsRes?.campaigns)
+          ? campaignsRes.campaigns
+          : Array.isArray(campaignsRes) ? campaignsRes : [];
+
         setData({
           totalShows: shows.length,
           podcastCount: shows.filter((s) => s.platform === "podcast").length,
@@ -85,6 +91,7 @@ export default function DashboardPage() {
           revenueOutstanding: stats.total_outstanding ?? 0,
           pipelineValue,
           overdueCount: overdueInvs.length,
+          campaignCount: campaignList.length,
           recentDeals: deals.slice(0, 5),
           recentInvoices: invoices.slice(0, 5),
         });
@@ -94,6 +101,7 @@ export default function DashboardPage() {
           totalShows: 0, podcastCount: 0, youtubeCount: 0,
           activeDeals: 0, pendingInvoices: 0, revenueThisMonth: 0,
           revenueOutstanding: 0, pipelineValue: 0, overdueCount: 0,
+          campaignCount: 0,
           recentDeals: [], recentInvoices: [],
         });
       } finally {
@@ -138,6 +146,30 @@ export default function DashboardPage() {
           Overview of your deals, invoices, and shows.
         </p>
       </div>
+
+      {/* First-campaign CTA — only when the brand has no campaigns yet. */}
+      {d.campaignCount === 0 && (
+        <Link
+          href="/campaigns/new"
+          className="group block mb-8 rounded-2xl border border-[var(--brand-blue)]/20 bg-gradient-to-br from-[var(--brand-blue)]/[0.06] to-[var(--brand-teal)]/[0.04] p-6 hover:border-[var(--brand-blue)]/40 transition-colors"
+        >
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <div className="text-xs uppercase tracking-wider font-semibold text-[var(--brand-blue)] mb-1.5">Welcome to Taylslate</div>
+              <h2 className="text-xl font-bold text-[var(--brand-text)]">Create your first campaign</h2>
+              <p className="text-sm text-[var(--brand-text-secondary)] mt-1.5 max-w-xl">
+                We&apos;ve saved your brand profile. When you start a campaign, we&apos;ll score 50–100 shows against your audience and surface the best matches. Most brands take 2–5 minutes from brief to IO.
+              </p>
+            </div>
+            <span className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--brand-blue)] text-white text-sm font-semibold whitespace-nowrap group-hover:bg-[var(--brand-blue-light)] transition-colors">
+              Start a campaign
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            </span>
+          </div>
+        </Link>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">

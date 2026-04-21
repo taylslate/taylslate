@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getBrandProfileByUserId, getUserProfile } from "@/lib/data/queries";
 import Sidebar from "@/components/layout/Sidebar";
 
 export default async function DashboardLayout({
@@ -14,6 +15,21 @@ export default async function DashboardLayout({
 
   if (!user) {
     redirect("/login");
+  }
+
+  // Role-less profile = user hasn't completed the (existing) role-selection
+  // onboarding at /onboarding. Send them back there.
+  const profile = await getUserProfile(user.id);
+  if (!profile?.role) {
+    redirect("/onboarding");
+  }
+
+  // Brand users need the Wave 8 brand onboarding before hitting the dashboard.
+  if (profile.role === "brand") {
+    const brandProfile = await getBrandProfileByUserId(user.id);
+    if (!brandProfile?.onboarded_at) {
+      redirect("/onboarding/brand");
+    }
   }
 
   return (

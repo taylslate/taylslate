@@ -20,6 +20,7 @@ import type {
   AgentShowRelationship,
   Campaign,
   CampaignStatus,
+  BrandProfile,
 } from "./types";
 
 // ---- Auth & Profiles ----
@@ -1377,4 +1378,77 @@ export async function updateCampaignMediaPlan(
     return false;
   }
   return true;
+}
+
+// ---- Brand Profile Queries (Wave 8) ----
+
+export async function getBrandProfileByUserId(
+  userId: string
+): Promise<BrandProfile | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("brand_profiles")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.error("[getBrandProfileByUserId] Error:", error.message);
+    return null;
+  }
+  return (data as BrandProfile) ?? null;
+}
+
+/**
+ * Upsert brand profile for a user. Creates the row on first call, patches
+ * on subsequent calls. Only the caller's own profile is touched.
+ */
+export async function upsertBrandProfile(
+  userId: string,
+  patch: Partial<Omit<BrandProfile, "id" | "user_id" | "created_at" | "updated_at">>
+): Promise<BrandProfile | null> {
+  const supabase = await createClient();
+
+  const existing = await getBrandProfileByUserId(userId);
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from("brand_profiles")
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .select()
+      .single();
+    if (error || !data) {
+      console.error("[upsertBrandProfile] Update error:", error?.message);
+      return null;
+    }
+    return data as BrandProfile;
+  }
+
+  const { data, error } = await supabase
+    .from("brand_profiles")
+    .insert({ user_id: userId, ...patch })
+    .select()
+    .single();
+  if (error || !data) {
+    console.error("[upsertBrandProfile] Insert error:", error?.message);
+    return null;
+  }
+  return data as BrandProfile;
+}
+
+export async function completeBrandProfile(
+  userId: string
+): Promise<BrandProfile | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("brand_profiles")
+    .update({ onboarded_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error || !data) {
+    console.error("[completeBrandProfile] Error:", error?.message);
+    return null;
+  }
+  return data as BrandProfile;
 }

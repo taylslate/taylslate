@@ -198,6 +198,8 @@ export interface ExpansionShow {
 export interface Campaign {
   id: string;
   user_id: string;
+  /** Wave 8: the brand profile the campaign was created from, if any. */
+  brand_profile_id?: string | null;
   name: string;
   brief: CampaignBrief;
   budget_total: number;
@@ -212,6 +214,46 @@ export interface Campaign {
   scoring_meta?: Record<string, unknown>;
   // Wave 7: Media plan builder persistence
   media_plan?: MediaPlan | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---- Brand Profile (Wave 8) ----
+
+export type BrandTargetGender = "mostly_men" | "mostly_women" | "mixed" | "no_preference";
+
+export type BrandCampaignGoal =
+  | "direct_sales"
+  | "brand_awareness"
+  | "new_product"
+  | "test_podcast";
+
+export interface BrandProfile {
+  id: string;
+  user_id: string;
+
+  // Step 2–4 (free text)
+  brand_identity?: string | null;
+  brand_website?: string | null;
+  target_customer?: string | null;
+
+  // Step 5 (age range)
+  target_age_min?: number | null;
+  target_age_max?: number | null;
+
+  // Step 6
+  target_gender?: BrandTargetGender | null;
+
+  // Step 7
+  content_categories?: string[];
+
+  // Step 8
+  campaign_goal?: BrandCampaignGoal | null;
+
+  // Step 9
+  exclusions?: string | null;
+
+  onboarded_at?: string | null;
   created_at: string;
   updated_at: string;
 }
