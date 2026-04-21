@@ -154,7 +154,22 @@ export default function MediaPlanBuilder({
   };
 
   const removeItem = (podcastId: string) => {
-    setLineItems((prev) => prev.filter((li) => li.podcast_id !== podcastId));
+    setLineItems((prev) => {
+      const next = prev.filter((li) => li.podcast_id !== podcastId);
+      // Also deselect at the discovery level so the show doesn't reappear on
+      // reload (the plan falls back to selected_show_ids for new additions).
+      fetch("/api/campaigns/selections", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          campaign_id: campaignId,
+          selected_show_ids: next.map((li) => li.podcast_id),
+        }),
+      }).catch(() => {
+        /* non-fatal */
+      });
+      return next;
+    });
   };
 
   const applyDefaultPlacement = (next: Placement) => {

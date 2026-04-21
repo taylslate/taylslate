@@ -291,7 +291,10 @@ export async function createIO(
     .insert(io)
     .select()
     .single();
-  if (ioError || !ioData) return null;
+  if (ioError || !ioData) {
+    console.error("[createIO] IO insert failed:", ioError?.code, ioError?.message, ioError?.details, ioError?.hint);
+    return null;
+  }
 
   // Insert line items with io_id
   const itemsWithIoId = lineItems.map((li) => ({ ...li, io_id: ioData.id }));
@@ -299,6 +302,9 @@ export async function createIO(
     .from("io_line_items")
     .insert(itemsWithIoId)
     .select();
+  if (liError) {
+    console.error("[createIO] line_items insert failed:", liError.code, liError.message, liError.details);
+  }
 
   return {
     ...ioData,
@@ -307,11 +313,13 @@ export async function createIO(
 }
 
 export async function getNextIONumber(): Promise<string> {
-  const supabase = await createClient();
+  // Use admin client: io_number uniqueness is global, but SELECT on
+  // insertion_orders is RLS-scoped to deal parties, so an anon-role read
+  // can undercount and produce duplicate key collisions on insert.
   const year = new Date().getFullYear();
   const prefix = `IO-${year}-`;
 
-  const { data } = await supabase
+  const { data } = await supabaseAdmin
     .from("insertion_orders")
     .select("io_number")
     .like("io_number", `${prefix}%`)

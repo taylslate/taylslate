@@ -8,6 +8,7 @@ import {
   createIO,
   getNextIONumber,
   getShowBySlug,
+  updateDeal,
 } from "@/lib/data/queries";
 import type {
   MediaPlanLineItem,
@@ -240,6 +241,9 @@ export async function POST(request: NextRequest) {
         errors.push(`IO creation failed for "${scoredShow.name}"`);
         continue;
       }
+
+      // Advance deal to io_sent so the Deals pipeline reflects the new IO.
+      await updateDeal(deal.id, { status: "io_sent" });
 
       created.push({ deal_id: deal.id, io_id: io.id, show_name: show.name });
     } catch (err) {
