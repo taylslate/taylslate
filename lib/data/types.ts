@@ -210,7 +210,28 @@ export interface Campaign {
   scored_shows?: ScoredShowRecord[]; // JSONB from scoring engine
   selected_show_ids?: string[];      // podcast IDs the brand checked
   scoring_meta?: Record<string, unknown>;
+  // Wave 7: Media plan builder persistence
+  media_plan?: MediaPlan | null;
   created_at: string;
+  updated_at: string;
+}
+
+// ---- Media Plan (Wave 7) ----
+
+export type PlanSpacing = "weekly" | "biweekly" | "monthly";
+
+/** Per-show configuration chosen by the brand in the plan builder. */
+export interface MediaPlanLineItem {
+  podcast_id: string;      // references ScoredShowRecord.podcastId
+  placement: Placement;
+  num_episodes: number;
+}
+
+export interface MediaPlan {
+  default_placement: Placement;
+  default_episodes: number;
+  spacing: PlanSpacing;
+  line_items: MediaPlanLineItem[];
   updated_at: string;
 }
 

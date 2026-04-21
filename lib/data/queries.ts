@@ -1351,3 +1351,22 @@ export async function updateCampaignSelections(
   }
   return true;
 }
+
+export async function updateCampaignMediaPlan(
+  campaignId: string,
+  mediaPlan: Record<string, unknown>
+): Promise<boolean> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("campaigns")
+    .update({
+      media_plan: mediaPlan,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", campaignId);
+  if (error) {
+    console.error("[updateCampaignMediaPlan] Error:", error.message);
+    return false;
+  }
+  return true;
+}
