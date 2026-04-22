@@ -258,6 +258,74 @@ export interface BrandProfile {
   updated_at: string;
 }
 
+// ---- Show Profile (Wave 9) ----
+
+export type ShowProfilePlatform = "podcast" | "youtube" | "both";
+
+export type ShowEpisodeCadence =
+  | "daily"
+  | "weekly"
+  | "biweekly"
+  | "monthly"
+  | "irregular";
+
+export type ShowAdFormat = "host_read_baked" | "dynamic_insertion";
+
+export type ShowAdReadType =
+  | "personal_experience"
+  | "scripted"
+  | "talking_points"
+  | "any";
+
+export type ShowPlacement = "pre_roll" | "mid_roll" | "post_roll";
+
+export type ShowCategoryExclusion =
+  | "gambling"
+  | "alcohol"
+  | "supplements"
+  | "political"
+  | "crypto"
+  | "adult"
+  | "none";
+
+export interface ShowProfile {
+  id: string;
+  user_id: string;
+
+  // Step 1
+  feed_url?: string | null;
+
+  // Step 2 — Podscan-enriched, editable
+  podscan_id?: string | null;
+  show_name?: string | null;
+  show_description?: string | null;
+  show_image_url?: string | null;
+  show_categories?: string[];
+  episode_count?: number | null;
+
+  // Step 3
+  platform?: ShowProfilePlatform | null;
+
+  // Step 4
+  episode_cadence?: ShowEpisodeCadence | null;
+
+  // Step 5
+  audience_size?: number | null;
+
+  // Step 6
+  expected_cpm?: number | null;
+
+  // Steps 7-10 (multi-select)
+  ad_formats?: ShowAdFormat[];
+  ad_read_types?: ShowAdReadType[];
+  placements?: ShowPlacement[];
+  category_exclusions?: ShowCategoryExclusion[];
+
+  onboarded_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ---- Media Plan (Wave 7) ----
 
 export type PlanSpacing = "weekly" | "biweekly" | "monthly";

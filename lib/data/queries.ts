@@ -21,6 +21,7 @@ import type {
   Campaign,
   CampaignStatus,
   BrandProfile,
+  ShowProfile,
 } from "./types";
 
 // ---- Auth & Profiles ----
@@ -1451,4 +1452,73 @@ export async function completeBrandProfile(
     return null;
   }
   return data as BrandProfile;
+}
+
+// ---- Show Profile Queries (Wave 9) ----
+
+export async function getShowProfileByUserId(
+  userId: string
+): Promise<ShowProfile | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("show_profiles")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.error("[getShowProfileByUserId] Error:", error.message);
+    return null;
+  }
+  return (data as ShowProfile) ?? null;
+}
+
+export async function upsertShowProfile(
+  userId: string,
+  patch: Partial<Omit<ShowProfile, "id" | "user_id" | "created_at" | "updated_at">>
+): Promise<ShowProfile | null> {
+  const supabase = await createClient();
+
+  const existing = await getShowProfileByUserId(userId);
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from("show_profiles")
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .select()
+      .single();
+    if (error || !data) {
+      console.error("[upsertShowProfile] Update error:", error?.message);
+      return null;
+    }
+    return data as ShowProfile;
+  }
+
+  const { data, error } = await supabase
+    .from("show_profiles")
+    .insert({ user_id: userId, ...patch })
+    .select()
+    .single();
+  if (error || !data) {
+    console.error("[upsertShowProfile] Insert error:", error?.message);
+    return null;
+  }
+  return data as ShowProfile;
+}
+
+export async function completeShowProfile(
+  userId: string
+): Promise<ShowProfile | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("show_profiles")
+    .update({ onboarded_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error || !data) {
+    console.error("[completeShowProfile] Error:", error?.message);
+    return null;
+  }
+  return data as ShowProfile;
 }

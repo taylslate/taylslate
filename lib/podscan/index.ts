@@ -16,6 +16,12 @@ export { getPodcastAnalysis } from "./analysis";
 export { getEpisodeEngagement } from "./engagement";
 export { getPodcastBrandSafety } from "./brand-safety";
 export { getPodcastRankings, type RankingsParams } from "./rankings";
+export {
+  getPodcastByRss,
+  getPodcastByItunesId,
+  extractItunesId,
+  lookupShowByUrl,
+} from "./lookup";
 
 // Types
 export type {

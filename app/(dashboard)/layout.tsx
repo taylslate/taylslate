@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getBrandProfileByUserId, getUserProfile } from "@/lib/data/queries";
+import {
+  getBrandProfileByUserId,
+  getShowProfileByUserId,
+  getUserProfile,
+} from "@/lib/data/queries";
 import Sidebar from "@/components/layout/Sidebar";
 
 export default async function DashboardLayout({
@@ -29,6 +33,14 @@ export default async function DashboardLayout({
     const brandProfile = await getBrandProfileByUserId(user.id);
     if (!brandProfile?.onboarded_at) {
       redirect("/onboarding/brand");
+    }
+  }
+
+  // Show/creator users need the Wave 9 show onboarding before hitting the dashboard.
+  if (profile.role === "show") {
+    const showProfile = await getShowProfileByUserId(user.id);
+    if (!showProfile?.onboarded_at) {
+      redirect("/onboarding/show");
     }
   }
 
