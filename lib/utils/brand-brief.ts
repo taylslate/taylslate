@@ -4,6 +4,42 @@
 
 import type { BrandProfile, BrandCampaignGoal, BrandTargetGender } from "@/lib/data/types";
 
+/**
+ * Wave 10: Per-campaign overrides that sit on top of the stored brand
+ * profile. These never persist — they only shape the brief that gets
+ * sent to the scoring engine for a single campaign run.
+ */
+export interface CampaignOverrides {
+  target_customer?: string;
+  content_categories?: string[];
+  campaign_goals?: BrandCampaignGoal[];
+}
+
+/**
+ * Shallow-merge overrides onto a BrandProfile. Undefined / empty-array
+ * override values fall through to the base profile; set values replace.
+ * Returns a new object; never mutates.
+ */
+export function mergeProfileWithOverrides(
+  profile: BrandProfile | null | undefined,
+  overrides: CampaignOverrides | null | undefined
+): BrandProfile | null {
+  if (!profile) return null;
+  if (!overrides) return profile;
+
+  const merged: BrandProfile = { ...profile };
+  if (typeof overrides.target_customer === "string" && overrides.target_customer.trim().length > 0) {
+    merged.target_customer = overrides.target_customer.trim();
+  }
+  if (Array.isArray(overrides.content_categories) && overrides.content_categories.length > 0) {
+    merged.content_categories = overrides.content_categories;
+  }
+  if (Array.isArray(overrides.campaign_goals) && overrides.campaign_goals.length > 0) {
+    merged.campaign_goals = overrides.campaign_goals;
+  }
+  return merged;
+}
+
 const GOAL_PHRASES: Record<BrandCampaignGoal, string> = {
   direct_sales: "drive direct sales through promo codes",
   brand_awareness: "build brand awareness at scale",

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import ConnectOnboarding from "@/components/payments/ConnectOnboarding";
@@ -78,6 +79,25 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {role === "brand" && (
+        <Link
+          href="/settings/brand-profile"
+          className="block p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6 hover:border-[var(--brand-blue)]/40 transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-[var(--brand-text)]">Brand profile</h2>
+              <p className="text-sm text-[var(--brand-text-muted)] mt-0.5">
+                Edit the foundational targeting info we use to score shows for your campaigns.
+              </p>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </div>
+        </Link>
+      )}
 
       {!profileLoaded ? (
         <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
