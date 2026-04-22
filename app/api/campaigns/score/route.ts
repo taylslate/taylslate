@@ -149,20 +149,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to initialize user profile" }, { status: 500 });
   }
 
-  // Parse the free-form brief through Claude when provided; fall back to the
-  // legacy structured fields on the request body otherwise.
+  // Build a brief from legacy structured fields so we always have a fallback
+  // if the AI parser fails (credit limits, rate limits, timeouts, outages).
+  const fallbackBrief: CampaignBrief = {
+    brand_url: body.brand_url,
+    target_age_range: body.target_age_range,
+    target_gender: body.target_gender,
+    target_interests: body.target_interests || [],
+    keywords: body.keywords || [],
+    campaign_goals: body.campaign_goals,
+  };
+
   let brief: CampaignBrief;
   const briefText = body.brief_text?.trim();
-  if (briefText) {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        {
-          error: "AI brief parsing is not configured. Please add an ANTHROPIC_API_KEY environment variable.",
-          code: "NO_API_KEY",
-        },
-        { status: 503 }
-      );
-    }
+
+  if (briefText && process.env.ANTHROPIC_API_KEY) {
     try {
       const parsed = await parseBriefWithClaude(briefText, body.brand_url);
       console.log(
@@ -178,22 +179,39 @@ export async function POST(request: NextRequest) {
         campaign_goals: parsed.campaign_goals ?? undefined,
       };
     } catch (err) {
-      const errMessage = err instanceof Error ? err.message : "Unknown error";
-      console.error("[campaign/score] Brief parser error:", errMessage);
-      return NextResponse.json(
-        { error: `Could not parse brief: ${errMessage}` },
-        { status: 422 }
+      // Log the real error server-side, but never surface raw API messages
+      // to the user. Fall through to the structured-fields fallback.
+      console.error(
+        "[campaign/score] Brief parser failed, falling back to structured fields:",
+        err instanceof Error ? `${err.name}: ${err.message}` : err
       );
+      brief = fallbackBrief;
     }
   } else {
-    brief = {
-      brand_url: body.brand_url,
-      target_age_range: body.target_age_range,
-      target_gender: body.target_gender,
-      target_interests: body.target_interests || [],
-      keywords: body.keywords || [],
-      campaign_goals: body.campaign_goals,
-    };
+    if (briefText && !process.env.ANTHROPIC_API_KEY) {
+      console.warn(
+        "[campaign/score] ANTHROPIC_API_KEY not set — using structured fields fallback for brief."
+      );
+    }
+    brief = fallbackBrief;
+  }
+
+  // Final guard: if neither the parser nor the fallback gave us anything
+  // scoring-relevant, tell the user something went wrong (friendly copy only).
+  const hasSignal =
+    brief.target_interests.length > 0 ||
+    brief.keywords.length > 0 ||
+    !!brief.target_age_range ||
+    !!brief.target_gender ||
+    !!brief.campaign_goals;
+  if (briefText && !hasSignal) {
+    return NextResponse.json(
+      {
+        error:
+          "We're experiencing a temporary issue — please try again in a moment.",
+      },
+      { status: 503 }
+    );
   }
 
   try {
@@ -253,7 +271,10 @@ export async function POST(request: NextRequest) {
     const errMessage = err instanceof Error ? err.message : "Unknown error";
     console.error("[campaign/score] Error:", errMessage);
     return NextResponse.json(
-      { error: `Scoring failed: ${errMessage}` },
+      {
+        error:
+          "We're experiencing a temporary issue — please try again in a moment.",
+      },
       { status: 500 }
     );
   }

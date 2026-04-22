@@ -75,9 +75,23 @@ describe("sanitizeBrandProfilePatch", () => {
     }
   });
 
-  it("rejects unknown campaign goals", () => {
-    const patch = sanitizeBrandProfilePatch({ campaign_goal: "world_domination" });
-    expect(patch.campaign_goal).toBeUndefined();
+  it("filters out unknown campaign goals and dedupes", () => {
+    const patch = sanitizeBrandProfilePatch({
+      campaign_goals: ["direct_sales", "world_domination", "direct_sales", "brand_awareness"],
+    });
+    expect(patch.campaign_goals).toEqual(["direct_sales", "brand_awareness"]);
+  });
+
+  it("caps campaign_goals at 3", () => {
+    const patch = sanitizeBrandProfilePatch({
+      campaign_goals: ["direct_sales", "brand_awareness", "new_product", "test_podcast"],
+    });
+    expect(patch.campaign_goals).toHaveLength(3);
+  });
+
+  it("ignores non-array campaign_goals", () => {
+    const patch = sanitizeBrandProfilePatch({ campaign_goals: "direct_sales" });
+    expect(patch.campaign_goals).toBeUndefined();
   });
 
   it("caps content_categories to 10 and filters junk", () => {
@@ -178,11 +192,19 @@ describe("POST /api/brand-profile/complete", () => {
       brand_identity: "",
       target_customer: "",
       content_categories: [],
+      campaign_goals: [],
     });
     const res = await COMPLETE_POST();
     const body = await res.json();
     expect(res.status).toBe(400);
-    expect(body.missing).toEqual(expect.arrayContaining(["brand_identity", "target_customer", "content_categories"]));
+    expect(body.missing).toEqual(
+      expect.arrayContaining([
+        "brand_identity",
+        "target_customer",
+        "content_categories",
+        "campaign_goals",
+      ])
+    );
   });
 
   it("calls completeBrandProfile when minimum fields are present", async () => {
@@ -193,6 +215,7 @@ describe("POST /api/brand-profile/complete", () => {
       brand_identity: "Saunas",
       target_customer: "Men 30-45",
       content_categories: ["Health & Wellness"],
+      campaign_goals: ["direct_sales"],
     });
     completeBrandProfile.mockResolvedValue({
       id: "bp1",

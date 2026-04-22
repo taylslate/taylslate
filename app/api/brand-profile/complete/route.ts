@@ -22,12 +22,16 @@ export async function POST() {
     );
   }
 
-  // Minimum viable: identity + customer description + at least one category.
+  // Minimum viable: identity + customer description + at least one category
+  // + at least one campaign goal.
   const missing: string[] = [];
   if (!existing.brand_identity?.trim()) missing.push("brand_identity");
   if (!existing.target_customer?.trim()) missing.push("target_customer");
   if (!existing.content_categories || existing.content_categories.length === 0) {
     missing.push("content_categories");
+  }
+  if (!existing.campaign_goals || existing.campaign_goals.length === 0) {
+    missing.push("campaign_goals");
   }
   if (missing.length > 0) {
     return NextResponse.json(

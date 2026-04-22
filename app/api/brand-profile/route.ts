@@ -42,8 +42,18 @@ export function sanitizeBrandProfilePatch(
     patch.target_gender = body.target_gender as BrandTargetGender;
   }
 
-  if (typeof body.campaign_goal === "string" && ALLOWED_GOALS.includes(body.campaign_goal as BrandCampaignGoal)) {
-    patch.campaign_goal = body.campaign_goal as BrandCampaignGoal;
+  if (Array.isArray(body.campaign_goals)) {
+    const seen = new Set<BrandCampaignGoal>();
+    const goals: BrandCampaignGoal[] = [];
+    for (const g of body.campaign_goals) {
+      if (typeof g !== "string") continue;
+      if (!ALLOWED_GOALS.includes(g as BrandCampaignGoal)) continue;
+      if (seen.has(g as BrandCampaignGoal)) continue;
+      seen.add(g as BrandCampaignGoal);
+      goals.push(g as BrandCampaignGoal);
+      if (goals.length >= 3) break;
+    }
+    patch.campaign_goals = goals;
   }
 
   if (Array.isArray(body.content_categories)) {

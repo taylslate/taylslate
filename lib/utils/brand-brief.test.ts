@@ -29,7 +29,7 @@ describe("buildBriefFromProfile", () => {
       target_age_max: 45,
       target_gender: "mostly_men",
       content_categories: ["Health & Wellness", "Self-Improvement"],
-      campaign_goal: "direct_sales",
+      campaign_goals: ["direct_sales"],
       exclusions: "no gambling",
     });
 
@@ -38,8 +38,19 @@ describe("buildBriefFromProfile", () => {
     expect(brief).toContain("Our target customer: health-conscious men with disposable income.");
     expect(brief).toContain("primarily men aged 30-45");
     expect(brief).toContain("Health & Wellness, Self-Improvement");
-    expect(brief).toContain("drive direct sales through promo codes");
+    expect(brief).toContain("Goal: drive direct sales through promo codes");
     expect(brief).toContain("Exclusions: no gambling.");
+  });
+
+  it("joins multiple goals with a semicolon and uses plural label", () => {
+    const profile = make({
+      brand_identity: "A brand",
+      campaign_goals: ["direct_sales", "brand_awareness"],
+    });
+    const brief = buildBriefFromProfile(profile);
+    expect(brief).toContain(
+      "Goals: drive direct sales through promo codes; build brand awareness at scale."
+    );
   });
 
   it("uses 65+ notation when max age is unbounded", () => {

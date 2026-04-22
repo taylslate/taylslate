@@ -55,8 +55,10 @@ export function buildBriefFromProfile(profile: BrandProfile | null | undefined):
     );
   }
 
-  if (profile.campaign_goal) {
-    sentences.push(`Goal: ${GOAL_PHRASES[profile.campaign_goal]}.`);
+  if (profile.campaign_goals && profile.campaign_goals.length > 0) {
+    const phrases = profile.campaign_goals.map((g) => GOAL_PHRASES[g]);
+    const label = profile.campaign_goals.length === 1 ? "Goal" : "Goals";
+    sentences.push(`${label}: ${phrases.join("; ")}.`);
   }
 
   if (profile.exclusions?.trim()) {

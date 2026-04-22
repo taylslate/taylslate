@@ -18,13 +18,13 @@ export default async function BrandOnboardingIndex() {
 
   const nextStep: BrandOnboardingSlug = (() => {
     if (!profile) return "welcome";
+    if (profile.brand_website == null) return "welcome";
     if (!profile.brand_identity) return "identity";
-    if (profile.brand_website == null) return "website";
     if (!profile.target_customer) return "customer";
     if (profile.target_age_min == null) return "age";
     if (!profile.target_gender) return "gender";
     if (!profile.content_categories || profile.content_categories.length === 0) return "categories";
-    if (!profile.campaign_goal) return "goals";
+    if (!profile.campaign_goals || profile.campaign_goals.length === 0) return "goals";
     if (profile.exclusions == null) return "exclusions";
     return "summary";
   })();

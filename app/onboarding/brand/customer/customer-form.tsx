@@ -19,9 +19,12 @@ export default function CustomerForm({ initialValue }: { initialValue: string })
         onChange={(e) => setValue(e.target.value)}
         rows={5}
         autoFocus
-        placeholder="e.g. Health-conscious men 30-45 with disposable income who invest in recovery and wellness"
+        placeholder="Start typing..."
         className="w-full px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none"
       />
+      <p className="text-xs text-[var(--brand-text-muted)] mt-2">
+        Think about who actually buys from you — their age, interests, lifestyle, and what problems they&apos;re solving.
+      </p>
     </OnboardingShell>
   );
 }

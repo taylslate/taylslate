@@ -68,8 +68,8 @@ export default function SummaryClient({ profile }: { profile: BrandProfile }) {
           </p>
 
           <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] divide-y divide-[var(--brand-border)]">
+            <Row label="Website" value={profile.brand_website ?? ""} editSlug="welcome" emptyLabel="Add your website" placeholderAsEmpty />
             <Row label="Brand" value={profile.brand_identity ?? ""} editSlug="identity" emptyLabel="Add your brand description" />
-            <Row label="Website" value={profile.brand_website ?? ""} editSlug="website" emptyLabel="Add your website" />
             <Row label="Ideal customer" value={profile.target_customer ?? ""} editSlug="customer" emptyLabel="Describe your ideal customer" />
             <Row label="Age range" value={formatAgeRange(profile.target_age_min, profile.target_age_max)} editSlug="age" />
             <Row label="Audience skew" value={profile.target_gender ? GENDER_LABELS[profile.target_gender] : ""} editSlug="gender" emptyLabel="Pick a skew" />
@@ -79,7 +79,12 @@ export default function SummaryClient({ profile }: { profile: BrandProfile }) {
               editSlug="categories"
               emptyLabel="Pick at least one category"
             />
-            <Row label="Primary goal" value={profile.campaign_goal ? GOAL_LABELS[profile.campaign_goal] : ""} editSlug="goals" emptyLabel="Pick a goal" />
+            <Row
+              label="Goals"
+              value={(profile.campaign_goals ?? []).map((g) => GOAL_LABELS[g]).join(" · ")}
+              editSlug="goals"
+              emptyLabel="Pick at least one goal"
+            />
             <Row label="Exclusions" value={profile.exclusions ?? ""} editSlug="exclusions" emptyLabel="None" placeholderAsEmpty />
           </div>
 

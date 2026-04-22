@@ -247,8 +247,8 @@ export interface BrandProfile {
   // Step 7
   content_categories?: string[];
 
-  // Step 8
-  campaign_goal?: BrandCampaignGoal | null;
+  // Step 8 — multi-select, 1-3 goals
+  campaign_goals?: BrandCampaignGoal[] | null;
 
   // Step 9
   exclusions?: string | null;

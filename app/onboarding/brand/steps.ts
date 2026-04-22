@@ -5,7 +5,6 @@
 export const BRAND_ONBOARDING_STEPS = [
   { slug: "welcome", label: "Welcome" },
   { slug: "identity", label: "Brand identity" },
-  { slug: "website", label: "Website" },
   { slug: "customer", label: "Target customer" },
   { slug: "age", label: "Age range" },
   { slug: "gender", label: "Gender" },

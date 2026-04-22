@@ -19,11 +19,11 @@ export default function IdentityForm({ initialValue }: { initialValue: string })
         onChange={(e) => setValue(e.target.value)}
         rows={5}
         autoFocus
-        placeholder="e.g. SaunaBox makes portable infrared saunas for home use, priced $400-800"
+        placeholder="Start typing..."
         className="w-full px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none"
       />
       <p className="text-xs text-[var(--brand-text-muted)] mt-2">
-        {value.trim().length < 10 ? "Write at least a sentence to continue." : `${value.trim().length} characters`}
+        What do you sell and who&apos;s it for? Include your product type, price range, and what makes it different.
       </p>
     </OnboardingShell>
   );
