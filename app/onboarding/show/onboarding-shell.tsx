@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
 import type { ShowProfile } from "@/lib/data/types";
 import {
@@ -50,6 +50,8 @@ export default function OnboardingShell({
   hideBack,
 }: ShellProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get("return");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,6 +79,10 @@ export default function OnboardingShell({
           return;
         }
       }
+      if (returnTo === "summary") {
+        router.push("/onboarding/show/summary");
+        return;
+      }
       const next = nextStepSlug(slug);
       if (next) {
         router.push(`/onboarding/show/${next}`);
@@ -87,7 +93,7 @@ export default function OnboardingShell({
       setError(err instanceof Error ? err.message : "Something went wrong");
       setSubmitting(false);
     }
-  }, [onContinue, router, slug, submitting, continueDisabled]);
+  }, [onContinue, router, slug, submitting, continueDisabled, returnTo]);
 
   const back = prevStepSlug(slug);
 

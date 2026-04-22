@@ -82,10 +82,16 @@ export function sanitizeShowProfilePatch(
       .slice(0, 10);
   }
 
-  for (const k of ["episode_count", "audience_size", "expected_cpm"] as const) {
+  for (const k of ["episode_count", "audience_size"] as const) {
     if (typeof body[k] === "number" && Number.isFinite(body[k] as number)) {
       patch[k] = Math.max(0, Math.round(body[k] as number));
     }
+  }
+
+  // expected_cpm accepts two decimal places ($28.50) — stored as NUMERIC(6,2)
+  // after migration 010. Round to cents to normalize DB writes.
+  if (typeof body.expected_cpm === "number" && Number.isFinite(body.expected_cpm)) {
+    patch.expected_cpm = Math.max(0, Math.round(body.expected_cpm * 100) / 100);
   }
 
   if (typeof body.platform === "string" && ALLOWED_PLATFORMS.includes(body.platform as ShowProfilePlatform)) {

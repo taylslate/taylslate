@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
 import type { BrandProfile } from "@/lib/data/types";
 import {
@@ -55,6 +55,8 @@ export default function OnboardingShell({
   hideBack,
 }: ShellProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get("return");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,6 +84,12 @@ export default function OnboardingShell({
           return;
         }
       }
+      // If the user came from the summary page ("Edit" link), return them
+      // to the summary instead of advancing to the next step in sequence.
+      if (returnTo === "summary") {
+        router.push("/onboarding/brand/summary");
+        return;
+      }
       const next = nextStepSlug(slug);
       if (next) {
         router.push(`/onboarding/brand/${next}`);
@@ -92,7 +100,7 @@ export default function OnboardingShell({
       setError(err instanceof Error ? err.message : "Something went wrong");
       setSubmitting(false);
     }
-  }, [onContinue, router, slug, submitting, continueDisabled]);
+  }, [onContinue, router, slug, submitting, continueDisabled, returnTo]);
 
   const back = prevStepSlug(slug);
 

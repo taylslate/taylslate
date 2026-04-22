@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import ConnectOnboarding from "@/components/payments/ConnectOnboarding";
 import CardForm from "@/components/payments/CardForm";
+import SignOutButton from "@/components/auth/SignOutButton";
 
 type UserRole = "brand" | "agency" | "agent" | "show";
 
@@ -115,7 +116,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
+      <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-semibold text-[var(--brand-text)]">API & MCP Access</h2>
           <span className="text-xs bg-[var(--brand-blue)]/10 text-[var(--brand-blue)] px-2 py-0.5 rounded-full font-medium">Growth plan required</span>
@@ -124,6 +125,18 @@ export default function SettingsPage() {
         <button disabled className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-muted)] cursor-not-allowed opacity-50">
           Generate API Key
         </button>
+      </div>
+
+      <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-[var(--brand-text)]">Session</h2>
+            <p className="text-sm text-[var(--brand-text-muted)] mt-0.5">End your session on this device.</p>
+          </div>
+          <SignOutButton className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text)] hover:bg-[var(--brand-surface)] disabled:opacity-50 transition-colors">
+            Sign out
+          </SignOutButton>
+        </div>
       </div>
     </div>
   );

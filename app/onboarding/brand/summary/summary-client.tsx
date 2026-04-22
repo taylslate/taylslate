@@ -147,7 +147,7 @@ function Row({
         </div>
       </div>
       <Link
-        href={`/onboarding/brand/${editSlug}`}
+        href={`/onboarding/brand/${editSlug}?return=summary`}
         className="text-xs font-medium text-[var(--brand-blue)] hover:text-[var(--brand-blue-light)] transition-colors whitespace-nowrap"
       >
         Edit

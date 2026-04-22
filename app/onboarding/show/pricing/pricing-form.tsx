@@ -33,7 +33,7 @@ export default function PricingForm({
       title="What CPM do you think is fair for your show?"
       subtitle="No wrong answer — we'll show you what the market looks like once you share your number."
       onContinue={async () =>
-        hasInput ? { expected_cpm: Math.round(parsed) } : false
+        hasInput ? { expected_cpm: Math.round(parsed * 100) / 100 } : false
       }
       continueDisabled={!hasInput}
     >
@@ -44,9 +44,9 @@ export default function PricingForm({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           min={0}
-          step={1}
+          step={0.01}
           autoFocus
-          placeholder="25"
+          placeholder="28.50"
           className="w-full pl-8 pr-20 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-base focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
         />
         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-[var(--brand-text-muted)]">
@@ -100,7 +100,7 @@ export default function PricingForm({
               Your number
             </div>
             <div className="text-sm text-[var(--brand-text)] leading-relaxed">
-              At <strong>${Math.round(parsed)} CPM</strong>, each ad spot earns you{" "}
+              At <strong>${parsed.toFixed(parsed % 1 === 0 ? 0 : 2)} CPM</strong>, each ad spot earns you{" "}
               <strong className="text-[var(--brand-text)]">
                 ${userSpot?.toLocaleString()}
               </strong>

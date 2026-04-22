@@ -34,9 +34,9 @@ export default function AudienceForm({
           step={100}
           autoFocus
           placeholder="e.g. 12000"
-          className="w-full px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-base focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+          className="w-full pl-4 pr-32 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-base focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
         />
-        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-[var(--brand-text-muted)]">
+        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-[var(--brand-text-muted)] whitespace-nowrap">
           downloads / ep
         </span>
       </div>

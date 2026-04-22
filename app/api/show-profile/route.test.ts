@@ -54,15 +54,20 @@ describe("sanitizeShowProfilePatch", () => {
     expect(patch.show_name).toBeNull();
   });
 
-  it("clamps numeric fields to non-negative integers", () => {
+  it("clamps audience + episode count to non-negative integers", () => {
     const patch = sanitizeShowProfilePatch({
       audience_size: 12345.7,
-      expected_cpm: -10,
       episode_count: 50,
     });
     expect(patch.audience_size).toBe(12346);
-    expect(patch.expected_cpm).toBe(0);
     expect(patch.episode_count).toBe(50);
+  });
+
+  it("keeps expected_cpm as a non-negative number rounded to cents", () => {
+    expect(sanitizeShowProfilePatch({ expected_cpm: 28.5 }).expected_cpm).toBe(28.5);
+    expect(sanitizeShowProfilePatch({ expected_cpm: 28.567 }).expected_cpm).toBe(28.57);
+    expect(sanitizeShowProfilePatch({ expected_cpm: 25 }).expected_cpm).toBe(25);
+    expect(sanitizeShowProfilePatch({ expected_cpm: -10 }).expected_cpm).toBe(0);
   });
 
   it("rejects unknown platform values", () => {
@@ -262,5 +267,25 @@ describe("POST /api/show-profile/lookup", () => {
       episode_count: 42,
       audience_size: 12500,
     });
+  });
+
+  it("strips HTML tags from the podcast description before returning", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u1" });
+    getPodscanClientSafe.mockReturnValue({});
+    lookupShowByUrl.mockResolvedValue({
+      podcast_id: "p1",
+      podcast_name: "My Show",
+      podcast_description:
+        "<p>Interviews with <strong>builders</strong>.</p><p>New episodes every week.</p>",
+      podcast_image_url: null,
+      podcast_categories: [],
+      episode_count: 10,
+      reach: null,
+    });
+    const res = await LOOKUP_POST(lookupReq({ url: "https://feeds.example.com/rss" }) as never);
+    const body = await res.json();
+    expect(body.podcast.show_description).toBe(
+      "Interviews with builders. New episodes every week."
+    );
   });
 });
