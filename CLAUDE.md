@@ -1,258 +1,172 @@
 # CLAUDE.md — Taylslate Project Context
 
-*Last updated: April 13, 2026*
+*Last updated: April 22, 2026*
 
 **For deep strategic context, competitive research, and domain knowledge, see `TAYLSLATE_CONTEXT.md` in this project folder.**
+**For Podscan API reference, see `docs/podscan-api.md`.**
 
 ---
 
 ## What is Taylslate
 
-Taylslate is the **infrastructure layer for creator sponsorship advertising** — podcasts, YouTube, and eventually wherever host-endorsed advertising lives. It replaces the manual, weeks-long process of campaign planning, deal negotiation, insertion order management, delivery tracking, invoicing, and payment with one AI-powered platform.
+Taylslate is the **transaction data layer and payment rail for podcast (and YouTube) sponsorship advertising** — Layer 3 infrastructure that brands, shows, and eventually AI agents operate on. It replaces the manual, weeks-long process of campaign planning, deal negotiation, insertion order management, delivery tracking, invoicing, and payment with one AI-powered platform.
 
-**The one-liner:** "Discover your shows. Build your plan. Send your IOs. Ads run. We verify. You get paid."
+**The tagline:** "Facebook ads for podcast reads."
 
-**The thesis:** Creator sponsorship is a $6B+ market growing 20%+ annually, but the buying process is stuck in 2015. Digital media has programmatic infrastructure. Creator sponsorship has email threads, Word docs, and 90-day payment terms. Taylslate closes that gap.
+**The thesis:** Creator sponsorship is a $6B+ market growing 20%+ annually, but the buying process is stuck in 2015. Digital media has programmatic infrastructure. Creator sponsorship has email threads, Word docs, and 90-day payment terms. Taylslate closes that gap. The data moat compounds with transaction volume — every deal that runs through the platform makes the AI smarter.
 
-## Core Thesis
+## Core Positioning — Layer 3 Infrastructure
 
-The most valuable data in podcast advertising — real CPM rates, verified download performance, advertiser retention, conversion signals — does not exist in any API. Taylslate captures this data by facilitating the actual transaction. Every deal makes the AI smarter. The moat is the data. Everything else is a mechanism to capture it.
+Taylslate is NOT a marketplace (Layer 2 orchestrator) and NOT an AI agent (Layer 1). It is the transaction data layer and payment rail that sits underneath both. The data moat compounds with transaction volume, not with being the smartest agent or having the most shows signed up.
 
-**Monaco.com analogy:** Monaco replaced 5-8 fragmented sales tools with one AI-native system of record where intelligence compounds with usage. Taylslate does the same for creator sponsorship transactions.
+**Key distinction from competitors:** CreatorExchange and SpotsNow are marketplaces that require shows to sign up before brands can transact. Taylslate's discovery layer touches the entire Podscan universe of 4.4M shows. A brand can discover, plan, and generate IOs without a single show having "signed up." The show's first interaction is receiving a professional IO — money arriving, not a recruitment pitch.
 
-## Target User (April 2026 Shift)
+## Target User
 
-**Primary:** Brands new to podcast advertising. These brands have budget, they know podcast ads work, but they don't know how to buy them. They need market education alongside the transaction infrastructure.
+**Primary:** Brands new to podcast advertising. They have budget, they know podcast ads work, but they don't know how to buy them. They need market education alongside the transaction infrastructure. NOT brands already spending heavily (they have agency relationships) and NOT agencies (late adopters with workflow inertia).
 
-**Secondary:** Sales agents and talent managers representing multiple shows (original MVP target, still a valid user type).
+**Secondary:** Sales agents and talent managers representing multiple shows.
 
-**Late adopters (not early targets):** Agencies. They have workflow inertia — existing IO templates, existing spreadsheets, existing relationships. They won't import everything into Taylslate on day one. We serve them eventually, but we don't optimize GTM around them.
+**Show-side:** Shows and creators onboard organically when deals arrive. The onboarding flow educates them on realistic CPM expectations and market pricing.
 
-**Not the target:** Brands already spending in the space. They have agency relationships and established processes. They're the hardest to convert and the least valuable early.
+## Product Flow
 
-## Product Flow — Discovery List, Not Auto-Plan
+**Brand side (complete):**
+1. Signup → conversational onboarding (10 steps, captures durable brand profile)
+2. New campaign → "Anything different?" override screen → single text-area brief pre-filled from profile
+3. AI returns scored discovery list of 50-100 shows → brand browses, filters, selects via checkbox
+4. Platform builds media plan from selections (placement, episodes, pricing, totals)
+5. Generate IOs → deals created → IO PDFs generated
+6. Payment: brand card charged on verified delivery (Stripe Connect)
 
-This is the key product shift from the original spec. The original flow had AI generating a complete media plan. The new flow separates discovery from planning.
+**Show side (complete):**
+1. Signup → conversational onboarding (11 steps, with CPM education at step 6)
+2. RSS/Apple Podcasts link auto-populates show data from Podscan
+3. Profile ready for brand discovery
 
-**Step 1 — Brief:** Brand inputs URL, budget, target audience, campaign goals.
-
-**Step 2 — Discovery list:** AI returns a scored list of 50-100 shows ranked by fit. Each show displays: audience size, estimated CPM, demographic profile, sponsor retention signal, ad engagement rate (when available), brand safety context, and a composite fit score. Brand browses, filters by category, sorts by fit / audience / CPM / engagement.
-
-**Step 3 — Selection:** Brand selects shows via checkbox. Running totals display as they select (total impressions, estimated spend, show count).
-
-**Step 4 — Plan builder:** Selected shows become line items. Brand configures default placement (pre/mid/post-roll), episodes per show, and spacing (weekly/biweekly/monthly). Platform calculates spot prices, blended CPM, and total spend using domain logic.
-
-**Step 5 — IO generation:** One click generates industry-standard IOs for every show in the plan, pre-filled with all standard terms. Ready for e-signature.
-
-**Step 6 — Verification and payment:** Ads run, delivery verified (Podscribe or RSS/transcript scanning), invoices auto-generated, payment facilitated through Stripe Connect.
-
-**Why this flow:** First-time brand buyers don't trust an AI to make the final decision. They need to see the landscape to develop intuition, which is also the market education our GTM requires. The discovery list itself teaches them about the space — CPM ranges, audience sizes, the value of smaller shows.
+**Campaign creation for returning brands (complete):**
+- Pre-filled from brand profile
+- "Use as-is" shortcut or stackable overrides (audience, categories, goals)
+- Overrides apply per-campaign only, don't change the saved profile
 
 ## Recommendation Engine
 
-The scoring engine combines three Podscan data sources and scores every candidate show across four dimensions.
-
 **Data sources:**
-- **Category Leaders** (`POST /category-leaders/search`) — Top shows per IAB/chart/self-reported category, ranked by Podscan Reach Score. Professional plan returns up to 500 shows per category.
-- **Podcast Search** (`GET /podcasts/search`) — Filtered search with audience size, category, and sponsor filters.
-- **Discover** (`GET /podcasts/{id}/discover`) — Vector similarity across content, demographics, and commercial dimensions. Used to fan out from strong matches and find adjacent shows the brand wouldn't have found otherwise.
+- **Category Leaders** (`POST /category-leaders/search`) — pool building, up to 500 shows/category
+- **Podcast Search** (`GET /podcasts/search`) — filtered queries with audience size, category, sponsors
+- **Discover** (`GET /podcasts/{id}/discover`) — vector similarity across content, demographics, commercial dimensions
 
 **Scoring weights (default):**
-- Audience fit: 40% — demographics match, age/gender skew, purchasing power, professional industry
-- Ad engagement: 30% — mid-roll engagement rate, completion rate, placement details (requires listener engagement add-on)
-- Sponsor retention: 20% — repeat advertisers and episode counts from `/podcasts/{id}/analysis` (proxy for conversion)
+- Audience fit: 40% — demographics match from `/podcasts/{id}/demographics`
+- Ad engagement: 30% — mid-roll engagement rate from `/episodes/{id}/engagement` (listener engagement add-on enabled)
+- Sponsor retention: 20% — repeat advertisers from `/podcasts/{id}/analysis`
 - Reach / PRS: 10% — audience size and chart position
 
-**Brand safety:** Displayed as context on every show (GARM risk levels from `/podcasts/{id}/brand-safety`) but never used to exclude shows from results. A true crime podcast might flag medium risk but convert well for a security brand — the brand decides.
+**Brand safety:** Displayed as metadata on every show but NEVER used to exclude shows from results.
 
-**Listener engagement add-on:** Paid Podscan add-on ($100/month). To be enabled when Wave 5 (scoring engine) is wired up. Until then, the engagement endpoint returns 403 and that dimension is weighted to zero with remaining dimensions redistributed.
+**English filter:** Active on all candidate-pulling functions.
 
-**Key product rule:** Never optimize away the small, high-fit show. A 5K-download show with 95% audience fit should surface next to a 450K-download show with 80% fit. That variance is the Taylslate thesis in action — serving shows agencies ignore with data to back them up.
+**Known issue:** Discovery list sometimes returns fewer than 50 shows and over-indexes on topically adjacent but format-mismatched shows. Scoring engine tuning needed.
 
-## Architecture Philosophy
+## Business Model (IN FLUX — April 2026)
 
-**Agent-native design.** The web app is the on-ramp. The API is the real product.
+**What's decided:**
+- 8% all-in platform fee on transactions (Taylslate absorbs Stripe fees)
+- 10% fee for agency/white-label tier
+- Fee transparency as competitive differentiator vs agencies at 15-20%+ with hidden markups
+- Never release show payouts until inbound brand payment settles
+- Show payouts manual initially, automated later
+- Early payout option (within 7 days for 2.5% fee) planned but not built
 
-1. **Database and API** — structured data layer that persists across agent sessions
-2. **Domain logic engine** — IO formatting rules, CPM calculations, make-good thresholds, invoice generation, plan building
-3. **Aggregated intelligence layer** — grows with every transaction
-4. **Packaged skills / MCP server** — so AI agents can interact with Taylslate's data and logic
-5. **Lightweight web UI** — for onboarding, review, and approval
+**What's in flux:**
+- Whether to add SaaS subscription tiers alongside the transaction fee (hybrid model)
+- Discovery runs as metered cost — each costs ~$0.09-0.40 in API calls. One discovery per campaign may be included; additional runs may be metered or subscription-gated
+- Possible tiered structure: Free (1 campaign) / Starter $49/mo (5 campaigns) / Pro $149/mo (20 campaigns) / Agency $349/mo + 10% fee (unlimited)
+- Future revenue: data licensing as transaction volume grows
 
-**Build order:** Web app captures data → clean API underneath from day one → skills and MCP server for power users → as agents mature, the web app becomes one of several interfaces.
-
-**Integration philosophy:** Don't build bespoke integrations to every platform. Build a clean API that agents can bridge. Exception: Podscribe integration is worth building directly (verification data connected to IO terms is core value prop).
+**API cost analysis (confirmed):**
+- Claude API per closed deal: ~$0.59 (Haiku scoring, Sonnet generation)
+- Claude API never crosses 1% of revenue at any scale
+- Stripe (2.9% + $0.30) is 5-6x more expensive than Claude API
+- Fixed costs (Podscan $300/mo, Supabase, Vercel, Resend) matter more than variable API costs early on
 
 ## Tech Stack
 
 - **Framework:** Next.js (App Router) with TypeScript
-- **Styling:** Tailwind CSS 4 with custom CSS variables (see `app/globals.css` for design tokens)
-- **Database:** Supabase (Postgres + Auth) — connected, active
-- **Deployment:** Vercel
-- **AI:** Claude API (scoring brand briefs, drafting outreach, extracting data from uploaded IOs)
-- **Payments:** Stripe Connect for marketplace payments (Express accounts, card-on-file via SetupIntent)
-- **Show data:** Podscan API (Professional plan) — primary data source for recommendations and enrichment
-- **Verification (planned):** Podscribe API integration or RSS/transcript scanning
-- **E-signature (planned):** DocuSign, BoldSign, or equivalent
+- **Styling:** Tailwind CSS 4 with custom CSS variables
+- **Database:** Supabase (Postgres + Auth + RLS)
+- **Deployment:** Vercel (auto-deploy from main)
+- **AI:** Claude API — Haiku 4.5 for scoring, Sonnet 4.6 for brief parsing and generation
+- **Payments:** Stripe Connect (Express accounts, card-on-file via SetupIntent)
+- **Show data:** Podscan API (Professional $200/mo + Listener Engagement add-on $100/mo)
 - **Email:** Resend for transactional email
+- **Podscan API docs:** `docs/podscan-api.md` (committed to repo)
 
-## Project Structure
+## Build Status (April 22, 2026)
 
-```
-app/
-  page.tsx                          # Landing page (dark navy theme)
-  globals.css                       # Design tokens (--brand-blue, --brand-surface, etc.)
-  (dashboard)/
-    layout.tsx                      # Authenticated layout with sidebar
-    campaigns/                      # Brand-side campaign flow
-      page.tsx                      # Campaign list
-      new/page.tsx                  # Campaign brief form
-      [id]/
-        page.tsx                    # Discovery list (scored shows, checkboxes, plan summary)
-        plan/page.tsx               # Plan builder (selected shows → line items → totals)
-    settings/page.tsx               # Account & subscription settings
-components/
-  layout/Sidebar.tsx                # Main navigation sidebar
-  discovery/                        # Discovery list components
-  plan/                             # Plan builder components
-lib/
-  data/
-    types.ts                        # ALL TypeScript types for the platform
-    seed.ts                         # Realistic mock data (18 shows, deals, IOs, invoices)
-    queries.ts                      # Supabase query functions
-    index.ts                        # Barrel export
-  podscan/                          # Podscan API client layer (Wave 4)
-    client.ts                       # Base client with auth + rate limiting
-    category-leaders.ts             # POST /category-leaders/search
-    discover.ts                     # GET /podcasts/{id}/discover
-    demographics.ts                 # GET /podcasts/{id}/demographics
-    analysis.ts                     # GET /podcasts/{id}/analysis
-    engagement.ts                   # GET /episodes/{id}/engagement (add-on required)
-    brand-safety.ts                 # GET /podcasts/{id}/brand-safety
-    search.ts                       # GET /podcasts/search
-    types.ts                        # Podscan response types
-  scoring/                          # Scoring engine (Wave 5)
-    index.ts                        # Main scoring orchestrator
-    dimensions/
-      audience-fit.ts               # Demographics match scoring
-      ad-engagement.ts              # Engagement data scoring
-      sponsor-retention.ts          # Sponsor repeat-buy scoring
-      reach.ts                      # PRS / audience size scoring
-    weights.ts                      # Default weights + redistribution logic
-  supabase/                         # Supabase client config
-```
+**All core waves complete:**
+- Wave 4: Podscan integration layer (`lib/podscan/`, 11 files)
+- Wave 5: Scoring engine (`lib/scoring/`, 4-dimension weighted scoring)
+- Wave 6: Discovery list UI (scored list, filters, sort, checkbox selection)
+- Wave 6.5: English filter + single text-area brief + Claude parsing + graceful error fallback
+- Wave 7: Media plan builder (line items, placement adjustments, pricing, IO generation)
+- Wave 8: Brand conversational onboarding (10 steps) + brand profile entity
+- Wave 8.5: Onboarding fixes (welcome+URL combined, multi-select goals, generic placeholders)
+- Wave 9: Show conversational onboarding (11 steps) with CPM education layer
+- Wave 10: Brand-profile-aware campaign creation with overrides
+- Bug fixes: HTML stripping, decimal CPM, scroll clipping, edit-returns-to-summary, sign out
 
-## Data Schema
-
-Complete type system in `lib/data/types.ts`. Key entities:
-
-- **Show** — podcast or YouTube channel with audience data, rate cards, demographics, sponsor history, engagement data
-- **Campaign** — brand-side campaign brief + AI-generated scored show list (stored as ephemeral recommendation JSONB, not persisted to shows table)
-- **CampaignSelection** — which shows the brand checked from the discovery list
-- **MediaPlan** — line items built from selected shows, with placement, episodes, spacing, pricing
-- **Deal** — relationship between brand and show, created when media plan is approved and IO is generated
-- **InsertionOrder** — the contract, with per-episode line items. Modeled on real VeritoneOne IO template.
-- **Invoice** — monthly billing document referencing IO line items
-- **Profile** — user with role (brand, agency, agent, show) and subscription tier
-- **AgentShowRelationship** — which agent represents which shows
-
-**Architecture rule — discovered shows are ephemeral.** A scored list of 50-100 shows lives in the campaign recommendation JSONB, not the shows table. Only when a deal is created does a show record get persisted (or created if it doesn't exist). The shows table is agent inventory, not a Podscan mirror.
-
-## Build Sequence
-
-**Completed:**
-- Supabase schema and RLS policies
-- Auth (email/password + OAuth callback, middleware)
-- Deal lifecycle (create, update, delete, list)
-- IO generation (PDF, email send via Resend, VeritoneOne format)
-- Invoice generation with make-good detection
-- Show roster (CRUD, CSV import, enrichment stubs)
-- Onboarding flow with role selection
-
-**In progress:**
-- Wave 6 — Discovery list UI (next up)
-
-**Next waves:**
-
-**Wave 6 — Discovery list UI:** Replace current campaign results page with the scored list view. Filters, sort, checkboxes, running plan summary. Persist selections to a campaign record in Supabase.
-
-**Wave 7 — Media plan builder:** New screen after discovery. Selected shows become line items. Placement config, episode config, spacing, pricing. Feeds into existing IO generation flow.
-
-**Recently completed:**
-
-**Wave 4 — Podscan integration layer (DONE):** `lib/podscan/` with typed clients for Category Leaders, Discover, Demographics, Analysis, Brand Safety, Podcast Search, Rankings, and Engagement. Rate limit handling for Professional plan (5K/day, 120/min). Engagement endpoint returns graceful 403 when add-on disabled.
-
-**Wave 5 — Scoring engine (DONE):** `lib/scoring/` with the four-dimension scoring (audience fit 40%, ad engagement 30%, sponsor retention 20%, reach 10%). Listener engagement add-on enabled. Returns ranked list of 50-100 candidate shows.
-
-**Later:**
+**Remaining:**
+- Stripe charging on verified delivery (brand-side only; show payouts manual for now)
+- UI/copy polish pass (Claude Design available)
+- Scoring engine tuning (show pool variety)
+- Security audit (RLS, API keys, webhooks, rate limiting)
 - Podscribe integration for verification
 - MCP server for agent access
-- YouTube expansion
-- Cross-channel (Meta, TikTok, Google) budget allocation
 
-## Podcast Advertising Domain Knowledge
-
-- **CPM pricing:** Ad Spot Price = (Downloads ÷ 1,000) × CPM Rate. Range: $15–$50.
-- **Placements:** Pre-roll (10% premium), mid-roll (standard), post-roll (25% discount).
-- **Price types:** CPM-based (pay per actual download) or Flat Rate (fixed price with make-good if underdelivery >10%).
-- **IO structure:** Per-episode line items with: format, post date, guaranteed downloads, show name, placement, scripted Y/N, personal experience Y/N, reader type, evergreen/dated, pixel Y/N, gross rate, gross CPM, price type, net due.
-- **IO standard terms:** Competitor exclusivity (90 days), ROFR (30 days), make-good clause (>10% underdelivery), 45-day download tracking, FTC compliance, cancellation (14 days notice), morality/take-down clauses, Net 30 EOM payment.
-- **Agency markup:** Agencies mark up CPM to brands (e.g., show's $25 CPM → agency charges $29.41 ~15%). Show never sees full rate. Taylslate's all-in 8% fee (Taylslate absorbs Stripe fees) is the transparent alternative.
-- **Payment flow pain:** Shows must manually invoice agencies monthly. Net 30 EOM terms, but agencies routinely pay Net 60–75+. Show running a January ad may not see payment until April.
-- **YouTube:** Flat-fee pricing (not CPM). $2K–$20K based on cultural significance. Content is evergreen.
-- **Ad copy philosophy:** 3-5 bullet point talking points, not full scripts. Host authenticity is the value. No pre-approval review — verification is post-publication (Podscribe).
-- **VeritoneOne IO template** is in project files — use as the format standard.
-- **Never release show payouts until inbound brand payment settles.** Eliminates float risk.
-
-## Design System
-
-All colors use CSS custom properties from `globals.css`:
-- `--brand-navy` / `--brand-navy-light` — dark backgrounds (landing page)
-- `--brand-blue` / `--brand-blue-light` — primary action color
-- `--brand-teal` / `--brand-teal-light` — secondary accent
-- `--brand-orange` — tertiary accent (sponsor badges)
-- `--brand-surface` / `--brand-surface-elevated` — light backgrounds (dashboard)
-- `--brand-border` — borders
-- `--brand-text` / `--brand-text-secondary` / `--brand-text-muted` — text hierarchy
-- `--brand-success` / `--brand-warning` / `--brand-error` — status colors
-
-Dashboard uses light theme. Landing page uses dark theme.
+**Tests:** 83 passing (Vitest).
 
 ## Conventions
 
-- Use `var(--brand-*)` CSS variables for all colors, not hardcoded values
-- Pages import from Supabase via `lib/data/queries.ts` — seed data is only for development fallbacks now
-- Keep components in `components/` organized by feature
+- Use `var(--brand-*)` CSS variables for all colors
+- Pages import from Supabase via `lib/data/queries.ts`
+- Components in `components/` organized by feature
 - File naming: lowercase with hyphens for files, PascalCase for components
-- All monetary values in USD, stored as numbers (not strings)
-- Dates stored as ISO strings, displayed with `toLocaleDateString()`
-- Build clean API endpoints from day one — the web UI is one of several future interfaces
-- Schemas and forms must match real-world industry documents and processes
-- **Git workflow (REQUIRED):** After completing any wave, feature, or substantial change, ALWAYS run `git add . && git commit -m "<descriptive message>" && git push` without being asked. Do not stop at "the code is built" — the work isn't done until it's pushed to main. This applies to every Claude Code session, every wave, every feature. No exceptions.
-- **Testing (REQUIRED):** After completing any feature, write at least one API route test or unit test verifying the core behavior. Tests go in `__tests__/` mirroring the source structure. Use Vitest. For API routes, test with real HTTP requests against the dev server using the test account. For scoring/pricing logic, write pure unit tests with no external dependencies. Every wave must ship with tests that verify the key behavior — if the tests don't pass, the wave isn't done.
-- **Interactive verification (REQUIRED):** Use the test account (credentials in env or provided in session) to log into the app and verify UI features work end-to-end in the browser before marking a wave complete. Do not rely solely on typecheck/lint passing — compile clean does not mean feature works.
+- All monetary values in USD, stored as numbers
+- Dates stored as ISO strings
+- Build clean API endpoints from day one
+- Schemas and forms must match real-world industry documents
+- **Git workflow (REQUIRED):** After completing any wave, feature, or substantial change, ALWAYS run `git add . && git commit -m "<descriptive message>" && git push` without being asked. No exceptions.
+- **Testing (REQUIRED):** Write at least one test per feature. Use Vitest. Tests in `__tests__/`.
+- **Interactive verification (REQUIRED):** Log in with test account and verify UI end-to-end. Compile clean does not mean feature works.
+- **CLAUDE.md requires explicit enforcement language** or Claude Code won't follow conventions reliably.
+- **docs/podscan-api.md as persistent reference:** Large API docs committed to repo to survive across sessions.
 
-## Test Account
+## Test Accounts
 
-A test account exists in Supabase for Claude Code to use during interactive verification. Credentials will be provided at the start of each session. Use this account to log in, create campaigns, test flows, and verify UI behavior. Never use the founder's personal account for testing.
+Two test accounts in Supabase for Claude Code verification:
+- **Brand account:** Credentials provided at session start. Completed brand onboarding.
+- **Show account:** Credentials provided at session start. Completed show onboarding.
+Never use the founder's personal account for testing.
 
-## Competitive Context (Quick Reference)
+## Competitive Context
 
-- **LiveRead.io** — IO/invoice management, real integrations, but no AI, no discovery, no campaign planning. Operations only.
-- **Gumball.fm** — Host-read ad marketplace (Headgum). 150+ shows, $10M Series A. Limited to own network inventory.
-- **Podscribe** — Verification and attribution (IAB-certified). Industry standard. No IO/deal/payment data. Integrate, don't compete.
-- **Traditional agencies (VeritoneOne, Ad Results Media)** — 15-20% markup, manual processes, ignore small shows. Taylslate is 10x faster, transparent 8% fee.
+- **LiveRead.io** — IO/invoice management, no AI, no discovery. Operations only.
+- **Gumball.fm** — Host-read ad marketplace. 150+ shows, $10M Series A. Own network only.
+- **CreatorExchange (thecreatorx.io)** — Ossa Collective rebrand. Marketplace, 1,800 shows. Takes 25%.
+- **SpotsNow (spotsnow.io)** — Last-minute/remnant inventory marketplace. Takes 10%. Agency-friendly.
+- **Podscribe** — Verification and attribution. Integrate, don't compete.
+- **Traditional agencies** — 15-20% markup, manual, ignore small shows.
 
-See `TAYLSLATE_CONTEXT.md` for full competitive analysis.
+**Taylslate wins on:** Self-serve AI planning (not marketplace), transparent 8% fee, entire Podscan universe accessible, market education built in.
 
 ## Founder Working Style
 
-- Prefers focused, step-by-step explanations over comprehensive overviews
-- Works iteratively — build, test, refine
-- Values authentic industry modeling — schemas must match real-world documents
-- Uses Claude Code for building (disable worktree, work on main)
-- Uses Claude desktop app for strategy and planning conversations
-- Agent teams (parallel sessions with separated file scopes) for larger builds, single sessions for tightly coupled changes
-- Comfortable with GitHub, terminal, Vercel deployment
+- Focused, step-by-step over comprehensive overviews
+- Iterative — build, test, refine
+- Authentic industry modeling — schemas match real-world documents
+- Claude Code desktop app for building (Opus 4.7 + deeper thinking for complex waves)
+- This chat interface for strategy and planning
+- Agent teams for larger builds; single sessions for tightly coupled changes
 - Think as a co-founder, not just an assistant
 - Motivated by bold launches, not incremental releases
