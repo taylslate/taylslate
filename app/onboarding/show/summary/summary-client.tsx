@@ -160,6 +160,20 @@ export default function SummaryClient({ profile }: { profile: ShowProfile }) {
             <Row label="Ad reads" value={joinLabels(profile.ad_read_types, READ_LABELS)} editSlug="read-types" emptyLabel="Pick at least one" />
             <Row label="Placements" value={joinLabels(profile.placements, PLACEMENT_LABELS)} editSlug="placements" emptyLabel="Pick at least one" />
             <Row label="Exclusions" value={joinLabels(profile.category_exclusions, EXCLUSION_LABELS)} editSlug="exclusions" emptyLabel="Open to everything" placeholderAsEmpty />
+            <Row
+              label="Ad copy email"
+              value={profile.ad_copy_email ?? ""}
+              editSlug="contacts"
+              emptyLabel="Using your signing email"
+              placeholderAsEmpty
+            />
+            <Row
+              label="Billing email"
+              value={profile.billing_email ?? ""}
+              editSlug="contacts"
+              emptyLabel="Using your signing email"
+              placeholderAsEmpty
+            />
           </div>
 
           {bench && userSpot != null && marketLow != null && marketHigh != null && (
@@ -184,7 +198,7 @@ export default function SummaryClient({ profile }: { profile: ShowProfile }) {
 
           <div className="flex items-center justify-between mt-8">
             <Link
-              href="/onboarding/show/exclusions"
+              href="/onboarding/show/contacts"
               className="text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
             >
               ← Back

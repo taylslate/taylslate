@@ -69,6 +69,8 @@ export function sanitizeShowProfilePatch(
     "show_name",
     "show_description",
     "show_image_url",
+    "ad_copy_email",
+    "billing_email",
   ] as const) {
     if (typeof body[k] === "string") {
       const trimmed = (body[k] as string).trim();

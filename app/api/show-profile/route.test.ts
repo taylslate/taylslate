@@ -91,6 +91,24 @@ describe("sanitizeShowProfilePatch", () => {
     expect(patch.category_exclusions).toEqual(["gambling", "alcohol", "none"]);
   });
 
+  it("accepts ad_copy_email and billing_email and trims them", () => {
+    const patch = sanitizeShowProfilePatch({
+      ad_copy_email: "  ads@show.com  ",
+      billing_email: "billing@show.com",
+    });
+    expect(patch.ad_copy_email).toBe("ads@show.com");
+    expect(patch.billing_email).toBe("billing@show.com");
+  });
+
+  it("collapses empty contact emails to null (use signing email fallback)", () => {
+    const patch = sanitizeShowProfilePatch({
+      ad_copy_email: "   ",
+      billing_email: "",
+    });
+    expect(patch.ad_copy_email).toBeNull();
+    expect(patch.billing_email).toBeNull();
+  });
+
   it("ignores unknown keys entirely", () => {
     const patch = sanitizeShowProfilePatch({
       drop_database: true,

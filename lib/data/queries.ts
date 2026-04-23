@@ -22,6 +22,8 @@ import type {
   CampaignStatus,
   BrandProfile,
   ShowProfile,
+  Outreach,
+  OutreachResponseStatus,
 } from "./types";
 
 // ---- Auth & Profiles ----
@@ -1521,4 +1523,72 @@ export async function completeShowProfile(
     return null;
   }
   return data as ShowProfile;
+}
+
+// ---- Outreach Queries (Wave 11) ----
+
+/** Insert a new outreach. Brand must own the brand_profile_id. */
+export async function createOutreach(
+  patch: Omit<Outreach, "id" | "created_at" | "updated_at">
+): Promise<Outreach | null> {
+  const { data, error } = await supabaseAdmin
+    .from("outreaches")
+    .insert(patch)
+    .select()
+    .single();
+  if (error || !data) {
+    console.error("[createOutreach] Error:", error?.message, error?.code);
+    return null;
+  }
+  return data as Outreach;
+}
+
+export async function getOutreachById(id: string): Promise<Outreach | null> {
+  const { data, error } = await supabaseAdmin
+    .from("outreaches")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error || !data) return null;
+  return data as Outreach;
+}
+
+export async function getOutreachesForCampaign(
+  campaignId: string
+): Promise<Outreach[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("outreaches")
+    .select("*")
+    .eq("campaign_id", campaignId)
+    .order("created_at", { ascending: false });
+  if (error || !data) return [];
+  return data as Outreach[];
+}
+
+export async function updateOutreachResponse(
+  id: string,
+  patch: Partial<
+    Pick<
+      Outreach,
+      "response_status" | "responded_at" | "counter_cpm" | "counter_message" | "decline_reason"
+    >
+  >
+): Promise<Outreach | null> {
+  const { data, error } = await supabaseAdmin
+    .from("outreaches")
+    .update(patch)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error || !data) {
+    console.error("[updateOutreachResponse] Error:", error?.message);
+    return null;
+  }
+  return data as Outreach;
+}
+
+/** True when the outreach is still awaiting a response. */
+export function isOutreachOpen(status: OutreachResponseStatus): boolean {
+  return status === "pending";
 }

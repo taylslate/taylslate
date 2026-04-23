@@ -315,6 +315,13 @@ export default function MediaPlanBuilder({
               Export CSV
             </button>
             <button
+              onClick={() => router.push(`/campaigns/${campaignId}/outreach`)}
+              disabled={visibleItems.length === 0}
+              className="px-4 py-2 rounded-lg border border-[var(--brand-blue)]/40 bg-[var(--brand-blue)]/[0.06] text-sm font-medium text-[var(--brand-blue)] hover:bg-[var(--brand-blue)]/[0.12] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Send outreach
+            </button>
+            <button
               onClick={generateIOs}
               disabled={visibleItems.length === 0 || generating}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"

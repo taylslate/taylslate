@@ -31,11 +31,15 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes
+  // /outreach/[token]   — Wave 11 public pitch page (token-gated)
+  // /auth/magic         — magic link landing/error states
   const isPublicRoute =
     pathname === "/" ||
     pathname === "/login" ||
     pathname === "/signup" ||
-    pathname.startsWith("/api/");
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/outreach/") ||
+    pathname.startsWith("/auth/magic");
 
   if (isPublicRoute) return supabaseResponse;
 

@@ -321,6 +321,10 @@ export interface ShowProfile {
   placements?: ShowPlacement[];
   category_exclusions?: ShowCategoryExclusion[];
 
+  // Step 11 (Wave 11) — contact routing. Both optional, fall back to profiles.email.
+  ad_copy_email?: string | null;
+  billing_email?: string | null;
+
   onboarded_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -393,6 +397,48 @@ export interface OutreachDraft {
   subject: string;
   body: string;
   sent?: boolean;
+}
+
+// ---- Outreach (Wave 11) ----
+
+export type OutreachResponseStatus =
+  | "pending"
+  | "accepted"
+  | "countered"
+  | "declined"
+  | "no_response";
+
+export type OutreachPlacement = Placement;
+
+export interface Outreach {
+  id: string;
+  brand_profile_id: string;
+  campaign_id: string;
+  show_id?: string | null;
+  podscan_id?: string | null;
+  show_name: string;
+
+  proposed_cpm: number;
+  proposed_episode_count: number;
+  proposed_placement: OutreachPlacement;
+  proposed_flight_start: string;
+  proposed_flight_end: string;
+
+  pitch_body: string;
+
+  sent_at?: string | null;
+  sent_to_email: string;
+
+  response_status: OutreachResponseStatus;
+  responded_at?: string | null;
+  counter_cpm?: number | null;
+  counter_message?: string | null;
+  decline_reason?: string | null;
+
+  token: string;
+
+  created_at: string;
+  updated_at: string;
 }
 
 // ---- Deals ----

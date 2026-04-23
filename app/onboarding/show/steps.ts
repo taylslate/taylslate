@@ -12,6 +12,7 @@ export const SHOW_ONBOARDING_STEPS = [
   { slug: "read-types", label: "Ad reads" },
   { slug: "placements", label: "Placements" },
   { slug: "exclusions", label: "Exclusions" },
+  { slug: "contacts", label: "Contacts" },
   { slug: "summary", label: "Review" },
 ] as const;
 
