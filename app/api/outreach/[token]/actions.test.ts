@@ -10,7 +10,9 @@ const { adminBuilder, supabaseAdmin } = vi.hoisted(() => {
   const builder = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    ilike: vi.fn().mockReturnThis(),
     single: vi.fn(),
+    maybeSingle: vi.fn(),
   };
   return {
     adminBuilder: builder,
@@ -20,6 +22,9 @@ const { adminBuilder, supabaseAdmin } = vi.hoisted(() => {
 
 const sendEmail = vi.fn().mockResolvedValue({ ok: true });
 const checkRateLimit = vi.fn();
+const createWave12Deal = vi.fn();
+const getWave12DealByOutreachId = vi.fn();
+const logEvent = vi.fn().mockResolvedValue(null);
 
 vi.mock("@/lib/io/tokens", () => ({
   verifyOutreachToken: (...args: unknown[]) => verifyOutreachToken(...args),
@@ -29,7 +34,10 @@ vi.mock("@/lib/data/queries", () => ({
   getCampaignById: (...args: unknown[]) => getCampaignById(...args),
   updateOutreachResponse: (...args: unknown[]) => updateOutreachResponse(...args),
   isOutreachOpen: (...args: unknown[]) => isOutreachOpen(...args),
+  createWave12Deal: (...args: unknown[]) => createWave12Deal(...args),
+  getWave12DealByOutreachId: (...args: unknown[]) => getWave12DealByOutreachId(...args),
 }));
+vi.mock("@/lib/data/events", () => ({ logEvent: (...a: unknown[]) => logEvent(...a) }));
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin }));
 vi.mock("@/lib/email/send", () => ({ sendEmail: (...a: unknown[]) => sendEmail(...a) }));
 vi.mock("@/lib/utils/rate-limit", () => ({
@@ -92,6 +100,11 @@ beforeEach(() => {
       data: { id: "u1", email: "brand@example.com", role: "brand", full_name: "Brand", company_name: "Aurora" },
       error: null,
     });
+  // Wave 12: show profile lookup is a maybeSingle on profiles table for the
+  // sent_to_email. Default to "no onboarded show found" so deal creation is
+  // skipped — those tests live in their own files.
+  adminBuilder.maybeSingle.mockResolvedValue({ data: null, error: null });
+  getWave12DealByOutreachId.mockResolvedValue(null);
 });
 
 describe("POST /api/outreach/[token]/accept", () => {

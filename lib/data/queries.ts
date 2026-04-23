@@ -24,6 +24,8 @@ import type {
   ShowProfile,
   Outreach,
   OutreachResponseStatus,
+  Wave12Deal,
+  Wave12DealStatus,
 } from "./types";
 
 // ---- Auth & Profiles ----
@@ -1591,4 +1593,159 @@ export async function updateOutreachResponse(
 /** True when the outreach is still awaiting a response. */
 export function isOutreachOpen(status: OutreachResponseStatus): boolean {
   return status === "pending";
+}
+
+// ---- Wave 12 Deal Queries ----
+// All Wave-12 deal access goes through the admin client. The user-facing
+// access path is brand_profile_id / show_profile_id (RLS enforces ownership
+// when called from a request-scoped client), but our flow consistently runs
+// these from server handlers that have already verified ownership.
+
+export interface CreateWave12DealInput {
+  outreach_id: string;
+  brand_profile_id: string;
+  show_profile_id: string;
+  agreed_cpm: number;
+  agreed_episode_count: number;
+  agreed_placement: string;
+  agreed_flight_start: string;
+  agreed_flight_end: string;
+}
+
+export async function createWave12Deal(
+  input: CreateWave12DealInput
+): Promise<Wave12Deal | null> {
+  const { data, error } = await supabaseAdmin
+    .from("deals")
+    .insert({
+      ...input,
+      status: "planning",
+      // The legacy fields are required by the original migration's NOT NULL
+      // constraints. Mirror the new "agreed_*" values into them so old code
+      // paths keep working without surprise.
+      cpm_rate: input.agreed_cpm,
+      num_episodes: input.agreed_episode_count,
+      placement: input.agreed_placement,
+      flight_start: input.agreed_flight_start,
+      flight_end: input.agreed_flight_end,
+      ad_format: "host_read",
+      price_type: "cpm",
+      guaranteed_downloads: 0,
+      net_per_episode: 0,
+      total_net: 0,
+      reader_type: "host_read",
+      content_type: "evergreen",
+    })
+    .select()
+    .single();
+  if (error || !data) {
+    console.error(
+      "[createWave12Deal] insert failed:",
+      error?.message,
+      error?.code,
+      error?.details
+    );
+    return null;
+  }
+  return data as Wave12Deal;
+}
+
+export async function getWave12DealById(id: string): Promise<Wave12Deal | null> {
+  const { data, error } = await supabaseAdmin
+    .from("deals")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error || !data) return null;
+  return data as Wave12Deal;
+}
+
+export async function getWave12DealByOutreachId(
+  outreachId: string
+): Promise<Wave12Deal | null> {
+  const { data } = await supabaseAdmin
+    .from("deals")
+    .select("*")
+    .eq("outreach_id", outreachId)
+    .maybeSingle();
+  return (data as Wave12Deal) ?? null;
+}
+
+export async function getWave12DealByEnvelopeId(
+  envelopeId: string
+): Promise<Wave12Deal | null> {
+  const { data } = await supabaseAdmin
+    .from("deals")
+    .select("*")
+    .eq("docusign_envelope_id", envelopeId)
+    .maybeSingle();
+  return (data as Wave12Deal) ?? null;
+}
+
+export async function updateWave12Deal(
+  id: string,
+  patch: Partial<Wave12Deal>
+): Promise<Wave12Deal | null> {
+  const { data, error } = await supabaseAdmin
+    .from("deals")
+    .update(patch)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error || !data) {
+    console.error("[updateWave12Deal] update failed:", error?.message);
+    return null;
+  }
+  return data as Wave12Deal;
+}
+
+export async function getWave12DealsForBrand(
+  brandProfileId: string
+): Promise<Wave12Deal[]> {
+  const { data } = await supabaseAdmin
+    .from("deals")
+    .select("*")
+    .eq("brand_profile_id", brandProfileId)
+    .order("created_at", { ascending: false });
+  return (data as Wave12Deal[]) ?? [];
+}
+
+export async function getWave12DealsForShow(
+  showProfileId: string
+): Promise<Wave12Deal[]> {
+  const { data } = await supabaseAdmin
+    .from("deals")
+    .select("*")
+    .eq("show_profile_id", showProfileId)
+    .order("created_at", { ascending: false });
+  return (data as Wave12Deal[]) ?? [];
+}
+
+/** Cron helper: deals stuck in planning past `daysAgo` with no reminder yet. */
+export async function findStaleUnsignedDealsForReminder(
+  daysAgo = 3
+): Promise<Wave12Deal[]> {
+  const cutoff = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await supabaseAdmin
+    .from("deals")
+    .select("*")
+    .eq("status", "planning")
+    .not("outreach_id", "is", null)
+    .lte("created_at", cutoff)
+    .is("brand_reminder_sent_at", null);
+  return (data as Wave12Deal[]) ?? [];
+}
+
+/** Cron helper: deals stuck before show_signed past `daysAgo`, ready to cancel. */
+export async function findDealsToTimeoutCancel(
+  daysAgo = 14
+): Promise<Wave12Deal[]> {
+  const cutoff = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await supabaseAdmin
+    .from("deals")
+    .select("*")
+    .in("status", ["planning", "brand_signed"] as Wave12DealStatus[])
+    .not("outreach_id", "is", null)
+    .lte("created_at", cutoff);
+  return (data as Wave12Deal[]) ?? [];
 }

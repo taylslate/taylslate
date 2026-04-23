@@ -31,8 +31,11 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes
-  // /outreach/[token]   — Wave 11 public pitch page (token-gated)
-  // /auth/magic         — magic link landing/error states
+  // /outreach/[token]            — Wave 11 public pitch page (token-gated)
+  // /auth/magic                  — magic link landing/error states
+  // /api/webhooks/docusign       — Wave 12 DocuSign Connect webhook (HMAC-verified)
+  // /api/cron/*                  — Vercel Cron jobs (CRON_SECRET-verified)
+  // All /api/* are listed; per-route handlers enforce their own auth.
   const isPublicRoute =
     pathname === "/" ||
     pathname === "/login" ||

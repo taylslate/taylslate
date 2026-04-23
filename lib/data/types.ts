@@ -441,6 +441,75 @@ export interface Outreach {
   updated_at: string;
 }
 
+// ---- Wave 12: Outreach-driven Deal lifecycle ----
+// New status values for deals created from accepted outreaches. Older legacy
+// deal statuses (planning, io_sent, live, completed) coexist on the same
+// table — Wave-12 deals are identified by a non-null outreach_id.
+
+export type Wave12DealStatus =
+  | "planning"        // outreach accepted, IO not yet sent for signature
+  | "brand_signed"    // brand signed, awaiting show countersignature
+  | "show_signed"     // both signed (terminal until delivery starts)
+  | "live"            // ad campaign in flight
+  | "delivering"      // verification mid-flight
+  | "completed"       // wrapped
+  | "cancelled";      // any party cancelled or 14-day timeout fired
+
+export interface Wave12Deal {
+  id: string;
+  outreach_id: string;
+  brand_profile_id: string;
+  show_profile_id: string;
+  status: Wave12DealStatus;
+
+  agreed_cpm: number;
+  agreed_episode_count: number;
+  agreed_placement: Placement;
+  agreed_flight_start: string;
+  agreed_flight_end: string;
+
+  docusign_envelope_id?: string | null;
+  brand_signed_at?: string | null;
+  show_signed_at?: string | null;
+  signed_io_pdf_url?: string | null;
+  signature_certificate_url?: string | null;
+  brand_reminder_sent_at?: string | null;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
+
+  created_at: string;
+  updated_at: string;
+}
+
+// ---- Domain Events (Wave 12) ----
+
+export type DomainEventType =
+  | "deal.created"
+  | "deal.updated"
+  | "deal.status_changed"
+  | "deal.cancelled"
+  | "io.generated"
+  | "io.sent_for_signature"
+  | "io.brand_signed"
+  | "io.show_signed"
+  | "io.completed"
+  | "io.declined"
+  | "io.counter_accepted"
+  | "io.timeout_cancelled";
+
+export type DomainEntityType = "deal" | "insertion_order" | "outreach";
+
+export interface DomainEvent {
+  id: string;
+  event_type: DomainEventType;
+  entity_type: DomainEntityType;
+  entity_id: string;
+  actor_id?: string | null;
+  payload: Record<string, unknown>;
+  schema_version: string;
+  created_at: string;
+}
+
 // ---- Deals ----
 // A deal is the relationship between a brand/agency and a show for a campaign.
 // When approved, it generates an IO.

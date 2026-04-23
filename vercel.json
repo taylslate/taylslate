@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/deal-timeouts",
+      "schedule": "0 14 * * *"
+    }
+  ]
+}

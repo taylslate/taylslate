@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser, getDealWithRelations, getDealById, updateDeal, deleteDeal } from "@/lib/data/queries";
-import type { DealStatus } from "@/lib/data/types";
+import {
+  getAuthenticatedUser,
+  getDealWithRelations,
+  getDealById,
+  updateDeal,
+  deleteDeal,
+  getWave12DealById,
+  getOutreachById,
+} from "@/lib/data/queries";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import type { DealStatus, BrandProfile, ShowProfile } from "@/lib/data/types";
 
 const VALID_STATUSES: DealStatus[] = ["planning", "io_sent", "live", "completed"];
 
@@ -27,13 +36,43 @@ export async function GET(
 
     const deal = await getDealWithRelations(id);
 
-    if (!deal) {
-      console.error(`[GET /api/deals/${id}] Deal not found for user ${user.id}`);
-      return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    if (deal && deal.show_name) {
+      console.log(
+        `[GET /api/deals/${id}] Found legacy deal: brand_id=${deal.brand_id} agent_id=${deal.agent_id} show=${deal.show_name}`
+      );
+      return NextResponse.json({ deal });
     }
 
-    console.log(`[GET /api/deals/${id}] Found deal: brand_id=${deal.brand_id} agent_id=${deal.agent_id} show=${deal.show_name}`);
-    return NextResponse.json({ deal });
+    // Wave 12 fallback — outreach-driven deals don't join through shows table.
+    const wave12 = await getWave12DealById(id);
+    if (wave12 && wave12.outreach_id) {
+      const outreach = await getOutreachById(wave12.outreach_id);
+      const { data: bp } = await supabaseAdmin
+        .from("brand_profiles")
+        .select("id, brand_identity, brand_website")
+        .eq("id", wave12.brand_profile_id)
+        .single();
+      const { data: sp } = await supabaseAdmin
+        .from("show_profiles")
+        .select("id, show_name")
+        .eq("id", wave12.show_profile_id)
+        .single();
+      const brandName =
+        (bp as BrandProfile | null)?.brand_identity?.split(/[.,—–-]/)[0]?.trim() ||
+        (bp as BrandProfile | null)?.brand_website ||
+        "Brand";
+      return NextResponse.json({
+        deal: {
+          ...wave12,
+          show_name: (sp as ShowProfile | null)?.show_name ?? outreach?.show_name ?? "Show",
+          brand_name: brandName,
+          outreach,
+        },
+      });
+    }
+
+    console.error(`[GET /api/deals/${id}] Deal not found for user ${user.id}`);
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: `Failed to fetch deal: ${message}` }, { status: 500 });
