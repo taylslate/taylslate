@@ -1,6 +1,6 @@
 # Taylslate — Product & Founder Context
 
-*Last updated: April 23, 2026. This document is the primary context reference for Claude when working on Taylslate.*
+*Last updated: April 24, 2026. This document is the primary strategic context reference for Claude when working on Taylslate. For build state, schema, and technical conventions, see `CLAUDE.md`.*
 
 ---
 
@@ -8,25 +8,32 @@
 
 **Chris Taylor** — Founder of Taylslate. Previously ran a podcast media buying agency. Lost deals because the time between a brand expressing interest and delivering a campaign plan was too long — weeks or months of research, outreach, and vetting caused brands to shift budgets or lose enthusiasm. Charged 5% agency markup vs. the industry standard 15-20% but never closed a deal because the process was too slow. This firsthand pain is the foundation of the product.
 
-Chris works iteratively: strategy first, confirm, draft prompt, ship, update docs. Prefers focused step-by-step explanations. Uses Claude Code for development (prefers the Claude desktop app over VS Code), GitHub for version control, and Vercel for deployment. Comfortable with terminal workflows. Prefers to work directly on main branches. Values authentic industry modeling — schemas and forms must match real-world documents and processes.
+Chris works iteratively, prefers focused step-by-step explanations, and builds functional prototypes before committing. Uses Claude Code (desktop app) for development, Claude.ai chat for strategy conversations, GitHub for version control, Vercel for deployment. Comfortable with terminal workflows. Prefers to work directly on main branches. Values authentic industry modeling — schemas and forms must match real-world documents and processes.
 
-**Technical stack:** Next.js with TypeScript, Supabase backend, Tailwind 4, Vercel deployment, Stripe Connect (planned), third-party e-signature (planned).
+Taylslate is currently Chris's sole professional focus.
+
+**Technical stack:** Next.js with TypeScript, Supabase backend, Tailwind 4, Vercel deployment, Claude API (Sonnet/Opus) for all AI, DocuSign for e-signatures, Resend for email, Stripe for payments (Wave 13+), Podscan for podcast data enrichment.
 
 ---
 
-## 2. The Vision
+## 2. The Vision & Positioning (Updated April 2026)
 
-Taylslate is the infrastructure layer for the creator sponsorship economy — podcasts, YouTube, and eventually wherever host-endorsed advertising lives.
+Taylslate is **Layer 3 infrastructure** for podcast and YouTube sponsorship advertising — the transaction data layer and payment rail that brands, shows, and AI agents operate on.
 
 **The one-liner:** "Facebook Ads for podcast reads."
 
-**The thesis:** Sponsorship advertising works, the market is growing ($4B+ podcast, $2B+ YouTube), but the buying process is stuck in 2015. Digital media buying has programmatic infrastructure. Creator sponsorship has email threads, Word docs, and 90-day payment terms. Taylslate closes that gap.
+**The positioning shift (March → April 2026):** Originally framed as "AI generates a complete campaign plan." Refined to: AI returns a scored discovery list of 50-100 shows, brand selects via checkbox, platform builds the media plan using domain logic. Market education happens through the discovery list experience itself — not through separate documentation or onboarding specialists. Discovery-list + human-select is more trustworthy, educationally valuable, and commercially sound than AI generating a complete plan autonomously.
+
+**The thesis:** Sponsorship advertising works, the market is growing ($4B+ podcast, $2B+ YouTube, 20%+ annually), but the buying process is stuck in 2015. Digital media has programmatic infrastructure. Creator sponsorship has email threads, Word docs, and 90-day payment terms. Taylslate closes that gap.
+
+**Target user (refined April 2026):** Brands **new to podcast advertising**. Not brands already spending heavily — they have agencies. Not agencies themselves — they're late adopters with workflow inertia. Market education is core GTM function, and shows with unrealistic CPM expectations are a documented barrier that the product addresses through discovery flow + show onboarding education.
 
 **What Taylslate does for each user type:**
 
-- **Brands & agencies:** Source deals across the entire podcast and YouTube landscape. Get an AI-generated campaign plan in seconds. Send outreach. Track deal pipeline. Pay creators on time. See what converts.
-- **Creators & their teams (including sales agents/networks):** Respond to inbound brand outreach. Manage ad deals. Track delivery. Auto-generate invoices. Get paid fast. Succeed regardless of show size.
-- **Small shows & channels:** Get access to ad dollars. Even small shows with dedicated audiences are worth advertising on — Taylslate removes the cost barrier of transacting with them.
+- **Brands new to podcast advertising:** Enter URL, budget, demographics. Get a scored discovery list in seconds. Select shows. Platform builds the media plan. Send outreach. Sign IOs via DocuSign. Card on file charges per verified delivery. See what converts.
+- **Shows & creators (onboarded via outreach acceptance):** Receive pitch from brand with proposed terms. Accept, counter, or decline. Get IO auto-generated. Sign via DocuSign. Get paid via Stripe as episodes deliver. Auto-invoicing. Fair pricing.
+- **Shows under 10K downloads:** Systematically ignored by agencies. Taylslate removes the cost barrier of transacting with smaller shows. This matters for long-tail inventory.
+- **Sales agents / rep companies (Wave 14/15):** Represent portfolios of shows. High-leverage GTM — one agent onboards, 10-30 shows arrive. Data model exists (`agent_show_relationships`), UX not built yet.
 
 ---
 
@@ -34,192 +41,256 @@ Taylslate is the infrastructure layer for the creator sponsorship economy — po
 
 The moat is the data. Everything else is a mechanism to capture it.
 
-**Three things force data through Taylslate:**
+**Two things force data through Taylslate:**
 
-1. **Automated verification** — Taylslate watches the public internet (RSS feeds, episode audio) and confirms ads ran, what was said, and whether downloads hit the guarantee. Integrate with Podscribe rather than rebuild.
+1. **Automated verification** — Taylslate watches the public internet (RSS feeds, episode audio) and confirms ads ran, what was said, whether downloads hit the guarantee. Passive data capture. Podscribe does transcript-based verification and download checking already, so Taylslate will integrate rather than rebuild (planned post-Wave-13). Taylslate's contribution: connecting Podscribe's "what happened" to Taylslate's "what was agreed to" and "what was paid."
 
-2. **Payment facilitation** — When money moves through Taylslate, we capture the one piece of data nobody shares voluntarily: what was actually paid, when, and by whom.
+2. **Payment facilitation** — When money moves through Taylslate (Wave 13 and beyond), we capture the one piece of data nobody shares voluntarily: what was actually paid, when, by whom. This is the transaction intelligence that powers everything.
 
-3. **Preference-based recommendation** — Every outreach response, every iteration, every show starred or rejected is training signal. VeritoneOne recommends based on relationships (Rolodex). Taylslate recommends based on learned preferences (Spotify/Netflix pattern). This is what makes the recommendation engine a differentiator, not a feature.
+**What the data becomes over time:** Aggregated, anonymized intelligence — CPM benchmarks by category and show size, advertiser retention signals, delivery reliability scores, payment timing patterns. After thousands of transactions, Taylslate knows more about the real economics of creator sponsorship than any agency, brand, or network. Every subsequent recommendation gets smarter.
 
-**Deal history as product surface.** Every signed IO, every certificate of completion, every delivery receipt, every invoice, every payment — stored permanently in Supabase storage, searchable in each brand's and show's dashboard. DocuSign fragments this (signature happens in DocuSign, tracking in one system, payment in another). Taylslate unifies it. Nobody else in podcast advertising treats the record as a product.
+**Data usage model:** All proprietary data used in aggregate only. No individual deal terms exposed. No show-specific CPMs shared. Brands see category-level benchmarks. Shows see how they compare to their tier. Nobody sees anyone else's specific deal. ToS must clearly state users grant Taylslate a license to use aggregated, anonymized data.
 
-**What the data becomes over time:** Aggregated, anonymized intelligence — CPM benchmarks by category and show size, advertiser retention signals, delivery reliability scores, payment timing patterns. After thousands of transactions, Taylslate knows more about the real economics of creator sponsorship than any agency, brand, or network.
-
-**Data usage model:** All proprietary data is used in aggregate only. No individual deal terms are exposed. ToS must clearly state users grant Taylslate a license to use aggregated, anonymized data.
+**The Monaco analogy:** Monaco.com is the system of record for startup revenue — replaced 5-8 fragmented sales tools with one AI-native platform where every interaction is captured and intelligence compounds over time. Taylslate is the system of record for creator sponsorship transactions.
 
 ---
 
-## 4. Competitive Landscape
+## 4. Key Strategic Decisions (Locked as of April 24, 2026)
+
+### Pricing & fees
+- **8% all-in platform fee** (brand side, absorbs Stripe fees)
+- **10% for agency/white-label tier**
+- Transparency as competitive differentiator vs. agencies charging 15-20% with hidden markups
+- Real buyer minimum campaign: **$20K/month**
+- Pricing may evolve to hybrid SaaS + transaction as product matures — under consideration post-launch
+
+### Payment model (Wave 13)
+- **Pay-as-delivers, NOT escrow**
+- Card-on-file via Stripe SetupIntent at IO signature (not charged yet)
+- Charged per episode as it runs in billing cycle (verified delivery triggers charge)
+- Show payout follows each verified delivery charge
+- No pre-funding, no held escrow
+- Show can opt into early payout (within 7 days) for 2.5% fee
+- **Core financial rule:** Payout NEVER released until inbound brand payment has settled. Zero float risk.
+- Anti-leakage mechanisms are speed, reliability, future deal flow, brand operational friction — not escrow
+
+### E-signature (Wave 12 shipped)
+- **DocuSign** as vendor. Confirmed used by Veritone — industry trust signal. Starter plan ($50/mo, 40 envelopes) at production launch, sandbox free during development.
+- **Hosted signing at launch.** Show redirects to DocuSign's domain. Matches industry convention.
+- **Embedded signing is the near-term upgrade** (post-funding). Requires Intermediate tier (~$300/mo). Premium brand feel.
+- **No custom DocuSign branding at launch.** Level 1 branding deferred to post-funding (Business Pro tier).
+- **Brand signs first, show countersigns** (matches agency origination pattern).
+- Do NOT build e-signature in-house. ESIGN/UETA compliance is a regulatory product, not something to recreate.
+
+### Outreach flow (Wave 11 shipped)
+- Brand composes outreach with proposed terms (CPM, episode count, placement, flight dates)
+- Claude drafts pitch body (Wave 12 future polish: tighten system prompt to reduce fluff)
+- Public pitch page at `/outreach/[token]` with signed JWT tokens — forwardable to agents naturally
+- Dual-state logic: not onboarded shows see magic-link setup flow; onboarded shows go straight to accept/counter/decline
+- Brand-forward styling throughout — emails from brand name, landing page header "[Brand] wants to work with [Show]", Taylslate in small footer
+- Multi-contact schema deferred indefinitely — shows just have `ad_copy_email` and `billing_email` columns
+
+### Auth (unification planned)
+- Current: brands use email/password, shows use magic link + Supabase OTP
+- Target: unified magic link + 6-digit OTP for all users
+- Deferred to Wave 12.5 or folded into Wave 13 — not blocking validation
+
+### Product principle — agentic design
+Every form field must pass: **"Is this a decision or mechanical work?"**
+- Decisions stay manual (budget, goals, exclusions)
+- Mechanical work gets AI-derived with human confirm/edit (brand name, category, demographics, CPM defaults)
+- Forms ask; conversations suggest
+- Applies to brand onboarding, show onboarding, outreach drafting, IO terms, Stripe setup
+
+---
+
+## 5. Build History & Current State
+
+See `CLAUDE.md` for full wave-by-wave detail. High level:
+
+- **Waves 1-3 (Feb-Mar 2026):** Supabase foundation, deal transaction loop, show roster + agent onboarding. Migration from in-memory seed data.
+- **Waves 4-7 (Mar 2026):** Show discovery via Podscan, scoring engine (audience 40 / engagement 30 / retention 20 / reach 10), discovery list UI, media plan builder.
+- **Waves 8-10 (Mar-Apr 2026):** Conversational onboarding (brand + show), brand-profile-aware campaigns.
+- **Wave 11 (April 23, 2026):** Outreach-to-onboarded-show loop. 121 tests. Public pitch page, magic link account creation, accept/counter/decline, brand proposes terms upfront.
+- **Wave 12 (April 23, 2026):** IO PDF generation + DocuSign JWT integration + hosted signing + HMAC webhook verification + signed PDF storage + day-3/day-14 timeout cron. 157 tests (+36). Migrations 013-014 applied.
+
+**Real user validation pending.** Chris's sales agent friend will onboard multiple shows + test show-side flows. Brand friends will test brand-side. Pre-req: verify `taylslate.com` in Resend so magic links actually deliver.
+
+**Next: Wave 13 — Stripe pay-as-delivers.** Pre-existing Stripe SDK build error must be fixed with same lazy-require pattern used for DocuSign in Wave 12.
+
+---
+
+## 6. Competitive Landscape
 
 ### LiveRead.io
-Order management platform for podcast advertising. Real integrations (Megaphone, Bill.com, QuickBooks, BoldSign for e-signatures, HubSpot, Art19, YouTube). Real users. **Weakness:** No AI, no discovery, no campaign planning. Operations tool only.
+- **What they are:** Order management platform for podcast advertising. Manages IOs, invoicing, delivery tracking, ad copy distribution.
+- **Strengths:** Real integrations (Megaphone, Bill.com, QuickBooks, BoldSign for e-signatures, HubSpot, Art19, YouTube). Real users including Always Sunny Podcast, Whitney Cummings, Bad Friends, Flagrant Media Group. 2.5+ years of iteration.
+- **Ownership change:** Nov 2024, Ilyas Frenkel (founder of Single Source Media, a podcast/YouTube ad agency) acquired controlling stake. Original founder Alex Aldea departed. CTO Mike Perrigue became CEO. Joined Sounds Profitable as partner organization.
+- **Key weakness:** No AI intelligence layer. No campaign planning. No show discovery. Operations tool only. Zero marketing to date, fully word-of-mouth. Enterprise-oriented UX.
+- **What Taylslate does that LiveRead doesn't:** AI campaign planning, show discovery, budget optimization, recommendation engine, speed, serves brands who've never bought podcast ads before.
 
 ### Gumball.fm (Headgum)
-Marketplace for host-read ads. Amazon-style cart. 400+ advertisers, 150+ shows. $10M Series A. **Weakness:** Limited to own network inventory. 10K download minimum excludes smaller shows.
-
-### SpotsNow
-"Hotel Tonight for podcast ads." Last-minute host-read inventory marketplace for remnant/unsold inventory. 10% cut. Competes on timing, not discovery or long-term recommendation.
-
-### CreatorExchange
-25% cut. Competitor.
+- **What they are:** Marketplace for host-read ads. Amazon-style cart experience.
+- **Strengths:** 400+ advertisers, 150+ shows. $10M Series A (2022). Full workflow. Expanding to YouTube. Launched "adaptive ads" (AI scripts matched to episode context) late 2024. Revenue share 70%+ to creator.
+- **Key weakness:** Limited to own network inventory. Marketplace requires both sides to adopt. 10K download minimum excludes smaller shows.
+- **Key insight from Gumball:** They use 3-5 bullet point copy, not scripts. Don't let advertisers pre-review ad reads — adds friction, diminishes authenticity. Airchecks are post-publication verification only.
 
 ### Podscribe
-Attribution and verification platform. IAB-certified. Mature, trusted. **Integrate, don't compete.** Connect Podscribe's "what happened" to Taylslate's "what was agreed to" and "what was paid."
+- **What they are:** Attribution and verification platform. Industry standard for podcast ad measurement.
+- **What they do:** Automated transcription, 18+ checks validating ad placement/duration/talking points, download counting, pixel-based attribution, incrementality testing. IAB-certified.
+- **Key fact:** They already do automated verification and download checking. Mature, trusted tech.
+- **What they DON'T have:** No IO data, deal terms, invoice data, payment data, deal pipeline, campaign planning, show discovery.
+- **Taylslate relationship:** Integrate (planned post-Wave-13). Connect "what happened" to "what was agreed to" and "what was paid." The manual reconciliation between Podscribe reports and IOs in spreadsheets is the gap Taylslate fills.
 
-### Rephonic ($99-$299/month) / Podscan
-Podcast data platforms. Podscan has real-time API + MCP server. Use as data providers, not competitors.
+### Magellan AI
+- **What they are:** Podcast advertising intelligence and measurement. Analytics-focused.
+- **Taylslate differentiation:** Analytics only, no transaction facilitation.
+
+### Podscan (Primary Data Provider, not competitor)
+- **What they are:** 4.4M podcasts, 51M episodes, real-time API, MCP server. Founder (Arvid Kahl) encourages building on their API.
+- **Taylslate use:** Category Leaders, Podcast Search, Discover endpoints. Pool building (500 shows/category), filtered search, vector similarity. Professional plan.
+- **Key future primitive:** "Find shows like this one" using Discover endpoint (vector similarity) — first-class UI element, preference signal capture to `brand_profiles` for learning. Competitive differentiator vs. VeritoneOne's Rolodex model.
+
+### Rephonic (Alternative Data Provider)
+- **What they are:** 3M+ podcasts with demographics, reach estimates, sponsor history, contacts.
+- **Why backup vs primary:** Most permissive commercial ToS. Worth keeping as alternative.
 
 ### Traditional Agencies (VeritoneOne, Ad Results Media)
-Full-service buying. 15-20% markup. Uses DocuSign for e-signature (confirmed from IO PDF in project files). Net 30 EOM officially, routinely Net 60-75+. Ignore shows under 10K downloads. **Taylslate positioning:** 10x faster, 8% no markup, serves all show sizes.
+- **What they do:** Full-service buying. 15-20% markup. Manual IO generation (internal Word templates). Ignore shows under 10K downloads.
+- **Payment terms:** Net 30 EOM officially, routinely Net 60-75+. Ad Results Media has Net 75 terms.
+- **Taylslate positioning:** 10x faster, 8% transparent fee, serves all show sizes.
 
 ---
 
-## 5. Domain Knowledge — Podcast Advertising
+## 7. Domain Knowledge — Podcast Advertising
 
 ### Ad Types
-- **Host-read baked-in:** Host reads a live ad, permanently part of episode. Premium format.
-- **Dynamic insertion (DI):** Pre-recorded ads stitched at playback. Same IO structure used for both.
+- **Host-read baked-in:** Host reads live ad, permanently part of episode. Historically evergreen. Sometimes pulled after download threshold. Premium format.
+- **Dynamic insertion (DI):** Pre-recorded ads stitched at playback via hosting platform (Megaphone, Libsyn). Can be host-read or not. Restricted to download/impression thresholds.
+- **Same IO structure used for both types.** Either brand or show can send the IO.
 
 ### Pricing
-- **CPM:** Ad spot price = (downloads ÷ 1,000) × CPM rate. Range: $15-$50.
-- **Flat rate:** Fixed price with make-good if underdelivery >10%.
-- **YouTube:** Flat-fee, $2K-$20K based on cultural significance, evergreen.
-- **Real buyer campaigns start at $20K/month minimum** (data point from April 2026).
+- **CPM (cost per mille):** Ad Spot Price = (downloads ÷ 1,000) × CPM rate. Range: $15-$50.
+- **Flat rate:** Fixed price with make-good if downloads underdeliver >10%.
+- **YouTube:** Typically flat-fee, not CPM. Higher rates because content is evergreen.
+- **Price type on IO:** Either CPM-based (pay per actual download) or flat rate.
 
-### Negotiation Pattern
-CPM negotiation is typically one-direction — brand asks for less than listed, not more. Shows rarely ask for more than their rate card. Design: brand proposes terms upfront in outreach; show accepts, counters (usually with "I'll go down to X"), or declines. One round of negotiation by default.
+### Deal Flow
+1. Brand reaches out to show directly or through buying agency
+2. Show/plans delivered — can be disjointed via direct contact or agency collates options
+3. Deal confirms
+4. IO is sent with ad copy (IO is the record of purchase)
+5. Ad is read by host / inserted via DI
+6. Podscribe verifies ad ran and checks downloads
+7. Show invoices for ad read
+8. Money sent direct or through agency on net terms
 
-### Deal Flow (Taylslate model — outreach-first)
-1. Brand runs discovery, selects shows, builds media plan
-2. Brand sends outreach email per show with proposed terms
-3. Show (or their agent/network rep — most marketable shows are repped) clicks link, lands on pitch page
-4. Show responds: accept, counter, or decline
-5. On accept, brand builds IO with confirmed terms
-6. IO signed via third-party e-signature (BoldSign/Dropbox Sign/DocuSign)
-7. Ad runs
-8. Podscribe verifies delivery
-9. Brand charged per verified episode (pay-as-delivers model)
-10. Show payout follows each charge
+**Taylslate's flow compresses all of this into a single platform with card-on-file pay-as-delivers.**
 
 ### IO Standard Fields
-Advertiser, Publisher, Agency/Bill To, Format, Post Date, Downloads/Views guarantee, Show Name, Placement, Scripted Y/N, Personal Experience Y/N, Reader type, Type (Evergreen/Dated), Pixel required Y/N, Gross Rate, Gross CPM, Price Type, Net Due.
+Advertiser, Publisher, Agency/Bill To, Format (Podcast/YouTube), Post Date, Downloads/Views guarantee, Show Name, Placement (Pre/Mid/Post), Scripted (Y/N), Personal Experience (Y/N), Reader type (Host-Read), Type (Evergreen/Dated), Pixel required (Y/N), Gross Rate, Gross CPM, Price Type, Net Due.
 
 ### IO Standard Terms
-Competitor exclusivity (90 days), ROFR (30 days), make-good clause (>10% underdelivery), 45-day download tracking, FTC compliance, cancellation (14 days notice), morality/take-down clauses, Net 30 EOM payment.
+- Competitor exclusivity (90 days typical)
+- Right of first refusal (ROFR, 30 days)
+- Make-good clause (>10% underdelivery triggers free additional placement)
+- 45-day download tracking window
+- FTC compliance requirements
+- Cancellation terms (14 days notice)
+- Morality/take-down clauses
+- Net 30 EOM payment terms (routinely violated by agencies)
 
 ### Ad Copy Philosophy
-3-5 bullet point talking points, not full scripts. Host authenticity is the value. No pre-approval review loop.
+- Bullet points / talking points preferred over full scripts
+- 3-5 copy points is standard (per Gumball)
+- Host authenticity is the entire value of host-read ads — over-scripting defeats the purpose
+- No pre-approval review loop — adds friction, degrades product quality
+- Verification happens post-publication automatically (Podscribe)
+
+### Payment Pain (problem Taylslate solves)
+- Net 30 EOM standard but routinely violated
+- Agencies regularly pay Net 60, Net 75, or longer
+- Shows manually invoice every month separately for multi-month contracts
+- A show running an ad in January may not see payment until April
+- Small podcast operations struggle with cash flow
 
 ### Industry Reference
-- VeritoneOne IO template in project files. DocuSign for signature. Format standard.
-- Agency markup example: Show CPM $25, agency charges brand $29.41 (~15% markup).
+- VeritoneOne IO template in project files — format standard
+- Agency markup example from real IO: Show CPM $25, agency charges brand $29.41 (~15% markup)
 
 ---
 
-## 6. Architecture Philosophy
+## 8. Architecture Philosophy
 
 ### Agent-Native Design
-The future is not a monolithic web app. AI agents will increasingly be the interface. Taylslate is:
-1. Database and API
-2. Domain logic engine
-3. Aggregated intelligence layer
-4. Packaged skills / MCP server
-5. Lightweight web UI (capture + dashboard, not primary workflow long-term)
+The future is not a monolithic web app with dozens of integrations. AI agents (Cowork, Claude Code, OpenClaw, Perplexity computer use) will increasingly be the interface through which normal people interact with their tools. Taylslate should be designed for this world.
+
+**What Taylslate needs to be:**
+1. **The database and API** — structured data layer that persists across agent sessions
+2. **The domain logic engine** — IO formatting rules, CPM calculations, make-good thresholds, invoice generation
+3. **The aggregated intelligence layer** — grows with every transaction, proprietary to Taylslate
+4. **Packaged skills / MCP server** — so agents can interact with Taylslate's data and logic
+5. **A lightweight web UI** — for onboarding, review, and approval
+
+**Build order:** Web app captures data → clean API from day one → skills and MCP server for power users → as agents mature, the web app becomes one of several interfaces.
+
+**Key principle:** Build for today's user, architect for tomorrow's.
 
 ### Integration Philosophy
-Build a clean API that agents can bridge. Exception integrations: Podscribe (verification data is core value prop), third-party e-signature (regulatory compliance as a regulatory product is not worth rebuilding).
+Don't build bespoke integrations to every platform (the LiveRead approach). Build a clean API that agents can use to bridge between Taylslate and whatever tools the user has. More flexible, less maintenance, positioned for where the market is going.
 
-### E-signature Strategy
-**Third-party signs. Taylslate owns the record.**
+**Exceptions worth building directly:**
+- **Podscribe** — verification data connected to IO terms is core value prop
+- **DocuSign** — e-signature compliance is a regulatory product
 
-- **Signing event** → BoldSign, Dropbox Sign, or DocuSign. They handle ESIGN/UETA compliance, audit trails, certificates of completion.
-- **Record** → Taylslate stores the signed PDF + certificate in Supabase, tied to the deal, forever.
-- DocuSign confirmed used by Veritone (from IO PDF Envelope ID in project files).
-- Dropbox Sign preferred given Chris's existing Dropbox account.
-- Do NOT build e-signature in-house — compliance is a forever-liability product, not a one-time build.
-
-### Payment Strategy (Wave 13)
-**Pay-as-delivers, not escrow.**
-
-- Card-on-file via Stripe SetupIntent at IO signature. No charge at that moment.
-- Each verified episode delivery triggers a charge against the brand's card for that episode's amount.
-- Show payout follows the charge via Stripe Connect.
-- No pre-funding, no escrow holding.
-
-**Why this shape:** Brands won't fund upfront for multi-month campaigns. Industry norm is charge-at-delivery.
-
-**Anti-leakage levers (since we can't hold money):**
-- Speed — show gets paid in days through Taylslate vs. chasing brand Net 60-75
-- Payment reliability — card on file, automatic charge on delivery, show doesn't chase
-- Future deal flow — shows routing around Taylslate don't stay in discovery pool
-- Brand-side operational friction — brand committed to platform flow, rerouting is more work
-
-**Margin lever — ACH routing.** Stripe is the real variable cost, not Claude API. Card charges at 2.9% + $0.30 vs. ACH at 0.8% capped at $5. For $20K+ campaigns, ACH saves huge margin. Build ACH prominently into IO signature UX.
+### Domain Events (Wave 12 foundation)
+Append-only audit log at `domain_events` table. Every state transition fires an event (entity.action form: `outreach.created`, `outreach.accepted`, `deal.created`, `envelope.signed`, etc.). Fat payloads with `schema_version` field. Service-role write only. Future MCP server / webhook subscriptions will consume this.
 
 ---
 
-## 7. Launch Plan
+## 9. Launch Plan
+
+### Current State (April 2026)
+- Full flow built through signed IO (Waves 1-12)
+- Pending: Wave 13 (Stripe), domain verification in Resend, first real user validation
+- 157 tests passing
 
 ### The Wedge
-**"Facebook Ads for podcast reads."** Brand runs discovery, reaches out to shows, closes deals, gets them executed, pays fast — all in one platform.
+**"Build and execute your ad campaigns in seconds."** Monaco-style full-thesis launch.
 
-### Revenue Model (locked April 22, 2026)
-- **8% all-in** platform fee for self-serve brands (absorbs Stripe fees)
-- **10% managed tier** — Chris-as-operator running campaigns for brands wanting hands-on service
-- No SaaS subscription
-- No early-payout fee for shows
-- No metered feature gates
-- Pay only when you transact
+Brand enters URL, budget, audience → AI returns scored discovery list → brand picks → platform builds media plan → brand sends outreach → show accepts → IO auto-generated → DocuSign signing → (Wave 13) card charged per delivery → (future) Podscribe verifies, invoice auto-generates.
 
-**First 100 brands may get a better rate** as a product-market-fit incentive — decide per-deal.
+### Validation Strategy
+- **Not** synthetic end-to-end testing — 157 unit tests cover the plumbing
+- Real users > fake users. Chris's sales agent friend onboards multiple shows. Brand friends test brand side.
+- First 50-100 customers are the relationship-building phase before broader GTM
+- Chris serves as human relationship layer for early customers
 
-### Build Status (April 23, 2026)
+### GTM Stack
+- **Monaco.com** for outbound
+- **Okara CMO** for inbound
+- **Claude Code** for engineering
+- Chris on the front lines with early users
 
-**Complete:**
-- Waves 4-10: Foundation (Supabase, auth, roster), Podscan integration, scoring engine, discovery list, media plan builder, brand + show onboarding
-- **Wave 11:** Outreach-to-onboarded-show loop (April 23, 2026)
-  - Outreach entity, Claude-drafted pitch composer, public pitch page at `/outreach/[token]`
-  - Dual-state logic (onboarded vs not)
-  - Magic link account creation
-  - Wave 9 +1 step for ad_copy_email + billing_email
-  - Accept / Counter / Decline flow with brand notifications
-  - 121 Vitest tests passing (+38 over prior baseline)
-
-**Remaining:**
-- **Wave 12:** IO generation + third-party e-signature integration. Signed PDF + certificate stored forever per deal.
-- **Wave 13:** Stripe charging on pay-as-delivers model. SetupIntent at IO signature, charge per verified delivery, Connect payout to show.
+### What Comes Later
+- Wave 14/15: Agent/rep accounts (multi-show portfolio management)
 - Podscribe integration for automated verification
-- Stripe SDK module-load error (pre-existing baseline issue, must fix before Wave 13)
-- Scoring engine tuning
-- MCP server
-
-### GTM Posture
-Chris runs the first 100+ brand campaigns operator-style (10% managed tier effectively). Self-serve 8% brands are a later phase. Domain expertise is the trust bridge while the product builds a track record. Every signed IO becomes a case study.
+- Full MCP server / Claude Code skills
+- Advanced scoring: tunable weights, "expand my horizons" slider, "find shows like this one" primitive
+- Cross-channel expansion (Meta, TikTok, Google ad planning)
+- Data licensing as future revenue stream as transaction volume grows
 
 ---
 
-## 8. Working Style Preferences
+## 10. Working Style Preferences
 
-- Strategy → confirm → draft prompt → ship → update docs
-- Focused, step-by-step explanations over comprehensive overviews
-- Schemas must match real-world industry documents
-- Build iteratively — one wave at a time
-- Claude Code for building (main branch, no worktree)
-- Claude desktop app for strategy conversations
-- CLAUDE.md and TAYLSLATE_CONTEXT.md kept current after major direction changes
-- Bold launches, not incremental releases
-- Think as a co-founder, not just an assistant
-
----
-
-## 9. Key Principles Reaffirmed
-
-- **Pay only when you transact** — the whole elegance of the 8% model
-- **Market education is product** — discovery and outreach must be low-friction for brands new to podcast ads
-- **Preference-based recommendation is the moat** — not Rolodex, not data licensing alone
-- **Friction goes at payment, not at agreement** — shows accept outreach, sign IOs, onboard; they're pushed to sign up at the moment of real value exchange
-- **Predictability builds trust** — no stochastic shuffling of recommendations
-- **Optimize Stripe, not tokens** — Claude API costs are negligible; payment rail economics are where margin lives
-- **Third-party signs, Taylslate owns the record** — e-signature is infrastructure, not a build
-- **Deal history as product surface** — nobody else in the space does this
+- Prefers focused, step-by-step explanations over comprehensive overviews
+- Values authentic industry modeling — schemas must match real-world documents
+- Works iteratively — build, test, refine
+- Uses Claude Code desktop app for actual building (disable worktree, work on main)
+- Uses Claude.ai chat for strategy and planning conversations
+- Uses CLAUDE.md + TAYLSLATE_CONTEXT.md for project context
+- Comfortable with GitHub workflows, terminal commands, deployment
+- Wants Claude to think as a co-founder, not just an assistant
+- Motivated by big launches (Monaco-style), not incremental SaaS releases
+- Direct about risks — honest about what isn't working beats hedging

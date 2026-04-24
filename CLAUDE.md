@@ -1,6 +1,6 @@
 # CLAUDE.md — Taylslate Project Context
 
-*Last updated: April 23, 2026*
+*Last updated: April 24, 2026 — Waves 4-12 complete*
 
 **For deep strategic context, competitive research, and domain knowledge, see `TAYLSLATE_CONTEXT.md` in this project folder.**
 
@@ -8,247 +8,379 @@
 
 ## What is Taylslate
 
-Taylslate is the **infrastructure layer for creator sponsorship advertising** — podcasts, YouTube, and eventually wherever host-endorsed advertising lives. It replaces the manual, weeks-long process of campaign planning, deal negotiation, insertion order management, delivery tracking, invoicing, and payment with one AI-powered platform.
+Taylslate is **Layer 3 infrastructure for podcast and YouTube sponsorship advertising** — the transaction data layer and payment rail that brands, shows, and eventually AI agents operate on. It replaces the manual, weeks-long process of campaign planning, deal negotiation, IO management, delivery tracking, invoicing, and payment with one AI-powered workflow.
 
-**The one-liner:** "Facebook Ads for podcast reads." Plan your campaign. Reach out to shows. Send your IOs. Ads run. We verify. You get paid. All in one place.
+**The positioning:** "Facebook Ads for podcast reads." Brands new to podcast advertising enter a URL, budget, and demographics; Taylslate returns a scored discovery list of 50-100 shows. Brand selects; platform builds the media plan. Every transaction captured makes the scoring smarter — that's the moat.
 
-**The thesis:** Creator sponsorship is a $6B+ market growing 20%+ annually, but the buying process is stuck in 2015. Digital media has programmatic infrastructure. Creator sponsorship has email threads, Word docs, and 90-day payment terms. Taylslate closes that gap.
+**Target user:** Brands new to podcast advertising. Not brands already spending heavily (they have agencies). Not agencies themselves (they have workflow inertia and are late adopters). Market education is core GTM — the product itself teaches brands what to expect on CPMs, episode counts, and timing.
+
+**Fee model:** 8% all-in platform fee on the brand side (absorbs Stripe fees). 10% for agency/white-label tier. Transparency as a competitive differentiator vs. VeritoneOne-style agencies charging 15-20% with hidden markups. Pricing is in flux — may evolve to hybrid SaaS + transaction as product matures.
 
 ## Core Thesis
 
-The most valuable data in podcast advertising — real CPM rates, verified download performance, advertiser retention, conversion signals — does not exist in any API. Taylslate captures this data by facilitating the actual transaction. Every deal makes the AI smarter. The moat is the data. Everything else is a mechanism to capture it.
+The most valuable data in podcast advertising — real CPM rates, verified download performance, advertiser retention, conversion signals — does not exist in any API or database. Taylslate captures it by facilitating the actual transaction. Every deal that runs through the platform makes the AI smarter. After thousands of transactions, Taylslate has unmatched pricing intelligence.
 
-**Preference-based recommendation is the differentiator.** VeritoneOne pitches "we know shows because we have relationships" (Rolodex). Taylslate pitches "we know shows because we've learned what you like" (preference). Spotify/Netflix pattern applied to ad inventory.
+**Two things force data through the platform:**
+1. **Automated verification** (planned Podscribe integration + RSS/transcript scanning) confirms ads ran and downloads hit guarantees
+2. **Payment facilitation** captures the one piece of data nobody shares voluntarily: what was actually paid, when, by whom
+
+**Monaco.com analogy:** Monaco replaced 5-8 fragmented sales tools with one AI-native system of record where intelligence compounds with usage. Taylslate does the same for creator sponsorship transactions.
 
 ## User Types
 
-- **Brands / Advertisers:** Mid-market brands entering or expanding in podcast/YouTube ads. Real buyers start at $20K/month. Want fast campaign planning, transparent pricing, audience fit confidence.
-- **Sales Agents / Networks:** Represent multiple podcasts and YouTube channels. Handle outreach response on behalf of shows. Most marketable shows are repped, so outreach is forwarded to agents who respond in the show's place.
-- **Shows / Creators:** Podcast hosts and YouTube creators selling ad inventory. Want brand deals, fair pricing, fast payment. Shows under 10K downloads are systematically ignored by agencies — Taylslate serves them.
-- **Agencies & Buyers:** Late adopters with workflow inertia. Not a launch priority.
+- **Brands / Advertisers:** Mid-market brands (minimum $20K/month real buyers) new to podcast ads. Want fast campaign planning, transparent pricing, audience fit confidence. Primary target.
+- **Shows / Creators:** Podcast hosts and YouTube creators. Onboard via outreach acceptance flow. Want brand deals, fair pricing, fast payment. Shows under 10K downloads are systematically ignored by agencies — Taylslate serves them.
+- **Sales Agents / Rep Companies (Wave 14/15):** Represent portfolios of shows. Unlock high-leverage GTM — one agent onboarding brings 10-30 shows. Data model foundation exists (`agent_show_relationships`) but agent-facing UX not built.
+- **Agencies:** Deferred — late adopters, workflow inertia, not the primary GTM channel.
 
-## The Full Loop
+## Build Status (through April 24, 2026)
 
-**User flow (outreach-first model — confirmed April 2026):**
+Waves 1-3 laid the foundation (Supabase migration from seed data, deal transaction loop, show roster/import). Since then:
 
-1. Brand runs discovery → selects shows → builds media plan
-2. Brand drafts outreach email per show (Claude-drafted, brand edits), proposes terms (CPM, episodes, placement, flight dates)
-3. Email goes to show's Podscan contact with unique signed link
-4. Show (or their agent) clicks link → lands on brand-forward pitch page at `/outreach/[token]`
-5. **If not onboarded:** magic link → Wave 9 onboarding → return to pitch page
-6. **If onboarded:** straight to deal confirmation
-7. Show responds: Accept / Counter / Decline (one round of negotiation)
-8. Brand notified → builds IO (Wave 12)
-9. IO signed via third-party e-signature (Wave 12)
-10. Ads run → verified → brand charged → show paid (Wave 13, pay-as-delivers)
+**Wave 4-5: Show discovery & scoring engine** — Podscan Category Leaders (pool building, 500 shows/category) + Podcast Search filters + Discover endpoint (vector similarity). Scoring weights: audience fit 40%, ad engagement 30%, sponsor retention 20%, reach 10%. Brand safety shown as metadata but never excludes shows.
 
-## Build Status (April 23, 2026)
+**Wave 6: Discovery list UI** — Brand sees scored list of 50-100 shows; checkboxes to pick the ones that fit. AI no longer generates complete media plans autonomously — the brand picks, platform builds. Market education happens through the discovery experience itself.
 
-**All core waves complete:**
-- Wave 4: Podscan integration layer (`lib/podscan/`, 11 files)
-- Wave 5: Scoring engine (`lib/scoring/`, 4-dimension weighted scoring)
-- Wave 6: Discovery list UI (scored list, filters, sort, checkbox selection)
-- Wave 6.5: English filter + single text-area brief with Claude parsing + graceful API error fallback
-- Wave 7: Media plan builder (line items, placement adjustments, pricing)
-- Wave 8: Brand conversational onboarding (10 steps) + brand profile entity
-- Wave 8.5: Onboarding fixes
-- Wave 9: Show conversational onboarding (12 steps — added contacts step in Wave 11) with CPM education layer
-- Wave 10: Brand-profile-aware campaign creation with overrides
-- **Wave 11: Outreach-to-onboarded-show loop (April 23, 2026)**
-  - Outreach entity + schema (migrations 011, 012)
-  - Brand-facing composer with Claude-drafted pitch + editable terms
-  - Public pitch page at `/outreach/[token]` with dual-state logic (onboarded vs not)
-  - Magic link account creation flow
-  - Wave 9 +1 step for ad_copy_email + billing_email
-  - Accept / Counter / Decline actions with brand notifications
-  - HS256 token signing for outreach + magic links
-  - Rate limiting (5/min per token), terminal-state handling
-  - Public routes allowed in `proxy.ts`
+**Wave 6.5: English filter + campaign brief** — Single text-area brief combined with structured brand profile fields. (Known issue: brief currently renders as jumbled paragraph, flagged for post-Wave-13 polish.)
 
-**Tests:** 121 passing (Vitest), up from 83
+**Wave 7: Media plan builder** — Picks flow into media plan with per-show CPM, episodes, placement, flight dates, spot price, line total. (Known issue: CPM not visibly editable on plan screen despite being editable downstream; flagged for polish.)
 
-**Remaining:**
-- **Wave 12:** IO generation + third-party e-signature (BoldSign or Dropbox Sign preferred). Signed PDF + certificate stored permanently in Supabase.
-- **Wave 13:** Stripe charging on pay-as-delivers model — SetupIntent at IO signature, charged per verified delivery, show payout follows each charge. ACH routing UX as margin lever.
-- Podscribe integration for automated verification
-- Scoring engine tuning (show pool variety, fewer sleep shows for wellness brands)
-- Security audit (RLS policies, API key exposure, webhook verification, rate limiting)
-- Stripe SDK module-load error fix (pre-existing, blocks clean build — address before Wave 13)
-- MCP server for agent access
+**Wave 8: Brand conversational onboarding** — 9-step flow capturing brand name, URL, customer description, age range, demographics, categories, goals, exclusions. Creates `brand_profiles` row. (Known issues: age asked twice, 1-5 category cap and 1-3 goals cap are artificially restrictive, no AI-prefill from URL yet. Future wave.)
+
+**Wave 9: Show conversational onboarding** — Similar flow for shows; captures rate card, ad formats, demographics, ad copy email, billing email. Education layer explains realistic CPM expectations to shows.
+
+**Wave 10: Brand-profile-aware campaign creation** — Campaign creation reuses brand profile; brand only provides campaign-specific overrides (budget, specific goals).
+
+**Wave 11 (shipped April 23): Outreach-to-onboarded-show loop** — Brand composes outreach with proposed terms (CPM, episode count, placement, flight dates); Claude drafts pitch body. Public pitch page at `/outreach/[token]` with signed JWT tokens — forwardable to agents. Dual-state logic: not onboarded shows see magic-link setup flow (routes through Wave 9 onboarding +1 step for ad_copy_email/billing_email); onboarded shows go straight to accept/counter/decline. Brand-forward styling throughout. 121 tests.
+
+**Wave 12 (shipped April 23): Accepted outreach → signed IO via DocuSign** — Full details below.
+
+**Total: 157 tests passing. Migrations through 014 applied to Supabase.**
+
+## Wave 12 — DocuSign Integration (Deep Detail)
+
+Wave 12 materializes the deal on outreach acceptance, generates a VeritoneOne-format IO PDF, routes it through DocuSign for brand-first-then-show signing, verifies webhooks with HMAC, and stores signed PDF + certificate in Supabase storage.
+
+### Key strategic decisions
+
+- **Vendor: DocuSign.** Not BoldSign, Dropbox Sign, or Adobe Sign. Confirmed used by Veritone (DocuSign Envelope ID visible on Veritone IO PDF in project files). Industry trust signal. Starter plan ($50/mo, 40 envelopes) at launch, sandbox free during development.
+- **Hosted signing, not embedded** at launch. Show redirects to DocuSign's domain to sign. Embedded signing is a near-term upgrade (requires Intermediate API tier, ~$300/mo, 100 envelopes) post-funding for premium brand feel.
+- **No custom DocuSign branding at launch.** Level 1 branding deferred to post-funding (requires Business Pro tier).
+- **Brand signs first, show countersigns (Model A).** Matches agency origination pattern.
+- **Timeout: day-3 brand reminder, day-14 auto-cancel.** If brand hasn't signed by day 14, envelope is voided, show is notified, deal is cancelled.
+- **IO auto-generated on show acceptance** + brand review screen (sign or cancel, no editing). Terms are locked at outreach acceptance.
+- **Counter handling:** Brand accepts counter → IO generates with countered CPM. Dismiss = brand can send new outreach. One round, no infinite ping-pong.
+- **Separate `deals` table** (not outreach-as-source-of-truth). One deal per accepted outreach. Owns IO lifecycle.
+- **`DOCUSIGN_ENV=sandbox|production` toggle** in env vars.
+- **Domain events** — append-only audit log at `domain_events` table. Fat payloads with `schema_version`. Service-role write only. Future MCP server / webhook subscriptions will consume.
+
+### Files & structure
+
+```
+supabase/migrations/
+  013_deals_wave12.sql              # Extends deals table with outreach_id, brand/show profile FKs, 
+                                    # agreed_* terms, docusign_envelope_id, signed_at timestamps,
+                                    # signed_io_pdf_url, signature_certificate_url, cancellation 
+                                    # fields. Expands status enum. Storage policy for signed-ios.
+  014_domain_events.sql             # Append-only audit log, service-role only.
+
+lib/
+  data/
+    events.ts                       # logEvent() helper. Never throws, never blocks main txn.
+  pdf/
+    io-generator.ts                 # Deal-driven VeritoneOne-format PDF. Taylslate as Bill-To, 
+                                    # derived post dates from cadence, DocuSign signature anchors.
+  docusign/
+    client.ts                       # JWT auth. 1h token cache. SDK loaded via runtime require 
+                                    # behind (0,eval) so Turbopack doesn't bundle UMD modules.
+    envelope.ts                     # Two-signer create + hosted signing URL + void + download.
+    webhook.ts                      # HMAC verify + payload classify.
+
+app/api/
+  outreach/[token]/accept-counter/  # Brand-only: materializes deal at countered CPM
+  deals/[id]/
+    preview/                        # Inline PDF preview
+    send-to-docusign/               # Creates envelope, returns hosted signing URL
+    cancel/                         # Voids envelope, notifies show
+  webhooks/docusign/                # HMAC-verified. Fires brand_signed/show_signed/completed/
+                                    # declined events. Uploads signed PDF + cert on completion.
+  cron/deal-timeouts/               # Day-3 reminder + day-14 cancellation. Idempotent.
+
+app/(dashboard)/deals/[id]/
+  page.tsx                          # Server-side dispatcher (Wave 12 vs legacy)
+  legacy-client.tsx                 # Pre-Wave-12 deal view (preserved)
+
+components/deals/
+  Wave12DealClient.tsx              # PDF preview iframe + agreed-terms sidebar + sign/cancel
+
+vercel.json                         # Cron schedule: 0 14 * * * daily for /api/cron/deal-timeouts
+```
+
+### Deal status lifecycle (Wave 12 states)
+
+```
+planning → io_sent → brand_signed → show_signed → delivering → completed
+                                                              → cancelled (at any point)
+```
+
+Legacy values (`proposed`, `negotiating`, `approved`, `signed`) preserved in status check constraint for backwards compatibility with pre-Wave-12 agent-imported deals.
+
+### DocuSign configuration (done in sandbox, must repeat in production)
+
+- Private integration with User Application auth (secure secret storage: Yes), JWT Grant auth method
+- One-time JWT consent grant required (URL pattern: `https://account-d.docusign.com/oauth/auth?response_type=code&scope=signature%20impersonation&client_id={KEY}&redirect_uri={CONSENT_URL}`)
+- Connect (webhook) configured under Organizations → Integrations → Connect — Custom Sender webhooks type with HMAC signature enabled
+- Subscribed events: Envelope Signed/Completed, Envelope Declined, Envelope Voided, Recipient Signed/Completed
+- Connect Key generated in Connect Keys tab — used as `DOCUSIGN_WEBHOOK_SECRET`
+
+### Required env vars
+
+```
+DOCUSIGN_ENV=sandbox              # or 'production'
+DOCUSIGN_INTEGRATION_KEY=...      # From Apps and Keys
+DOCUSIGN_USER_ID=...              # From Apps and Keys
+DOCUSIGN_ACCOUNT_ID=...           # From Apps and Keys
+DOCUSIGN_RSA_PRIVATE_KEY=...      # Generated in Service Integration section
+DOCUSIGN_WEBHOOK_SECRET=...       # Generated in Connect Keys tab
+
+RESEND_API_KEY=re_...             # For email delivery (outreach, reminders, notifications)
+```
+
+### Known gotchas & patterns worth preserving
+
+1. **Turbopack + DocuSign SDK.** `docusign-esign` ships UMD modules that Turbopack tries to bundle and fails. Fix: runtime `require` behind `(0,eval)`. Same pattern needed for Stripe SDK when we get to Wave 13.
+2. **Storage bucket `signed-ios`.** Created manually in Supabase dashboard (private, 50MB limit). Service role policy set via migration 013. Webhook handler uploads signed PDF + certificate; API routes serve via short-lived signed URLs.
+3. **Signing order enforced by DocuSign** via recipient routing order (brand = 1, show = 2). Show cannot sign until brand finishes.
+4. **Domain events never throw.** `logEvent()` swallows errors and logs. We never want an audit-log failure to block the main flow.
+
+### Outstanding manual follow-ups (pre-production)
+
+- Verify `taylslate.com` domain in Resend so emails send from `outreach@taylslate.com` instead of `onboarding@resend.dev`. Current workaround is using shared domain, limits sends to chris@taylslate.com only.
+- Swap `onboarding@resend.dev` back to `outreach@taylslate.com` in `lib/email/send.ts` and `lib/email/templates/outreach.ts` after verification.
+- Update DocuSign webhook URL when custom domain is cut over from `taylslate.vercel.app` to final production domain.
 
 ## Architecture Philosophy
 
 **Agent-native design.** The web app is the on-ramp. The API is the real product.
 
-1. **Database and API** — structured data layer that persists across agent sessions
+1. **Database and API** — structured data layer persisting across agent sessions
 2. **Domain logic engine** — IO formatting rules, CPM calculations, make-good thresholds, invoice generation
 3. **Aggregated intelligence layer** — grows with every transaction
 4. **Packaged skills / MCP server** — so AI agents can interact with Taylslate's data and logic
 5. **Lightweight web UI** — for onboarding, review, and approval
 
-**Integration philosophy:** Don't build bespoke integrations to every platform. Build a clean API that agents can bridge. Exception: Podscribe for verification, third-party e-signature (BoldSign/Dropbox Sign/DocuSign) — these are core infrastructure worth direct integration.
+**Build order:** Web app captures data → clean API from day one → skills and MCP server for power users → as agents mature, the web app becomes one of several interfaces.
 
-**The signing event is third-party. The record is Taylslate's.** Signed PDFs and certificates of completion are stored permanently on every deal in Supabase storage. This is the deal history product surface that nothing else in podcast advertising offers.
+**Integration philosophy:** Don't build bespoke integrations to every platform. Build a clean API that agents can bridge. Exceptions worth building directly: Podscribe (verification data connected to IO terms is core value prop), DocuSign (e-signature compliance is a regulatory product, not something to recreate).
+
+## Product Principle — Agentic Design
+
+Every form field must pass the test: **"Is this asking for a decision, or for mechanical work?"**
+
+- **Decisions stay manual.** Budget, campaign goals, competitor exclusions, final sign-off.
+- **Mechanical work gets AI-derived with human confirm/edit.** Brand name, category, demographics, CPM defaults, episode count standards, pitch drafting.
+
+A product that asks the user to type what it can derive is badly designed. Forms ask; conversations suggest and refine. Applies everywhere: brand/show onboarding, outreach drafting, IO terms, Stripe setup.
 
 ## Tech Stack
 
-- **Framework:** Next.js (App Router) with TypeScript
-- **Styling:** Tailwind CSS 4 with custom CSS variables (see `app/globals.css` for design tokens)
-- **Database:** Supabase (Postgres + Auth)
-- **Deployment:** Vercel
-- **AI:** Claude API (campaign planning, outreach drafting, data extraction)
-- **Email:** Resend
-- **Auth:** Supabase Auth + magic link for show onboarding
-- **Payments (planned Wave 13):** Stripe Connect for marketplace payments, pay-as-delivers model
-- **E-signature (planned Wave 12):** BoldSign or Dropbox Sign preferred (Dropbox account already exists)
-- **Verification (planned):** Podscribe API integration
+- **Framework:** Next.js (App Router) with TypeScript, Turbopack
+- **Styling:** Tailwind CSS 4 with custom CSS variables (see `app/globals.css`)
+- **Database:** Supabase (Postgres + Auth), migrations through 014 applied
+- **Deployment:** Vercel (Hobby tier), custom domain cutover pending
+- **AI:** Claude API (campaign planning, outreach drafting, pitch body, brief analysis)
+- **Payments (Wave 13):** Stripe Connect for pay-as-delivers marketplace flow
+- **Verification (future):** Podscribe API integration preferred, RSS/transcript scanning fallback
+- **E-signature:** DocuSign (sandbox configured, production gated on Starter plan purchase)
+- **Email:** Resend (testing domain now, taylslate.com verification pending)
+- **Show data enrichment:** Podscan (Professional plan) — Category Leaders, Podcast Search, Discover endpoints
 
-## Revenue Model (locked April 22, 2026)
+## Data Schema
 
-- **8% all-in platform fee** for self-serve brands (absorbs Stripe fees)
-- **10% managed tier** — Chris-as-operator running campaigns for brands that want hands-on service
-- No SaaS subscription, no early-payout fee, no metered discoveries
-- Claude API costs are a rounding error (~0.05% of revenue per deal)
-- Stripe is the real margin lever — ACH routing vs. card is the biggest untapped optimization
-- Future revenue: paid show verification (Phase 3), data licensing (at scale)
+Complete type system in `lib/data/types.ts`. Key entities:
 
-## Outreach Flow Architecture (Wave 11)
+- **Show** — Podcast or YouTube channel. Audience data, rate cards, demographics, sponsor history. Ephemeral during discovery; persisted to `shows` table when a deal is created.
+- **BrandProfile** — Persisted brand identity (name, URL, demographics, categories, goals, exclusions). Reused across campaigns.
+- **ShowProfile** — Persisted show identity (rate card, ad formats, ad_copy_email, billing_email). Created via Wave 9 onboarding.
+- **Campaign** — Campaign brief (budget, overrides on brand profile). Discovery results tied to a campaign.
+- **Outreach** — Brand's pitch to a show with proposed terms (CPM, episode count, placement, flight dates). Signed JWT token in URL. Response status: pending → accepted / countered / declined.
+- **Deal** — Created on outreach acceptance (Wave 12). Full lifecycle: planning → io_sent → brand_signed → show_signed → delivering → completed. Cancellable at any stage.
+- **InsertionOrder** — Per-episode line items (generated from deal). Per-episode post date, guaranteed downloads, placement, CPM, gross rate, net due, make-good tracking. Modeled on VeritoneOne template.
+- **Invoice** — Monthly billing document referencing IO line items.
+- **Payment** — Wave 13. Stripe PaymentIntent records tied to verified episode deliveries.
+- **DomainEvent** — Append-only audit log. Fat payloads, schema_version field, service-role only.
 
-**Public routes (no auth required):**
-- `/outreach/[token]` — pitch page, dual-state
-- `/auth/magic` — magic link landing (sent / error states)
-- `/auth/magic/verify` — consume magic token, create account, redirect
+## Supabase Conventions (REQUIRED)
 
-**Outreach entity fields (see `lib/data/types.ts`):**
-- `proposed_cpm`, `proposed_episode_count`, `proposed_placement`, `proposed_flight_start`, `proposed_flight_end`
-- `pitch_body` — editable email copy
-- `response_status` — pending | accepted | countered | declined | no_response
-- `counter_cpm`, `counter_message`, `decline_reason`
-- Token signed with `OUTREACH_TOKEN_SECRET`, no expiry until status transitions to terminal state
+**Idempotent migration pattern — ALL migrations must follow this:**
 
-**Dual-state logic:**
-- Match outreach's `sent_to_email` against existing `profiles.email` where a `show_profile.onboarded_at` exists
-- If match: token issues short-lived session, pitch page shows Accept / Counter / Decline
-- If no match: pitch page shows "Interested — set up your account" → magic link → Wave 9 → return URL stored in magic token payload
+- Tables: `CREATE TABLE IF NOT EXISTS`
+- Columns: `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+- Indexes: `CREATE INDEX IF NOT EXISTS`
+- Triggers: `DROP TRIGGER IF EXISTS <name> ON <table>; CREATE TRIGGER ...`
+- RLS policies: `DROP POLICY IF EXISTS "<name>" ON <table>; CREATE POLICY ...`
+- Functions: `CREATE OR REPLACE FUNCTION`
+- Check constraints: `ALTER TABLE ... DROP CONSTRAINT IF EXISTS; ... ADD CONSTRAINT`
 
-**Brand-forward styling:** from-name on emails is brand name, not "Taylslate". Header on pitch page: "[Brand] wants to work with [Show]". Taylslate branding is a small footer mentioning "payments powered by Taylslate". Professional tone throughout — match VeritoneOne IO email style, not startup marketing copy.
+**Rationale:** Chris pastes migrations into Supabase SQL Editor (not CLI). Partial failures break naive re-runs. Every migration must be safely re-runnable.
 
 ## Project Structure
 
 ```
 app/
-  page.tsx                          # Landing page
+  page.tsx                          # Landing page (dark navy)
   globals.css                       # Design tokens
-  outreach/[token]/                 # Public pitch page (Wave 11)
-  auth/magic/                       # Magic link flow (Wave 11)
+  (auth)/
+    login/page.tsx                  # Brand login (email/password — future unification to magic link)
+    signup/page.tsx                 # Brand signup
+    callback/route.ts               # Supabase OAuth callback
   (dashboard)/
-    layout.tsx                      # Authenticated layout
-    campaigns/
+    layout.tsx                      # Authenticated layout, sidebar
+    dashboard/page.tsx              # Home (brand-only currently; role-awareness post-Wave-13)
+    campaigns/                      # Brand campaign flow
+      page.tsx
+      new/page.tsx
       [id]/
         page.tsx                    # Discovery list
         plan/page.tsx               # Media plan builder
-        outreach/page.tsx           # Outreach management (Wave 11)
+        outreach/page.tsx           # Outreach list
+    deals/[id]/                     # Wave 12 deal view
+      page.tsx                      # Server dispatcher
+      legacy-client.tsx             # Pre-Wave-12 preserved
+    invoices/                       # Invoice UI
+    shows/page.tsx                  # Agent show roster
     settings/page.tsx
+  outreach/[token]/page.tsx         # Public pitch page (signed JWT)
+  auth/magic/page.tsx               # Magic link landing for shows
   onboarding/
-    show/                           # 12-step show onboarding (Wave 9 + Wave 11 contacts step)
-    brand/                          # Brand onboarding
-  api/
-    outreach/                       # Create + action endpoints (Wave 11)
-    auth/magic/                     # Magic link routes (Wave 11)
+    brand/                          # 9-step brand flow
+    show/                           # 10-step show flow
+  api/                              # All server endpoints
 components/
   layout/Sidebar.tsx
-  outreach/                         # Composer modal, show list (Wave 11)
+  deals/Wave12DealClient.tsx
+  ... (feature-organized)
 lib/
   data/
     types.ts                        # All TypeScript types
     queries.ts                      # Supabase query functions
-    seed.ts                         # Dev seed data
-  podscan/                          # Podscan API client layer
-  scoring/                          # Scoring engine
-  prompts/
-    brief-parser.ts                 # Claude-powered brief → structured input
-    outreach-draft.ts               # Claude-powered outreach drafting (Wave 11)
-  io/
-    tokens.ts                       # HS256 JWT sign/verify for outreach + magic (Wave 11)
-  email/
-    templates/                      # Resend email templates (outreach, magic, notifications)
-  utils/
-    pricing.ts                      # Spot price, placement adjustments, blended CPM
-  supabase/                         # Supabase client config
-proxy.ts                            # Public route allowlist (Wave 11 update)
+    events.ts                       # Domain event logging
+  docusign/                         # DocuSign integration
+  pdf/                              # PDF generation
+  email/                            # Resend + templates
+  podscan/                          # Podscan API client + discover endpoint
+  scoring/
+    weights.ts                      # Scoring weights (hardcoded — future refactor for tunability)
+  supabase/                         # Client configs (client/server/admin)
+  validation/                       # IO validation, input schemas
+supabase/migrations/                # SQL migrations (001-014 applied)
+docs/
+  podscan-api.md                    # Podscan API reference (persistent across sessions)
 ```
 
-## Domain Knowledge — Podcast Advertising
+## Podcast Advertising Domain Knowledge
 
-### Pricing
-- **CPM pricing:** Ad Spot Price = (Downloads ÷ 1,000) × CPM Rate. Range: $15–$50.
+- **CPM pricing:** Ad Spot Price = (Downloads ÷ 1,000) × CPM Rate. Range: $15-$50.
 - **Placements:** Pre-roll, mid-roll (standard, highest rate), post-roll.
-- **Price types:** CPM-based or Flat Rate (with make-good if underdelivery >10%).
-- **YouTube:** Flat-fee pricing, $2K–$20K based on cultural significance. Content is evergreen.
+- **Price types:** CPM-based (pay per actual download) or Flat Rate (fixed price with make-good if underdelivery >10%).
+- **IO structure:** Per-episode line items with format, post date, guaranteed downloads, show name, placement, scripted Y/N, personal experience Y/N, reader type, evergreen/dated, pixel Y/N, gross rate, gross CPM, price type, net due.
+- **IO standard terms:** Competitor exclusivity (90 days), ROFR (30 days), make-good clause (>10% underdelivery), 45-day download tracking, FTC compliance, cancellation (14 days notice), morality/take-down, Net 30 EOM payment.
+- **Agency markup:** Traditional agencies mark up CPM (e.g., show's $25 CPM → agency charges brand $29.41, ~15%). Show never sees full rate. Taylslate's 8% is transparent.
+- **Payment flow pain:** Shows manually invoice agencies monthly. Net 30 EOM officially, routinely Net 60-75+. A January ad may not pay until April. Taylslate's pay-as-delivers model fixes this.
+- **YouTube:** Flat-fee pricing (not CPM). $2K-$20K based on cultural significance. Content is evergreen.
+- **Ad copy philosophy:** 3-5 bullet point talking points preferred over full scripts. Host authenticity is the value. No pre-approval review loop — verification is post-publication (Podscribe).
+- **VeritoneOne IO template** in project files is the format standard.
 
-### IO Structure
-Per-episode line items: format, post date, guaranteed downloads, show name, placement, scripted Y/N, personal experience Y/N, reader type, evergreen/dated, pixel Y/N, gross rate, gross CPM, price type, net due.
+## Payment Model (Wave 13 — Next)
 
-### Standard IO Terms
-- Competitor exclusivity (90 days typical)
-- ROFR (30 days)
-- Make-good clause (>10% underdelivery triggers free additional placement)
-- 45-day download tracking window
-- Net 30 EOM payment (routinely violated in industry — agencies pay Net 60–75+)
+**Pay-as-delivers, NOT escrow.** Locked decision.
 
-### Agency Markup Context
-Agencies mark up CPM to brands (e.g., show's $25 CPM → agency charges $29.41 ~15%). Taylslate's 8% all-in is the anti-VeritoneOne transparency pitch.
+- Card-on-file via Stripe SetupIntent at IO signature (not charged yet)
+- Charged per episode as it runs in the billing cycle (verified delivery triggers charge)
+- Show payout follows each verified delivery charge
+- No pre-funding, no held escrow
+- Show can opt into early payout (within 7 days of delivery) for 2.5% fee
+- Payout NEVER released until inbound brand payment has settled — core financial rule, no float risk
 
-### Ad Copy Philosophy
-3-5 bullet point talking points, not full scripts. Host authenticity is the value. No pre-approval review — verification is post-publication (Podscribe).
+**Anti-leakage mechanisms:** Speed (days vs. Net 60-75), payment reliability, future deal flow, brand operational friction. Not held escrow.
 
-### VeritoneOne IO Template
-Reference document in project files. Uses DocuSign for e-signature (DocuSign Envelope ID visible on every page). Use as format standard for Taylslate IO generation in Wave 12.
+**Real buyer minimum:** $20K/month campaigns.
+
+## Design System
+
+All colors use CSS custom properties from `globals.css`:
+- `--brand-navy` / `--brand-navy-light` — dark backgrounds (landing page)
+- `--brand-blue` / `--brand-blue-light` — primary action color
+- `--brand-teal` / `--brand-teal-light` — secondary accent
+- `--brand-orange` — tertiary accent (sponsor badges)
+- `--brand-surface` / `--brand-surface-elevated` — light backgrounds (dashboard)
+- `--brand-border` — borders
+- `--brand-text` / `--brand-text-secondary` / `--brand-text-muted` — text hierarchy
+- `--brand-success` / `--brand-warning` / `--brand-error` — status colors
+
+Dashboard uses light theme. Landing and public pitch pages use dark/brand-forward theme.
 
 ## Conventions
 
-### Code & data
-- Use `var(--brand-*)` CSS variables for all colors, not hardcoded values
-- Build clean API endpoints from day one — the web UI is one of several future interfaces
-- Schemas and forms must match real-world industry documents and processes
-- All monetary values in USD, stored as numbers
-- Dates stored as ISO strings
-- Public routes must be added to `proxy.ts` allowlist
-
-### Git — REQUIRED, no exceptions
-- Auto-commit after each logical chunk with clear messages
-- ALWAYS `git add`, `git commit`, `git push` — no exceptions
-
-### Supabase migrations — REQUIRED, no exceptions
-All migration files must be idempotent — safe to re-run without error if they've already been applied in whole or in part. This is non-negotiable because Chris pastes migrations directly into the Supabase SQL Editor, not via CLI, and partial failures leave state that breaks naive re-runs.
-
-Idempotency rules:
-- **Tables:** `CREATE TABLE IF NOT EXISTS`
-- **Columns:** `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
-- **Indexes:** `CREATE INDEX IF NOT EXISTS`
-- **Triggers:** `DROP TRIGGER IF EXISTS <name> ON <table>; CREATE TRIGGER ...` (Postgres has no `CREATE TRIGGER IF NOT EXISTS`)
-- **RLS policies:** `DROP POLICY IF EXISTS "<name>" ON <table>; CREATE POLICY ...` (Postgres has no `CREATE POLICY IF NOT EXISTS`)
-- **Functions:** `CREATE OR REPLACE FUNCTION`
-- **Enum types:** wrap in `DO $$ BEGIN ... IF NOT EXISTS ... END $$;` blocks
-- **Constraints:** query `information_schema.table_constraints` before adding, or use `DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$;`
-
-When a migration cannot be idempotent (rare — e.g. data backfills), wrap the non-idempotent portion in a guard that checks whether the work has already been done.
+- Use `var(--brand-*)` CSS variables for colors, not hardcoded values
+- File naming: lowercase with hyphens for files, PascalCase for components
+- All monetary values in USD, stored as numbers (not strings)
+- Dates stored as ISO strings, displayed with `toLocaleDateString()`
+- Build clean API endpoints from day one
+- Schemas and forms must match real-world industry documents
+- Commit messages: imperative mood, under 70 chars for summary line
+- Auto-commit after significant changes with no exceptions (enforced in CLAUDE.md language)
+- Migrations: follow idempotent pattern above, always
+- Domain events on every state transition (entity.action form: `deal.created`, `outreach.accepted`, `envelope.signed`)
 
 ## Competitive Context (Quick Reference)
 
-- **LiveRead.io** — IO/invoice management, real integrations, but no AI, no discovery, no campaign planning.
-- **Gumball.fm** — Host-read ad marketplace (Headgum). 150+ shows. Limited to own network inventory.
-- **SpotsNow** — "Hotel Tonight for podcast ads." Last-minute inventory marketplace. 10% cut. Competes on timing/remnant, not discovery.
-- **CreatorExchange** — 25% cut. Competitor.
-- **Podscribe** — Verification and attribution (IAB-certified). Integrate, don't compete.
-- **Traditional agencies (VeritoneOne, Ad Results Media)** — 15-20% markup, manual processes, ignore small shows.
+- **LiveRead.io** — IO/invoice management, real integrations (Megaphone, Bill.com, QuickBooks, BoldSign, HubSpot, Art19). No AI, no discovery, no campaign planning. Operations only.
+- **Gumball.fm (Headgum)** — Host-read ad marketplace. 150+ shows, $10M Series A. Limited to own network inventory. 10K download minimum.
+- **Podscribe** — Verification + attribution (IAB-certified). Industry standard. No IO/deal/payment data. Integrate (planned), don't compete.
+- **Podscan** — Primary data provider. 4.4M podcasts, real-time API, MCP server, founder-encouraged. Current enrichment source.
+- **Rephonic** — Alternative data provider. 3M+ podcasts, most permissive ToS. Backup option.
+- **Traditional agencies (VeritoneOne, Ad Results Media)** — 15-20% markup, manual processes, ignore small shows. Taylslate is 10x faster, no markup.
+
+See `TAYLSLATE_CONTEXT.md` for full competitive analysis.
 
 ## Founder Working Style
 
 - Prefers focused, step-by-step explanations over comprehensive overviews
-- Works iteratively — strategy → confirm → prompt → ship → update docs
 - Values authentic industry modeling — schemas must match real-world documents
-- Uses Claude Code for building (disable worktree, work on main)
-- Uses Claude desktop app for strategy and planning conversations
+- Works iteratively — build, test, refine
+- Uses Claude Code (desktop app) for building — disable worktree, work on main
+- Uses Claude.ai chat for strategy, planning, and this doc
+- Comfortable with GitHub, terminal, Vercel deployment
 - Think as a co-founder, not just an assistant
 - Motivated by bold launches, not incremental releases
+- Direct about risks — honest about what isn't working beats hedging
+
+## Build Queue (Near Term)
+
+**Wave 13 — Stripe pay-as-delivers (next)**
+Pre-req: Fix pre-existing Stripe SDK build error with same lazy-require pattern used for DocuSign.
+Covers: Stripe Connect setup, SetupIntent at IO signature, episode charge on delivery, show payout flow, idempotency, webhook handling, Connect onboarding UI.
+
+**Wave 12.5 (or folded into Wave 13) — Auth unification**
+Move brands from email/password to magic link + 6-digit OTP. Unify with show auth. Safer, easier UX, no password management.
+
+**Post-Wave-13 polish wave — UX improvements**
+(1) Brand onboarding: hybrid AI-prefill from URL, remove age double-ask, remove category/goals caps, "Back to Summary" CTA when editing.
+(2) Campaign brief: structured fields instead of jumbled paragraph.
+(3) Media plan: editable CPM indicator.
+(4) Outreach: "Compose outreach" not "Reach out", tightened pitch system prompt, rebrand "Claude is writing..." to product-voice persona.
+(5) Outreach email bug: from-name getting full brief paragraph instead of brand name.
+(6) Pitch page: add total deal value (CPM × episodes × audience/1000).
+
+**Wave 14/15 — Agent/rep accounts**
+Multi-show portfolio management UX. High-leverage GTM channel. Data model foundation exists (`agent_show_relationships`), needs UX.
+
+**Future — Scoring engine tunability + "expand my horizons" slider**
+Refactor `lib/scoring/weights.ts` to accept per-request overrides. Enables the slider UX: Tight fit ← → Broad exploration. Drops audience weight, raises engagement, pulls from adjacent Podscan vector categories.
+
+**Future — "Find shows like this one" primitive**
+First-class UI on each show card. Uses Podscan Discover endpoint. UI button + preference signal capture to `brand_profiles` for learning. Competitive differentiator vs. VeritoneOne's Rolodex model.
+
+**Future — Internal dev tooling**
+Seed/bypass admin mode: "log me in as test show 1" button for faster local testing. Replaces Gmail +tag aliases + incognito windows.
