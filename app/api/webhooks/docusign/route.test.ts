@@ -28,6 +28,7 @@ const logEvent = vi.fn().mockResolvedValue(null);
 const downloadCompletedDocument = vi.fn();
 const downloadCertificate = vi.fn();
 const sendEmail = vi.fn().mockResolvedValue({ ok: true });
+const createSetupIntentForBrand = vi.fn();
 
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin }));
 vi.mock("@/lib/data/queries", () => ({
@@ -45,6 +46,9 @@ vi.mock("@/lib/docusign/envelope", () => ({
 }));
 vi.mock("@/lib/email/send", () => ({
   sendEmail: (...a: unknown[]) => sendEmail(...a),
+}));
+vi.mock("@/lib/stripe/setup-intent", () => ({
+  createSetupIntentForBrand: (...a: unknown[]) => createSetupIntentForBrand(...a),
 }));
 
 import { POST } from "./route";
@@ -97,6 +101,11 @@ describe("POST /api/webhooks/docusign", () => {
     // Mocks for sub-queries used by the email helpers
     adminBuilder.single.mockResolvedValue({ data: null, error: null });
     getOutreachById.mockResolvedValue({ show_name: "Daily Briefing" });
+    createSetupIntentForBrand.mockResolvedValue({
+      setupIntentId: "si_test",
+      clientSecret: "si_test_secret",
+      stripeCustomerId: "cus_test",
+    });
   });
 
   it("rejects requests with a bad signature", async () => {
@@ -198,6 +207,62 @@ describe("POST /api/webhooks/docusign", () => {
     );
     const types = logEvent.mock.calls.map((c) => c[0].eventType);
     expect(types).toContain("io.declined");
+  });
+
+  it("provisions a Stripe SetupIntent on brand_signed", async () => {
+    // The route runs notifyShowOfBrandSignature() then
+    // provisionBrandSetupIntent() against the same shared adminBuilder.
+    // notifyShowOfBrandSignature short-circuits when its show_profiles
+    // lookup returns null, but only after calling .single() three times
+    // (deal → brand_profiles → show_profiles). We queue those nulls,
+    // then supply real data for the provisioner's two lookups
+    // (brand_profiles → profiles).
+    adminBuilder.single
+      // notify: deal lookup returns null → notify exits immediately
+      .mockResolvedValueOnce({ data: null, error: null })
+      // provisioner: brand_profiles
+      .mockResolvedValueOnce({
+        data: { id: "bp1", user_id: "u_brand", brand_identity: "Acme Co." },
+        error: null,
+      })
+      // provisioner: profiles
+      .mockResolvedValueOnce({
+        data: {
+          id: "u_brand",
+          email: "brand@example.com",
+          full_name: "Brand Owner",
+          company_name: null,
+          stripe_customer_id: null,
+        },
+        error: null,
+      })
+      // The deals UPDATE that persists setup_intent_id chains .eq() not
+      // .single(); but if anything else falls through, default to null.
+      .mockResolvedValue({ data: null, error: null });
+
+    const res = await POST(
+      signedRequest({
+        event: "recipient-completed",
+        data: {
+          envelopeId: "env-1",
+          envelopeSummary: {
+            status: "sent",
+            recipients: {
+              signers: [
+                { recipientId: "1", signedDateTime: "2026-04-23T12:00:00Z" },
+              ],
+            },
+          },
+        },
+      }) as never
+    );
+    expect(res.status).toBe(200);
+    expect(createSetupIntentForBrand).toHaveBeenCalledWith(
+      expect.objectContaining({ dealId: "deal-1" })
+    );
+    const types = logEvent.mock.calls.map((c) => c[0].eventType);
+    expect(types).toContain("io.brand_signed");
+    expect(types).toContain("deal.setup_intent_created");
   });
 
   it("is idempotent — replayed brand_signed is a no-op", async () => {

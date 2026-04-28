@@ -27,6 +27,7 @@ import {
   renderDealCancelledShow,
 } from "@/lib/email/templates/deal-cancelled-show";
 import { sendEmail } from "@/lib/email/send";
+import { createSetupIntentForBrand } from "@/lib/stripe/setup-intent";
 import type { BrandProfile, ShowProfile } from "@/lib/data/types";
 
 const STORAGE_BUCKET = "signed-ios";
@@ -60,6 +61,100 @@ async function uploadToBucket(
     return null;
   }
   return path;
+}
+
+/**
+ * Wave 13 hook — fired additively after `brand_signed` lands. Looks up
+ * the brand's profile, creates a Stripe SetupIntent so the brand UI can
+ * collect a card on file, and persists the SetupIntent id + client
+ * secret onto the deal. Best-effort: a SetupIntent failure must NOT
+ * roll back the brand_signed transition (the deal is still legitimately
+ * signed; we just need to ask for a card again later).
+ */
+async function provisionBrandSetupIntent(
+  dealId: string,
+  brandProfileId: string | null
+): Promise<void> {
+  if (!brandProfileId) {
+    console.warn(
+      `[docusign webhook] brand_signed deal ${dealId} has no brand_profile_id; skipping SetupIntent provisioning`
+    );
+    return;
+  }
+  const { data: bp, error: bpErr } = await supabaseAdmin
+    .from("brand_profiles")
+    .select("id,user_id,brand_identity")
+    .eq("id", brandProfileId)
+    .single<{ id: string; user_id: string; brand_identity: string | null }>();
+  if (bpErr || !bp) {
+    console.error(
+      `[docusign webhook] failed to load brand_profile ${brandProfileId} for SetupIntent on deal ${dealId}:`,
+      bpErr?.message
+    );
+    return;
+  }
+  const { data: profile, error: profileErr } = await supabaseAdmin
+    .from("profiles")
+    .select("id,email,full_name,company_name,stripe_customer_id")
+    .eq("id", bp.user_id)
+    .single<{
+      id: string;
+      email: string;
+      full_name: string | null;
+      company_name: string | null;
+      stripe_customer_id: string | null;
+    }>();
+  if (profileErr || !profile) {
+    console.error(
+      `[docusign webhook] failed to load profile ${bp.user_id} for SetupIntent on deal ${dealId}:`,
+      profileErr?.message
+    );
+    return;
+  }
+
+  try {
+    const result = await createSetupIntentForBrand({
+      profile: {
+        id: profile.id,
+        email: profile.email,
+        full_name: profile.full_name,
+        company_name: profile.company_name ?? bp.brand_identity ?? null,
+        stripe_customer_id: profile.stripe_customer_id,
+      },
+      dealId,
+    });
+    const { error: updErr } = await supabaseAdmin
+      .from("deals")
+      .update({
+        setup_intent_id: result.setupIntentId,
+        setup_intent_client_secret: result.clientSecret,
+      })
+      .eq("id", dealId);
+    if (updErr) {
+      console.error(
+        `[docusign webhook] failed to persist SetupIntent ${result.setupIntentId} on deal ${dealId}:`,
+        updErr.message
+      );
+      return;
+    }
+    await logEvent({
+      eventType: "deal.setup_intent_created",
+      entityType: "deal",
+      entityId: dealId,
+      payload: {
+        setup_intent_id: result.setupIntentId,
+        stripe_customer_id: result.stripeCustomerId,
+        profile_id: profile.id,
+      },
+    });
+  } catch (err) {
+    // Never let a SetupIntent failure block the signing pipeline. The
+    // deal can prompt the brand for a card later via the dashboard.
+    console.error(
+      `[docusign webhook] createSetupIntentForBrand failed for deal ${dealId}:`,
+      err instanceof Error ? err.message : err
+    );
+  }
 }
 
 async function notifyShowOfBrandSignature(dealId: string): Promise<void> {
@@ -202,6 +297,10 @@ export async function POST(request: NextRequest) {
       payload: { envelope_id: evt.envelopeId, signed_at: action.signedAt },
     });
     await notifyShowOfBrandSignature(deal.id);
+    // Wave 13 — provision a SetupIntent so the brand can save a card on
+    // file. Additive: this never throws and never alters the signing
+    // state, even if Stripe is unreachable.
+    await provisionBrandSetupIntent(deal.id, deal.brand_profile_id ?? null);
     return NextResponse.json({ ok: true });
   }
 
