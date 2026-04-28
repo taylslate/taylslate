@@ -495,9 +495,31 @@ export type DomainEventType =
   | "io.completed"
   | "io.declined"
   | "io.counter_accepted"
-  | "io.timeout_cancelled";
+  | "io.timeout_cancelled"
+  // Wave 13 — subscription/plan transitions
+  | "customer.upgraded"
+  | "customer.downgraded"
+  | "customer.plan_changed"
+  | "customer.seat_added"
+  | "customer.seat_removed"
+  // Wave 13 — payment lifecycle (Stripe pay-as-delivers)
+  | "payment.charged"
+  | "payment.failed"
+  | "payment.settled"
+  | "payment.disputed"
+  // Wave 13 — Stripe subscription webhook state
+  | "subscription.updated"
+  | "subscription.deleted";
 
-export type DomainEntityType = "deal" | "insertion_order" | "outreach";
+export type DomainEntityType =
+  | "deal"
+  | "insertion_order"
+  | "outreach"
+  // Wave 13 — billing/subscription state lives on profiles
+  | "customer"
+  // Wave 13 — payments table + per-profile subscription audit
+  | "payment"
+  | "profile";
 
 export interface DomainEvent {
   id: string;
