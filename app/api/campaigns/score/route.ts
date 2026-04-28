@@ -8,6 +8,7 @@ import {
   buildBriefParserUserPrompt,
   INTEREST_BUCKETS,
 } from "@/lib/prompts/brief-parser";
+import { recordEvent } from "@/lib/data/event-log";
 
 interface ScoreRequest {
   name: string;
@@ -259,6 +260,12 @@ export async function POST(request: NextRequest) {
       sourceCounts: result.meta.sourceCounts,
       durationMs: result.meta.durationMs,
       errors: result.meta.errors,
+    });
+
+    await recordEvent({
+      customerId: user.id,
+      operationType: "discovery_run",
+      metadata: { campaign_id: campaignId, show_count: scoredRecords.length },
     });
 
     return NextResponse.json({

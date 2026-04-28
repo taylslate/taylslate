@@ -8,6 +8,7 @@ import {
   prepareShowsForPrompt,
 } from "@/lib/prompts/campaign-planning";
 import { discoverShows } from "@/lib/discovery";
+import { recordEvent } from "@/lib/data/event-log";
 
 interface GenerateRequest {
   name: string;
@@ -323,6 +324,12 @@ export async function POST(request: NextRequest) {
     });
 
     if (savedCampaign) {
+      // TODO: also fire from MCP server when api endpoints land
+      await recordEvent({
+        customerId: user.id,
+        operationType: "campaign_generated",
+        metadata: { campaign_id: savedCampaign.id },
+      });
       // Return saved campaign with real Supabase ID
       return NextResponse.json({
         campaign: {

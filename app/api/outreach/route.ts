@@ -12,6 +12,7 @@ import {
 import { signOutreachToken } from "@/lib/io/tokens";
 import { renderOutreachEmail } from "@/lib/email/templates/outreach";
 import { sendEmail } from "@/lib/email/send";
+import { recordEvent } from "@/lib/data/event-log";
 import type {
   Outreach,
   OutreachPlacement,
@@ -182,6 +183,15 @@ export async function POST(request: NextRequest) {
     text: email.text,
     from: email.from,
     reply_to: email.reply_to,
+  });
+
+  await recordEvent({
+    customerId: user.id,
+    operationType: "outreach_sent",
+    metadata: {
+      outreach_id: created.id,
+      show_id: body.show.show_id ?? null,
+    },
   });
 
   return NextResponse.json({

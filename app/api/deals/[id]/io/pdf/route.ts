@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser, getDealById, getShowById, getIOByDealId, getProfileById, getNextIONumber } from "@/lib/data/queries";
 import { generateIOPdf } from "@/lib/pdf/io-pdf";
 import type { InsertionOrder, IOLineItem } from "@/lib/data";
+import { recordEvent } from "@/lib/data/event-log";
 
 // POST: Generate PDF from provided IO data (for edited IOs)
 export async function POST(request: NextRequest) {
@@ -14,6 +15,13 @@ export async function POST(request: NextRequest) {
 
     const pdfBuffer = generateIOPdf(io);
     const filename = `${io.io_number.replace(/\s+/g, "_")}.pdf`;
+
+    const user = await getAuthenticatedUser();
+    await recordEvent({
+      customerId: user?.id,
+      operationType: "io_generated",
+      metadata: { deal_id: io.deal_id, mode: "POST" },
+    });
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
@@ -131,6 +139,12 @@ export async function GET(
 
     const pdfBuffer = generateIOPdf(io);
     const filename = `${io.io_number.replace(/\s+/g, "_")}.pdf`;
+
+    await recordEvent({
+      customerId: user.id,
+      operationType: "io_generated",
+      metadata: { deal_id: deal.id, mode: "GET" },
+    });
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
