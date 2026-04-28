@@ -19,6 +19,10 @@ vi.mock("@/lib/scoring", () => ({
   scoreShows: (...args: unknown[]) => scoreShows(...args),
 }));
 
+vi.mock("@/lib/data/event-log", () => ({
+  recordEvent: vi.fn(),
+}));
+
 vi.mock("@anthropic-ai/sdk", () => {
   return {
     default: class {

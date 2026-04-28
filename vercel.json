@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/deal-timeouts",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/conversion-alerts",
+      "schedule": "0 15 * * *"
     }
   ]
 }
