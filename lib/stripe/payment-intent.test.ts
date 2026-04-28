@@ -2,13 +2,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ---- Hoist all mocks BEFORE the module under test imports them. ----
 
+interface MockQueryBuilder {
+  select: ReturnType<typeof vi.fn>;
+  eq: ReturnType<typeof vi.fn>;
+  insert: ReturnType<typeof vi.fn>;
+  single: ReturnType<typeof vi.fn>;
+  _inserted: () => unknown;
+}
+
 const { stripe, supabaseAdmin, logEvent, supabaseTables } = vi.hoisted(() => {
   // Per-table query-builder factory. Each `from(table)` returns a fresh
   // builder so the tests can stage rows independently.
   const tables: Record<string, { row?: unknown; error?: unknown }> = {};
-  function makeBuilder(table: string) {
+  function makeBuilder(table: string): MockQueryBuilder {
     let inserted: unknown = null;
-    const builder: Record<string, unknown> = {
+    const builder: MockQueryBuilder = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       insert: vi.fn((payload: unknown) => {
@@ -31,7 +39,7 @@ const { stripe, supabaseAdmin, logEvent, supabaseTables } = vi.hoisted(() => {
     };
     return builder;
   }
-  const builders: Record<string, ReturnType<typeof makeBuilder>> = {};
+  const builders: Record<string, MockQueryBuilder> = {};
   return {
     stripe: {
       customers: { retrieve: vi.fn() },

@@ -1,14 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+interface MockQueryBuilder {
+  update: ReturnType<typeof vi.fn>;
+  eq: ReturnType<typeof vi.fn>;
+  select: ReturnType<typeof vi.fn>;
+  single: ReturnType<typeof vi.fn>;
+  _stage: (row: unknown, error?: unknown) => void;
+  _updated: () => unknown;
+}
+
 const { stripe, supabaseAdmin, logEvent, finalizeDowngrade, transferPayoutForPayment } = vi.hoisted(() => {
-  const builders: Record<string, ReturnType<typeof makeBuilder>> = {};
-  function makeBuilder() {
+  const builders: Record<string, MockQueryBuilder> = {};
+  function makeBuilder(): MockQueryBuilder {
     let updated: unknown = null;
     let returned: { row?: unknown; error?: unknown } = { row: null, error: null };
     // .eq must be (1) chainable for .select().eq().single() and (2) awaitable
     // for terminal UPDATE-then-eq calls (e.g. deals UPDATE with no .select()).
     // We make it a thenable that ALSO returns the builder for chaining.
-    const builder: Record<string, unknown> = {
+    const builder: MockQueryBuilder = {
       update: vi.fn((payload: unknown) => {
         updated = payload;
         return builder;
