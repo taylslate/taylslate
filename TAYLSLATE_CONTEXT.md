@@ -1,6 +1,6 @@
 # Taylslate — Product & Founder Context
 
-*Last updated: April 24, 2026. This document is the primary strategic context reference for Claude when working on Taylslate. For build state, schema, and technical conventions, see `CLAUDE.md`.*
+*Last updated: April 28, 2026. Pricing model locked. This document is the primary strategic context reference for Claude when working on Taylslate. For build state, schema, and technical conventions, see `CLAUDE.md`.*
 
 ---
 
@@ -30,7 +30,7 @@ Taylslate is **Layer 3 infrastructure** for podcast and YouTube sponsorship adve
 
 **What Taylslate does for each user type:**
 
-- **Brands new to podcast advertising:** Enter URL, budget, demographics. Get a scored discovery list in seconds. Select shows. Platform builds the media plan. Send outreach. Sign IOs via DocuSign. Card on file charges per verified delivery. See what converts.
+- **Brands new to podcast advertising ($30K-$50K monthly campaign budgets):** Founder-led and operated, often with an agency handling social spend but new to podcast specifically. Enter URL, budget, demographics. Get a scored discovery list in seconds. Select shows. Platform builds the media plan. Send outreach. Sign IOs via DocuSign. Card on file charges per verified delivery. See what converts. Testing podcast as a channel — Pay-as-you-go pricing matches their psychology. Convert to Operator once channel is proven.
 - **Shows & creators (onboarded via outreach acceptance):** Receive pitch from brand with proposed terms. Accept, counter, or decline. Get IO auto-generated. Sign via DocuSign. Get paid via Stripe as episodes deliver. Auto-invoicing. Fair pricing.
 - **Shows under 10K downloads:** Systematically ignored by agencies. Taylslate removes the cost barrier of transacting with smaller shows. This matters for long-tail inventory.
 - **Sales agents / rep companies (Wave 14/15):** Represent portfolios of shows. High-leverage GTM — one agent onboards, 10-30 shows arrive. Data model exists (`agent_show_relationships`), UX not built yet.
@@ -57,12 +57,127 @@ The moat is the data. Everything else is a mechanism to capture it.
 
 ## 4. Key Strategic Decisions (Locked as of April 24, 2026)
 
-### Pricing & fees
-- **8% all-in platform fee** (brand side, absorbs Stripe fees)
-- **10% for agency/white-label tier**
-- Transparency as competitive differentiator vs. agencies charging 15-20% with hidden markups
-- Real buyer minimum campaign: **$20K/month**
-- Pricing may evolve to hybrid SaaS + transaction as product matures — under consideration post-launch
+### Pricing & Fees (Locked April 28, 2026)
+
+Three-tier model pressure-tested in pricing strategy session. Customer chooses entry point; conversion to higher tiers is sales-led, not gated. Reference class is commerce infrastructure (Shopify, Toast), not full marketing suites (HubSpot, Salesforce) — Taylslate is a channel tool, "Facebook Ads for podcast reads," not a marketing platform.
+
+**Pay-as-you-go (Brand entry):**
+- 10% transaction fee, no subscription
+- 1 seat, up to 2 concurrent active campaigns
+- Per-campaign reporting, standard support, no API access
+- All core features (AI planning, discovery, IO generation, verification, invoicing, payment)
+
+**Operator (Brand committed):**
+- $499/month + 6% transaction
+- Breakeven vs PAYG at ~$12,500/month spend
+- 1 seat included, additional seats at $299/month
+- Unlimited concurrent campaigns, portfolio dashboard, cross-campaign analytics, CSV exports
+- Priority support, API access
+- All Pay-as-you-go features
+
+**Agency (white-label):**
+- $5,000/month + 4% transaction
+- 5 seats included, additional seats at $500/month
+- White-label IOs and dashboards, multi-client architecture, permissions, client billing separation
+- Custom reporting, dedicated success manager
+- All Operator features
+
+**Real buyer minimum:** $30K-$50K/month campaigns (revised from $20K based on customer reality).
+
+### Pricing Philosophy (the why behind the model)
+
+**Transaction fee is the entry. SaaS is the upgrade for ongoing operations.** Customers earn their way to SaaS rather than being gated into it. Founder-buyers testing podcast advertising for the first time start on PAYG with no recurring fee. Once they prove the channel and run consistent monthly spend, they convert to Operator for better economics.
+
+**Optimize for churn over per-customer revenue.** PAYG generates more per-customer revenue than Operator at high volumes (10% on $100K/month = $10K vs Operator's $5,999), but Operator customers retain dramatically longer because the platform gets cheaper as they scale rather than more expensive. Higher LTV through stickier relationships beats higher per-month revenue from volatile transaction-only customers.
+
+**Don't gate the wedge. Gate the scale features.** AI planning, discovery, IO generation, verification, invoicing, and payment are the wedge — must be available to everyone. Things that only matter at scale (concurrent campaign caps, portfolio dashboard, API access, multi-client architecture, white-label) gate naturally to the tier where they're actually needed.
+
+**Customer chooses, platform doesn't force.** No mandatory graduation by volume thresholds. Some customers will stay on PAYG even when Operator is cheaper because they value zero monthly fee. Respect that choice.
+
+### Why Other Models Were Rejected
+
+- **Pure 8% transaction (previous model):** Doesn't generate recurring revenue, structurally caps exit multiple, fights retention at scale (high-volume customers leave for in-house when 8% × $1M/year = $80K, cheaper to insource a media buyer at $90-120K).
+- **Pure SaaS:** Sticker shock at the entry point. Founders testing podcast advertising for the first time won't sign up for a $1,500/month subscription before knowing the channel works. The "test before paying" psychology is real and primary.
+- **Feature-gated tiers (gate features behind SaaS):** Taylslate's value is in the wedge features. Gating those undermines the entire pitch. There aren't enough non-wedge features to justify a SaaS tier purely on capability.
+- **Per-campaign / per-discovery / per-outreach metering:** Too much billing complexity for too little revenue. Doesn't fit the customer's mental model.
+- **Listing fees / featured placement for shows:** Compromises discovery integrity. The mission is helping shows that don't get enough ad dollars find more deals — pay-to-play discovery contradicts that. Killed permanently.
+- **$1,500/mo Operator price (initial proposal):** Too high for the founder-buyer reference class. They compare Taylslate to Facebook Ads / Google Ads (channel tools), not to HubSpot (marketing suite). $499 anchors correctly.
+
+### Conversion Mechanic (Most Important Operational Detail)
+
+PAYG → Operator conversion rate is the single highest-leverage activity in the company. Every percentage point moves year-3+ revenue dramatically. The CS function and trigger system are non-negotiable, not nice-to-have.
+
+**Internal trigger system:**
+- When a customer's trailing 90-day GMV averages above $12,500/month, fire an internal alert
+- Alert goes to Chris initially, then to a CS person once that role exists
+- Includes the math: "Customer X spending $Y/month. PAYG cost: $Z. Operator would save them $W/year."
+- Triggers a sales-led upgrade conversation, not an automated email
+
+**Customer-facing signal (built later):**
+- Subtle dashboard indicator showing estimated savings if they switched
+- No popups, no pressure — just shows the math so customers can self-discover
+
+**Switching mechanics:**
+- Friction-free, prorated through Stripe Subscription primitives
+- Keep all data, deal history, customer relationship intact
+- Allow downgrades back to PAYG if customer requests (don't trap them)
+
+### Three Revenue Streams (Three Modes of Using Taylslate)
+
+The streams aren't just three revenue lines — they're three distinct *modes of using the platform*:
+
+1. **Transaction (PAYG, 10%)** — "Human running campaigns through the UI occasionally." Day 1 entry point.
+2. **SaaS (Operator $499+6%, Agency $5,000+4%)** — "Human running campaigns through the UI consistently." Month 3+ recurring revenue engine.
+3. **API/MCP (per-call + per-deal pricing)** — "Agents running campaigns programmatically." Month 9-12+ for agent-mediated commerce.
+
+This coherence matters. Adding unrelated streams (concierge, data products, financing) would fragment the story. Three streams, three modes, one product.
+
+**API/MCP pricing shape (future):**
+- Per-call pricing for read operations (discovery runs, show lookups, scoring queries) — roughly $0.10-$0.50/call
+- Per-deal pricing for write operations (campaigns created, IOs generated) — roughly $5-$25/IO
+- 1-2% additional surcharge on transactions executed via API (on top of customer's underlying plan rate)
+- Probably NOT a flat monthly subscription for API access — fights the "agents pay per use" model
+
+Don't decide API pricing now. Architect Wave 13 to log every API call with customer ID, timestamp, and operation type. That data enables intelligent pricing in 12 months.
+
+### Revenue Projections (Base Case, No Agencies)
+
+Agencies are pure upside, not in the base model — there aren't 175 podcast advertising agencies that exist to capture by year 6. Treat agency adoption as gravy.
+
+- **Year 1:** ~$900K total revenue
+- **Year 2:** ~$4.5M
+- **Year 3:** ~$15.8M (~$11M recurring, 70% recurring share)
+- **Year 4:** ~$36M
+- **Year 5:** ~$74M
+- **Year 6:** ~$90M revenue (77% recurring) → $720M-$900M exit at 8-10x blended multiple
+
+**Path to $1B exit:** Operator retention at high volumes ($100K-$200K/month customers) is the primary lever. If those customers stay on the platform rather than going in-house, year 6 revenue jumps to $100-105M and $1B exit becomes comfortable. Agency adoption (a few major agencies — Veritone, Ad Results, Oxford Road, Marketsmith, Right Side Up) and faster API/agent ecosystem maturity are upside levers on top.
+
+### Three Things That Determine Whether This Works
+
+1. **Operator conversion rate.** Target 40-50% of brands who run more than one campaign convert within 6 months. The CS function and trigger system are how this gets achieved.
+
+2. **Operator retention at high volumes.** Customers spending $100K-$200K/month must stay on Operator rather than leaving for in-house. The product needs to be undeniably better than spreadsheets and a hired media buyer at that scale. Year 3-5 product roadmap should obsess over "what does the $200K/month Operator customer need next?"
+
+3. **API revenue maturity by year 3-4.** Depends on whether AI agents become a real commerce channel. If yes, meaningful third revenue line. If no, model still works but caps lower.
+
+### Wave 13 Architectural Requirements
+
+These must happen in Wave 13 because retrofitting later is painful:
+
+1. **Customer plan field** — `pay_as_you_go`, `operator`, `agency` enum on customer record
+2. **Per-customer dynamic transaction fee** — `platform_fee_percentage` stored on customer record. Stripe Connect `application_fee_amount` calculated per-charge from this field. Never hardcode 10% anywhere.
+3. **Stripe Subscription billing** — Set up subscription products and prices for Operator ($499) and Agency ($5,000) even if zero customers are subscribed at launch.
+4. **Seat counting** — `seat_count` on customer record. Per-seat billing via Stripe Subscription quantity.
+5. **Plan switching with proration** — Use Stripe Subscription's built-in proration, not custom logic.
+6. **Event logging at fine granularity** — Every campaign generation, discovery run, IO generation, outreach sent, and API call needs logged with customer ID, timestamp, and operation type. Foundation for future API revenue stream.
+7. **GMV trigger alerting** — Trailing 90-day GMV per customer. Alert system fires at Operator breakeven ($12,500/month). Conversion mechanic must work from day Wave 13 ships.
+
+### Investor Pitch Shape
+
+> "Brand-side transaction fee gets customers in the door at zero adoption friction. Most active customers convert to a $499/month + 6% Operator plan within 6 months once they prove the channel. By year 3, recurring revenue is ~70% of total. By year 6 we project $90M revenue, 77% recurring, with agencies and API revenue as upside levers. The model is structurally optimized for retention — customers stay because the platform gets cheaper as they scale, not more expensive."
+
+This pitch is more credible than including aggressive agency assumptions. Investors discount aggressive assumptions; honest assumptions with clear upside levers are more persuasive.
 
 ### Payment model (Wave 13)
 - **Pay-as-delivers, NOT escrow**

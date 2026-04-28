@@ -1,6 +1,6 @@
 # CLAUDE.md — Taylslate Project Context
 
-*Last updated: April 24, 2026 — Waves 4-12 complete*
+*Last updated: April 28, 2026 — Pricing model locked, Wave 13 next*
 
 **For deep strategic context, competitive research, and domain knowledge, see `TAYLSLATE_CONTEXT.md` in this project folder.**
 
@@ -14,7 +14,7 @@ Taylslate is **Layer 3 infrastructure for podcast and YouTube sponsorship advert
 
 **Target user:** Brands new to podcast advertising. Not brands already spending heavily (they have agencies). Not agencies themselves (they have workflow inertia and are late adopters). Market education is core GTM — the product itself teaches brands what to expect on CPMs, episode counts, and timing.
 
-**Fee model:** 8% all-in platform fee on the brand side (absorbs Stripe fees). 10% for agency/white-label tier. Transparency as a competitive differentiator vs. VeritoneOne-style agencies charging 15-20% with hidden markups. Pricing is in flux — may evolve to hybrid SaaS + transaction as product matures.
+**Fee model (locked April 28, 2026):** Three-tier structure. Brand entry is **Pay-as-you-go at 10% transaction** (no SaaS, channel-tool entry, matches founder-buyer "test before pay" psychology). Brand committed customers convert to **Operator: $499/mo + 6% transaction** (breakeven at ~$12.5K/mo spend, sales-led upgrade conversation, optimizes for retention at scale). **Agency: $5,000/mo + 4% transaction** for white-label/multi-client (Veritone-class buyers). Plus future API/MCP per-call+per-deal pricing (architect now, monetize Month 9-12+). Transparency as competitive differentiator vs. VeritoneOne-style 15-20% hidden markups.
 
 ## Core Thesis
 
@@ -28,7 +28,7 @@ The most valuable data in podcast advertising — real CPM rates, verified downl
 
 ## User Types
 
-- **Brands / Advertisers:** Mid-market brands (minimum $20K/month real buyers) new to podcast ads. Want fast campaign planning, transparent pricing, audience fit confidence. Primary target.
+- **Brands / Advertisers:** Mid-market brands ($30K-$50K monthly campaign budgets) new to podcast ads. Founder-led and operated, often with an agency handling social spend but new to podcast specifically. Want fast campaign planning, transparent pricing, audience fit confidence. Testing podcast as a channel — Pay-as-you-go pricing matches their psychology. Convert to Operator once channel is proven. Primary target.
 - **Shows / Creators:** Podcast hosts and YouTube creators. Onboard via outreach acceptance flow. Want brand deals, fair pricing, fast payment. Shows under 10K downloads are systematically ignored by agencies — Taylslate serves them.
 - **Sales Agents / Rep Companies (Wave 14/15):** Represent portfolios of shows. Unlock high-leverage GTM — one agent onboarding brings 10-30 shows. Data model foundation exists (`agent_show_relationships`) but agent-facing UX not built.
 - **Agencies:** Deferred — late adopters, workflow inertia, not the primary GTM channel.
@@ -304,7 +304,67 @@ docs/
 
 **Anti-leakage mechanisms:** Speed (days vs. Net 60-75), payment reliability, future deal flow, brand operational friction. Not held escrow.
 
-**Real buyer minimum:** $20K/month campaigns.
+**Real buyer minimum:** $30K-$50K/month campaigns (revised from earlier $20K assumption based on customer reality).
+
+## Pricing & Revenue Model (Locked April 28, 2026)
+
+Three-tier model. Customer chooses entry; conversion to higher tiers is sales-led, not gated. See `TAYLSLATE_CONTEXT.md` Section 4 for full reasoning, philosophy, and revenue projections.
+
+### The plans
+
+**Pay-as-you-go (Brand entry):**
+- 10% transaction fee, no subscription
+- 1 seat, up to 2 concurrent active campaigns
+- Per-campaign reporting, standard support, no API access
+- All core features (AI planning, discovery, IO generation, verification, invoicing, payment)
+
+**Operator (Brand committed):**
+- $499/month + 6% transaction
+- Breakeven vs PAYG at ~$12,500/month spend
+- 1 seat included, additional seats at $299/month
+- Unlimited concurrent campaigns, portfolio dashboard, cross-campaign analytics, CSV exports
+- Priority support, API access
+- All Pay-as-you-go features
+
+**Agency (white-label):**
+- $5,000/month + 4% transaction
+- 5 seats included, additional seats at $500/month
+- White-label IOs and dashboards, multi-client architecture, permissions, client billing separation
+- Custom reporting, dedicated success manager
+- All Operator features
+
+### Pricing philosophy (one-line summaries)
+
+- **Transaction fee is the entry. SaaS is the upgrade for ongoing operations.** Customers earn their way to SaaS rather than being gated into it.
+- **Reference class is commerce infrastructure (Shopify, Toast), not marketing suites (HubSpot, Salesforce).** Channel tool, not full marketing platform.
+- **Optimize for churn over per-customer revenue.** Operator customers retain dramatically longer; LTV beats per-month revenue.
+- **Don't gate the wedge. Gate the scale features.** AI planning, discovery, IO, verification, invoicing, payment available to all tiers.
+- **Customer chooses, platform doesn't force.** No mandatory graduation by volume thresholds.
+
+### Conversion mechanic (highest-leverage activity)
+
+PAYG → Operator conversion rate is the single most important metric. Build into Wave 13:
+
+- Internal trigger: trailing 90-day GMV >$12,500/month fires alert with savings math
+- Sales-led upgrade conversation (not automated email) — relationship moment
+- Customer-facing dashboard signal: subtle savings indicator (no popups)
+- Stripe Subscription proration handles switching mechanics; downgrades back to PAYG allowed
+
+### Three revenue streams (three modes of using the platform)
+
+1. **Transaction (PAYG, 10%)** — Day 1 entry point, "human running campaigns through UI occasionally"
+2. **SaaS (Operator $499+6%, Agency $5,000+4%)** — Month 3+ recurring engine, "human running campaigns consistently"
+3. **API/MCP (per-call + per-deal pricing)** — Month 9-12+, "agents running campaigns programmatically"
+
+### Wave 13 architectural requirements (must build now, hard to retrofit)
+
+1. **Customer plan field** — `pay_as_you_go`, `operator`, `agency` enum on customer record
+2. **Per-customer dynamic transaction fee** — `platform_fee_percentage` on customer record. Stripe Connect `application_fee_amount` calculated per-charge. Never hardcode.
+3. **Stripe Subscription billing** — Set up subscription products and prices for Operator ($499) and Agency ($5,000) even with zero subscribers at launch. Adding later is a real migration.
+4. **Seat counting** — `seat_count` on customer record. Per-seat billing via Stripe Subscription quantity. Architect for it even if launch is single-seat.
+5. **Plan switching with proration** — Use Stripe Subscription's built-in proration, not custom logic.
+6. **Event logging at fine granularity** — Every campaign generation, discovery run, IO generation, outreach sent, API call. Customer ID + timestamp + operation type. Foundation for future API metering. Backfilling later is impossible.
+7. **GMV trigger alerting** — Trailing 90-day GMV per customer. Alert system fires at Operator breakeven ($12,500/month). Conversion mechanic must work day Wave 13 ships.
 
 ## Design System
 
@@ -358,9 +418,9 @@ See `TAYLSLATE_CONTEXT.md` for full competitive analysis.
 
 ## Build Queue (Near Term)
 
-**Wave 13 — Stripe pay-as-delivers (next)**
+**Wave 13 — Stripe pay-as-delivers + pricing tier architecture (next)**
 Pre-req: Fix pre-existing Stripe SDK build error with same lazy-require pattern used for DocuSign.
-Covers: Stripe Connect setup, SetupIntent at IO signature, episode charge on delivery, show payout flow, idempotency, webhook handling, Connect onboarding UI.
+Covers: Stripe Connect setup, SetupIntent at IO signature, episode charge on delivery, show payout flow, idempotency, webhook handling, Connect onboarding UI. **Plus pricing tier scaffolding:** customer plan field, dynamic per-customer transaction fee %, Stripe Subscription billing for Operator/Agency tiers (even with zero subscribers at launch), seat counting, plan-switching proration, fine-grained event logging, GMV trigger alerting at $12.5K/mo Operator breakeven.
 
 **Wave 12.5 (or folded into Wave 13) — Auth unification**
 Move brands from email/password to magic link + 6-digit OTP. Unify with show auth. Safer, easier UX, no password management.
