@@ -488,6 +488,7 @@ export type DomainEventType =
   | "deal.updated"
   | "deal.status_changed"
   | "deal.cancelled"
+  | "deal.setup_intent_completed"
   | "io.generated"
   | "io.sent_for_signature"
   | "io.brand_signed"
@@ -510,7 +511,12 @@ export type DomainEventType =
   | "payment.disputed"
   // Wave 13 — Stripe subscription webhook state
   | "subscription.updated"
-  | "subscription.deleted";
+  | "subscription.deleted"
+  // Wave 13 — Pay-as-delivers SetupIntent + payout flow
+  | "deal.setup_intent_created"
+  | "deal.payment_method_attached"
+  | "payout.transferred"
+  | "payout.early_requested";
 
 export type DomainEntityType =
   | "deal"
@@ -520,7 +526,9 @@ export type DomainEntityType =
   | "customer"
   // Wave 13 — payments table + per-profile subscription audit
   | "payment"
-  | "profile";
+  | "profile"
+  // Wave 13 — pay-as-delivers payouts to show connected accounts
+  | "payout";
 
 export interface DomainEvent {
   id: string;

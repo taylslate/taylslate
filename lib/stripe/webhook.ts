@@ -20,8 +20,38 @@ import type Stripe from "stripe";
 import { stripe } from "./server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logEvent } from "@/lib/data/events";
+import { finalizeDowngrade } from "@/lib/billing/subscription";
+
+// Teammate 3 ships lib/payouts/transfer.ts with `transferPayoutForPayment`.
+// We resolve it lazily so the webhook keeps building before that file
+// lands; the wrapper falls back to a console.warn if the module isn't
+// present yet. The fail-soft guarantee for transfers is also enforced
+// here so a transfer failure can never break the webhook ack.
+async function maybeTransferPayout(paymentId: string): Promise<void> {
+  try {
+    const mod = (await import("@/lib/payouts/transfer").catch(() => null)) as
+      | { transferPayoutForPayment?: (id: string) => Promise<unknown> }
+      | null;
+    if (!mod?.transferPayoutForPayment) {
+      console.warn(
+        "[stripe.webhook] transferPayoutForPayment not yet available — payment_id=",
+        paymentId
+      );
+      return;
+    }
+    await mod.transferPayoutForPayment(paymentId);
+  } catch (err) {
+    console.warn(
+      "[stripe.webhook] transferPayoutForPayment failed:",
+      err instanceof Error ? err.message : err,
+      "payment_id=",
+      paymentId
+    );
+  }
+}
 
 export const HANDLED_STRIPE_EVENTS = [
+  "setup_intent.succeeded",
   "payment_intent.succeeded",
   "payment_intent.payment_failed",
   "charge.succeeded",
@@ -74,6 +104,10 @@ export async function verifyAndHandleStripeEvent(
   let handled = false;
   try {
     switch (event.type) {
+      case "setup_intent.succeeded":
+        await handleSetupIntentSucceeded(event);
+        handled = true;
+        break;
       case "payment_intent.succeeded":
         await handlePaymentIntentSucceeded(event);
         handled = true;
@@ -114,6 +148,54 @@ export async function verifyAndHandleStripeEvent(
 }
 
 // ---- Handlers ----
+
+async function handleSetupIntentSucceeded(event: Stripe.Event): Promise<void> {
+  const setupIntent = event.data.object as Stripe.SetupIntent;
+  // The deal is wired in via metadata stamped at SetupIntent creation by
+  // createSetupIntentForBrand. Without it we can't resolve a deal record.
+  const dealId = setupIntent.metadata?.deal_id ?? null;
+  if (!dealId) {
+    console.warn(
+      `[stripe.webhook] setup_intent.succeeded ${setupIntent.id} has no metadata.deal_id — ignoring`
+    );
+    return;
+  }
+  const paymentMethodId =
+    typeof setupIntent.payment_method === "string"
+      ? setupIntent.payment_method
+      : setupIntent.payment_method?.id ?? null;
+  if (!paymentMethodId) {
+    console.warn(
+      `[stripe.webhook] setup_intent.succeeded ${setupIntent.id} has no payment_method — ignoring`
+    );
+    return;
+  }
+
+  const { error } = await supabaseAdmin
+    .from("deals")
+    .update({ payment_method_id: paymentMethodId })
+    .eq("id", dealId);
+  if (error) {
+    console.warn(
+      `[stripe.webhook] failed to persist payment_method_id on deal ${dealId}: ${error.message}`
+    );
+    return;
+  }
+
+  await logEvent({
+    eventType: "deal.setup_intent_completed",
+    entityType: "deal",
+    entityId: dealId,
+    payload: {
+      stripe_setup_intent_id: setupIntent.id,
+      stripe_customer_id:
+        typeof setupIntent.customer === "string"
+          ? setupIntent.customer
+          : setupIntent.customer?.id ?? null,
+      payment_method_id: paymentMethodId,
+    },
+  });
+}
 
 async function handlePaymentIntentSucceeded(event: Stripe.Event): Promise<void> {
   const pi = event.data.object as Stripe.PaymentIntent;
@@ -205,6 +287,12 @@ async function handleChargeSucceeded(event: Stripe.Event): Promise<void> {
       io_line_item_id: data.io_line_item_id,
     },
   });
+
+  // Settlement reached — fire the show payout. Fail-soft via maybeTransferPayout
+  // so a transfer failure never breaks the webhook ack (Stripe would otherwise
+  // re-deliver charge.succeeded and we'd re-flip settled_at every retry). The
+  // payout job is idempotent on payments.id so a manual retry path is safe.
+  await maybeTransferPayout(data.id);
 }
 
 async function handleChargeDispute(event: Stripe.Event): Promise<void> {
@@ -260,57 +348,57 @@ async function handleSubscriptionEvent(event: Stripe.Event): Promise<void> {
     return;
   }
 
-  // Stripe statuses we care about: active, past_due, canceled, trialing.
-  const update: Record<string, unknown> = {
-    subscription_status: mapStripeSubStatus(sub.status, event.type),
-  };
-
-  // Subscription deletion = downgrade to PAYG. Reset the fee to 0.10 and
-  // unset the subscription id so future writes are clean. Wave 13 plan
-  // upgrades/downgrades take care of `plan` writes through the billing
-  // lib (Teammate 2); we only handle the deletion fallback here.
+  // Subscription deletion = downgrade to PAYG. Delegated to the canonical
+  // billing helper so plan/fee/seat/subscription_status revert is single-
+  // sourced (Teammate 2 owns finalizeDowngrade — it's idempotent and emits
+  // its own customer.plan_changed domain event).
   if (event.type === "customer.subscription.deleted") {
-    update.plan = "pay_as_you_go";
-    update.platform_fee_percentage = 0.10;
-    update.stripe_subscription_id = null;
+    try {
+      await finalizeDowngrade(profile.id);
+    } catch (err) {
+      console.error(
+        `[stripe.webhook] finalizeDowngrade failed for profile ${profile.id}: ${
+          err instanceof Error ? err.message : err
+        }`
+      );
+    }
+    return;
   }
 
+  // customer.subscription.updated — mirror the live status onto the profile
+  // but DO NOT touch plan / platform_fee_percentage. Those move through the
+  // billing lib's upgrade/downgrade entrypoints (Teammate 2). A partial
+  // helper for this path doesn't exist yet — keeping it inline until one is
+  // published, per the team-lead's coordination note.
+  const next = mapStripeSubStatus(sub.status, event.type);
   const { error: updErr } = await supabaseAdmin
     .from("profiles")
-    .update(update)
+    .update({ subscription_status: next })
     .eq("id", profile.id);
   if (updErr) {
     console.error(
-      `[stripe.webhook] failed to update profile ${profile.id} from subscription event ${event.type}: ${updErr.message}`
+      `[stripe.webhook] failed to update subscription_status on profile ${profile.id}: ${updErr.message}`
     );
     return;
   }
 
   await logEvent({
-    eventType:
-      event.type === "customer.subscription.deleted"
-        ? "subscription.deleted"
-        : "subscription.updated",
+    eventType: "subscription.updated",
     entityType: "profile",
     entityId: profile.id,
     payload: {
       stripe_customer_id: customerId,
       stripe_subscription_id: sub.id,
       stripe_subscription_status: sub.status,
-      previous_plan: profile.plan,
-      previous_platform_fee_percentage: Number(profile.platform_fee_percentage),
-      next_plan: update.plan ?? profile.plan,
-      next_platform_fee_percentage:
-        update.platform_fee_percentage ?? Number(profile.platform_fee_percentage),
+      next_subscription_status: next,
     },
   });
 }
 
 function mapStripeSubStatus(
   stripeStatus: Stripe.Subscription.Status,
-  eventType: string
+  _eventType: string
 ): "none" | "active" | "past_due" | "canceled" | "trialing" {
-  if (eventType === "customer.subscription.deleted") return "none";
   switch (stripeStatus) {
     case "active":
       return "active";
