@@ -488,7 +488,6 @@ export type DomainEventType =
   | "deal.updated"
   | "deal.status_changed"
   | "deal.cancelled"
-  | "deal.setup_intent_completed"
   | "io.generated"
   | "io.sent_for_signature"
   | "io.brand_signed"

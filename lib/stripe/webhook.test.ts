@@ -131,7 +131,7 @@ describe("verifyAndHandleStripeEvent — verification", () => {
 });
 
 describe("verifyAndHandleStripeEvent — handlers", () => {
-  it("setup_intent.succeeded persists payment_method_id onto the deal and fires deal.setup_intent_completed", async () => {
+  it("setup_intent.succeeded persists payment_method_id onto the deal and fires deal.payment_method_attached", async () => {
     stripe.webhooks.constructEvent.mockReturnValueOnce({
       id: "evt_si_ok",
       type: "setup_intent.succeeded",
@@ -151,14 +151,14 @@ describe("verifyAndHandleStripeEvent — handlers", () => {
     expect(supabaseAdmin._builders.deals._updated()).toEqual({ payment_method_id: "pm_card_1" });
     expect(logEvent).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: "deal.setup_intent_completed",
+        eventType: "deal.payment_method_attached",
         entityType: "deal",
         entityId: "deal_si_1",
-        payload: expect.objectContaining({
+        payload: {
+          setup_intent_id: "seti_1",
           payment_method_id: "pm_card_1",
-          stripe_setup_intent_id: "seti_1",
-          stripe_customer_id: "cus_brand_1",
-        }),
+          deal_id: "deal_si_1",
+        },
       })
     );
   });

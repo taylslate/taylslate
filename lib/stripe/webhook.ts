@@ -21,34 +21,7 @@ import { stripe } from "./server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logEvent } from "@/lib/data/events";
 import { finalizeDowngrade } from "@/lib/billing/subscription";
-
-// Teammate 3 ships lib/payouts/transfer.ts with `transferPayoutForPayment`.
-// We resolve it lazily so the webhook keeps building before that file
-// lands; the wrapper falls back to a console.warn if the module isn't
-// present yet. The fail-soft guarantee for transfers is also enforced
-// here so a transfer failure can never break the webhook ack.
-async function maybeTransferPayout(paymentId: string): Promise<void> {
-  try {
-    const mod = (await import("@/lib/payouts/transfer").catch(() => null)) as
-      | { transferPayoutForPayment?: (id: string) => Promise<unknown> }
-      | null;
-    if (!mod?.transferPayoutForPayment) {
-      console.warn(
-        "[stripe.webhook] transferPayoutForPayment not yet available — payment_id=",
-        paymentId
-      );
-      return;
-    }
-    await mod.transferPayoutForPayment(paymentId);
-  } catch (err) {
-    console.warn(
-      "[stripe.webhook] transferPayoutForPayment failed:",
-      err instanceof Error ? err.message : err,
-      "payment_id=",
-      paymentId
-    );
-  }
-}
+import { transferPayoutForPayment } from "@/lib/payouts/transfer";
 
 export const HANDLED_STRIPE_EVENTS = [
   "setup_intent.succeeded",
@@ -183,16 +156,13 @@ async function handleSetupIntentSucceeded(event: Stripe.Event): Promise<void> {
   }
 
   await logEvent({
-    eventType: "deal.setup_intent_completed",
+    eventType: "deal.payment_method_attached",
     entityType: "deal",
     entityId: dealId,
     payload: {
-      stripe_setup_intent_id: setupIntent.id,
-      stripe_customer_id:
-        typeof setupIntent.customer === "string"
-          ? setupIntent.customer
-          : setupIntent.customer?.id ?? null,
+      setup_intent_id: setupIntent.id,
       payment_method_id: paymentMethodId,
+      deal_id: dealId,
     },
   });
 }
@@ -288,11 +258,21 @@ async function handleChargeSucceeded(event: Stripe.Event): Promise<void> {
     },
   });
 
-  // Settlement reached — fire the show payout. Fail-soft via maybeTransferPayout
-  // so a transfer failure never breaks the webhook ack (Stripe would otherwise
-  // re-deliver charge.succeeded and we'd re-flip settled_at every retry). The
-  // payout job is idempotent on payments.id so a manual retry path is safe.
-  await maybeTransferPayout(data.id);
+  // Settlement reached — fire the show payout. The helper is gated on
+  // payments.settled_at (returns null when the gate is closed) and idempotent
+  // on payment id, so retries are safe. Fail-soft try/catch: a transfer
+  // failure must NEVER break the webhook ack, otherwise Stripe re-delivers
+  // charge.succeeded and we re-flip settled_at on every retry.
+  try {
+    await transferPayoutForPayment(data.id);
+  } catch (err) {
+    console.error(
+      "[stripe.webhook] payout transfer after settle failed:",
+      err instanceof Error ? err.message : err,
+      "payment=",
+      data.id
+    );
+  }
 }
 
 async function handleChargeDispute(event: Stripe.Event): Promise<void> {
