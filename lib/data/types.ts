@@ -502,6 +502,7 @@ export type DomainEventType =
   | "customer.plan_changed"
   | "customer.seat_added"
   | "customer.seat_removed"
+  | "customer.conversion_alert_sent"
   // Wave 13 — payment lifecycle (Stripe pay-as-delivers)
   | "payment.charged"
   | "payment.failed"
