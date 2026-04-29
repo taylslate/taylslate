@@ -3,8 +3,10 @@
 // Replaces seed data imports with real database queries.
 // ============================================================
 
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { isBrandSide } from "@/lib/nav/items";
 import type {
   Profile,
   Show,
@@ -26,7 +28,10 @@ import type {
   OutreachResponseStatus,
   Wave12Deal,
   Wave12DealStatus,
+  UserRole,
 } from "./types";
+
+export const VIEW_AS_COOKIE = "taylslate_view_as";
 
 // ---- Auth & Profiles ----
 
@@ -1748,4 +1753,55 @@ export async function findDealsToTimeoutCancel(
     .not("outreach_id", "is", null)
     .lte("created_at", cutoff);
   return (data as Wave12Deal[]) ?? [];
+}
+
+// ---- Effective Role (chrome / page-routing) ----
+
+export interface EffectiveRoleResult {
+  /** Role used to drive nav, dashboard widgets, and page-level guards. */
+  effectiveRole: UserRole;
+  /** Untouched profiles.role — source of truth for ownership / permissions. */
+  baseRole: UserRole;
+  hasBrandProfile: boolean;
+  hasShowProfile: boolean;
+  /** Set when the user has BOTH a brand_profile AND a show_profile row,
+   *  pointing to the role they could flip into. Null otherwise. */
+  canSwitchTo: UserRole | null;
+}
+
+/**
+ * Resolve the role used by the dashboard chrome.
+ * Reads `taylslate_view_as` cookie and only honors it when the alternate
+ * profile row actually exists for this user. Falls back to profile.role.
+ * Returns null if the user has no profile.
+ */
+export async function getEffectiveRole(
+  userId: string
+): Promise<EffectiveRoleResult | null> {
+  const profile = await getUserProfile(userId);
+  if (!profile?.role) return null;
+
+  const baseRole = profile.role;
+  const [brandProfile, showProfile] = await Promise.all([
+    getBrandProfileByUserId(userId),
+    getShowProfileByUserId(userId),
+  ]);
+  const hasBrandProfile = !!brandProfile;
+  const hasShowProfile = !!showProfile;
+
+  let canSwitchTo: UserRole | null = null;
+  if (hasBrandProfile && hasShowProfile) {
+    canSwitchTo = isBrandSide(baseRole) ? "show" : "brand";
+  }
+
+  const cookieStore = await cookies();
+  const viewAs = cookieStore.get(VIEW_AS_COOKIE)?.value;
+  let effectiveRole: UserRole = baseRole;
+  if (viewAs === "brand" && hasBrandProfile) {
+    effectiveRole = "brand";
+  } else if (viewAs === "show" && hasShowProfile) {
+    effectiveRole = "show";
+  }
+
+  return { effectiveRole, baseRole, hasBrandProfile, hasShowProfile, canSwitchTo };
 }

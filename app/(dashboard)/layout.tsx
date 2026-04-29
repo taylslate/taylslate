@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
   getBrandProfileByUserId,
+  getEffectiveRole,
   getShowProfileByUserId,
   getUserProfile,
 } from "@/lib/data/queries";
@@ -44,9 +45,13 @@ export default async function DashboardLayout({
     }
   }
 
+  const eff = await getEffectiveRole(user.id);
+  const effectiveRole = eff?.effectiveRole ?? profile.role;
+  const canSwitchTo = eff?.canSwitchTo ?? null;
+
   return (
     <div className="min-h-screen bg-[var(--brand-surface)]">
-      <Sidebar />
+      <Sidebar role={effectiveRole} canSwitchTo={canSwitchTo} />
       <main className="ml-[240px] min-h-screen">{children}</main>
     </div>
   );
