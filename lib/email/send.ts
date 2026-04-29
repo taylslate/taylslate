@@ -20,7 +20,7 @@ export interface SendEmailResult {
   id?: string;
 }
 
-const DEFAULT_FROM = "Taylslate <onboarding@resend.dev>";
+const DEFAULT_FROM = "Taylslate <notifications@taylslate.com>";
 
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY;

@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
     subject: email.subject,
     html: email.html,
     text: email.text,
+    from: "Taylslate <auth@taylslate.com>",
   });
 
   return NextResponse.json({ ok: true, email_sent: sendResult.ok, email_reason: sendResult.reason });

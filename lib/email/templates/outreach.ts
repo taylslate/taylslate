@@ -85,7 +85,7 @@ function fmtDate(iso: string): string {
 function buildFromAndReply(brandName: string): { from: string; reply_to: string } {
   const safeName = brandName.replace(/[<>"\\]/g, "").trim() || "Sponsorship";
   return {
-    from: `${safeName} <onboarding@resend.dev>`,
+    from: `${safeName} <outreach@taylslate.com>`,
     reply_to: "outreach@taylslate.com",
   };
 }

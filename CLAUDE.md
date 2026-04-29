@@ -155,9 +155,12 @@ RESEND_API_KEY=re_...             # For email delivery (outreach, reminders, not
 
 ### Outstanding manual follow-ups (pre-production)
 
-- Verify `taylslate.com` domain in Resend so emails send from `outreach@taylslate.com` instead of `onboarding@resend.dev`. Current workaround is using shared domain, limits sends to chris@taylslate.com only.
-- Swap `onboarding@resend.dev` back to `outreach@taylslate.com` in `lib/email/send.ts` and `lib/email/templates/outreach.ts` after verification.
-- Update DocuSign webhook URL when custom domain is cut over from `taylslate.vercel.app` to final production domain.
+- ~~Verify `taylslate.com` domain in Resend~~ — done April 29, 2026. Send-domain cutover applied: `notifications@` (transactional default in `lib/email/send.ts`), `outreach@` (outreach to shows in `lib/email/templates/outreach.ts`), `auth@` (magic links in `app/api/auth/magic/start/route.ts`), `hello@` (general/support, available via per-call `from` override).
+- External service URL cutovers still pending (manual, outside the repo):
+  - DocuSign Connect webhook URL → swap from `taylslate.vercel.app/api/webhooks/docusign` to `taylslate.com/api/webhooks/docusign`.
+  - Stripe webhook endpoint URL → register `taylslate.com/api/webhooks/stripe` with the Wave 13 event list.
+  - Supabase project Site URL + auth Redirect URLs → update from `taylslate.vercel.app` to `taylslate.com`.
+  - Vercel env var `NEXT_PUBLIC_SITE_URL` → set to `https://taylslate.com` for production (the cron-route fallback now defaults to `taylslate.com` if unset, but env var should be authoritative).
 
 ## Architecture Philosophy
 

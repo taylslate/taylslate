@@ -39,7 +39,7 @@ function authorized(req: NextRequest): boolean {
 function siteOrigin(): string {
   return (
     process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
-    "https://taylslate.vercel.app"
+    "https://taylslate.com"
   );
 }
 
