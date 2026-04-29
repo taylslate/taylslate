@@ -30,8 +30,8 @@ export async function POST(request: NextRequest) {
 
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
-      refresh_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings?stripe_refresh=true`,
-      return_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings?stripe_onboarded=true`,
+      refresh_url: `${process.env.NEXT_PUBLIC_SITE_URL}/settings?stripe_refresh=true`,
+      return_url: `${process.env.NEXT_PUBLIC_SITE_URL}/settings?stripe_onboarded=true`,
       type: "account_onboarding",
     });
 
