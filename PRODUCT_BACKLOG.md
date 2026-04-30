@@ -1,42 +1,56 @@
 # Taylslate Product Backlog
 
-*Last updated: April 28, 2026*
+*Last updated: April 30, 2026*
 
-This document captures everything that's been identified as worth building but hasn't been built yet. It replaces the wave-based roadmap. Each item has a category, a short rationale, and a rough effort estimate. Priority is set by customer signal — items move up when real customers ask for them, not on a predetermined schedule.
+This document captures everything that's been identified as worth building. Two parts:
+
+1. **Pre-launch backlog** — things that must finish before GTM. Operational unblock, polish, and foundational architecture. These are the "must do before we can credibly take real money" items.
+
+2. **Post-launch queue** — things that respond to real customer signal once the product is live. Customer-driven and future/aspirational.
+
+Wave model continues as the execution unit. Items get pulled from the backlog into numbered waves. Within the backlog, customer signal sets priority — but pre-launch items have a hard deadline (GTM) and can't wait for signal.
 
 ---
 
 ## Categorization
 
-- **Operational unblock** — small fixes blocking GTM credibility or daily founder workflow
-- **Polish** — visible bugs and UX rough edges customers will hit
-- **Foundational architecture** — small refactors that unlock multiple future features
-- **Customer-driven** — features that should only be built once a real customer asks
-- **Future / aspirational** — directional items, build only when transaction volume justifies
+- **Operational unblock** — small fixes blocking GTM credibility or daily founder workflow. Pre-launch.
+- **Polish** — visible bugs and UX rough edges customers will hit. Pre-launch.
+- **Foundational architecture** — small refactors that unlock multiple future features. Pre-launch where high-leverage.
+- **Wave 14 foundation** — discovery agent groundwork. Pre-launch (data flywheel needs to start spinning before customers arrive).
+- **Customer-driven** — features that should only be built once a real customer asks. Post-launch.
+- **Future / aspirational** — directional items, build only when transaction volume justifies. Post-launch.
 
 ---
 
-## Operational Unblock (do these first, no waiting on customers)
+# PRE-LAUNCH BACKLOG
+
+Things that must finish before GTM. The launch bar.
+
+## Operational Unblock
 
 ### Domain & email cutover
-- Verify `taylslate.com` in Resend
-- Add `taylslate.com` as custom domain in Vercel, point DNS
-- Swap `from:` addresses in `lib/email/send.ts` and `lib/email/templates/outreach.ts` from `onboarding@resend.dev` to `outreach@taylslate.com`
-- Update DocuSign webhook URL when production domain is cut over
-- **Effort:** 4-6 hours
-- **Why:** Every customer touchpoint currently looks unprofessional. Blocking GTM.
+- ~~Verify `taylslate.com` in Resend~~ — done April 29
+- ~~Add `taylslate.com` as custom domain in Vercel, point DNS~~ — done April 29
+- ~~Swap `from:` addresses to taylslate.com domains~~ — done April 29
+- Update DocuSign Connect webhook URL → `taylslate.com/api/webhooks/docusign`
+- Update Stripe webhook endpoint URL → `taylslate.com/api/webhooks/stripe`
+- Update Supabase project Site URL + auth Redirect URLs from `taylslate.vercel.app` to `taylslate.com`
+- Set Vercel env var `NEXT_PUBLIC_SITE_URL=https://taylslate.com`
+- **Effort:** 1-2 hours
+- **Why:** External service URL cutovers still pending. Required for production correctness.
 
 ### Outreach email "from name" bug
 - `buildFromAndReply()` in `lib/email/templates/outreach.ts` is receiving `brandName=full brief paragraph` instead of brand name
 - Add dedicated `brand_name` field on brand profile, update outreach pipeline to use it
 - **Effort:** 2-3 hours
-- **Why:** Brand outreach emails currently show paragraph-length "from" lines. Looks broken.
+- **Why:** Brand outreach emails currently show paragraph-length "from" lines. Looks broken. GTM-blocking.
 
 ### Internal admin tooling — "log in as test user"
 - Admin panel with "log me in as test show 1" / "test brand 1" buttons
 - Replaces current Gmail +tag aliases + incognito windows workflow
 - **Effort:** 1 day
-- **Why:** Multi-account testing friction compounds as you and team test more flows. Saves hours/week.
+- **Why:** Multi-account testing friction compounds as we test more flows. Saves hours/week. Worth doing before bringing brand friends and sales agent friend onto the platform.
 
 ### Direct show search
 - Brands who come in with a specific target list (knowing the shows they want) have no way to search for them by name
@@ -44,7 +58,7 @@ This document captures everything that's been identified as worth building but h
 - Add a search bar to the discovery experience that hits Podscan's search endpoint, returns matching shows, lets brand select and add to media plan
 - Coexists with AI discovery, doesn't replace it
 - **Effort:** 2-3 days
-- **Why:** Real brands sometimes know what they want. Forcing them through AI discovery when they want to search for "Acquired" specifically is unnecessary friction. Both flows feed into the same media plan UI — search results just need to be selectable the same way discovery results are.
+- **Why:** Real brands sometimes know what they want. Forcing them through AI discovery when they want to search for "Acquired" specifically is unnecessary friction. Both flows feed into the same media plan UI.
 
 ### Test mode for full transaction loop
 - Currently no clean way to test full brand-side discovery → outreach → deal → IO → payment flow with two accounts you control
@@ -55,7 +69,7 @@ This document captures everything that's been identified as worth building but h
 
 ---
 
-## Polish (visible to first customers, do alongside GTM)
+## Polish
 
 ### Brand onboarding fixes
 - Hybrid AI-prefill from URL (currently full manual entry)
@@ -68,6 +82,7 @@ This document captures everything that's been identified as worth building but h
 - Replace single jumbled paragraph with structured fields: Brand, Product, Audience, Target segments, Categories, Goals, Exclusions
 - Render structured brief in outreach templates and pitch pages
 - **Effort:** 1-2 days
+- **Note:** This is the *display* fix. The Wave 14 brief interpretation agent will reshape *intake* later — but this polish item should ship first to unblock GTM.
 
 ### Media plan editable CPM indicator
 - CPM is currently editable downstream but not visibly editable on media plan screen
@@ -84,11 +99,6 @@ This document captures everything that's been identified as worth building but h
 - Proposed Terms section should show total deal value calculation: CPM × episodes × audience/1000
 - **Effort:** 2-3 hours
 
-### Dashboard role-awareness
-- Currently `/dashboard` is brand-only and shows "Create your first campaign" CTA regardless of role
-- Make dashboard role-aware: brand sees campaign CTA, show sees deal pipeline, agent sees portfolio
-- **Effort:** 1-2 days
-
 ### Auth unification
 - Currently brands use email/password, shows use magic link + Supabase OTP
 - Move all users to unified magic link + 6-digit OTP
@@ -97,21 +107,15 @@ This document captures everything that's been identified as worth building but h
 
 ---
 
-## Foundational Architecture (small, leveraged, do early to unblock future work)
+## Foundational Architecture
 
 ### Scoring weight tunability refactor
 - Refactor `lib/scoring/weights.ts` to accept per-request overrides
 - Default weights stay (audience 40 / engagement 30 / retention 20 / reach 10)
-- Per-request overrides enable A/B testing, "expand my horizons" slider, customer-specific tuning, future ML weights
+- Per-request overrides enable A/B testing, ring-aware scoring (Wave 14), "expand my horizons" slider, customer-specific tuning, future ML weights
 - **Effort:** 2-3 days
-- **Unblocks:** Every future discovery feature
-
-### "Find shows like this one" primitive
-- First-class UI button on every show card in discovery results
-- Calls Podscan Discover endpoint (vector similarity) — already wrapped in `lib/podscan/discover.ts`
-- Captures preference signal to `BrandProfile` (which shows the brand finds appealing)
-- **Effort:** 2-3 days
-- **Why:** Magic moment for customers, preference signal for data flywheel, competitive differentiator vs Rolodex model
+- **Unblocks:** Every future discovery feature, including Wave 14 conviction scoring
+- **Pre-launch:** yes — Wave 14 foundation depends on this
 
 ### English language filter
 - Non-English shows currently surface in results without filtering
@@ -126,9 +130,61 @@ This document captures everything that's been identified as worth building but h
 
 ---
 
-## Customer-Driven (build only when signal demands)
+## Wave 14 Foundation — Discovery Agent Groundwork
+
+Foundation work for the discovery agent thesis (see `TAYLSLATE_CONTEXT.md` Section 5). The agent UX itself is post-launch customer-driven, but the foundation must ship pre-launch so the data flywheel starts spinning the moment customers arrive.
+
+### Pattern library schema
+- New tables: `campaign_patterns`, `analog_matches`, `ring_hypotheses`, `conviction_scores`
+- Designed to support podcast + long-form YouTube via existing `shows.platform` enum
+- Captures: product attributes, customer description, ring hypotheses (primary + laterals), conviction scores, sampling decisions, analog matches, outcomes
+- Idempotent migration following Supabase conventions
+- **Effort:** 1-2 days schema + 2-3 days seeding interface for Chris to populate ~100-200 brand/show pairs from media-buying memory
+- **Why:** This is the data asset that compounds. Built now, populated manually until volume arrives, schema-ready for embedding retrieval and future ML.
+
+### Reasoning persistence in event_log
+- Every AI decision (interpretation, ring hypothesis, conviction score, analog match, sampling decision) writes structured reasoning to `event_log` (Wave 13 table)
+- New event types: `discovery.brief_interpreted`, `discovery.ring_hypothesized`, `discovery.conviction_scored`, `discovery.analog_matched`, `discovery.sampled`
+- Schema must match what we'd want as training data later — full reasoning text, structured inputs/outputs, confidence values
+- Wrapper helper `logReasoning()` that never throws, never blocks main flow (same pattern as `logEvent()`)
+- **Effort:** Half day for wrapper + ongoing discipline as new AI surfaces ship
+- **Why:** Storage is cheap. Lost training data is expensive. Without this, every campaign run is wasted training data.
+
+### Multi-medium creator inventory abstraction
+- `shows.platform` already has `'podcast' | 'youtube'` enum ✓
+- Add `surfaces` JSONB to capture simulcast (one show, podcast + YouTube)
+- Add `medium_priors` JSONB for medium-specific scoring (CPM range, engagement weight, frequency norms)
+- Update discovery orchestrator (`lib/discovery/discover-shows.ts`) to merge simulcast records
+- Update conviction reasoning to be medium-aware
+- **Effort:** 2-3 days
+- **Why:** Long-form YouTube is launch-day medium, not future expansion. Simulcasts are common (most podcasts upload to YouTube). Modeling now avoids re-migration later.
+
+---
+
+# POST-LAUNCH QUEUE
+
+Things that respond to real customer signal once the product is live.
+
+## Customer-Driven
 
 These are real product capabilities, but building them before customers ask is speculative. Listed here so they don't get forgotten, not as a promise to build them.
+
+### Wave 14 Agent UX — Brief interpretation loop
+- Replace current form-based brief intake with interactive interpretation agent
+- AI proposes 1 primary read + 2-4 lateral candidate ring hypotheses with confidence
+- Brand confirms or refines interpretation (not show list — interpretation of customer)
+- Refinement loop visible in chat or sidebar; final ring shape collapses from confirmed reads
+- Lateral examples that should fall out for free with this architecture: "you mentioned mobile use → outdoor/parenting audiences worth exploring?"
+- **Effort:** 2-3 weeks (foundation work makes this a 1-2 week build)
+- **Trigger:** First real campaign where current discovery returns thin/wrong results, OR when foundation pattern library has enough seeds to power useful ring hypothesis generation
+
+### Wave 14 Agent UX — Conviction scoring UI
+- Replace fit score with conviction score + reasoning surface
+- Show-level: "Conviction: high. Host personally uses cold plunge. Audience over-indexes 2.4x on biohacker purchases. Shows like this converted in 4 of 5 recovery campaigns."
+- Portfolio-level: "High conviction portfolio: 12 shows, weighted toward 6 anchors. Confidence is high because we have strong analogs."
+- Confidence bands: High / Medium / Low / Speculative
+- **Effort:** 1-2 weeks
+- **Trigger:** Same as brief interpretation — or sooner if we want to A/B test conviction-score-with-reasoning vs current fit-score numerical display
 
 ### Agent / rep account UX
 - Multi-show portfolio management for sales agents (Veritone, Ad Results, indie reps)
@@ -156,12 +212,6 @@ These are real product capabilities, but building them before customers ask is s
 - **Effort:** 2-3 weeks
 - **Trigger:** When show-side conversion via web flow plateaus
 
-### Brand brief refinement as conversation
-- Replace static brief form with interactive probing conversation
-- "You said wellness — supplements, mental health, or fitness? Each has different dynamics."
-- **Effort:** 2-3 weeks
-- **Trigger:** When discovery quality is limited by brief vagueness
-
 ### Content-aware discovery (ASR-derived)
 - Layer ASR-derived content intelligence on top of metadata-based discovery
 - Find shows where hosts have organically mentioned a brand category recently
@@ -169,7 +219,7 @@ These are real product capabilities, but building them before customers ask is s
 - Track sponsor frequency and recency
 - **Effort:** 1-2 months (depends heavily on ASR provider integration)
 - **Trigger:** When discovery quality limit is metadata, not algorithm
-- **Note:** Architectural prerequisite — ASR provider abstraction must be pluggable
+- **Note:** Architectural prerequisite — ASR provider abstraction must be pluggable. Self-hosted (Microsoft VibeVoice-ASR) is a long-term option. Launch with Podscribe for credibility/IAB cert.
 
 ### Sponsor competition tracking
 - Detect newly-mentioned brands across episodes before metadata sources update
@@ -181,8 +231,16 @@ These are real product capabilities, but building them before customers ask is s
 - Discovery slider: Tight fit ← → Broad exploration
 - Drops audience weight, raises engagement, pulls from adjacent Podscan vector categories
 - **Effort:** 1 week
-- **Prerequisite:** Scoring weight tunability refactor
+- **Prerequisite:** Scoring weight tunability refactor (foundational architecture, pre-launch)
 - **Trigger:** When customers consistently ask for "more options"
+
+### "Find shows like this one" primitive
+- First-class UI button on every show card in discovery results
+- Calls Podscan Discover endpoint (vector similarity) — already wrapped in `lib/podscan/discover.ts`
+- Captures preference signal to `BrandProfile` (which shows the brand finds appealing)
+- **Effort:** 2-3 days
+- **Trigger:** When customers express preference signals through behavior (e.g., consistently selecting same kind of show across campaigns)
+- **Why:** Magic moment for customers, preference signal for data flywheel, competitive differentiator vs Rolodex model
 
 ### Saved show lists / favorites
 - Brands who run repeat campaigns want to save show lists they've worked with before ("my known performers")
@@ -190,13 +248,22 @@ These are real product capabilities, but building them before customers ask is s
 - **Effort:** 3-5 days
 - **Trigger:** When a customer asks for it, OR when a single brand is on their 3rd+ campaign with overlap in show selection
 
+### Dashboard role-awareness UX polish
+- ~~Currently `/dashboard` is brand-only~~ — partial fix shipped April 29 (sidebar + dashboard widget now role-aware)
+- Further role-specific deepening as customer signal demands (agent dashboard with portfolio, show dashboard with deal pipeline, etc.)
+- **Effort:** 1-2 weeks per role
+- **Trigger:** Per-role customer feedback
+
 ---
 
-## Future / Aspirational (build when transaction volume justifies)
+## Future / Aspirational
+
+Build when transaction volume justifies.
 
 ### MCP server for agent-mediated commerce
 - Public MCP server so Claude Code, Cowork, OpenClaw, etc. can run campaigns programmatically
 - Per-call + per-deal pricing structure already designed (see `PRICING_DECISIONS.md`)
+- Each step of internal discovery agent reasoning loop already designed as MCP-ready primitive (Wave 14 architecture decision)
 - **Effort:** 1-2 months
 - **Trigger:** Month 9-12+ once API surface is mature
 
@@ -236,6 +303,12 @@ These are real product capabilities, but building them before customers ask is s
 - **Effort:** 2-3 days configuration
 - **Trigger:** Post-funding, premium brand experience priority
 
+### Self-hosted verification (long-term ASR)
+- Microsoft VibeVoice-ASR (60-min single-pass, hotwords, speaker diarization, MIT license)
+- Self-hosted is post-launch project; launch with Podscribe for credibility/IAB cert
+- **Effort:** Multi-month research + integration
+- **Trigger:** When Podscribe pricing or limits become a constraint
+
 ### International expansion
 - UK, Canada, Australia podcast advertising
 - Requires localized payment infrastructure, market education in new geographies
@@ -260,14 +333,20 @@ These are real product capabilities, but building them before customers ask is s
 - **Per-campaign / per-discovery / per-outreach metering** — billing complexity, doesn't fit customer mental model
 - **Pure 8% transaction (previous pricing)** — replaced with three-tier model (see `PRICING_DECISIONS.md`)
 - **$1,500/mo Operator tier (initial proposal)** — wrong reference class, anchored at $499 instead
+- **YouTube Shorts as launch medium** — different read mechanics, no proven conversion playbook, wait-and-see
+- **AI generates complete media plans autonomously** — replaced with discovery list + human selection (March 2026)
+- **Bespoke integrations to every platform (LiveRead approach)** — replaced with clean API + agent-bridge philosophy
 
 ---
 
 ## How to use this document
 
-1. **When a real customer asks for something:** find it in this list. If it's there, move it up the priority queue. If it's not there, add it with the customer name attached.
-2. **When tempted to build something speculatively:** check if it's in "Customer-Driven" or "Future." If so, ask whether a real customer has asked. If not, don't build.
-3. **When planning a build cycle:** mix items from "Operational Unblock" and "Polish" liberally; reach into "Foundational Architecture" sparingly; pull from "Customer-Driven" only when triggered.
+1. **Pre-launch backlog must finish before GTM.** Pull items from pre-launch into numbered waves. Wave 14 is the next wave — covers Wave 14 Foundation items + likely picks up scoring tunability + multi-medium abstraction. Other pre-launch items can be wave-bundled or run as polish in parallel.
+
+2. **When a real customer asks for something post-launch:** find it in the post-launch queue. If it's there, move it up the priority queue. If it's not there, add it with the customer name attached.
+
+3. **When tempted to build something speculatively post-launch:** check if it's in "Customer-Driven" or "Future." If so, ask whether a real customer has asked. If not, don't build.
+
 4. **Update regularly:** as items ship, move them out. As new ideas emerge, add them. As customers reveal what they actually want, reprioritize ruthlessly.
 
-The wave model served its purpose for Waves 1-13. From here forward, the priority is customers, and the backlog responds to customers — not the other way around.
+Waves remain the execution unit. Backlog is the queue. Customer signal sets priority within the post-launch queue. Pre-launch has a hard deadline (GTM) that overrides signal.
