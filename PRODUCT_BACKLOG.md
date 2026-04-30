@@ -334,7 +334,6 @@ Build when transaction volume justifies.
 - **Pure 8% transaction (previous pricing)** — replaced with three-tier model (see `PRICING_DECISIONS.md`)
 - **$1,500/mo Operator tier (initial proposal)** — wrong reference class, anchored at $499 instead
 - **YouTube Shorts as launch medium** — different read mechanics, no proven conversion playbook, wait-and-see
-- **AI generates complete media plans autonomously** — replaced with discovery list + human selection (March 2026)
 - **Bespoke integrations to every platform (LiveRead approach)** — replaced with clean API + agent-bridge philosophy
 
 ---

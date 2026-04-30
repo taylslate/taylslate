@@ -442,6 +442,24 @@ Advertiser, Publisher, Agency/Bill To, Format (Podcast/YouTube), Post Date, Down
 
 ## 9. Architecture Philosophy
 
+### Agentic Design Principle
+
+**Every interaction should leave the AI smarter and the human less burdened.** That is the test for whether a design is more or less agentic.
+
+Maximize AI autonomy. Reserve human input for moments where the human contributes information the AI cannot infer:
+- **Privileged customer knowledge** — who their actual customer is, what's worked before, what their product is really for
+- **Business decisions** — budget, goals, exclusions, final commitments
+- **Confirmation of AI interpretation** — the human verifies the AI's read of the brief is correct, contributing the customer truth only they know
+
+Anti-patterns to avoid:
+- **Form-filling for things the AI can derive.** A product that asks the user to type a brand name from a URL it could fetch is badly designed.
+- **Verification checkpoints at output stage.** Asking humans to approve finished plans line-by-line wastes their time and loses the chance to integrate their feedback into reasoning.
+- **Autonomy without humility.** AI that ships final commitments without confirming it understood the brief is brittle and untrustworthy. Confirmation is a feature, not a constraint.
+
+The interpretation checkpoint in discovery (Section 5) is the canonical example: the AI proposes 1 primary read + 2-4 lateral ring hypotheses, the brand confirms or refines, and the AI then runs autonomously through ring location, conviction scoring, sampling, and portfolio construction. The brand contributes 30 seconds of customer truth; the AI contributes hours of reasoning. Both sides do what they're good at.
+
+This principle applies everywhere AI surfaces in the product: brand onboarding, show onboarding, brief intake, outreach drafting, IO terms generation, pitch composition, make-good negotiation, conversion alerting.
+
 ### Agent-Native Design
 The future is not a monolithic web app with dozens of integrations. AI agents (Cowork, Claude Code, OpenClaw, Perplexity computer use) will increasingly be the interface through which normal people interact with their tools. Taylslate should be designed for this world.
 
