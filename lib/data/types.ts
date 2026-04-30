@@ -786,3 +786,83 @@ export interface BrandDashboardStats {
   total_impressions: number;
   shows_booked: number;
 }
+
+// ---- Wave 14 Phase 1: Discovery Agent Foundation row types ----
+// These mirror the columns added by migration 019. Service-side admin
+// types (snake_case) — used by lib/data/reasoning-log.ts and any future
+// code that reads these tables directly.
+
+export type AovBucket = "low" | "mid" | "high";
+
+export type RingHypothesisKind = "primary" | "lateral" | "confirmed";
+
+export type ConvictionBand = "high" | "medium" | "low" | "speculative";
+
+export type ConvictionTier = "test" | "scale" | "dropped";
+
+export interface CampaignPatternRow {
+  id: string;
+  campaign_id: string | null;
+  customer_id: string | null;
+  created_at: string;
+  product_attributes: Record<string, unknown>;
+  customer_description: string | null;
+  aov_bucket: AovBucket | null;
+  scoring_weights: Record<string, unknown> | null;
+}
+
+export interface RingHypothesisRow {
+  id: string;
+  campaign_pattern_id: string;
+  created_at: string;
+  kind: RingHypothesisKind;
+  label: string;
+  reasoning: string | null;
+  confidence: ConvictionBand;
+  confidence_score: number | null;
+  brand_confirmed: boolean | null;
+}
+
+export interface ConvictionScoreRow {
+  id: string;
+  campaign_pattern_id: string;
+  show_id: string | null;
+  ring_hypothesis_id: string | null;
+  created_at: string;
+  audience_fit_score: number | null;
+  topical_relevance_score: number | null;
+  purchase_power_score: number | null;
+  composite_score: number | null;
+  conviction_band: ConvictionBand | null;
+  reasoning: string | null;
+  tier: ConvictionTier | null;
+}
+
+export interface AnalogMatchRow {
+  id: string;
+  campaign_pattern_id: string;
+  analog_name: string;
+  reasoning: string | null;
+  similarity_score: number | null;
+  created_at: string;
+}
+
+export interface FounderAnnotationRow {
+  id: string;
+  show_id: string | null;
+  author_id: string | null;
+  created_at: string;
+  note: string;
+  tags: string[];
+}
+
+/**
+ * Self-reported by a show during onboarding (Wave 14 Phase 1).
+ * Stored as JSONB on show_profiles.brand_history.
+ */
+export interface ShowBrandHistoryEntry {
+  brand_name: string;
+  category?: string;
+  deal_type?: "one-off" | "annual";
+  notes?: string;
+}
