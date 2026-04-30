@@ -316,10 +316,11 @@ See `CLAUDE.md` for full wave-by-wave detail. High level:
 - **Wave 11 (April 23, 2026):** Outreach-to-onboarded-show loop. Public pitch page, magic link account creation, accept/counter/decline.
 - **Wave 12 (April 23, 2026):** IO PDF + DocuSign integration + signed PDF storage + day-3/day-14 timeout cron.
 - **Wave 13 (April 28, 2026, shipped):** Stripe Connect pay-as-delivers + pricing tier architecture. Card-on-file via SetupIntent at IO signature, charge per verified episode delivery, show payout follows each charge, Stripe Subscription for Operator/Agency tiers, dynamic per-customer transaction fee, fine-grained event logging, GMV trigger alerting at $12.5K/mo Operator breakeven.
+- **Wave 14 Phase 1 (April 30, 2026, shipped):** Discovery agent foundation. Migration 019 (pattern library tables + show brand history + audience purchase power), reasoning persistence wrapper (`lib/data/reasoning-log.ts`), scoring weight tunability with new `topicalRelevance` and `purchasePower` dimensions and AOV-aware tilt. 318 tests passing. All helpers ship dormant — Phase 2 wires them into the discovery UI when customer signal triggers.
 
 **Current state:** Full transaction loop working on production. Pricing tier architecture in place. Real user validation pending — domain cutover applied, need to onboard sales agent friend (show side) and brand friends (brand side).
 
-**Next: Wave 14 — Discovery Agent Foundation.** Pattern library schema, conviction scoring, brief interpretation loop, reasoning persistence. See PRODUCT_BACKLOG.md.
+**Next: Wave 14 Phase 2 — Discovery Agent UX (deferred, customer-driven trigger).** Brief interpretation loop, three-dimensional conviction surface, test portfolio + scale tier dual output, founder annotation UI. See PRODUCT_BACKLOG.md.
 
 ---
 

@@ -12,6 +12,21 @@ Wave model continues as the execution unit. Items get pulled from the backlog in
 
 ---
 
+# SHIPPED
+
+Items that were on the backlog and are now live in production.
+
+## Wave 14 Phase 1 — Discovery Agent Foundation (shipped April 30, 2026)
+
+- **Pattern library schema** (migration 019) — `campaign_patterns`, `ring_hypotheses`, `conviction_scores`, `analog_matches`, `founder_annotations` tables, plus `show_profiles.brand_history` and `shows.audience_purchase_power` columns. Idempotent.
+- **Reasoning persistence wrapper** (`lib/data/reasoning-log.ts`) — 5 record helpers + 1 reader. Fail-soft contract: never throws, never blocks main flow. Mirrors `event-log.ts` pattern.
+- **Scoring weight tunability** — `lib/scoring/weights.ts` exports `getEffectiveWeights()` with per-request overrides. New optional `topicalRelevance` and `purchasePower` dimensions. AOV-aware tilt: when `aovBucket='high'`, purchase-power weight raises and reach drops. Backwards-compatible: when new dims are 0, returns existing 4-dim shape unchanged.
+- **TypeScript types** — `CampaignPatternRow`, `RingHypothesisRow`, `ConvictionScoreRow`, `AnalogMatchRow`, `FounderAnnotationRow`, `ShowBrandHistoryEntry`, plus `AovBucket`, `RingHypothesisKind`, `ConvictionBand`, `ConvictionTier` enums.
+
+All Phase 1 helpers ship dormant. Phase 2 wires them into the discovery UI at each AI decision point.
+
+---
+
 ## Categorization
 
 - **Operational unblock** — small fixes blocking GTM credibility or daily founder workflow. Pre-launch.
@@ -130,35 +145,6 @@ Things that must finish before GTM. The launch bar.
 
 ---
 
-## Wave 14 Foundation — Discovery Agent Groundwork
-
-Foundation work for the discovery agent thesis (see `TAYLSLATE_CONTEXT.md` Section 5). The agent UX itself is post-launch customer-driven, but the foundation must ship pre-launch so the data flywheel starts spinning the moment customers arrive.
-
-### Pattern library schema
-- New tables: `campaign_patterns`, `analog_matches`, `ring_hypotheses`, `conviction_scores`
-- Designed to support podcast + long-form YouTube via existing `shows.platform` enum
-- Captures: product attributes, customer description, ring hypotheses (primary + laterals), conviction scores, sampling decisions, analog matches, outcomes
-- Idempotent migration following Supabase conventions
-- **Effort:** 1-2 days schema + 2-3 days seeding interface for Chris to populate ~100-200 brand/show pairs from media-buying memory
-- **Why:** This is the data asset that compounds. Built now, populated manually until volume arrives, schema-ready for embedding retrieval and future ML.
-
-### Reasoning persistence in event_log
-- Every AI decision (interpretation, ring hypothesis, conviction score, analog match, sampling decision) writes structured reasoning to `event_log` (Wave 13 table)
-- New event types: `discovery.brief_interpreted`, `discovery.ring_hypothesized`, `discovery.conviction_scored`, `discovery.analog_matched`, `discovery.sampled`
-- Schema must match what we'd want as training data later — full reasoning text, structured inputs/outputs, confidence values
-- Wrapper helper `logReasoning()` that never throws, never blocks main flow (same pattern as `logEvent()`)
-- **Effort:** Half day for wrapper + ongoing discipline as new AI surfaces ship
-- **Why:** Storage is cheap. Lost training data is expensive. Without this, every campaign run is wasted training data.
-
-### Multi-medium creator inventory abstraction
-- `shows.platform` already has `'podcast' | 'youtube'` enum ✓
-- Add `surfaces` JSONB to capture simulcast (one show, podcast + YouTube)
-- Add `medium_priors` JSONB for medium-specific scoring (CPM range, engagement weight, frequency norms)
-- Update discovery orchestrator (`lib/discovery/discover-shows.ts`) to merge simulcast records
-- Update conviction reasoning to be medium-aware
-- **Effort:** 2-3 days
-- **Why:** Long-form YouTube is launch-day medium, not future expansion. Simulcasts are common (most podcasts upload to YouTube). Modeling now avoids re-migration later.
-
 ---
 
 # POST-LAUNCH QUEUE
@@ -185,6 +171,17 @@ These are real product capabilities, but building them before customers ask is s
 - Confidence bands: High / Medium / Low / Speculative
 - **Effort:** 1-2 weeks
 - **Trigger:** Same as brief interpretation — or sooner if we want to A/B test conviction-score-with-reasoning vs current fit-score numerical display
+
+### Wave 14 Phase 2 — Discovery Agent UX
+- Wires Phase 1 dormant infrastructure into brand-facing UI
+- Brief interpretation loop with 1 primary + 2-4 lateral ring hypotheses
+- Three-dimensional conviction scoring (audience fit / topical relevance / purchase power) surfaced per show with reasoning text
+- Test portfolio + scale tier dual output with 3-spot floor as default budget filter
+- Founder annotation UI for capturing show-level reasoning
+- Lateral ring confirmation flow (brand confirms/refines AI interpretation, not show list)
+- Show onboarding addition: "brand history" field for self-reported top advertisers + annual deals
+- **Effort:** 2-3 weeks (foundation work makes this a 1-2 week build)
+- **Trigger:** Real campaign where current discovery returns thin/wrong results, OR pattern library has enough seeded analogs to power useful ring generation
 
 ### Agent / rep account UX
 - Multi-show portfolio management for sales agents (Veritone, Ad Results, indie reps)

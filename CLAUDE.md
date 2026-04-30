@@ -36,7 +36,7 @@ The most valuable data in podcast advertising — real CPM rates, verified downl
 - **Sales Agents / Rep Companies (Wave 15+):** Represent portfolios of shows. Unlock high-leverage GTM — one agent onboarding brings 10-30 shows. Data model foundation exists (`agent_show_relationships`) but agent-facing UX not built.
 - **Agencies:** Deferred — late adopters, workflow inertia, not the primary GTM channel. Tier exists ($5K/mo + 4%) for when they come.
 
-## Build Status (through April 28, 2026)
+## Build Status (through April 30, 2026)
 
 Waves 1-3 laid the foundation (Supabase migration from seed data, deal transaction loop, show roster/import). Since then:
 
@@ -60,9 +60,11 @@ Waves 1-3 laid the foundation (Supabase migration from seed data, deal transacti
 
 **Wave 13 (April 28, shipped): Stripe Connect pay-as-delivers + pricing tier architecture** — Card-on-file via Stripe SetupIntent at IO signature, charge per verified episode delivery, show payout follows each charge, idempotent webhook handling, Connect onboarding UI. Pricing tier scaffolding: customer plan field, dynamic per-customer transaction fee, Stripe Subscription for Operator/Agency tiers, seat counting, plan-switching proration, fine-grained event logging in `event_log` table, GMV trigger alerting at $12.5K/mo Operator breakeven. Migrations 015-018.
 
-**Total: 157+ tests passing. Migrations 001-018 applied.**
+**Wave 14 Phase 1 (April 30, shipped): Discovery agent foundation.** Migration 019 applied (pattern library tables: `campaign_patterns`, `ring_hypotheses`, `conviction_scores`, `analog_matches`, `founder_annotations`; `show_profiles.brand_history`; `shows.audience_purchase_power`). `lib/data/reasoning-log.ts` with 5 record helpers + reader, fail-soft contract matching `event-log.ts`. Scoring weight tunability refactor — `lib/scoring/weights.ts` now exports `getEffectiveWeights()` with per-request overrides plus AOV-aware tilt; new optional `topicalRelevance` and `purchasePower` dimensions default to 0 for backwards compatibility. All Phase 1 helpers ship dormant — Phase 2 wires them into the discovery agent at each AI decision point.
 
-**Next: Wave 14 — Discovery Agent Foundation.** See backlog and "Wave 14 Scope" section below.
+**Total: 318 tests passing. Migrations 001-019 applied.**
+
+**Next: Wave 14 Phase 2 — Discovery Agent UX (deferred, customer-driven trigger).** Wires Phase 1 dormant infrastructure into the brand-facing UI. See backlog and "Wave 14 Scope" section below.
 
 ## Wave 12 — DocuSign Integration (Reference)
 
@@ -215,13 +217,15 @@ STRIPE_AGENCY_SEAT_PRICE_ID=price_...   # $500/seat add-on
   - Supabase project Site URL + auth Redirect URLs → update from `taylslate.vercel.app` to `taylslate.com`
   - Vercel env var `NEXT_PUBLIC_SITE_URL` → set to `https://taylslate.com` for production
 
-## Wave 14 — Discovery Agent Foundation (Next)
+## Wave 14 — Discovery Agent (Phase 1 shipped, Phase 2 deferred)
 
 Discovery is the act of locating, for a given product, the universe of shows where it will convert profitably — and producing a sampling plan against that universe given budget. Not a database query. Not a category filter with extra steps. An interpretive reasoning task. See `TAYLSLATE_CONTEXT.md` Section 5 for full thesis.
 
 Wave 14 scope is split into **foundation work** (build now, low-risk, high-leverage, accumulates training data even before agent UX exists) and **agent UX work** (build when first real campaign exposes the gap). Foundation work is part of the pre-launch backlog. Agent UX is post-launch customer-driven.
 
 ### Wave 14 Foundation (pre-launch)
+
+**Status: shipped April 30, 2026.** Migration 019 applied. Pattern library tables, reasoning persistence wrapper, scoring weight tunability all live in dormant state. Phase 2 wires them into UI.
 
 Build now to make the data flywheel start spinning.
 
