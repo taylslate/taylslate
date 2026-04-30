@@ -122,6 +122,20 @@ Things that must finish before GTM. The launch bar.
 
 ---
 
+## Wave 14 Phase 2 — Discovery Agent UX (pre-launch)
+
+- Wires Phase 1 dormant infrastructure into brand-facing UI
+- Brief interpretation loop with 1 primary + 2-4 lateral ring hypotheses
+- Three-dimensional conviction scoring (audience fit / topical relevance / purchase power) surfaced per show with reasoning text
+- Test portfolio + scale tier dual output with 3-spot floor as default budget filter
+- Founder annotation UI for capturing show-level reasoning
+- Lateral ring confirmation flow (brand confirms/refines AI interpretation, not show list)
+- Show onboarding addition: "brand history" field for self-reported top advertisers + annual deals
+- **Effort:** 2-3 weeks (foundation work makes this a 1-2 week build)
+- **Trigger:** Pre-launch must-do. Current flat fit-score discovery isn't strong enough to launch on — Sauna Box walkthrough confirmed. Phase 2 is the discovery experience that makes Taylslate's wedge actually competitive at launch. Build before broader GTM.
+
+---
+
 ## Foundational Architecture
 
 ### Scoring weight tunability refactor
@@ -171,17 +185,6 @@ These are real product capabilities, but building them before customers ask is s
 - Confidence bands: High / Medium / Low / Speculative
 - **Effort:** 1-2 weeks
 - **Trigger:** Same as brief interpretation — or sooner if we want to A/B test conviction-score-with-reasoning vs current fit-score numerical display
-
-### Wave 14 Phase 2 — Discovery Agent UX
-- Wires Phase 1 dormant infrastructure into brand-facing UI
-- Brief interpretation loop with 1 primary + 2-4 lateral ring hypotheses
-- Three-dimensional conviction scoring (audience fit / topical relevance / purchase power) surfaced per show with reasoning text
-- Test portfolio + scale tier dual output with 3-spot floor as default budget filter
-- Founder annotation UI for capturing show-level reasoning
-- Lateral ring confirmation flow (brand confirms/refines AI interpretation, not show list)
-- Show onboarding addition: "brand history" field for self-reported top advertisers + annual deals
-- **Effort:** 2-3 weeks (foundation work makes this a 1-2 week build)
-- **Trigger:** Real campaign where current discovery returns thin/wrong results, OR pattern library has enough seeded analogs to power useful ring generation
 
 ### Agent / rep account UX
 - Multi-show portfolio management for sales agents (Veritone, Ad Results, indie reps)
