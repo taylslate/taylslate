@@ -46,6 +46,9 @@ export default async function DashboardLayout({
   }
 
   const eff = await getEffectiveRole(user.id);
+  if (eff?.staleViewAs) {
+    redirect("/api/view-mode/clear?next=/dashboard");
+  }
   const effectiveRole = eff?.effectiveRole ?? profile.role;
   const canSwitchTo = eff?.canSwitchTo ?? null;
 

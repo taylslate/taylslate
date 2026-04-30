@@ -1764,6 +1764,9 @@ export interface EffectiveRoleResult {
   baseRole: UserRole;
   hasBrandProfile: boolean;
   hasShowProfile: boolean;
+  /** True when the cookie names a role for which no profile row exists.
+   *  Caller should clear the cookie so the next render is clean. */
+  staleViewAs: boolean;
   /** Set when the user has BOTH a brand_profile AND a show_profile row,
    *  pointing to the role they could flip into. Null otherwise. */
   canSwitchTo: UserRole | null;
@@ -1803,5 +1806,16 @@ export async function getEffectiveRole(
     effectiveRole = "show";
   }
 
-  return { effectiveRole, baseRole, hasBrandProfile, hasShowProfile, canSwitchTo };
+  const staleViewAs =
+    (viewAs === "brand" && !hasBrandProfile) ||
+    (viewAs === "show" && !hasShowProfile);
+
+  return {
+    effectiveRole,
+    baseRole,
+    hasBrandProfile,
+    hasShowProfile,
+    staleViewAs,
+    canSwitchTo,
+  };
 }

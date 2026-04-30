@@ -6,12 +6,14 @@ import { createClient } from "@/lib/supabase/client";
 import ConnectOnboarding from "@/components/payments/ConnectOnboarding";
 import CardForm from "@/components/payments/CardForm";
 import SignOutButton from "@/components/auth/SignOutButton";
+import { PLANS, type PlanId } from "@/lib/billing/plans";
 
 type UserRole = "brand" | "agency" | "agent" | "show";
 
 export default function SettingsPage() {
   const [role, setRole] = useState<UserRole | null>(null);
   const [email, setEmail] = useState("user@example.com");
+  const [plan, setPlan] = useState<PlanId>("pay_as_you_go");
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   useEffect(() => {
@@ -22,11 +24,14 @@ export default function SettingsPage() {
         setEmail(user.email || "user@example.com");
         const { data: profile } = await supabase
           .from("profiles")
-          .select("role")
+          .select("role, plan")
           .eq("id", user.id)
           .single();
         if (profile) {
           setRole(profile.role as UserRole);
+          if (profile.plan && (profile.plan as string) in PLANS) {
+            setPlan(profile.plan as PlanId);
+          }
         }
       }
       setProfileLoaded(true);
@@ -37,6 +42,26 @@ export default function SettingsPage() {
   const showPayoutSection = role === "show" || role === "agent";
   const showPaymentMethodSection = role === "brand" || role === "agency";
 
+  const planTiers: PlanId[] = ["pay_as_you_go", "operator", "agency"];
+  const formatPct = (pct: number) => `${(pct * 100).toFixed(0)}%`;
+  const formatMonthly = (cents: number) =>
+    cents === 0 ? "$0" : `$${(cents / 100).toLocaleString()}`;
+  const planSubline = (id: PlanId) => {
+    const p = PLANS[id];
+    if (id === "pay_as_you_go") {
+      return `${formatPct(p.feePercentage)} transaction fee, no monthly fee`;
+    }
+    return `${formatMonthly(p.monthlyBaseCents)}/mo + ${formatPct(
+      p.feePercentage
+    )} transaction`;
+  };
+  const planFeatureLine = (id: PlanId) => {
+    if (id === "pay_as_you_go") return "Up to 2 concurrent campaigns";
+    if (id === "operator") return "Unlimited campaigns, API access, priority support";
+    return "White-label, multi-client, dedicated success manager";
+  };
+  const currentPlan = PLANS[plan];
+
   return (
     <div className="p-8 max-w-2xl">
       <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight mb-1">Settings</h1>
@@ -46,22 +71,48 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="font-semibold text-[var(--brand-text)]">Current Plan</h2>
-            <p className="text-sm text-[var(--brand-text-muted)] mt-0.5">Free — 1 campaign per month</p>
+            <p className="text-sm text-[var(--brand-text-muted)] mt-0.5">
+              {currentPlan.label} — {planSubline(plan)}
+            </p>
           </div>
-          <button className="px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors">Upgrade</button>
+          <Link href="/settings/billing" className="px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors">
+            Manage subscription
+          </Link>
         </div>
         <div className="grid grid-cols-3 gap-4">
-          {[
-            { name: "Starter", price: "$49", features: "5 campaigns, outreach emails" },
-            { name: "Growth", price: "$149", features: "25 campaigns, ad copy, MCP access" },
-            { name: "Business", price: "$349", features: "Unlimited, competitive intel, API" },
-          ].map((plan) => (
-            <div key={plan.name} className="p-4 rounded-lg border border-[var(--brand-border)] hover:border-[var(--brand-blue)]/30 transition-colors">
-              <div className="font-semibold text-[var(--brand-text)] mb-0.5">{plan.name}</div>
-              <div className="text-lg font-bold text-[var(--brand-blue)]">{plan.price}<span className="text-xs font-normal text-[var(--brand-text-muted)]">/mo</span></div>
-              <div className="text-xs text-[var(--brand-text-muted)] mt-1">{plan.features}</div>
-            </div>
-          ))}
+          {planTiers.map((id) => {
+            const p = PLANS[id];
+            const isCurrent = id === plan;
+            return (
+              <div
+                key={id}
+                className={`p-4 rounded-lg border transition-colors ${
+                  isCurrent
+                    ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.04]"
+                    : "border-[var(--brand-border)] hover:border-[var(--brand-blue)]/30"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-0.5">
+                  <div className="font-semibold text-[var(--brand-text)]">{p.label}</div>
+                  {isCurrent && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--brand-blue)]">
+                      Current
+                    </span>
+                  )}
+                </div>
+                <div className="text-lg font-bold text-[var(--brand-blue)]">
+                  {formatMonthly(p.monthlyBaseCents)}
+                  <span className="text-xs font-normal text-[var(--brand-text-muted)]">/mo</span>
+                </div>
+                <div className="text-xs text-[var(--brand-text-muted)] mt-1">
+                  + {formatPct(p.feePercentage)} transaction
+                </div>
+                <div className="text-xs text-[var(--brand-text-muted)] mt-2 leading-snug">
+                  {planFeatureLine(id)}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -119,7 +170,7 @@ export default function SettingsPage() {
       <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-semibold text-[var(--brand-text)]">API & MCP Access</h2>
-          <span className="text-xs bg-[var(--brand-blue)]/10 text-[var(--brand-blue)] px-2 py-0.5 rounded-full font-medium">Growth plan required</span>
+          <span className="text-xs bg-[var(--brand-blue)]/10 text-[var(--brand-blue)] px-2 py-0.5 rounded-full font-medium">Operator plan required</span>
         </div>
         <p className="text-sm text-[var(--brand-text-muted)] mb-4">Connect Taylslate to your AI workflow via MCP or REST API.</p>
         <button disabled className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-muted)] cursor-not-allowed opacity-50">
