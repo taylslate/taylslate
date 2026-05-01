@@ -1,6 +1,6 @@
 # Taylslate — Product & Founder Context
 
-*Last updated: April 30, 2026. Wave 13 shipped. Discovery agent thesis added. This document is the primary strategic context reference for Claude when working on Taylslate. For build state, schema, and technical conventions, see `CLAUDE.md`.*
+*Last updated: April 30, 2026. Wave 13 shipped. Wave 14 Phase 1 (Discovery Agent Foundation) shipped. Wave 14 Phase 2 (Discovery Agent UX) is next, pre-launch. This document is the primary strategic context reference for Claude when working on Taylslate. For build state, schema, and technical conventions, see `CLAUDE.md`.*
 
 ---
 
@@ -51,7 +51,7 @@ The moat is the data. Everything else is a mechanism to capture it.
 
 2. **Payment facilitation** — When money moves through Taylslate (Wave 13 shipped), we capture the one piece of data nobody shares voluntarily: what was actually paid, when, by whom. This is the transaction intelligence that powers everything.
 
-3. **Discovery reasoning library** — Every campaign run through Taylslate produces a structured record of what was tried and what worked: brand profile, ring hypotheses, conviction scores, analog matches, outcomes. After hundreds of campaigns, Taylslate has a proprietary pattern library of "what kind of product converts on what kind of show with what kind of host" that no competitor can replicate without running the same volume of campaigns. See Section 5 for the architecture.
+3. **Discovery reasoning library** — Every campaign run through Taylslate produces a structured record of what was tried and what worked: brand profile, ring hypotheses, conviction scores, analog matches, outcomes. Wave 14 Phase 1 shipped the schema and persistence layer (April 30, 2026); Phase 2 wires it into the discovery flow. After hundreds of campaigns, Taylslate has a proprietary pattern library of "what kind of product converts on what kind of show with what kind of host" that no competitor can replicate without running the same volume of campaigns. See Section 5 for the architecture.
 
 **What the data becomes over time:** Aggregated, anonymized intelligence — CPM benchmarks by category and show size, advertiser retention signals, delivery reliability scores, payment timing patterns, conviction calibration (predicted vs. actual conversion). After thousands of transactions, Taylslate knows more about the real economics of creator sponsorship than any agency, brand, or network. Every subsequent recommendation gets smarter.
 
@@ -78,6 +78,7 @@ Three-tier model pressure-tested in pricing strategy session. Customer chooses e
 - Unlimited concurrent campaigns, portfolio dashboard, cross-campaign analytics, CSV exports
 - Priority support, API access
 - All Pay-as-you-go features
+- *Possibly underpriced — pinned for revisit at month 3-6 with first 10-20 customers. Reference class might shift from "channel tool" to "ad operations platform" once scale customers run $50-200K/mo. Possible Operator + Operator Pro split, or raise to $999-1499 with grandfathering for early converts.*
 
 **Agency (white-label):**
 - $5,000/month + 4% transaction
@@ -175,7 +176,7 @@ This pitch is more credible than including aggressive agency assumptions. Invest
 
 ## 5. Discovery as Conviction-Based Interpretive Reasoning
 
-This section captures the discovery agent thesis and is the foundation for the next major build cycle (Wave 14: Discovery Agent Foundation).
+This section captures the discovery agent thesis and is the foundation for Wave 14 (Discovery Agent). Phase 1 (foundation) shipped April 30, 2026. Phase 2 (UX layer) is next.
 
 ### What discovery actually is
 
@@ -201,7 +202,7 @@ Veteran media buyers (VeritoneOne planners, AdResults, indie reps with 20+ years
 6. **Portfolio construction** — anchor / core / discovery mix shaped by budget. Frequency vs breadth.
 7. **The "weird bet"** — 1-2 shows that look wrong on paper but the agent knows convert. Pure pattern recognition.
 
-Taylslate's current scoring (audience 40 / engagement 30 / retention 20 / reach 10) handles part of layer 3. It does not yet do 1, 2, 4, 6, or 7. That's the roadmap.
+Taylslate's current scoring (audience 40 / engagement 30 / retention 20 / reach 10) handles part of layer 3. Wave 14 Phase 1 added the foundation for layers 1, 2, and 6 (pattern library, conviction scoring, reasoning persistence). Phase 2 wires those into the brand-facing UI.
 
 Layers 1, 2, 4, and 6 are achievable with LLM reasoning + a structured pattern library before Taylslate has transaction volume. Layer 3 plateaus without ASR. Layer 5 is a partnerships/data problem. Layer 7 plateaus without volume — but is mostly upside, not blocking.
 
@@ -225,10 +226,10 @@ The AI proposes 1 primary read + 2-4 lateral candidate rings with stated confide
 
 "Conviction score" is what an agent produces: a judgment with reasoning behind it, exposing the model's epistemic state. With conviction, brands argue with the *reasoning* ("you're underweighting host fit because their last three sponsors converted") not the number — a more productive conversation, more agent-feeling.
 
-Three levels of conviction surface in the UI:
+Three levels of conviction surface in the UI (Wave 14 Phase 2):
 - **Brief interpretation conviction** — how confident the AI is that it's reading the brand correctly
 - **Ring conviction** — high/medium/low/speculative per ring, with reasoning
-- **Show conviction** — per-show, with reasoning ("Conviction: high. Host personally uses cold plunge. Audience over-indexes 2.4x on biohacker purchases. Shows like this converted in 4 of 5 recovery campaigns.")
+- **Show conviction** — per-show, three-dimensional (audience fit, topical relevance, purchase power) plus composite. With reasoning ("Conviction: high. Host personally uses cold plunge. Audience over-indexes 2.4x on biohacker purchases. Shows like this converted in 4 of 5 recovery campaigns.")
 
 Reasoning surfaces are mandatory, not optional. The number alone is what databases provide. The reasoning is what makes Taylslate distinguishable.
 
@@ -242,14 +243,24 @@ The system must be intellectually honest about what it doesn't know. Conviction 
 
 This is what no current tool does and is a core trust signal.
 
+### Test portfolio + scale tier dual output
+
+Discovery returns two distinct lists from one analysis:
+
+- **Test portfolio** — fits within campaign budget at 3-spot test cadence (99% of podcast tests are 3-spot tests). Diagnostic: which ring converts, which audience, which read style.
+- **Scale tier** — high-conviction shows that exceed test budget. Surfaced with "deferred — fits future budget" framing and per-show 3-spot total cost. Brand picks from test list now; scale tier saved as the destination for once test data signals which ring to commit to.
+
+This is what makes Taylslate distinct from a database query. The system shows brands the full conviction-ring map, then helps them sample it given budget — and explicitly anchors the next budget tier.
+
 ### The pattern library (the moat)
 
-The discovery agent reasons over a structured pattern library — the data asset that compounds with every campaign:
+The discovery agent reasons over a structured pattern library — the data asset that compounds with every campaign. Wave 14 Phase 1 shipped the schema:
 
-- **Campaign records:** product attributes, customer description, ring hypotheses, conviction scores, sampling decisions, outcomes
-- **Analog matches:** which historical campaigns the AI matched a new brief against and why
-- **Ring patterns:** "product type → ring shape → analog campaigns → confidence priors"
-- **Outcome links:** verified delivery, conversion signals where available, brand satisfaction, repeat business
+- **Campaign records** (`campaign_patterns`): product attributes, customer description, AOV bucket, scoring weights used
+- **Ring hypotheses** (`ring_hypotheses`): primary + lateral candidate rings with confidence, reasoning, brand confirmation
+- **Conviction scores** (`conviction_scores`): per (campaign, show) pair, three sub-scores + composite + reasoning + tier (test/scale/dropped)
+- **Analog matches** (`analog_matches`): which historical campaigns the AI matched a new brief against and why
+- **Founder annotations** (`founder_annotations`): Chris's manual labels on shows. Audience character data the framework can't infer from metadata alone (e.g., "Blurry Creatures audience is more faith-based than the show description suggests")
 
 The library starts seeded by Chris's media-buying intuition (~100-200 brand/show pairs labeled from memory). It grows automatically with every campaign run on the platform. By the time Taylslate has 500 campaigns, the library is a real data asset.
 
@@ -257,13 +268,17 @@ The model isn't a custom foundation model. It's a *domain reasoning system* — 
 
 ### Build later, frameworked now
 
-Three pieces need data to be useful but should be **frameworked now** so they're plug-in-ready:
+Three pieces need data to be useful but are **frameworked now** (Wave 14 Phase 1) so they're plug-in-ready:
 
-- **Embedding-based retrieval over the pattern library** — works fine on hand-seeded patterns; better with volume. Build the embedding pipeline with the schema.
-- **Confidence calibration from empirical conversion vs predicted conviction** — needs outcome data. Schema must capture both prediction and outcome from day one.
-- **Outcome-similarity-based "shows like X"** — needs outcome data per show. Build the schema field; populate as transactions arrive.
+- **Embedding-based retrieval over the pattern library** — works fine on hand-seeded patterns; better with volume. Phase 1 schema supports it; Phase 2 or later wires up actual embedding pipeline.
+- **Confidence calibration from empirical conversion vs predicted conviction** — needs outcome data. Schema captures both prediction and outcome from day one.
+- **Outcome-similarity-based "shows like X"** — needs outcome data per show. Schema field present; populated as transactions arrive.
 
-Reasoning persistence is the discipline that makes all three possible: every AI decision (interpretation, ring hypothesis, conviction score, analog match) writes structured reasoning to `event_log` with the same schema you'd want for training data later. Storage is cheap. Lost training data is expensive.
+Reasoning persistence is the discipline that makes all three possible: every AI decision (interpretation, ring hypothesis, conviction score, analog match) writes structured reasoning via `lib/data/reasoning-log.ts` (shipped Wave 14 Phase 1). Phase 2 wires the helpers into the discovery flow. Storage is cheap. Lost training data is expensive.
+
+### Scoring weight tunability (Wave 14 Phase 1 shipped)
+
+`lib/scoring/weights.ts` now exports `getEffectiveWeights()` with per-request overrides plus AOV-aware tilt. Two new optional dimensions: `topicalRelevance` and `purchasePower`. When `aovBucket='high'` (e.g., a $2,799 product like SaunaBox Solara), purchase-power weight raises to 0.20 and reach drops to 0.05. This is the architectural foundation for Phase 2's three-dimensional conviction scoring and future "expand my horizons" slider.
 
 ### Lateral reasoning: why interpretive beats keyword
 
@@ -278,6 +293,18 @@ An interpretive LLM sees "sauna, mobile, $X price, home use" and reasons lateral
 
 Five different rings, each defensible, each leading to a different show universe. Foundation models do this naturally with the right prompting. This is where Taylslate embarrasses keyword-based competitors — and where the brand goes "oh, mobile is actually our biggest selling point, we hadn't thought about overlanders," and Taylslate just unlocked a customer segment the brand didn't consciously know about. That's the moment of agent-level value.
 
+### Founder picks teach the framework
+
+Real framework constraint discovered in Sauna Box walkthrough (April 30, 2026): topical relevance matters less than the framework initially weighted; audience demographics and purchase power matter more for high-AOV products. Founder picks are labeled training data — when Chris picks a show that the framework would have ranked lower, the system records the pick + reasoning and learns. Specifically:
+
+- **Audience demographics matter more than topical relevance.** A TV-rewatch show with 25-40 affluent female audience converts on premium wellness even though the host doesn't talk wellness.
+- **Purchase power is its own filter for high-AOV products.** A finance podcast (low topical relevance for wellness) converts on Solara because listeners can afford $2,799 saunas.
+- **3-spot budget viability gates everything.** 99% of podcast tests are 3-spot tests. Per-spot price × 3 must fit within test budget.
+- **Read quality is a real signal.** Hosts who personally read ads with personality > DAI aggregator format > programmatic insertion.
+- **Convergence beats single signals.** The strongest picks have audience fit AND topical relevance AND purchase power. Two-out-of-three is testable. One-out-of-three is speculative.
+
+Wave 14 Phase 2's founder annotation UI captures this kind of insight as structured pattern library data.
+
 ### Discovery philosophy
 
 - **Return more results, not fewer.** Aligns with Facebook Ads model — broad options, brand narrows down. Aligns with veteran agent behavior — long list, not curated three.
@@ -286,12 +313,13 @@ Five different rings, each defensible, each leading to a different show universe
 - **Don't gate discovery on whether a creator has self-onboarded.** Self-onboarded inventory gets a conviction boost ("immediately bookable") and unlocks streamlined deal flow. Non-onboarded shows still appear with a lighter outreach path.
 - **"Find shows like this one"** is a primary interaction, not a sidebar feature.
 - **Brand safety** is metadata, never an automatic exclusion. Brands decide.
+- **Test vs scale are distinct UX modes.** Test mode (current) is diagnostic. Scale mode (Wave 15+) is ongoing operations.
 
 ### What this is not
 
 - Not a marketplace. Marketplaces have two-sided liquidity problems and lower margins. Taylslate is an *inventory-aware transaction layer* — recommendations are the primary object, inventory availability is a confidence signal.
 - Not a black box. Reasoning surfaces everywhere conviction surfaces.
-- Not autonomous. The brand always confirms ring hypotheses before discovery commits. The AI proposes, the human chooses.
+- Not autonomous without humility. The brand always confirms ring hypotheses before discovery commits. The AI proposes, the human chooses. Confirmation is a feature, not a constraint.
 
 ### Multi-medium creator inventory
 
@@ -316,11 +344,11 @@ See `CLAUDE.md` for full wave-by-wave detail. High level:
 - **Wave 11 (April 23, 2026):** Outreach-to-onboarded-show loop. Public pitch page, magic link account creation, accept/counter/decline.
 - **Wave 12 (April 23, 2026):** IO PDF + DocuSign integration + signed PDF storage + day-3/day-14 timeout cron.
 - **Wave 13 (April 28, 2026, shipped):** Stripe Connect pay-as-delivers + pricing tier architecture. Card-on-file via SetupIntent at IO signature, charge per verified episode delivery, show payout follows each charge, Stripe Subscription for Operator/Agency tiers, dynamic per-customer transaction fee, fine-grained event logging, GMV trigger alerting at $12.5K/mo Operator breakeven.
-- **Wave 14 Phase 1 (April 30, 2026, shipped):** Discovery agent foundation. Migration 019 (pattern library tables + show brand history + audience purchase power), reasoning persistence wrapper (`lib/data/reasoning-log.ts`), scoring weight tunability with new `topicalRelevance` and `purchasePower` dimensions and AOV-aware tilt. 318 tests passing. All helpers ship dormant — Phase 2 wires them into the discovery UI when customer signal triggers.
+- **Wave 14 Phase 1 (April 30, 2026, shipped):** Discovery agent foundation. Migration 019 (pattern library tables: `campaign_patterns`, `ring_hypotheses`, `conviction_scores`, `analog_matches`, `founder_annotations`; plus `show_profiles.brand_history` and `shows.audience_purchase_power`). Reasoning persistence wrapper (`lib/data/reasoning-log.ts`). Scoring weight tunability with new `topicalRelevance` and `purchasePower` dimensions and AOV-aware tilt. 318 tests passing. All helpers ship dormant — Phase 2 wires them into the discovery UI.
 
-**Current state:** Full transaction loop working on production. Pricing tier architecture in place. Real user validation pending — domain cutover applied, need to onboard sales agent friend (show side) and brand friends (brand side).
+**Current state:** Full transaction loop working on production. Pricing tier architecture in place. Discovery agent foundation in place (dormant). Real user validation pending — domain cutover applied, need to onboard sales agent friend (show side) and brand friends (brand side).
 
-**Next: Wave 14 Phase 2 — Discovery Agent UX (deferred, customer-driven trigger).** Brief interpretation loop, three-dimensional conviction surface, test portfolio + scale tier dual output, founder annotation UI. See PRODUCT_BACKLOG.md.
+**Next: Wave 14 Phase 2 — Discovery Agent UX (pre-launch must-do).** Brief intake redesign + interpretation loop, three-dimensional conviction surface, test portfolio + scale tier dual output, founder annotation UI. ~2 weeks split across 4 sub-phases (2A-2D). See PRODUCT_BACKLOG.md.
 
 ---
 
@@ -392,9 +420,11 @@ See `CLAUDE.md` for full wave-by-wave detail. High level:
 | $250K | $30 | Quarterly campaign, 40-60 shows, 2-3 premium anchors |
 | $500K+ | $32 | Network buys + flagship hosts |
 
-CPM creeps up with budget tier because premium shows price higher. Premium anchors have minimums (Rogan ~$200K, Huberman $80K+, SmartLess $100K+). Below ~$150K total budget, those shows shouldn't even appear in discovery for credibility reasons.
+CPM creeps up with budget tier because premium shows price higher. Premium anchors have minimums (Rogan ~$200K, Huberman $80K+, SmartLess $100K+). Below ~$150K total budget, those shows shouldn't even appear in test-tier discovery for credibility reasons — they belong in scale tier with explicit "post-test commitment" framing.
 
 Frequency vs breadth: a great agent at $50K picks 12 shows × 2-3 reads each, not 25 shows × 1 read. Frequency drives conversion. Brands almost always want more shows; the system should default to agent intuition with override available.
+
+**3-spot test floor:** 99% of podcast test campaigns are 3-spot tests. Discovery defaults to filtering shows where 3 spots × per-spot price exceeds ~25% of test budget.
 
 ### Deal Flow
 1. Brand reaches out to show directly or through buying agency
@@ -434,6 +464,15 @@ Advertiser, Publisher, Agency/Bill To, Format (Podcast/YouTube), Post Date, Down
 - Shows manually invoice every month separately for multi-month contracts
 - A show running an ad in January may not see payment until April
 - Small podcast operations struggle with cash flow
+
+### Conversion Attribution Reality
+- Pixel-based attribution (Podscribe, Magellan) — gold standard but only captures fraction
+- Show-specific promo codes — direct signal but undercounts (lost codes, search-by-name conversions)
+- Self-reported in checkout — voluntary, undercounts
+- Brand-side renewal behavior — cleanest downstream proxy
+- Lift studies — accurate but expensive, only at $200K+ campaigns
+- 2x leak rule — agent rule of thumb: take measured conversions, double them to account for leaks
+- Taylslate's role: signal aggregator, not measurement platform. Capture promo codes at IO time, generate UTM tracking links, accept brand-reported attribution where shared. Apply 2x leak rule when displaying.
 
 ### Industry Reference
 - VeritoneOne IO template in project files — format standard
@@ -486,23 +525,24 @@ Don't build bespoke integrations to every platform (the LiveRead approach). Buil
 ### Domain Events (Wave 12 foundation)
 Append-only audit log at `domain_events` table. Every state transition fires an event (entity.action form: `outreach.created`, `outreach.accepted`, `deal.created`, `envelope.signed`, etc.). Fat payloads with `schema_version` field. Service-role write only. Future MCP server / webhook subscriptions will consume this.
 
-### Reasoning Persistence (Wave 14 discipline)
-Every AI decision (brief interpretation, ring hypothesis, conviction score, analog match, sampling decision) writes a structured record to `event_log` with the same schema you'd want for training data later. This is what makes the pattern library compound: campaigns aren't just transactions, they're labeled examples of "what the AI thought, what the human confirmed, what actually happened." Reasoning persistence is non-negotiable for any AI surface — including ones that don't seem important now.
+### Reasoning Persistence (Wave 14 discipline, Phase 1 shipped)
+Every AI decision (brief interpretation, ring hypothesis, conviction score, analog match, sampling decision) writes a structured record via `lib/data/reasoning-log.ts`. Schema is what you'd want for training data later. This is what makes the pattern library compound: campaigns aren't just transactions, they're labeled examples of "what the AI thought, what the human confirmed, what actually happened." Reasoning persistence is non-negotiable for any AI surface — including ones that don't seem important now.
 
 ---
 
 ## 10. Launch Plan
 
-### Current State (April 2026)
+### Current State (April 30, 2026)
 - Full flow built through paid IO + delivery + payouts (Waves 1-13 shipped)
+- Discovery agent foundation in place (Wave 14 Phase 1 shipped, dormant — Phase 2 wires it up)
 - Pricing tier architecture in place; PAYG → Operator conversion mechanic working
-- 157+ tests passing
-- Pending: real user validation (sales agent friend, brand friends)
+- 318 tests passing, migrations 001-019 applied
+- Pending: Wave 14 Phase 2 (discovery agent UX), real user validation (sales agent friend, brand friends)
 
 ### The Wedge
 **"Build and execute your ad campaigns in seconds."** Monaco-style full-thesis launch.
 
-Brand enters URL, budget, audience → AI returns scored discovery list → brand picks → platform builds media plan → brand sends outreach → show accepts → IO auto-generated → DocuSign signing → card charged per delivery → (future) Podscribe verifies, invoice auto-generates.
+Brand enters URL, budget, audience → AI proposes ring interpretation → brand confirms → AI returns conviction-scored test portfolio + scale tier → brand picks → platform builds media plan → brand sends outreach → show accepts → IO auto-generated → DocuSign signing → card charged per delivery → (future) Podscribe verifies, invoice auto-generates.
 
 ### Validation Strategy
 - **Not** synthetic end-to-end testing — unit tests cover the plumbing
@@ -517,13 +557,14 @@ Brand enters URL, budget, audience → AI returns scored discovery list → bran
 - Chris on the front lines with early users
 
 ### Pre-launch backlog (must finish before GTM)
-See `PRODUCT_BACKLOG.md`. Categorized as Operational Unblock, Polish, and Foundational Architecture.
+See `PRODUCT_BACKLOG.md`. Categorized as Operational Unblock, Polish, Wave 14 Phase 2 (Discovery Agent UX), and Foundational Architecture. Wave 14 Phase 2 is the largest pre-launch item — the discovery experience that makes Taylslate's wedge actually competitive at launch.
 
 ### What Comes Later (post-launch, customer-driven)
-- Wave 14: Discovery Agent Foundation (next major wave)
-- Wave 15+: Agent/rep accounts, multi-show portfolio management
+- Wave 15+: Agent/rep accounts, multi-show portfolio management, scale mode UX
 - Podscribe integration for automated verification
 - Full MCP server / Claude Code skills
+- Show-notes value bundle (UTM links, copy-paste blurbs, click-through tracking — pinned for month 3-6 revisit)
+- Operator pricing revisit (possibly underpriced — pinned for month 3-6 revisit)
 - Cross-channel expansion (Meta, TikTok, Google ad planning)
 - Data licensing as future revenue stream as transaction volume grows
 

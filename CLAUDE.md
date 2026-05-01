@@ -1,6 +1,6 @@
 # CLAUDE.md — Taylslate Project Context
 
-*Last updated: April 30, 2026 — Wave 13 shipped. Wave 14 (Discovery Agent Foundation) is next.*
+*Last updated: April 30, 2026 — Wave 13 shipped, Wave 14 Phase 1 shipped. Wave 14 Phase 2 (Discovery Agent UX) is next, pre-launch.*
 
 **For deep strategic context, the discovery agent thesis, competitive research, and domain knowledge, see `TAYLSLATE_CONTEXT.md`.**
 
@@ -25,7 +25,7 @@ The most valuable data in podcast advertising — real CPM rates, verified downl
 **Three things force data through the platform:**
 1. **Automated verification** (planned Podscribe integration + RSS/transcript scanning) confirms ads ran and downloads hit guarantees
 2. **Payment facilitation** (shipped Wave 13) captures what was actually paid, when, by whom
-3. **Discovery reasoning library** (Wave 14) captures what was tried, what was thought, what worked
+3. **Discovery reasoning library** (Wave 14 Phase 1 shipped) captures what was tried, what was thought, what worked
 
 **Monaco.com analogy:** Monaco replaced 5-8 fragmented sales tools with one AI-native system of record where intelligence compounds with usage. Taylslate does the same for creator sponsorship transactions.
 
@@ -64,7 +64,7 @@ Waves 1-3 laid the foundation (Supabase migration from seed data, deal transacti
 
 **Total: 318 tests passing. Migrations 001-019 applied.**
 
-**Next: Wave 14 Phase 2 — Discovery Agent UX (deferred, customer-driven trigger).** Wires Phase 1 dormant infrastructure into the brand-facing UI. See backlog and "Wave 14 Scope" section below.
+**Next: Wave 14 Phase 2 — Discovery Agent UX (pre-launch must-do).** Wires Phase 1 dormant infrastructure into the brand-facing UI. See backlog and "Wave 14 Scope" section below.
 
 ## Wave 12 — DocuSign Integration (Reference)
 
@@ -217,39 +217,42 @@ STRIPE_AGENCY_SEAT_PRICE_ID=price_...   # $500/seat add-on
   - Supabase project Site URL + auth Redirect URLs → update from `taylslate.vercel.app` to `taylslate.com`
   - Vercel env var `NEXT_PUBLIC_SITE_URL` → set to `https://taylslate.com` for production
 
-## Wave 14 — Discovery Agent (Phase 1 shipped, Phase 2 deferred)
+## Wave 14 — Discovery Agent (Phase 1 shipped, Phase 2 next pre-launch)
 
 Discovery is the act of locating, for a given product, the universe of shows where it will convert profitably — and producing a sampling plan against that universe given budget. Not a database query. Not a category filter with extra steps. An interpretive reasoning task. See `TAYLSLATE_CONTEXT.md` Section 5 for full thesis.
 
-Wave 14 scope is split into **foundation work** (build now, low-risk, high-leverage, accumulates training data even before agent UX exists) and **agent UX work** (build when first real campaign exposes the gap). Foundation work is part of the pre-launch backlog. Agent UX is post-launch customer-driven.
+Wave 14 was originally scoped as foundation work (pre-launch) + agent UX work (post-launch customer-driven). The Sauna Box walkthrough confirmed that current flat fit-score discovery isn't strong enough to launch on, so **Phase 2 (Agent UX) is now pre-launch must-do, not deferred.**
 
-### Wave 14 Foundation (pre-launch)
+### Wave 14 Phase 1 — Discovery Agent Foundation (shipped April 30, 2026)
 
-**Status: shipped April 30, 2026.** Migration 019 applied. Pattern library tables, reasoning persistence wrapper, scoring weight tunability all live in dormant state. Phase 2 wires them into UI.
+**Status: shipped.** Migration 019 applied. All helpers live in dormant state — Phase 2 wires them into the discovery flow.
 
-Build now to make the data flywheel start spinning.
+What shipped:
 
-1. **Pattern library schema** — `campaign_patterns`, `analog_matches`, `ring_hypotheses`, `conviction_scores` tables. Designed for future ML, populated manually now from Chris's media-buying intuition (~100-200 brand/show pairs from memory). See migration spec when scoped.
+1. **Pattern library schema** — `campaign_patterns`, `analog_matches`, `ring_hypotheses`, `conviction_scores`, `founder_annotations` tables. Idempotent migration. Plus `show_profiles.brand_history` JSONB and `shows.audience_purchase_power` columns.
 
-2. **Reasoning persistence in event_log** — Every AI decision (interpretation, ring hypothesis, conviction score, analog match, sampling decision) writes structured reasoning. Schema must match what you'd want as training data later. New event types: `discovery.brief_interpreted`, `discovery.ring_hypothesized`, `discovery.conviction_scored`, `discovery.analog_matched`. Existing `event_log` table is the home; no new table needed.
+2. **Reasoning persistence wrapper** — `lib/data/reasoning-log.ts` with 5 record helpers (`recordCampaignPattern`, `recordRingHypothesis`, `recordConvictionScore`, `recordAnalogMatch`, `recordFounderAnnotation`) + 1 reader (`getCampaignReasoning`). Fail-soft contract matching `event-log.ts` — never throws, never blocks main flow.
 
-3. **Scoring weight tunability refactor** — `lib/scoring/weights.ts` accepts per-request overrides. Default weights stay (40/30/20/10). Per-request overrides enable A/B testing, ring-aware scoring, future tuning. Effort: 2-3 days. Already on backlog as foundational architecture.
+3. **Scoring weight tunability** — `lib/scoring/weights.ts` exports `getEffectiveWeights()` with per-request overrides plus AOV-aware tilt. New optional `topicalRelevance` and `purchasePower` dimensions default to 0 for backwards compatibility. When `aovBucket='high'`, purchase-power weight raises to 0.20 and reach drops to 0.05.
 
-4. **Multi-medium creator inventory abstraction** — `shows.platform` already has `'podcast' | 'youtube'` enum. Add `surfaces` JSONB to capture simulcast (one show, podcast + YouTube). Add `medium_priors` JSONB for medium-specific scoring (CPM range, engagement weight, frequency norms).
+4. **TypeScript types** — `CampaignPatternRow`, `RingHypothesisRow`, `ConvictionScoreRow`, `AnalogMatchRow`, `FounderAnnotationRow`, `ShowBrandHistoryEntry`, plus `AovBucket`, `RingHypothesisKind`, `ConvictionBand`, `ConvictionTier` enums.
 
-### Wave 14 Agent UX (post-launch, customer-driven)
+### Wave 14 Phase 2 — Discovery Agent UX (pre-launch, next)
 
-Build when discovery quality limits a real customer's outcomes. Until then, the foundation accumulates data and the existing scored discovery list serves the wedge.
+Wires Phase 1 dormant infrastructure into the brand-facing UI. Build before broader GTM.
 
-1. **Brief interpretation agent** — Interactive intake that proposes 1 primary + 2-4 lateral ring hypotheses with confidence, runs structured refinement turns. Replaces (or augments) the current form-only brief flow.
+Sub-phases (each is its own Claude Code session):
 
-2. **Conviction scoring UI** — Replace fit score with conviction score + reasoning surface. Show-level and portfolio-level. "Conviction: high. Host personally uses cold plunge..." pattern.
+1. **2A — Brief intake redesign + interpretation loop (~3 days).** Reshape current 9-step form into free-text-led intake (product / customer / campaign sections). AI proposes 1 primary read + 2-4 lateral candidate ring hypotheses with confidence. Brand confirms or refines interpretation. Wires `recordCampaignPattern()` and `recordRingHypothesis()`.
 
-3. **Lateral ring surfacing** — UI exposes the 2-4 candidate rings the AI generated, lets brand confirm/reject. Refinement loop visible in the chat or sidebar.
+2. **2B — Three-dimensional conviction scoring + reasoning surface (~4 days).** Replace flat fit score with three sub-scores (audience fit, topical relevance, purchase power) plus composite. Conviction band (high / medium / low / speculative) surfaced in UI. Reasoning text per show. AOV-aware weight tilt active. Wires `recordConvictionScore()`.
 
-4. **Confidence-gated portfolio shape** — High conviction → tighter portfolio. Low conviction → wider portfolio + recommended test-and-learn framing.
+3. **2C — Test portfolio + scale tier dual output (~3 days).** Discovery returns two distinct lists from one analysis. Test portfolio with 3-spot floor as default budget filter. Scale tier surfaces high-conviction shows that exceed test budget with "deferred — fits future budget" framing.
 
-5. **Discovery agent as MCP-ready primitives** — Each step (interpret, refine, locate, sample, propose) is a discrete addressable function. UI consumes the same primitives an external agent would. Costs ~10-15% extra build time, saves 10x rebuild later.
+4. **2D — Founder annotations + show brand history + promo code capture (~2 days).** Founder annotation UI for show-level reasoning. Show onboarding addition: "brand history" field. Promo code field at IO generation time. Auto-generated UTM-tagged tracking link per deal. Show notes blurb generation helper.
+
+**Effort:** ~2 weeks total split across 4 Claude Code sessions
+**Pre-req:** Pattern library seeded with ~20-50 analog campaigns from Chris's media-buying memory (can happen async during Phase 2 build)
 
 ## Architecture Philosophy
 
@@ -265,7 +268,7 @@ Build when discovery quality limits a real customer's outcomes. Until then, the 
 
 **Integration philosophy:** Don't build bespoke integrations to every platform. Build a clean API that agents can bridge. Exceptions worth building directly: Podscribe (verification data connected to IO terms is core value prop), DocuSign (e-signature compliance is a regulatory product), Stripe Connect (payment compliance is a regulatory product).
 
-**Reasoning persistence is non-negotiable for any AI surface.** Every AI decision writes a structured record. Lost training data is expensive. See Wave 14 Foundation #2.
+**Reasoning persistence is non-negotiable for any AI surface.** Every AI decision writes a structured record via `lib/data/reasoning-log.ts` (Wave 14 Phase 1) or `lib/data/event-log.ts` (Wave 13). Lost training data is expensive.
 
 ## Product Principle — Agentic Design
 
@@ -276,11 +279,13 @@ Every form field must pass the test: **"Is this asking for a decision, or for me
 
 A product that asks the user to type what it can derive is badly designed. Forms ask; conversations suggest and refine. Applies everywhere: brand/show onboarding, outreach drafting, IO terms, Stripe setup, discovery brief.
 
+**Maximize AI autonomy. Reserve human input for moments where the human contributes information the AI cannot infer:** privileged customer knowledge (who their actual customer is), business decisions (budget, goals, exclusions, final commitments), confirmation of AI interpretation. The interpretation checkpoint in discovery (Wave 14 Phase 2) is the canonical example: AI proposes 1 primary read + 2-4 lateral ring hypotheses, brand confirms or refines, AI then runs autonomously through ring location, conviction scoring, sampling, and portfolio construction.
+
 ## Tech Stack
 
 - **Framework:** Next.js (App Router) with TypeScript, Turbopack
 - **Styling:** Tailwind CSS 4 with custom CSS variables (see `app/globals.css`)
-- **Database:** Supabase (Postgres + Auth), migrations through 018 applied
+- **Database:** Supabase (Postgres + Auth), migrations through 019 applied
 - **Deployment:** Vercel, custom domain `taylslate.com` cut over April 29
 - **AI:** Claude API (campaign planning, outreach drafting, pitch body, brief analysis, discovery reasoning)
 - **Payments:** Stripe Connect (Express accounts, SetupIntent for card-on-file, pay-as-delivers per episode)
@@ -294,9 +299,9 @@ A product that asks the user to type what it can derive is badly designed. Forms
 
 Complete type system in `lib/data/types.ts`. Key entities:
 
-- **Show** — Podcast or long-form YouTube channel. `platform: 'podcast' | 'youtube'`. Audience data, rate cards, demographics, sponsor history. Ephemeral during discovery; persisted to `shows` table when a deal is created. Simulcast (same show on both surfaces) modeled with linked records (Wave 14 work to formalize).
+- **Show** — Podcast or long-form YouTube channel. `platform: 'podcast' | 'youtube'`. Audience data, rate cards, demographics, sponsor history, `audience_purchase_power` (Wave 14 Phase 1). Ephemeral during discovery; persisted to `shows` table when a deal is created. Simulcast (same show on both surfaces) modeled with linked records (Wave 14 Phase 2 work to formalize).
 - **BrandProfile** — Persisted brand identity (name, URL, demographics, categories, goals, exclusions). Reused across campaigns.
-- **ShowProfile** — Persisted show identity (rate card, ad formats, ad_copy_email, billing_email). Created via Wave 9 onboarding.
+- **ShowProfile** — Persisted show identity (rate card, ad formats, ad_copy_email, billing_email, `brand_history` JSONB from Wave 14 Phase 1). Created via Wave 9 onboarding.
 - **Campaign** — Campaign brief (budget, overrides on brand profile). Discovery results tied to a campaign.
 - **Outreach** — Brand's pitch to a show with proposed terms. Signed JWT token in URL. Response status: pending → accepted / countered / declined.
 - **Deal** — Created on outreach acceptance (Wave 12). Lifecycle: planning → io_sent → brand_signed → show_signed → delivering → completed.
@@ -306,6 +311,7 @@ Complete type system in `lib/data/types.ts`. Key entities:
 - **Payout** — Wave 13. Show payout via Stripe Connect transfer. Tracks early payout fee.
 - **DomainEvent** — Append-only audit log. Fat payloads, schema_version field, service-role only. Powers state-transition tracking.
 - **EventLog** — Fine-grained operation log (Wave 13). Every campaign generation, discovery run, IO generation, outreach sent, API call. Foundation for API metering and reasoning persistence.
+- **CampaignPattern, RingHypothesis, ConvictionScore, AnalogMatch, FounderAnnotation** — Wave 14 Phase 1. Pattern library tables capturing AI reasoning at every discovery decision point.
 
 ## Supabase Conventions (REQUIRED)
 
@@ -350,10 +356,11 @@ components/
   io/                               # IO generator, preview
 lib/
   data/
-    types.ts                        # All TypeScript types
+    types.ts                        # All TypeScript types (incl. Wave 14 Phase 1 row types)
     queries.ts                      # Supabase query functions
     events.ts                       # Domain event logging
-    event-log.ts                    # Fine-grained operation logging
+    event-log.ts                    # Fine-grained operation logging (Wave 13)
+    reasoning-log.ts                # Discovery reasoning persistence (Wave 14 Phase 1)
   docusign/                         # DocuSign integration
   stripe/                           # Stripe Connect + payments
   payouts/                          # Show payout transfers
@@ -364,14 +371,14 @@ lib/
   enrichment/                       # Podscan + YouTube enrichment
   discovery/                        # Multi-platform discovery orchestrator
   scoring/
-    weights.ts                      # Scoring weights (refactor to per-request override pending)
+    weights.ts                      # Per-request overrides + AOV tilt (Wave 14 Phase 1)
     dimensions/                     # Per-dimension scoring functions
   alerts/                           # Conversion (GMV) alerts
   analytics/                        # GMV calculation
   supabase/                         # Client configs (client/server/admin)
   validation/                       # IO validation, input schemas
   nav/                              # Role-aware nav items
-supabase/migrations/                # SQL migrations 001-018 applied
+supabase/migrations/                # SQL migrations 001-019 applied
 docs/
   podscan-api.md                    # Podscan API reference
 ```
@@ -388,6 +395,7 @@ docs/
 - **IO standard terms:** Competitor exclusivity (90 days), ROFR (30 days), make-good clause (>10% underdelivery), 45-day download tracking, FTC compliance, cancellation (14 days notice), morality/take-down, Net 30 EOM payment.
 - **Agency markup:** Traditional agencies mark up CPM (e.g., show's $25 CPM → agency charges brand $29.41, ~15%). Show never sees full rate. Taylslate's per-tier transaction fee is transparent.
 - **Payment flow pain:** Shows manually invoice agencies monthly. Net 30 EOM officially, routinely Net 60-75+. A January ad may not pay until April. Taylslate's pay-as-delivers model fixes this.
+- **3-spot test floor:** 99% of podcast test campaigns are 3-spot tests. Discovery defaults to filtering shows where 3 spots × per-spot price exceeds ~25% of test budget.
 - **Ad copy philosophy:** 3-5 bullet point talking points preferred over full scripts. Host authenticity is the value. No pre-approval review loop — verification is post-publication (Podscribe).
 - **VeritoneOne IO template** in project files is the format standard.
 
@@ -403,9 +411,11 @@ Rings are determined by the *product*, not the budget. Budget is a sampling lens
 
 The agent loop: AI proposes 1 primary read + 2-4 lateral candidate rings with confidence → brand confirms/refines interpretation (not show list) → rings collapse to confirmed shape → portfolio sampled with budget constraints applied.
 
-Conviction score replaces fit score. Reasoning surfaces alongside the number. Three levels: brief interpretation conviction, ring conviction, show conviction.
+Conviction score replaces fit score. Three dimensions: audience fit, topical relevance, purchase power. Reasoning surfaces alongside the number. Confidence bands: high / medium / low / speculative.
 
 Pattern library is the moat. Every campaign writes a structured record (product attributes, ring hypotheses, conviction scores, analog matches, outcomes) to the database. Foundation models reason over the library; the library is proprietary.
+
+Test portfolio + scale tier dual output: discovery returns two lists from one analysis. Test portfolio fits within budget at 3-spot floor. Scale tier surfaces high-conviction shows that exceed test budget with "deferred — fits future budget" framing.
 
 See `TAYLSLATE_CONTEXT.md` Section 5 for full thesis.
 
@@ -428,6 +438,7 @@ Three-tier model. Customer chooses entry; conversion to higher tiers is sales-le
 - Unlimited concurrent campaigns, portfolio dashboard, cross-campaign analytics, CSV exports
 - Priority support, API access
 - All Pay-as-you-go features
+- *Possibly underpriced — pinned for revisit at month 3-6 with first 10-20 customers*
 
 **Agency (white-label):**
 - $5,000/month + 4% transaction
@@ -459,6 +470,41 @@ PAYG → Operator conversion rate is the single most important metric. Wave 13 s
 2. **SaaS (Operator $499+6%, Agency $5,000+4%)** — Month 3+ recurring engine, "human running campaigns consistently"
 3. **API/MCP (per-call + per-deal pricing)** — Month 9-12+, "agents running campaigns programmatically"
 
+## Conversion Attribution Philosophy (April 30, 2026)
+
+Taylslate is a signal aggregator, not a measurement platform. Brands rarely share full conversion data; product needs to be honest about that.
+
+**Day 1 (Wave 14 Phase 2):**
+- Capture promo code at IO time (brand-provided "SAUNABOX25" stored on deal)
+- Auto-generated UTM-tagged tracking link per deal for show-notes inclusion
+- Brand-reported attribution where they share it (optional)
+- Apply 2x leak rule when displaying ("rule of thumb agents work with — take conversions, double them to account for leaks")
+
+**Long-term:**
+- Podscribe pixel integration for direct attribution
+- Renewal as conversion proxy (brand re-runs on a show = it converted)
+- Lift studies for $200K+ campaigns (Spotify, Magellan, Podscribe Incrementality)
+
+Honest framing for brands: "We give you the best conviction-based discovery and capture every conversion signal we can. Hard attribution is a known industry challenge — here's what we measure and how we use it."
+
+## Test vs Scale (April 30, 2026)
+
+Two distinct UX modes the product needs to handle:
+
+**Test mode** (current + Wave 14 Phase 2):
+- Question being answered: "Does podcast advertising work for us?"
+- Single campaign, $20-30K, ~6 shows × 3 spots each
+- Diagnostic: which ring converts, which audience, which read style
+- PAYG pricing aligns
+
+**Scale mode** (Wave 15+, post-test):
+- Question being answered: "This works, how do we run it ongoing?"
+- Recurring monthly spend, often annual commitments
+- Treated like Meta/Google paid social — ad operations, not single-campaign discovery
+- Operator pricing aligns (sales-led upgrade conversation triggers here)
+
+Discovery agent doesn't disappear at scale — it shifts framing from "diagnostic test" to "ongoing optimization." Brand still needs ring/show recommendations, plus monthly cadence, annual commitments, portfolio rebalancing.
+
 ## Design System
 
 All colors use CSS custom properties from `globals.css`:
@@ -485,7 +531,7 @@ Dashboard uses light theme. Landing and public pitch pages use dark/brand-forwar
 - Auto-commit after significant changes with no exceptions
 - Migrations: follow idempotent pattern above, always
 - Domain events on every state transition (entity.action form: `deal.created`, `outreach.accepted`, `envelope.signed`)
-- Reasoning persistence: every AI decision writes a structured record to `event_log`
+- Reasoning persistence: every AI decision writes a structured record to `event_log` (Wave 13) or pattern library tables via `reasoning-log.ts` (Wave 14 Phase 1)
 - Cleanup Claude Code worktrees after every wave: `git worktree remove --force .claude/worktrees/<name>` then `git worktree prune`
 
 ## Competitive Context (Quick Reference)
@@ -515,11 +561,14 @@ See `TAYLSLATE_CONTEXT.md` for full competitive analysis.
 
 Pre-launch backlog and post-launch customer-driven items live in `PRODUCT_BACKLOG.md`. Waves remain the execution unit.
 
-**Wave 14 — Discovery Agent Foundation (next)**
-Foundation work (pattern library schema, reasoning persistence, scoring tunability, multi-medium abstraction) is part of pre-launch backlog. Agent UX work (interpretation loop, conviction UI, lateral ring surfacing) is post-launch customer-driven.
+**Wave 14 Phase 2 — Discovery Agent UX (next, pre-launch)**
+Wires Phase 1 dormant infrastructure into brand-facing UI. Brief intake redesign + interpretation loop, three-dimensional conviction scoring, test portfolio + scale tier output, founder annotations + show brand history + promo code capture. ~2 weeks split across 4 sub-phases.
 
 **Wave 15+ — Agent/rep accounts**
 Multi-show portfolio management UX. High-leverage GTM. Data model exists, UX doesn't.
+
+**Wave 15+ — Scale mode UX**
+For brands post-test running ongoing campaigns. Monthly cadence, annual commitments, recurring spend allocation. Distinct from test mode.
 
 **Future — Podscribe verification integration**
 Replace internal admin "mark delivered" stub with Podscribe webhook integration.
@@ -529,3 +578,6 @@ Public MCP server for agent-mediated commerce. Per-call + per-deal pricing.
 
 **Future — Internal dev tooling**
 "Log me in as test show 1" admin button to replace Gmail +tag aliases.
+
+**Pinned for month 3-6 revisit**
+Show-notes value bundle (auto UTM links, copy-paste blurb for shows, click-through tracking, "shows that include link" as conviction signal). Operator pricing revisit (possibly underpriced if scale customers run $50-200K/mo).
