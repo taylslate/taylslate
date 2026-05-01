@@ -2,11 +2,13 @@
 
 *Last updated: April 30, 2026*
 
-This document captures everything that's been identified as worth building. Two parts:
+This document captures everything that's been identified as worth building. Three parts:
 
-1. **Pre-launch backlog** — things that must finish before GTM. Operational unblock, polish, and foundational architecture. These are the "must do before we can credibly take real money" items.
+1. **Shipped** — items that were on the backlog and are now live in production.
 
-2. **Post-launch queue** — things that respond to real customer signal once the product is live. Customer-driven and future/aspirational.
+2. **Pre-launch backlog** — things that must finish before GTM. Operational unblock, polish, foundational architecture, and Wave 14 Phase 2 (discovery agent UX). These are the "must do before we can credibly take real money" items.
+
+3. **Post-launch queue** — things that respond to real customer signal once the product is live. Customer-driven and future/aspirational.
 
 Wave model continues as the execution unit. Items get pulled from the backlog into numbered waves. Within the backlog, customer signal sets priority — but pre-launch items have a hard deadline (GTM) and can't wait for signal.
 
@@ -32,7 +34,7 @@ All Phase 1 helpers ship dormant. Phase 2 wires them into the discovery UI at ea
 - **Operational unblock** — small fixes blocking GTM credibility or daily founder workflow. Pre-launch.
 - **Polish** — visible bugs and UX rough edges customers will hit. Pre-launch.
 - **Foundational architecture** — small refactors that unlock multiple future features. Pre-launch where high-leverage.
-- **Wave 14 foundation** — discovery agent groundwork. Pre-launch (data flywheel needs to start spinning before customers arrive).
+- **Wave 14 Phase 2 — Discovery Agent UX** — pre-launch must-do. Wires Phase 1 dormant infrastructure into the brand-facing experience.
 - **Customer-driven** — features that should only be built once a real customer asks. Post-launch.
 - **Future / aspirational** — directional items, build only when transaction volume justifies. Post-launch.
 
@@ -97,7 +99,7 @@ Things that must finish before GTM. The launch bar.
 - Replace single jumbled paragraph with structured fields: Brand, Product, Audience, Target segments, Categories, Goals, Exclusions
 - Render structured brief in outreach templates and pitch pages
 - **Effort:** 1-2 days
-- **Note:** This is the *display* fix. The Wave 14 brief interpretation agent will reshape *intake* later — but this polish item should ship first to unblock GTM.
+- **Note:** This is the *display* fix. The Wave 14 Phase 2 brief interpretation agent will reshape *intake* — but this polish item should ship first to unblock GTM if Phase 2 timing slips.
 
 ### Media plan editable CPM indicator
 - CPM is currently editable downstream but not visibly editable on media plan screen
@@ -124,27 +126,45 @@ Things that must finish before GTM. The launch bar.
 
 ## Wave 14 Phase 2 — Discovery Agent UX (pre-launch)
 
-- Wires Phase 1 dormant infrastructure into brand-facing UI
-- Brief interpretation loop with 1 primary + 2-4 lateral ring hypotheses
-- Three-dimensional conviction scoring (audience fit / topical relevance / purchase power) surfaced per show with reasoning text
-- Test portfolio + scale tier dual output with 3-spot floor as default budget filter
-- Founder annotation UI for capturing show-level reasoning
-- Lateral ring confirmation flow (brand confirms/refines AI interpretation, not show list)
-- Show onboarding addition: "brand history" field for self-reported top advertisers + annual deals
-- **Effort:** 2-3 weeks (foundation work makes this a 1-2 week build)
-- **Trigger:** Pre-launch must-do. Current flat fit-score discovery isn't strong enough to launch on — Sauna Box walkthrough confirmed. Phase 2 is the discovery experience that makes Taylslate's wedge actually competitive at launch. Build before broader GTM.
+Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-score discovery isn't strong enough to launch on — Sauna Box walkthrough confirmed. Phase 2 is the discovery experience that makes Taylslate's wedge actually competitive at launch. Build before broader GTM.
+
+**Sub-phases (each is its own Claude Code session):**
+
+### 2A — Brief intake redesign + interpretation loop (~3 days)
+- Reshape current 9-step form into free-text-led intake (product / customer / campaign sections)
+- AI proposes 1 primary read + 2-4 lateral candidate ring hypotheses with confidence
+- Brand confirms or refines interpretation (not show list — interpretation of customer)
+- Refinement loop visible in chat or sidebar; final ring shape collapses from confirmed reads
+- Lateral examples that should fall out: "you mentioned mobile use → outdoor/parenting audiences worth exploring?"
+- Wires `recordCampaignPattern()` and `recordRingHypothesis()` from Phase 1's reasoning-log
+
+### 2B — Three-dimensional conviction scoring + reasoning surface (~4 days)
+- Replace flat fit score with three sub-scores (audience fit, topical relevance, purchase power) plus composite
+- Conviction band (high / medium / low / speculative) surfaced in UI
+- Reasoning text per show: "Conviction: high. Host personally uses cold plunge. Audience over-indexes 2.4x on biohacker purchases. Strong analog to Plunge campaign."
+- AOV-aware weight tilt active when product attributes indicate high AOV
+- Wires `recordConvictionScore()` from Phase 1's reasoning-log
+
+### 2C — Test portfolio + scale tier dual output (~3 days)
+- Discovery returns two distinct lists from one analysis
+- Test portfolio: 3-spot floor as default budget filter, fits within campaign budget
+- Scale tier: high-conviction shows that exceed test budget, with "deferred — fits future budget" framing
+- Per-show 3-spot total cost displayed
+- Brand picks from test list; scale tier saved as watch list
+
+### 2D — Founder annotations + show brand history + promo code capture (~2 days)
+- Founder annotation UI: capture "why this show is right" reasoning that metadata can't infer (Wires `recordFounderAnnotation()`)
+- Show onboarding addition: "brand history" field (3-5 top advertisers + annual deals flag) → `show_profiles.brand_history`
+- Promo code field at IO generation time
+- Auto-generated UTM-tagged tracking link per deal
+- Show notes blurb generation helper (copy-paste output for the show)
+
+**Effort:** ~2 weeks total split across 4 Claude Code sessions
+**Pre-req:** Pattern library seeded with ~20-50 analog campaigns from Chris's media-buying memory (can happen async during Phase 2 build)
 
 ---
 
 ## Foundational Architecture
-
-### Scoring weight tunability refactor
-- Refactor `lib/scoring/weights.ts` to accept per-request overrides
-- Default weights stay (audience 40 / engagement 30 / retention 20 / reach 10)
-- Per-request overrides enable A/B testing, ring-aware scoring (Wave 14), "expand my horizons" slider, customer-specific tuning, future ML weights
-- **Effort:** 2-3 days
-- **Unblocks:** Every future discovery feature, including Wave 14 conviction scoring
-- **Pre-launch:** yes — Wave 14 foundation depends on this
 
 ### English language filter
 - Non-English shows currently surface in results without filtering
@@ -157,7 +177,14 @@ Things that must finish before GTM. The launch bar.
 - Document event schema versioning conventions
 - **Effort:** 1 day audit + ongoing as new endpoints ship
 
----
+### Multi-medium creator inventory abstraction
+- `shows.platform` already has `'podcast' | 'youtube'` enum ✓
+- Add `surfaces` JSONB to capture simulcast (one show, podcast + YouTube)
+- Add `medium_priors` JSONB for medium-specific scoring (CPM range, engagement weight, frequency norms)
+- Update discovery orchestrator (`lib/discovery/discover-shows.ts`) to merge simulcast records
+- Update conviction reasoning to be medium-aware
+- **Effort:** 2-3 days
+- **Why:** Long-form YouTube is launch-day medium, not future expansion. Simulcasts are common (most podcasts upload to YouTube). Modeling now avoids re-migration later.
 
 ---
 
@@ -168,23 +195,6 @@ Things that respond to real customer signal once the product is live.
 ## Customer-Driven
 
 These are real product capabilities, but building them before customers ask is speculative. Listed here so they don't get forgotten, not as a promise to build them.
-
-### Wave 14 Agent UX — Brief interpretation loop
-- Replace current form-based brief intake with interactive interpretation agent
-- AI proposes 1 primary read + 2-4 lateral candidate ring hypotheses with confidence
-- Brand confirms or refines interpretation (not show list — interpretation of customer)
-- Refinement loop visible in chat or sidebar; final ring shape collapses from confirmed reads
-- Lateral examples that should fall out for free with this architecture: "you mentioned mobile use → outdoor/parenting audiences worth exploring?"
-- **Effort:** 2-3 weeks (foundation work makes this a 1-2 week build)
-- **Trigger:** First real campaign where current discovery returns thin/wrong results, OR when foundation pattern library has enough seeds to power useful ring hypothesis generation
-
-### Wave 14 Agent UX — Conviction scoring UI
-- Replace fit score with conviction score + reasoning surface
-- Show-level: "Conviction: high. Host personally uses cold plunge. Audience over-indexes 2.4x on biohacker purchases. Shows like this converted in 4 of 5 recovery campaigns."
-- Portfolio-level: "High conviction portfolio: 12 shows, weighted toward 6 anchors. Confidence is high because we have strong analogs."
-- Confidence bands: High / Medium / Low / Speculative
-- **Effort:** 1-2 weeks
-- **Trigger:** Same as brief interpretation — or sooner if we want to A/B test conviction-score-with-reasoning vs current fit-score numerical display
 
 ### Agent / rep account UX
 - Multi-show portfolio management for sales agents (Veritone, Ad Results, indie reps)
@@ -231,7 +241,7 @@ These are real product capabilities, but building them before customers ask is s
 - Discovery slider: Tight fit ← → Broad exploration
 - Drops audience weight, raises engagement, pulls from adjacent Podscan vector categories
 - **Effort:** 1 week
-- **Prerequisite:** Scoring weight tunability refactor (foundational architecture, pre-launch)
+- **Prerequisite:** ~~Scoring weight tunability refactor~~ (shipped Wave 14 Phase 1)
 - **Trigger:** When customers consistently ask for "more options"
 
 ### "Find shows like this one" primitive
@@ -247,6 +257,28 @@ These are real product capabilities, but building them before customers ask is s
 - Build alongside or after Direct show search
 - **Effort:** 3-5 days
 - **Trigger:** When a customer asks for it, OR when a single brand is on their 3rd+ campaign with overlap in show selection
+
+### Scale mode UX (Wave 15+)
+- Distinct from test mode (Phase 2). For brands who've completed a test and converted to ongoing operations.
+- Monthly cadence, annual commitments, recurring spend allocation, weekly portfolio rebalancing
+- Treats podcast spending like Meta/Google paid social — ad operations, not single-campaign discovery
+- Aligns with Operator pricing tier conversion moment
+- **Effort:** 3-4 weeks
+- **Trigger:** First customer post-test wants to commit to ongoing monthly spend
+
+### Show-notes value bundle (pinned for month 3-6 revisit)
+- Auto-generated UTM links per deal (foundation in Phase 2D)
+- Copy-paste blurb for shows ("As mentioned in this episode, get $X off at saunabox.com/code")
+- Click-through tracking where brands enable analytics sharing
+- "Shows that consistently include the link in notes" as conviction signal (read engagement proxy)
+- **Effort:** 1-2 weeks
+- **Trigger:** First 10-20 customers; product feature pinned for month 3-6 revisit
+
+### Operator pricing revisit (pinned for month 3-6)
+- Possibly underpriced at $499 if scale customers run $50-200K/mo
+- Possible Operator/Operator Pro split or raise to $999-1499
+- Grandfather early converts at $499
+- **Trigger:** Decide with first 10-20 customer signal
 
 ### Dashboard role-awareness UX polish
 - ~~Currently `/dashboard` is brand-only~~ — partial fix shipped April 29 (sidebar + dashboard widget now role-aware)
@@ -321,6 +353,17 @@ Build when transaction volume justifies.
 - **Effort:** Multiple months
 - **Trigger:** Year 4+, when podcast platform is dominant and customers want adjacent channels
 
+### DAI and RSS hosting platform integrations
+- Megaphone, Libsyn, Art19, Spotify/Anchor, Acast integration for dynamic insertion campaigns
+- Currently launch is baked-in host-read only
+- **Effort:** Multiple months per integration
+- **Trigger:** Year 2 when hosting platform partnerships are real
+
+### Lift studies for $200K+ campaigns
+- Spotify, Magellan, Podscribe Incrementality integration
+- Household-level visit lift on exposed-vs-unexposed audiences
+- **Trigger:** When $200K+ campaigns are routine
+
 ---
 
 ## Killed (rejected, do not build)
@@ -340,7 +383,7 @@ Build when transaction volume justifies.
 
 ## How to use this document
 
-1. **Pre-launch backlog must finish before GTM.** Pull items from pre-launch into numbered waves. Wave 14 is the next wave — covers Wave 14 Foundation items + likely picks up scoring tunability + multi-medium abstraction. Other pre-launch items can be wave-bundled or run as polish in parallel.
+1. **Pre-launch backlog must finish before GTM.** Pull items from pre-launch into numbered waves. Wave 14 Phase 2 is the next major wave covering discovery agent UX. Other pre-launch items can be wave-bundled or run as polish in parallel.
 
 2. **When a real customer asks for something post-launch:** find it in the post-launch queue. If it's there, move it up the priority queue. If it's not there, add it with the customer name attached.
 
