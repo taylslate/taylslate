@@ -327,6 +327,26 @@ Complete type system in `lib/data/types.ts`. Key entities:
 
 **Rationale:** Chris pastes migrations into Supabase SQL Editor (not CLI). Partial failures break naive re-runs. Every migration must be safely re-runnable.
 
+**Data API grants — REQUIRED on every new table in `public` (Supabase breaking change, effective Oct 30, 2026):**
+
+As of the Supabase Data API change, new tables in the `public` schema are NOT auto-exposed to the Data API (`supabase-js`, PostgREST, GraphQL). Every `CREATE TABLE` in `public` must be followed by explicit `GRANT` statements, or server/client queries fail with a `42501` error. `GRANT` is idempotent — safe to re-run, fits the pattern above.
+
+Standard grant block for every new table:
+
+```sql
+-- Data API grants (REQUIRED — see Supabase Data API breaking change)
+grant select, insert, update, delete on public.<table> to service_role;
+grant select, insert, update, delete on public.<table> to authenticated;
+-- grant select on public.<table> to anon;   -- ONLY for publicly-readable tables (e.g. shows)
+```
+
+Rules:
+- **`service_role` grant is mandatory on every table.** Most sensitive writes go through `lib/supabase/server.ts` / `admin.ts`. Grants are checked *before* RLS — a missing `service_role` grant breaks server-side queries even when RLS would allow them.
+- **`authenticated` grant on every table the app reads/writes as a logged-in user.** RLS still filters rows; the grant is the table-level gate.
+- **`anon` grant is a deliberate decision, not boilerplate.** Default to NOT granting `anon`. Add `grant select ... to anon` only for genuinely public tables (`shows` is publicly readable per Wave 1 RLS design). Never grant `anon` on `deals`, `payments`, `campaign_patterns`, `conviction_scores`, `founder_annotations`, or any other sensitive table.
+- Grants come *before* the `enable row level security` / policy block in the migration, for readability. Order doesn't affect correctness.
+- Existing tables (migrations 001–019) are grandfathered and keep their current grants — no retroactive change needed.
+
 ## Project Structure
 
 ```
@@ -529,7 +549,7 @@ Dashboard uses light theme. Landing and public pitch pages use dark/brand-forwar
 - Schemas and forms must match real-world industry documents
 - Commit messages: imperative mood, under 70 chars for summary line
 - Auto-commit after significant changes with no exceptions
-- Migrations: follow idempotent pattern above, always
+- Migrations: follow idempotent pattern above, always — and every new `public` table needs the Data API grant block (see "Supabase Conventions")
 - Domain events on every state transition (entity.action form: `deal.created`, `outreach.accepted`, `envelope.signed`)
 - Reasoning persistence: every AI decision writes a structured record to `event_log` (Wave 13) or pattern library tables via `reasoning-log.ts` (Wave 14 Phase 1)
 - Cleanup Claude Code worktrees after every wave: `git worktree remove --force .claude/worktrees/<name>` then `git worktree prune`
