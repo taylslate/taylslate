@@ -141,7 +141,6 @@ describe("recordRingHypothesis", () => {
       reasoning: "host uses cold plunge organically",
       confidence: "high",
       confidenceScore: 82,
-      brandConfirmed: null,
     });
     expect(id).toBe("row-1");
     expect(directInsert).toHaveBeenCalledWith(
@@ -152,8 +151,21 @@ describe("recordRingHypothesis", () => {
         reasoning: "host uses cold plunge organically",
         confidence: "high",
         confidence_score: 82,
-        brand_confirmed: null,
+        brand_decision: "pending",
       })
+    );
+  });
+
+  it("forwards an explicit brandDecision to the insert", async () => {
+    await recordRingHypothesis({
+      campaignPatternId: "p1",
+      kind: "lateral",
+      label: "overlanders",
+      confidence: "low",
+      brandDecision: "added_by_brand",
+    });
+    expect(directInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ brand_decision: "added_by_brand" })
     );
   });
 

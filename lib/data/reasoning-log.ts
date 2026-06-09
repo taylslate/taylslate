@@ -12,6 +12,7 @@
 // Phase 1 ships these helpers; Phase 2 wires them into the discovery agent.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import type { BrandDecision } from "@/lib/data/types";
 
 // ============================================================
 // campaign_patterns
@@ -66,12 +67,17 @@ export async function recordCampaignPattern(
 
 export interface RecordRingHypothesisInput {
   campaignPatternId: string;
+  // 'confirmed' as a kind is legacy from migration 019. New code uses
+  // 'primary' or 'lateral'; brand state lives on brandDecision.
   kind: "primary" | "lateral" | "confirmed";
   label: string;
   reasoning?: string | null;
   confidence: "high" | "medium" | "low" | "speculative";
   confidenceScore?: number | null;
-  brandConfirmed?: boolean | null;
+  // Defaults to 'pending' when omitted — matches the column default in
+  // migration 021. Phase 2A interpretation writes pending; the confirm
+  // step transitions rings to confirmed/rejected/refined/added_by_brand.
+  brandDecision?: BrandDecision;
 }
 
 export async function recordRingHypothesis(
@@ -87,7 +93,7 @@ export async function recordRingHypothesis(
         reasoning: input.reasoning ?? null,
         confidence: input.confidence,
         confidence_score: input.confidenceScore ?? null,
-        brand_confirmed: input.brandConfirmed ?? null,
+        brand_decision: input.brandDecision ?? "pending",
       })
       .select("id")
       .single<{ id: string }>();

@@ -800,6 +800,15 @@ export type ConvictionBand = "high" | "medium" | "low" | "speculative";
 
 export type ConvictionTier = "test" | "scale" | "dropped";
 
+// Wave 14 Phase 2A. Five-state brand decision on a proposed ring hypothesis.
+// Replaces the boolean brand_confirmed flag; see migration 021.
+export type BrandDecision =
+  | "pending"
+  | "confirmed"
+  | "rejected"
+  | "refined"
+  | "added_by_brand";
+
 export interface CampaignPatternRow {
   id: string;
   campaign_id: string | null;
@@ -820,7 +829,10 @@ export interface RingHypothesisRow {
   reasoning: string | null;
   confidence: ConvictionBand;
   confidence_score: number | null;
+  // DEPRECATED (Wave 14 Phase 2A): use brand_decision. Preserved for
+  // backwards compatibility; not written by new code.
   brand_confirmed: boolean | null;
+  brand_decision: BrandDecision;
 }
 
 export interface ConvictionScoreRow {
