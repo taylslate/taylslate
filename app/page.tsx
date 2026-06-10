@@ -30,20 +30,19 @@ export default function Home() {
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/[0.08] mb-8">
             <div className="w-1.5 h-1.5 rounded-full bg-[var(--brand-teal)] animate-pulse" />
             <span className="text-xs text-white/60 font-medium tracking-wide uppercase">
-              AI-Powered Media Planning
+              Creator Sponsorship OS
             </span>
           </div>
 
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-[1.05] tracking-tight mb-6">
-            Plan podcast campaigns in{" "}
+            Run creator sponsorships{" "}
             <span className="bg-gradient-to-r from-[var(--brand-blue-light)] to-[var(--brand-teal-light)] bg-clip-text text-transparent">
-              minutes
+              without an agency
             </span>
-            , not weeks
           </h1>
 
           <p className="text-lg sm:text-xl text-white/50 leading-relaxed max-w-xl mb-10">
-            Taylslate finds the right shows for your brand, optimizes your budget, and drafts your outreach — so you can launch campaigns faster than any agency.
+            Taylslate turns your brand, budget, and customer profile into a conviction-scored podcast and YouTube sponsorship campaign, then handles outreach, IOs, signing, delivery tracking, and payments.
           </p>
 
           <div className="flex flex-wrap items-center gap-4">
@@ -59,12 +58,12 @@ export default function Home() {
 
         <div className="grid grid-cols-3 gap-8 max-w-2xl mt-24 pt-12 border-t border-white/[0.06]">
           <div>
-            <div className="text-3xl font-bold text-white mb-1">50K+</div>
-            <div className="text-sm text-white/40">Podcasts indexed</div>
+            <div className="text-3xl font-bold text-white mb-1">2</div>
+            <div className="text-sm text-white/40">Creator channels</div>
           </div>
           <div>
-            <div className="text-3xl font-bold text-white mb-1">2 min</div>
-            <div className="text-sm text-white/40">Average plan time</div>
+            <div className="text-3xl font-bold text-white mb-1">1</div>
+            <div className="text-sm text-white/40">Deal workflow</div>
           </div>
           <div>
             <div className="text-3xl font-bold text-white mb-1">10x</div>
@@ -79,8 +78,8 @@ export default function Home() {
                 <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
               </svg>
             </div>
-            <h3 className="font-semibold mb-2">Smart Discovery</h3>
-            <p className="text-sm text-white/40 leading-relaxed">AI scores thousands of shows against your brand, audience, and budget to find the perfect fit.</p>
+            <h3 className="font-semibold mb-2">Interpret the brief</h3>
+            <p className="text-sm text-white/40 leading-relaxed">AI maps the audience rings most likely to convert before it recommends a single show.</p>
           </div>
           <div className="group p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.1] transition-all">
             <div className="w-10 h-10 rounded-xl bg-[var(--brand-teal)]/10 flex items-center justify-center mb-4">
@@ -88,8 +87,8 @@ export default function Home() {
                 <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
               </svg>
             </div>
-            <h3 className="font-semibold mb-2">Budget Optimizer</h3>
-            <p className="text-sm text-white/40 leading-relaxed">Automatically allocate spend across shows using real CPM data and proven media buying rules.</p>
+            <h3 className="font-semibold mb-2">Build the portfolio</h3>
+            <p className="text-sm text-white/40 leading-relaxed">Compare test-ready shows and scale-tier opportunities across podcast and long-form YouTube.</p>
           </div>
           <div className="group p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.1] transition-all">
             <div className="w-10 h-10 rounded-xl bg-[var(--brand-orange)]/10 flex items-center justify-center mb-4">
@@ -97,8 +96,8 @@ export default function Home() {
                 <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Z" /><path d="m22 6-10 7L2 6" />
               </svg>
             </div>
-            <h3 className="font-semibold mb-2">Ready-to-Send Outreach</h3>
-            <p className="text-sm text-white/40 leading-relaxed">AI drafts personalized pitch emails and ad scripts for every show on your plan.</p>
+            <h3 className="font-semibold mb-2">Close the deal</h3>
+            <p className="text-sm text-white/40 leading-relaxed">Outreach, counters, IOs, signing, card-on-file, and creator payouts live in one workflow.</p>
           </div>
         </div>
       </main>

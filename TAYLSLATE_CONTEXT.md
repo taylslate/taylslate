@@ -1,6 +1,6 @@
 # Taylslate — Product & Founder Context
 
-*Last updated: April 30, 2026. Wave 13 shipped. Wave 14 Phase 1 (Discovery Agent Foundation) shipped. Wave 14 Phase 2 (Discovery Agent UX) is next, pre-launch. This document is the primary strategic context reference for Claude when working on Taylslate. For build state, schema, and technical conventions, see `CLAUDE.md`.*
+*Last updated: June 1, 2026. Wave 13 shipped. Wave 14 Phase 1 (Discovery Agent Foundation) shipped. Wave 14 Phase 2 (Discovery Agent UX) is next, pre-launch. SpotsNow competitive scan added. This document is the primary strategic context reference for Claude when working on Taylslate. For build state, schema, and technical conventions, see `CLAUDE.md`.*
 
 ---
 
@@ -20,11 +20,42 @@ Taylslate is currently Chris's sole professional focus.
 
 Taylslate is **Layer 3 infrastructure** for podcast and long-form YouTube sponsorship advertising — the transaction data layer and payment rail that brands, shows, and AI agents operate on.
 
-**The one-liner:** "Facebook Ads for podcast reads."
+**The one-liner:** "The sponsorship OS for podcast and YouTube creator ads."
+
+**Public message direction after SpotsNow scan (June 1, 2026):** Do not lead with "AI podcast ad platform," "podcast marketplace," or "plan podcast campaigns in minutes." SpotsNow is already claiming that surface area. Taylslate should lead with **repeatable sponsorship execution**: interpret the brand, map conversion hypotheses, build the test portfolio, handle outreach/IO/signing/payments, and learn what converts.
 
 **The mission:** Get brands spending more money in podcasting and YouTube on the shows that convert AND help shows that don't get enough ad dollars find more deals. Two-sided efficient allocation. Discovery quality isn't competitive differentiation — it *is* the mission. Bad discovery means the mission fails on both sides.
 
 **The positioning shift (March → April 2026):** Originally framed as "AI generates a complete campaign plan." Refined to: AI returns a scored discovery list of 50-100 shows, brand selects via checkbox, platform builds the media plan using domain logic. Market education happens through the discovery list experience itself — not through separate documentation or onboarding specialists.
+
+**The competitive positioning shift (June 2026):** SpotsNow has moved from remnant inventory into full AI campaign planning. That validates the category but makes generic "AI planning" non-differentiated. Taylslate's defensible wedge is **not** a better show list; it is the brand interpretation layer plus full deal lifecycle plus transaction/reasoning memory. Message Taylslate as the system that turns creator sponsorships into a repeatable performance channel.
+
+### Differentiation After SpotsNow
+
+Taylslate is not screwed. SpotsNow validates that the market wants faster podcast ad buying, but it also compresses the generic "AI finds shows" wedge. The response is not to copy faster. The response is to make Taylslate the system of record and strategic brain for creator sponsorships.
+
+Product differentiation should concentrate on seven hard-to-copy layers:
+
+1. **Brief interpretation before inventory.** Taylslate should show the brand how it understands the product, customer, AOV, buying psychology, and audience rings before any show list appears. Competitors can rank inventory; Taylslate should feel like a strategist explaining why a customer would buy.
+2. **Conviction-scored test design.** Output should be a diagnostic sampling plan: which audience rings are being tested, why each show belongs, what success would prove, and which scale-tier shows become relevant after signal.
+3. **Full transaction ledger.** Outreach, counters, IO terms, DocuSign envelope, card-on-file, delivery, charge, payout, make-good, renewal/churn all live in Taylslate. The ledger is more defensible than the planner.
+4. **Creator-side operating system.** Shows should maintain rate cards, ad formats, brand history, availability, payment preferences, and optional sellable surfaces. The show-side data improves matching and reduces transaction friction.
+5. **Creator-attached multi-surface inventory.** Podcasts often have YouTube, newsletter, Instagram, TikTok, X/LinkedIn, Patreon, Discord, and live-event surfaces. Taylslate should model these as creator-attached sponsorship surfaces, not generic social ad inventory.
+6. **Learning loop across channels.** Promo codes, UTMs, renewal, reported conversion, paid amplification results, and founder annotations update future recommendations. Every campaign becomes training data.
+7. **Agent/API primitive.** External agents can call Taylslate to plan and execute sponsorships. Taylslate should be the creator sponsorship primitive inside broader marketing agents, not a closed web-only app.
+
+### Digital Marketing OS North Star
+
+The long-term ambition can be "digital marketing OS," but the path matters. Taylslate should not become a generic Meta/Google/TikTok buying agent in the near term. Those channels are API-rich, feedback-loop-heavy, and likely to be commoditized by general paid-media agents. Taylslate's wedge is the messy, relationship-heavy, contract-heavy sponsorship channel those agents cannot easily operate.
+
+The right expansion path:
+
+1. **Own creator sponsorship execution.** Podcast + long-form YouTube + creator-attached surfaces.
+2. **Export intelligence to paid channels.** Turn winning host reads and audience rings into paid-social/search/YouTube briefs, audience suggestions, copy angles, UTM packages, and creative recommendations.
+3. **Coordinate agents rather than replace them.** OpenClaw/Hermes-style agents can execute Meta/Google/TikTok. Taylslate supplies the sponsorship-derived audience truth and receives performance results back.
+4. **Become the marketing decision layer once data justifies it.** Over time, Taylslate can recommend budget allocation across sponsorships, creator-attached amplification, paid social, search, and retargeting because it knows which creator audiences actually convert.
+
+Do not message this broad ambition on day one. Day-one message stays focused: **run creator sponsorships without an agency.** Internally, build every data model and event as if Taylslate will become the operating layer for creator-led performance marketing.
 
 **The thesis:** Sponsorship advertising works, the market is growing ($4B+ podcast, $2B+ YouTube, 20%+ annually), but the buying process is stuck in 2015. Digital media has programmatic infrastructure. Creator sponsorship has email threads, Word docs, and 90-day payment terms. Taylslate closes that gap.
 
@@ -366,6 +397,15 @@ See `CLAUDE.md` for full wave-by-wave detail. High level:
 - **Strengths:** 400+ advertisers, 150+ shows. $10M Series A (2022). Full workflow. Expanding to YouTube. Launched "adaptive ads" (AI scripts matched to episode context) late 2024. Revenue share 70%+ to creator.
 - **Key weakness:** Limited to own network inventory. Marketplace requires both sides to adopt. 10K download minimum excludes smaller shows.
 - **Key insight from Gumball:** They use 3-5 bullet point copy, not scripts. Don't let advertisers pre-review ad reads — adds friction, diminishes authenticity. Airchecks are post-publication verification only.
+
+### SpotsNow
+- **What they are:** One-stop podcast advertising platform evolving from "Hotel Tonight for host-read podcast ads" / remnant inventory marketplace into AI campaign planner and competitive intelligence layer.
+- **Founder:** Cam / Campbell Pritchard, founder and CEO. Former Thumbtack product leader. This matters because Thumbtack is a matching marketplace; SpotsNow's core thesis appears to import marketplace matching discipline into podcast ad buying.
+- **Public claims as of June 1, 2026:** 59K-69K+ creator/show profiles, 20K+ brand profiles, competitive intelligence on who advertises where and what they spend, AI campaign planner in under 10 minutes, projected ROAS, benchmark pricing, marketplace/remnant inventory, managed/pro campaign option, 12% fee of spend (15% under $30K/mo, min $5K spend), no retainer, and "Use SpotsNow on Claude & ChatGPT."
+- **Likely data model:** Public podcast/RSS directory data + ad-history/sponsor intelligence from crawled/transcribed episodes or licensed data + publisher-uploaded inventory via CSV/account manager + brand profiles derived from detected sponsors and website enrichment. Public sources do not confirm whether they built or licensed the ad-history layer.
+- **Likely matching model:** Brand website/category/audience inputs scored against show metadata, advertiser renewal patterns, ad load, expected share of voice, benchmark pricing, verified ad history, and proprietary buyer-strategy signals. This is serious and overlaps with Taylslate's Wave 14 surface.
+- **Key weakness / opening:** Public positioning is still competitive intelligence + planning + open/remnant inventory marketplace. That centers on "find and book the right podcast shows fast." Taylslate should not compete as a faster planner. Taylslate must compete as the **creator sponsorship operating system**: product interpretation, conviction rings, test vs scale portfolio, outreach/counter, IO, signing, card-on-file, pay-as-delivers, creator payout, verification, and reasoning/payment memory.
+- **Messaging implication:** Avoid "AI podcast ad platform," "podcast marketplace," and "plan campaigns in minutes." Use language like "Run creator sponsorships without an agency," "one workflow from brief to signed IO to paid creator," and "every campaign updates your sponsorship playbook."
 
 ### Podscribe
 - **What they are:** Attribution and verification platform. Industry standard for podcast ad measurement.

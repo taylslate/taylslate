@@ -1,10 +1,10 @@
 # Wave 14 Strategy Memo
 
-*Last updated: April 30, 2026*
+*Last updated: June 1, 2026*
 
 This document captures the strategic reasoning behind Wave 14 Phase 2 (Discovery Agent UX). Phase 1 (foundation) shipped April 30. Phase 2 is broken into four sub-phases (2A, 2B, 2C, 2D) that wire Phase 1's dormant infrastructure into the brand-facing UI.
 
-This memo is the missing context that CLAUDE.md, TAYLSLATE_CONTEXT.md, and PRODUCT_BACKLOG.md don't capture — specifically the design decisions and the reasoning that emerged from walking the Sauna Box campaign through the framework. Future chats working on Wave 14 should read this alongside the three core docs.
+This memo is the missing context that CLAUDE.md, TAYLSLATE_CONTEXT.md, and PRODUCT_BACKLOG.md don't capture — specifically the design decisions and the reasoning that emerged from walking the Sauna Box campaign through the framework, plus the June 2026 SpotsNow competitive scan. Future chats working on Wave 14 should read this alongside the three core docs.
 
 **Read order for any Wave 14 work:**
 1. TAYLSLATE_CONTEXT.md Section 5 (Discovery thesis)
@@ -27,6 +27,14 @@ Originally Phase 2 was scoped as post-launch customer-driven: ship the foundatio
 - No mechanism to capture founder annotations ("Blurry Creatures audience is more faith-based than the show description suggests") that pattern-library-future-Taylslate would need.
 
 **Conclusion:** Current discovery isn't strong enough to launch on. The wedge is "Facebook Ads for podcast reads," and Facebook's discovery is conviction-based interpretive reasoning, not category filtering. Taylslate has to ship that experience to be credibly competitive at launch — not as a v2 upgrade after customer feedback.
+
+**June 2026 competitive update:** SpotsNow has launched an AI campaign planner on top of its remnant/open inventory marketplace, with public claims around 59K-69K+ show profiles, 20K+ brand profiles, verified ad history, advertiser renewal patterns, ad load, expected share of voice, projected ROAS, and Claude/ChatGPT usage. This confirms that "AI finds shows for your brand" is now table stakes. Wave 14 Phase 2 is therefore not just product polish; it is the primary differentiation layer.
+
+The required distinction:
+- SpotsNow-like promise: "find and book the right podcast shows fast."
+- Taylslate promise: "interpret the brand, map the audience rings, build the test portfolio, execute the sponsorship transaction, and learn what converted."
+
+Phase 2 should feel less like a marketplace search result and more like a media-buying strategist turning a brief into a diagnostic test plan.
 
 So Phase 2 moves to pre-launch must-do. Build it before broader GTM.
 

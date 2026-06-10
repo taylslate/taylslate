@@ -128,6 +128,8 @@ Things that must finish before GTM. The launch bar.
 
 Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-score discovery isn't strong enough to launch on — Sauna Box walkthrough confirmed. Phase 2 is the discovery experience that makes Taylslate's wedge actually competitive at launch. Build before broader GTM.
 
+**Competitive pressure added June 1, 2026:** SpotsNow has launched an AI podcast campaign planner on top of its remnant/open inventory marketplace. Generic "enter URL and budget, get shows" is no longer differentiated. Phase 2 must make Taylslate feel like a media-buying strategist and transaction OS, not a show-search tool.
+
 **Sub-phases (each is its own Claude Code session):**
 
 ### 2A — Brief intake redesign + interpretation loop (~3 days)
@@ -136,6 +138,7 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - Brand confirms or refines interpretation (not show list — interpretation of customer)
 - Refinement loop visible in chat or sidebar; final ring shape collapses from confirmed reads
 - Lateral examples that should fall out: "you mentioned mobile use → outdoor/parenting audiences worth exploring?"
+- Acceptance criterion: before any show list appears, the brand sees a clear interpretation of "why this customer would buy" and can correct it. This is the anti-SpotsNow wedge.
 - Wires `recordCampaignPattern()` and `recordRingHypothesis()` from Phase 1's reasoning-log
 
 ### 2B — Three-dimensional conviction scoring + reasoning surface (~4 days)
@@ -143,6 +146,7 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - Conviction band (high / medium / low / speculative) surfaced in UI
 - Reasoning text per show: "Conviction: high. Host personally uses cold plunge. Audience over-indexes 2.4x on biohacker purchases. Strong analog to Plunge campaign."
 - AOV-aware weight tilt active when product attributes indicate high AOV
+- Acceptance criterion: never show a naked match percentage as the primary artifact. Any score must be paired with the conversion hypothesis and the dimension(s) driving it.
 - Wires `recordConvictionScore()` from Phase 1's reasoning-log
 
 ### 2C — Test portfolio + scale tier dual output (~3 days)
@@ -151,6 +155,7 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - Scale tier: high-conviction shows that exceed test budget, with "deferred — fits future budget" framing
 - Per-show 3-spot total cost displayed
 - Brand picks from test list; scale tier saved as watch list
+- Acceptance criterion: output reads like a diagnostic test plan, not a shopping cart. The brand should understand which audience rings are being sampled and what a successful test would teach.
 
 ### 2D — Founder annotations + show brand history + promo code capture (~2 days)
 - Founder annotation UI: capture "why this show is right" reasoning that metadata can't infer (Wires `recordFounderAnnotation()`)
@@ -158,6 +163,7 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - Promo code field at IO generation time
 - Auto-generated UTM-tagged tracking link per deal
 - Show notes blurb generation helper (copy-paste output for the show)
+- Acceptance criterion: capture the learning loop explicitly. Every creator selection, founder override, promo code, and UTM link should become future recommendation signal.
 
 **Effort:** ~2 weeks total split across 4 Claude Code sessions
 **Pre-req:** Pattern library seeded with ~20-50 analog campaigns from Chris's media-buying memory (can happen async during Phase 2 build)
@@ -185,6 +191,20 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - Update conviction reasoning to be medium-aware
 - **Effort:** 2-3 days
 - **Why:** Long-form YouTube is launch-day medium, not future expansion. Simulcasts are common (most podcasts upload to YouTube). Modeling now avoids re-migration later.
+
+### Creator-attached sellable surfaces
+- Expand show onboarding so creators can list optional surfaces they are willing to sell alongside the host read:
+  - Podcast read
+  - Long-form YouTube integration
+  - Newsletter mention
+  - Instagram/TikTok/Reels/Shorts clip
+  - X/LinkedIn host post
+  - Patreon/Discord/community mention
+  - Live event or bonus episode package
+- Capture audience size, format, minimum buy, creative constraints, lead time, and whether the creator/host or brand owns posting
+- Discovery should treat these as creator-attached sponsorship surfaces, not generic paid media inventory
+- **Effort:** 1-2 weeks for data model + onboarding + display; deeper pricing later
+- **Why:** Differentiates Taylslate from podcast-only planners and creates the path from "podcast ads" to creator-led marketing OS without prematurely becoming a generic Meta/Google ad buyer
 
 ---
 
@@ -274,6 +294,21 @@ These are real product capabilities, but building them before customers ask is s
 - **Effort:** 1-2 weeks
 - **Trigger:** First 10-20 customers; product feature pinned for month 3-6 revisit
 
+### Sponsorship-to-paid amplification brief
+- After a host read runs, generate a paid-media amplification packet:
+  - Winning audience ring and why it worked
+  - Suggested Meta/YouTube/TikTok audiences
+  - Recommended clip/read asset
+  - Copy variants using the host-read angle
+  - UTM links and promo code
+  - Suggested budget and flight
+  - Success metric and expected read on results
+- V1 is export/share only: brand or their paid-media agent executes
+- V2 can pass the packet to external agents via API/MCP
+- V3 can optionally execute creator-post boosting where the creator owns the social handle
+- **Effort:** 1 week for V1 after promo/UTM foundation; API handoff later
+- **Trigger:** First campaign with a clear winning show/read and brand interest in scaling the learning outside podcast
+
 ### Operator pricing revisit (pinned for month 3-6)
 - Possibly underpriced at $499 if scale customers run $50-200K/mo
 - Possible Operator/Operator Pro split or raise to $999-1499
@@ -309,6 +344,18 @@ Build when transaction volume justifies.
 - Packaged skills so agents can interact with Taylslate's data and logic
 - **Effort:** 2-3 weeks (after MCP server)
 - **Trigger:** Once 5+ external developers ask
+
+### Digital marketing OS command layer
+- Long-term north star: Taylslate becomes the operating layer that coordinates creator sponsorships, creator-attached amplification, paid social, search, YouTube, retargeting, and reporting
+- Do not build generic paid ad buying first; paid-media agents will commoditize Meta/Google/TikTok execution
+- Taylslate's role is to provide proprietary sponsorship-derived audience truth, conversion hypotheses, creator creative, and budget recommendations
+- Initial product shape:
+  - Marketing budget planner that recommends sponsorship vs paid amplification vs search/social/retargeting allocation
+  - Export/API handoff to paid-media agents
+  - Performance result ingestion back into Taylslate's learning loop
+  - Cross-channel audience playbook per brand
+- **Effort:** multi-quarter product line
+- **Trigger:** Sponsorship transaction volume is high enough to make cross-channel recommendations better than generic paid-media agent advice
 
 ### Data licensing API / benchmark reports
 - Aggregated CPM benchmarks, advertiser retention data, market trends
