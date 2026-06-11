@@ -7,6 +7,12 @@ const nextConfig: NextConfig = {
   // See lib/docusign/client.ts and lib/stripe/server.ts for the matching
   // (0, eval)("require") loader pattern.
   serverExternalPackages: ["docusign-esign", "stripe"],
+  // Markdown prompt files (lib/prompts/*.md) are read with fs at runtime
+  // (see lib/llm/client.ts loadPrompt). Force them into the serverless
+  // bundle — static file tracing can't see through the dynamic path join.
+  outputFileTracingIncludes: {
+    "/**": ["./lib/prompts/*.md"],
+  },
 };
 
 export default nextConfig;

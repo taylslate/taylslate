@@ -515,7 +515,10 @@ export type DomainEventType =
   | "deal.setup_intent_created"
   | "deal.payment_method_attached"
   | "payout.transferred"
-  | "payout.early_requested";
+  | "payout.early_requested"
+  // Wave 14 Phase 2A — brief intake + interpretation loop
+  | "brief.url_derived"
+  | "brief.url_derivation_failed";
 
 export type DomainEntityType =
   | "deal"
@@ -527,7 +530,9 @@ export type DomainEntityType =
   | "payment"
   | "profile"
   // Wave 13 — pay-as-delivers payouts to show connected accounts
-  | "payout";
+  | "payout"
+  // Wave 14 Phase 2A — brief derivation/interpretation events hang off campaigns
+  | "campaign";
 
 export interface DomainEvent {
   id: string;
@@ -793,6 +798,19 @@ export interface BrandDashboardStats {
 // code that reads these tables directly.
 
 export type AovBucket = "low" | "mid" | "high";
+
+// Wave 14 Phase 2A Layer 2 — AI-derived product read from a brand URL (or
+// pasted paragraph). Returned by /api/campaigns/[id]/derive-product for the
+// brief intake read-back card. Not persisted — the brand-confirmed version
+// is saved when the brief is submitted.
+export interface ProductDerivation {
+  brand_name: string;
+  category: string;
+  product_description: string;
+  aov_bucket: AovBucket;
+  aov_reasoning: string;
+  key_attributes: string[];
+}
 
 export type RingHypothesisKind = "primary" | "lateral" | "confirmed";
 
