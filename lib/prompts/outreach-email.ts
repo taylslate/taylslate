@@ -2,6 +2,7 @@
 // Claude writes personalized sponsorship outreach emails for each recommended show.
 
 import type { Campaign, ShowRecommendation, YouTubeRecommendation } from "@/lib/data/types";
+import { isBriefV2 } from "@/lib/data/types";
 
 export const OUTREACH_EMAIL_SYSTEM_PROMPT = `You are an expert podcast and YouTube advertising outreach writer. You write personalized sponsorship inquiry emails from brands to shows/creators. You sound like a real media buyer — conversational, authentic, and straight to the point.
 
@@ -73,10 +74,21 @@ export function buildOutreachUserPrompt(
 
   parts.push(`## Brand Details`);
   parts.push(`Campaign name: ${campaign.name}`);
-  if (campaign.brief.brand_url) parts.push(`Brand website: ${campaign.brief.brand_url}`);
-  if (campaign.brief.campaign_goals) parts.push(`Goals: ${campaign.brief.campaign_goals}`);
-  if (campaign.brief.target_interests.length > 0) parts.push(`Target interests: ${campaign.brief.target_interests.join(", ")}`);
-  if (campaign.brief.keywords.length > 0) parts.push(`Keywords: ${campaign.brief.keywords.join(", ")}`);
+  // V2 briefs (Wave 14 2A) carry product/customer free text instead of the
+  // legacy structured fields.
+  if (isBriefV2(campaign.brief)) {
+    const v2 = campaign.brief;
+    if (v2.product?.url) parts.push(`Brand website: ${v2.product.url}`);
+    if (v2.product?.product_description) parts.push(`Product: ${v2.product.product_description}`);
+    if (v2.customer_text) parts.push(`Customer: ${v2.customer_text}`);
+    if (v2.goals && v2.goals.length > 0) parts.push(`Goals: ${v2.goals.join(", ")}`);
+  } else {
+    const brief = campaign.brief;
+    if (brief.brand_url) parts.push(`Brand website: ${brief.brand_url}`);
+    if (brief.campaign_goals) parts.push(`Goals: ${brief.campaign_goals}`);
+    if (brief.target_interests.length > 0) parts.push(`Target interests: ${brief.target_interests.join(", ")}`);
+    if (brief.keywords.length > 0) parts.push(`Keywords: ${brief.keywords.join(", ")}`);
+  }
 
   if (recommendations.length > 0) {
     parts.push(``);

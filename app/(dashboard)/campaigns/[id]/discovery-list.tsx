@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { Campaign, ScoredShowRecord } from "@/lib/data/types";
+import { isBriefV2 } from "@/lib/data/types";
 
 // ---- Types ----
 
@@ -62,6 +63,9 @@ export default function DiscoveryList({ campaign }: DiscoveryListProps) {
   const router = useRouter();
   const shows = (campaign.scored_shows ?? []) as ScoredShowRecord[];
   const initialSelections = new Set(campaign.selected_show_ids ?? []);
+  // V2-brief campaigns (Wave 14 2A) never reach this component pre-2B —
+  // they have no scored_shows. Null out the legacy brief metadata for them.
+  const brief = isBriefV2(campaign.brief) ? null : campaign.brief;
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(initialSelections);
   const [activeCategory, setActiveCategory] = useState<string>("all");
@@ -191,21 +195,21 @@ export default function DiscoveryList({ campaign }: DiscoveryListProps) {
           )}
         </div>
         <div className="flex items-center gap-4 text-sm text-[var(--brand-text-secondary)]">
-          {campaign.brief.brand_url && (
+          {brief?.brand_url && (
             <span className="flex items-center gap-1">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-              {campaign.brief.brand_url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+              {brief.brand_url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
             </span>
           )}
           <span className="flex items-center gap-1">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
             {formatCurrency(campaign.budget_total)} budget
           </span>
-          {campaign.brief.target_age_range && (
-            <span>Ages {campaign.brief.target_age_range}</span>
+          {brief?.target_age_range && (
+            <span>Ages {brief.target_age_range}</span>
           )}
-          {campaign.brief.target_interests.length > 0 && (
-            <span>{campaign.brief.target_interests.slice(0, 3).join(", ")}</span>
+          {brief && brief.target_interests.length > 0 && (
+            <span>{brief.target_interests.slice(0, 3).join(", ")}</span>
           )}
           <span className="text-[var(--brand-text-muted)]">{shows.length} shows scored</span>
         </div>

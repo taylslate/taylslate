@@ -140,6 +140,61 @@ export interface CampaignBrief {
   campaign_goals?: string;
 }
 
+// ---- Campaign Brief v2 (Wave 14 Phase 2A) ----
+// Free-text-led brief intake. Stored in the same campaigns.brief JSONB
+// column, discriminated by `version: 2`. Fields are optional because a
+// draft row exists before the brand finishes the form (the derive-product
+// endpoint needs a campaign id); validation happens at submit.
+
+export type BriefGoal =
+  | "test_channel"
+  | "scale_winner"
+  | "direct_response"
+  | "brand_awareness"
+  | "lead_gen";
+
+export type BriefFlightPreset =
+  | "asap"
+  | "next_30_days"
+  | "next_60_days"
+  | "next_quarter";
+
+export interface BriefFlight {
+  mode: "preset" | "dates";
+  preset?: BriefFlightPreset;
+  start_date?: string; // ISO date
+  end_date?: string;   // ISO date
+}
+
+/** Brand-confirmed product derivation plus where it came from. */
+export interface BriefProduct extends ProductDerivation {
+  source: "url" | "paragraph";
+  url?: string | null;
+}
+
+export interface CampaignBriefV2 {
+  version: 2;
+  product?: BriefProduct;
+  customer_text?: string;
+  /** Returning-brand check-in: prior pattern reused and/or delta text. */
+  customer_context?: {
+    reused_from_pattern_id?: string;
+    delta_text?: string;
+  };
+  goals?: BriefGoal[];
+  goals_context?: string;
+  flight?: BriefFlight;
+  exclusions_text?: string;
+  /** Set when the brand submits the brief; absent on un-submitted drafts. */
+  submitted_at?: string;
+}
+
+export function isBriefV2(
+  brief: CampaignBrief | CampaignBriefV2
+): brief is CampaignBriefV2 {
+  return (brief as CampaignBriefV2).version === 2;
+}
+
 export interface ShowRecommendation {
   show_id: string;
   show_name: string;
@@ -201,7 +256,7 @@ export interface Campaign {
   /** Wave 8: the brand profile the campaign was created from, if any. */
   brand_profile_id?: string | null;
   name: string;
-  brief: CampaignBrief;
+  brief: CampaignBrief | CampaignBriefV2;
   budget_total: number;
   platforms: Platform[];
   status: CampaignStatus;
@@ -518,7 +573,8 @@ export type DomainEventType =
   | "payout.early_requested"
   // Wave 14 Phase 2A — brief intake + interpretation loop
   | "brief.url_derived"
-  | "brief.url_derivation_failed";
+  | "brief.url_derivation_failed"
+  | "brief.submitted";
 
 export type DomainEntityType =
   | "deal"
