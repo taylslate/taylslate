@@ -1,0 +1,676 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const {
+  mockGetAuthenticatedUser,
+  mockGetCampaignById,
+  mockLogEvent,
+  mockCallLLM,
+  mockRetrieveAnalogs,
+  mockRecordPattern,
+  mockRecordRing,
+  mockRecordAnalog,
+  mockGetPatternById,
+  mockGetLatestForCampaign,
+  mockGetReasoning,
+} = vi.hoisted(() => ({
+  mockGetAuthenticatedUser: vi.fn(),
+  mockGetCampaignById: vi.fn(),
+  mockLogEvent: vi.fn(),
+  mockCallLLM: vi.fn(),
+  mockRetrieveAnalogs: vi.fn(),
+  mockRecordPattern: vi.fn(),
+  mockRecordRing: vi.fn(),
+  mockRecordAnalog: vi.fn(),
+  mockGetPatternById: vi.fn(),
+  mockGetLatestForCampaign: vi.fn(),
+  mockGetReasoning: vi.fn(),
+}));
+
+vi.mock("@/lib/data/queries", () => ({
+  getAuthenticatedUser: mockGetAuthenticatedUser,
+  getCampaignById: mockGetCampaignById,
+}));
+
+vi.mock("@/lib/data/events", () => ({
+  logEvent: mockLogEvent,
+}));
+
+vi.mock("@/lib/llm/client", () => ({
+  callLLMWithFallback: mockCallLLM,
+  createLLMClient: vi.fn(() => ({})),
+  loadPrompt: vi.fn(() => "system prompt"),
+}));
+
+vi.mock("@/lib/discovery/pattern-library-retrieval", () => ({
+  retrieveAnalogCampaigns: mockRetrieveAnalogs,
+}));
+
+vi.mock("@/lib/data/reasoning-log", () => ({
+  recordCampaignPattern: mockRecordPattern,
+  recordRingHypothesis: mockRecordRing,
+  recordAnalogMatch: mockRecordAnalog,
+  getCampaignPatternById: mockGetPatternById,
+  getLatestCampaignPatternForCampaign: mockGetLatestForCampaign,
+  getCampaignReasoning: mockGetReasoning,
+}));
+
+import { POST } from "./route";
+
+const USER = { id: "user_1", email: "brand@example.com" };
+const SUBMITTED_AT = "2026-06-10T12:00:00.000Z";
+
+const FRESH_BRIEF = {
+  version: 2,
+  product: {
+    source: "url",
+    url: "https://saunabox.com",
+    brand_name: "SaunaBox",
+    category: "premium wellness",
+    product_description: "Portable infrared sauna kits for at-home recovery.",
+    aov_bucket: "high",
+    aov_reasoning: "Kits listed at $399-$2,799.",
+    key_attributes: ["mobile use case", "premium price point"],
+  },
+  customer_text: "Affluent men 30-55 into recovery and biohacking.",
+  goals: ["test_channel", "direct_response"],
+  flight: { mode: "preset", preset: "next_30_days" },
+  exclusions_text: "No competitor sauna brands.",
+  submitted_at: SUBMITTED_AT,
+};
+
+const CAMPAIGN = {
+  id: "camp_1",
+  user_id: "user_1",
+  budget_total: 25000,
+  brief: FRESH_BRIEF,
+};
+
+// Pattern library rows the retrieval mock returns (analogs the LLM may cite).
+const LIBRARY = [
+  {
+    id: "lib_1",
+    campaign_id: null,
+    customer_id: "founder",
+    created_at: "2026-05-01T00:00:00.000Z",
+    product_attributes: {
+      brand_name: "ColdCo",
+      category: "premium wellness",
+      customer_summary: "Recovery-obsessed men with high disposable income.",
+    },
+    customer_description: "Cold plunge buyers.",
+    aov_bucket: "high",
+    scoring_weights: null,
+  },
+  {
+    id: "lib_2",
+    campaign_id: null,
+    customer_id: "founder",
+    created_at: "2026-04-01T00:00:00.000Z",
+    product_attributes: {
+      brand_name: "HeatWorks",
+      category: "premium wellness",
+    },
+    customer_description: "Infrared mat buyers.",
+    aov_bucket: "high",
+    scoring_weights: null,
+  },
+];
+
+// Deterministic LLM response fixtures (spec: no real API calls in CI).
+function interpretation(overrides: Record<string, unknown> = {}) {
+  return {
+    campaign_pattern: {
+      customer_summary:
+        "Affluent men 30-55 already spending on premium recovery hardware.",
+      interpretation_confidence: "high",
+      exclusions_parsed: ["competitor sauna brands"],
+    },
+    primary_ring: {
+      ring_label: "protocol-driven recovery & biohacking",
+      confidence: "high",
+      reasoning: "Matches the ColdCo playbook on purchase power.",
+      analog_campaigns: ["ColdCo"],
+    },
+    lateral_rings: [
+      {
+        ring_label: "overlanding & van-life",
+        confidence: "medium",
+        reasoning: "Mobile use case opens vehicle-based audiences.",
+        analog_campaigns: ["HeatWorks"],
+      },
+      {
+        ring_label: "cold-climate remote workers",
+        confidence: "speculative",
+        reasoning: "Defensible hypothesis, nothing in the library.",
+        analog_campaigns: [],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function lateral(label: string, confidence = "medium") {
+  return {
+    ring_label: label,
+    confidence,
+    reasoning: `Reasoning for ${label}.`,
+    analog_campaigns: [],
+  };
+}
+
+function llmMessage(text: string, stopReason = "end_turn") {
+  return { stop_reason: stopReason, content: [{ type: "text", text }] };
+}
+
+function call(id = "camp_1") {
+  const req = new Request(`http://x/api/campaigns/${id}/interpret`, {
+    method: "POST",
+  });
+  return POST(req as never, { params: Promise.resolve({ id }) });
+}
+
+function llmUserContent(): string {
+  return mockCallLLM.mock.calls[0][0].userContent;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockGetAuthenticatedUser.mockResolvedValue(USER);
+  mockGetCampaignById.mockResolvedValue(CAMPAIGN);
+  mockLogEvent.mockResolvedValue(null);
+  mockRetrieveAnalogs.mockResolvedValue(LIBRARY);
+  mockRecordPattern.mockResolvedValue("pat_1");
+  let ringSeq = 0;
+  mockRecordRing.mockImplementation(async () => `ring_${++ringSeq}`);
+  mockRecordAnalog.mockResolvedValue(undefined);
+  mockGetLatestForCampaign.mockResolvedValue(null);
+  mockGetPatternById.mockResolvedValue(null);
+  mockGetReasoning.mockResolvedValue({
+    pattern: null,
+    rings: [],
+    convictionScores: [],
+    analogs: [],
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("POST /api/campaigns/[id]/interpret", () => {
+  it("interprets a fresh brief with a seeded library: pattern, rings, analogs persisted", async () => {
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.campaign_pattern_id).toBe("pat_1");
+    expect(body.campaign_pattern.customer_summary).toContain("Affluent men");
+    expect(body.primary_ring.ring_label).toBe(
+      "protocol-driven recovery & biohacking"
+    );
+    expect(body.primary_ring.ring_hypothesis_id).toBe("ring_1");
+    expect(body.lateral_rings).toHaveLength(2);
+    expect(body.lateral_rings[0].ring_hypothesis_id).toBe("ring_2");
+
+    // Critical wiring: analogs retrieved by brand-confirmed derivations and
+    // injected into the prompt's pattern library context.
+    expect(mockRetrieveAnalogs).toHaveBeenCalledWith({
+      aovBucket: "high",
+      category: "premium wellness",
+    });
+    expect(llmUserContent()).toContain("## Pattern library context");
+    expect(llmUserContent()).toContain("ColdCo");
+    expect(llmUserContent()).toContain("Recovery-obsessed men");
+
+    expect(mockRecordPattern).toHaveBeenCalledTimes(1);
+    expect(mockRecordRing).toHaveBeenCalledTimes(3);
+    expect(mockRecordRing).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        campaignPatternId: "pat_1",
+        kind: "primary",
+        label: "protocol-driven recovery & biohacking",
+        confidence: "high",
+      })
+    );
+    expect(mockRecordRing).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ kind: "lateral", label: "overlanding & van-life" })
+    );
+    // Both cited analogs exist in the library.
+    expect(mockRecordAnalog).toHaveBeenCalledTimes(2);
+    expect(mockRecordAnalog).toHaveBeenCalledWith(
+      expect.objectContaining({ campaignPatternId: "pat_1", analogName: "ColdCo" })
+    );
+    expect(mockLogEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "brief.interpretation_completed",
+        entityId: "camp_1",
+        payload: expect.objectContaining({
+          campaign_pattern_id: "pat_1",
+          interpretation_confidence: "high",
+        }),
+      })
+    );
+  });
+
+  it("handles an empty library: pattern + rings persist, zero analog rows, first-principles prompt", async () => {
+    mockRetrieveAnalogs.mockResolvedValue([]);
+    mockCallLLM.mockResolvedValue(
+      llmMessage(
+        JSON.stringify(
+          interpretation({
+            primary_ring: {
+              ...interpretation().primary_ring,
+              analog_campaigns: [],
+              confidence: "speculative",
+            },
+            lateral_rings: [lateral("endurance athletes", "low")],
+          })
+        )
+      )
+    );
+
+    const body = await (await call()).json();
+
+    expect(body.campaign_pattern_id).toBe("pat_1");
+    expect(mockRecordPattern).toHaveBeenCalledTimes(1);
+    expect(mockRecordRing).toHaveBeenCalledTimes(2);
+    expect(mockRecordAnalog).not.toHaveBeenCalled();
+    expect(llmUserContent()).toContain(
+      "Pattern library is empty — reason from first principles"
+    );
+  });
+
+  it("persists all rings when the LLM returns 5", async () => {
+    mockCallLLM.mockResolvedValue(
+      llmMessage(
+        JSON.stringify(
+          interpretation({
+            lateral_rings: [
+              lateral("ring a"),
+              lateral("ring b"),
+              lateral("ring c"),
+              lateral("ring d"),
+            ],
+          })
+        )
+      )
+    );
+
+    const body = await (await call()).json();
+
+    expect(body.lateral_rings).toHaveLength(4);
+    expect(mockRecordRing).toHaveBeenCalledTimes(5); // primary + 4
+  });
+
+  it("persists all rings with a warning when the LLM exceeds the soft cap", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockCallLLM.mockResolvedValue(
+      llmMessage(
+        JSON.stringify(
+          interpretation({
+            lateral_rings: [
+              lateral("ring a"),
+              lateral("ring b"),
+              lateral("ring c"),
+              lateral("ring d"),
+              lateral("ring e"),
+              lateral("ring f"),
+              lateral("ring g"),
+            ],
+          })
+        )
+      )
+    );
+
+    const body = await (await call()).json();
+
+    expect(body.lateral_rings).toHaveLength(7); // no truncation
+    expect(mockRecordRing).toHaveBeenCalledTimes(8);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("soft cap")
+    );
+  });
+
+  it("skips analog rows for cited brands not in the library, with a warning", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockCallLLM.mockResolvedValue(
+      llmMessage(
+        JSON.stringify(
+          interpretation({
+            primary_ring: {
+              ...interpretation().primary_ring,
+              analog_campaigns: ["ColdCo", "Plunge"], // Plunge not in library
+            },
+          })
+        )
+      )
+    );
+
+    await call();
+
+    expect(mockRecordAnalog).toHaveBeenCalledTimes(2); // ColdCo + HeatWorks only
+    expect(
+      mockRecordAnalog.mock.calls.some(
+        ([input]) => input.analogName === "Plunge"
+      )
+    ).toBe(false);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"Plunge" not in the pattern library context')
+    );
+  });
+
+  it("still returns the interpretation when recordCampaignPattern fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockRecordPattern.mockResolvedValue(null);
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.campaign_pattern_id).toBeNull();
+    expect(body.primary_ring.ring_label).toBe(
+      "protocol-driven recovery & biohacking"
+    );
+    expect(body.primary_ring.ring_hypothesis_id).toBeNull();
+    expect(mockRecordRing).not.toHaveBeenCalled(); // no FK to hang rings on
+    expect(mockRecordAnalog).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it("returns interpretation_failed on malformed JSON with zero persistence", async () => {
+    mockCallLLM.mockResolvedValue(
+      llmMessage("Here's my read of the brief: {campaign")
+    );
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toEqual({ error: "interpretation_failed", reason: "malformed_json" });
+    expect(mockRecordPattern).not.toHaveBeenCalled();
+    expect(mockRecordRing).not.toHaveBeenCalled();
+    expect(mockRecordAnalog).not.toHaveBeenCalled();
+    expect(mockLogEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "brief.interpretation_failed",
+        payload: { reason: "malformed_json" },
+      })
+    );
+  });
+
+  it("returns interpretation_failed when the LLM still refuses after fallback", async () => {
+    // callLLMWithFallback owns the retry; a refusal stop_reason here means
+    // both the configured model and the fallback refused.
+    mockCallLLM.mockResolvedValue(llmMessage("", "refusal"));
+
+    const body = await (await call()).json();
+
+    expect(body).toEqual({ error: "interpretation_failed", reason: "refusal" });
+    expect(mockRecordPattern).not.toHaveBeenCalled();
+  });
+
+  it("stores AOV-tilted effective weights for a high-AOV brief", async () => {
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    await call();
+
+    const input = mockRecordPattern.mock.calls[0][0];
+    expect(input.aovBucket).toBe("high");
+    expect(input.scoringWeights).toEqual(
+      expect.objectContaining({ purchasePower: 0.2, reach: 0.05 })
+    );
+    expect(input.productAttributes).toEqual(
+      expect.objectContaining({
+        customer_summary:
+          "Affluent men 30-55 already spending on premium recovery hardware.",
+        interpretation_confidence: "high",
+        brief_context: expect.objectContaining({
+          goals: ["test_channel", "direct_response"],
+          budget_total: 25000,
+          exclusions_text: "No competitor sauna brands.",
+          exclusions_parsed: ["competitor sauna brands"],
+        }),
+      })
+    );
+  });
+
+  it("keeps legacy 4-dimension weights for a mid-AOV brief", async () => {
+    mockGetCampaignById.mockResolvedValue({
+      ...CAMPAIGN,
+      brief: {
+        ...FRESH_BRIEF,
+        product: { ...FRESH_BRIEF.product, aov_bucket: "mid" },
+      },
+    });
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    await call();
+
+    expect(mockRecordPattern.mock.calls[0][0].scoringWeights).toEqual({
+      audienceFit: 0.4,
+      adEngagement: 0.3,
+      sponsorRetention: 0.2,
+      reach: 0.1,
+    });
+  });
+
+  it("round-trips all confidence values and normalizes invalid ones to speculative", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockCallLLM.mockResolvedValue(
+      llmMessage(
+        JSON.stringify(
+          interpretation({
+            lateral_rings: [
+              lateral("ring medium", "medium"),
+              lateral("ring low", "low"),
+              lateral("ring speculative", "speculative"),
+              lateral("ring invalid", "certain"),
+            ],
+          })
+        )
+      )
+    );
+
+    await call();
+
+    const confidences = mockRecordRing.mock.calls.map(([i]) => i.confidence);
+    expect(confidences).toEqual([
+      "high", // primary
+      "medium",
+      "low",
+      "speculative",
+      "speculative", // "certain" normalized
+    ]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("invalid confidence"),
+      "certain"
+    );
+  });
+
+  it("interprets a returning-brand brief: prior derivations drive retrieval, new values are canonical", async () => {
+    const PRIOR_PATTERN = {
+      id: "pat_prior",
+      campaign_id: "camp_old",
+      customer_id: "user_1",
+      created_at: "2026-03-01T00:00:00.000Z",
+      product_attributes: {
+        brand_name: "SaunaBox",
+        category: "premium wellness",
+        product_description: "Portable infrared sauna kits.",
+        aov_bucket: "high",
+        aov_reasoning: "Kits at $399-$2,799.",
+        key_attributes: ["mobile use case"],
+        customer_summary: "Affluent recovery-focused men 30-55.",
+      },
+      customer_description: "Men into recovery.",
+      aov_bucket: "high",
+      scoring_weights: null,
+    };
+    mockGetPatternById.mockResolvedValue(PRIOR_PATTERN);
+    mockGetCampaignById.mockResolvedValue({
+      ...CAMPAIGN,
+      brief: {
+        version: 2,
+        customer_text: "Now also seeing lots of women 25-40 buying for home spas.",
+        customer_context: {
+          reused_from_pattern_id: "pat_prior",
+          changed_fields: {
+            customer_description: {
+              before: "Men into recovery.",
+              after: "Now also seeing lots of women 25-40 buying for home spas.",
+            },
+          },
+        },
+        goals: ["scale_winner"],
+        flight: { mode: "preset", preset: "asap" },
+        exclusions_text: "No competitor wellness brands.",
+        submitted_at: SUBMITTED_AT,
+      },
+    });
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    await call();
+
+    expect(mockGetPatternById).toHaveBeenCalledWith("pat_prior");
+    // Retrieval queried with the prior pattern's brand-confirmed derivations.
+    expect(mockRetrieveAnalogs).toHaveBeenCalledWith({
+      aovBucket: "high",
+      category: "premium wellness",
+    });
+    const content = llmUserContent();
+    // New full top-level values are canonical in the prompt...
+    expect(content).toContain("women 25-40 buying for home spas");
+    expect(content).toContain("No competitor wellness brands.");
+    // ...and the changes record rides along as audit context.
+    expect(content).toContain("## Returning-brand context");
+    expect(content).toContain("Affluent recovery-focused men 30-55.");
+    expect(content).toContain(
+      '- customer_description: before "Men into recovery." → after "Now also seeing lots of women 25-40 buying for home spas."'
+    );
+    // The new pattern records the canonical customer text.
+    expect(mockRecordPattern.mock.calls[0][0].customerDescription).toContain(
+      "women 25-40"
+    );
+  });
+
+  it("falls back to prior pattern values when a returning brand changed nothing", async () => {
+    mockGetPatternById.mockResolvedValue({
+      id: "pat_prior",
+      campaign_id: "camp_old",
+      customer_id: "user_1",
+      created_at: "2026-03-01T00:00:00.000Z",
+      product_attributes: {
+        brand_name: "SaunaBox",
+        category: "premium wellness",
+        product_description: "Portable infrared sauna kits.",
+        aov_bucket: "high",
+        aov_reasoning: "",
+        key_attributes: [],
+        customer_summary: "Affluent recovery-focused men 30-55.",
+      },
+      customer_description: "Men into recovery.",
+      aov_bucket: "high",
+      scoring_weights: null,
+    });
+    mockGetCampaignById.mockResolvedValue({
+      ...CAMPAIGN,
+      brief: {
+        version: 2,
+        customer_context: { reused_from_pattern_id: "pat_prior" },
+        goals: ["test_channel"],
+        flight: { mode: "preset", preset: "next_30_days" },
+        submitted_at: SUBMITTED_AT,
+      },
+    });
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    await call();
+
+    const content = llmUserContent();
+    expect(content).toContain("Men into recovery."); // prior raw description
+    expect(content).toContain("Delta since last campaign: no changes reported.");
+    expect(mockRecordPattern.mock.calls[0][0].customerDescription).toBe(
+      "Men into recovery."
+    );
+  });
+
+  it("replays a stored interpretation instead of re-calling the LLM", async () => {
+    mockGetLatestForCampaign.mockResolvedValue({
+      id: "pat_done",
+      campaign_id: "camp_1",
+      customer_id: "user_1",
+      created_at: "2026-06-10T12:05:00.000Z", // after submitted_at
+      product_attributes: {
+        brand_name: "SaunaBox",
+        interpretation: interpretation(),
+      },
+      customer_description: "Affluent men 30-55.",
+      aov_bucket: "high",
+      scoring_weights: null,
+    });
+    mockGetReasoning.mockResolvedValue({
+      pattern: null,
+      rings: [
+        { id: "ring_a", label: "protocol-driven recovery & biohacking" },
+        { id: "ring_b", label: "overlanding & van-life" },
+        { id: "ring_c", label: "cold-climate remote workers" },
+      ],
+      convictionScores: [],
+      analogs: [],
+    });
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(mockCallLLM).not.toHaveBeenCalled();
+    expect(mockRecordPattern).not.toHaveBeenCalled();
+    expect(body.campaign_pattern_id).toBe("pat_done");
+    expect(body.primary_ring.ring_hypothesis_id).toBe("ring_a");
+    expect(body.lateral_rings[0].ring_hypothesis_id).toBe("ring_b");
+    expect(body.lateral_rings[1].ring_hypothesis_id).toBe("ring_c");
+  });
+
+  it("runs fresh when the latest pattern predates the brief submission", async () => {
+    mockGetLatestForCampaign.mockResolvedValue({
+      id: "pat_stale",
+      campaign_id: "camp_1",
+      customer_id: "user_1",
+      created_at: "2026-06-09T00:00:00.000Z", // before submitted_at
+      product_attributes: { interpretation: interpretation() },
+      customer_description: null,
+      aov_bucket: "high",
+      scoring_weights: null,
+    });
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    const body = await (await call()).json();
+
+    expect(mockCallLLM).toHaveBeenCalledTimes(1);
+    expect(body.campaign_pattern_id).toBe("pat_1");
+  });
+
+  it("returns 401 / 404 / 400 on auth, ownership, and unsubmitted-brief failures", async () => {
+    mockGetAuthenticatedUser.mockResolvedValueOnce(null);
+    expect((await call()).status).toBe(401);
+
+    mockGetCampaignById.mockResolvedValueOnce({
+      ...CAMPAIGN,
+      user_id: "someone_else",
+    });
+    expect((await call()).status).toBe(404);
+
+    mockGetCampaignById.mockResolvedValueOnce({
+      ...CAMPAIGN,
+      brief: { version: 2 }, // draft, never submitted
+    });
+    const res = await call();
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("brief_not_submitted");
+  });
+});

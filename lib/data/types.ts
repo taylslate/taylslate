@@ -594,7 +594,9 @@ export type DomainEventType =
   // Wave 14 Phase 2A — brief intake + interpretation loop
   | "brief.url_derived"
   | "brief.url_derivation_failed"
-  | "brief.submitted";
+  | "brief.submitted"
+  | "brief.interpretation_completed"
+  | "brief.interpretation_failed";
 
 export type DomainEntityType =
   | "deal"
@@ -971,4 +973,31 @@ export interface ShowBrandHistoryEntry {
   category?: string;
   deal_type?: "one-off" | "annual";
   notes?: string;
+}
+
+// ---- Wave 14 Phase 2A Layer 4: brief interpretation ----
+// Shape returned by POST /api/campaigns/[id]/interpret and rendered by the
+// Layer 5 interpretation page. Ring ids are nullable because pattern
+// library persistence is fail-soft — the interpretation still returns when
+// a write fails; Layer 5 disables the confirm flow for rings without ids.
+
+export interface InterpretedRing {
+  ring_hypothesis_id: string | null;
+  ring_label: string;
+  confidence: ConvictionBand;
+  reasoning: string;
+  /** Brand names of library analogs the model cited for this ring. */
+  analog_campaigns: string[];
+}
+
+export interface BriefInterpretation {
+  campaign_pattern_id: string | null;
+  campaign_pattern: {
+    customer_summary: string;
+    interpretation_confidence: ConvictionBand;
+    /** Structured parse of the brief's free-text exclusions. */
+    exclusions_parsed: string[];
+  };
+  primary_ring: InterpretedRing;
+  lateral_rings: InterpretedRing[];
 }

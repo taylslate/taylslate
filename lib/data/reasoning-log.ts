@@ -273,6 +273,40 @@ export async function getLatestCampaignPatternForCustomer(
   }
 }
 
+/**
+ * Most recent campaign_patterns row for a campaign, or null. Fail-soft.
+ * The interpret endpoint's idempotency guard: a pattern row created after
+ * the brief's submitted_at means interpretation already ran for this brief
+ * version, so the stored result is replayed instead of re-calling the LLM.
+ */
+export async function getLatestCampaignPatternForCampaign(
+  campaignId: string
+): Promise<CampaignPatternRow | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("campaign_patterns")
+      .select("*")
+      .eq("campaign_id", campaignId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<CampaignPatternRow>();
+    if (error) {
+      console.warn(
+        "[reasoning-log.getLatestCampaignPatternForCampaign] read failed:",
+        error.message
+      );
+      return null;
+    }
+    return data ?? null;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.getLatestCampaignPatternForCampaign] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
 /** Single campaign_patterns row by id, or null. Fail-soft. */
 export async function getCampaignPatternById(
   id: string
