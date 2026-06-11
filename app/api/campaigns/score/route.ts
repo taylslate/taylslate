@@ -1,3 +1,10 @@
+// DEPRECATED (Wave 14 2A): the legacy Wave 6.5 brief flow that called this
+// endpoint was removed when /campaigns/new became the brief intake form.
+// Nothing in the app calls it anymore. It stays as the working
+// brief→scoring→discovery pipeline reference until Layer 5/2B rewires
+// discovery to run from confirmed ring hypotheses — expect it to be
+// deleted or rewritten then.
+
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getAuthenticatedUser, ensureProfile, createCampaign, updateCampaignScoredShows } from "@/lib/data/queries";
