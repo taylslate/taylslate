@@ -1330,6 +1330,31 @@ export async function getCampaignById(id: string): Promise<Campaign | null> {
   return data as Campaign;
 }
 
+/** Wave 14 2A: update the brief-intake fields on a campaign row. */
+export async function updateCampaignBrief(
+  campaignId: string,
+  updates: {
+    name?: string;
+    brief?: Record<string, unknown>;
+    budget_total?: number;
+    status?: CampaignStatus;
+  }
+): Promise<boolean> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("campaigns")
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", campaignId);
+  if (error) {
+    console.error("[updateCampaignBrief] Error:", error.message);
+    return false;
+  }
+  return true;
+}
+
 export async function updateCampaignScoredShows(
   campaignId: string,
   scoredShows: unknown[],

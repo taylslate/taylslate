@@ -12,7 +12,7 @@
 // Phase 1 ships these helpers; Phase 2 wires them into the discovery agent.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import type { BrandDecision } from "@/lib/data/types";
+import type { BrandDecision, CampaignPatternRow } from "@/lib/data/types";
 
 // ============================================================
 // campaign_patterns
@@ -228,6 +228,75 @@ export async function recordFounderAnnotation(
       "[reasoning-log.recordFounderAnnotation] threw:",
       err instanceof Error ? err.message : err
     );
+  }
+}
+
+// ============================================================
+// Reader helper — returning-brand detection (Wave 14 2A)
+// ============================================================
+
+/**
+ * Most recent campaign_patterns row for a customer, or null if they have
+ * none (first-time brand) or the read fails. Fail-soft like everything
+ * else in this module.
+ *
+ * Layer 4 coordination: the check-in copy wants the AI-derived
+ * customer_summary, which has no column yet — Layer 4 decides where it
+ * lands. Until then, callers read
+ * `product_attributes.customer_summary ?? customer_description`.
+ */
+export async function getLatestCampaignPatternForCustomer(
+  customerId: string
+): Promise<CampaignPatternRow | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("campaign_patterns")
+      .select("*")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<CampaignPatternRow>();
+    if (error) {
+      console.warn(
+        "[reasoning-log.getLatestCampaignPatternForCustomer] read failed:",
+        error.message
+      );
+      return null;
+    }
+    return data ?? null;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.getLatestCampaignPatternForCustomer] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+/** Single campaign_patterns row by id, or null. Fail-soft. */
+export async function getCampaignPatternById(
+  id: string
+): Promise<CampaignPatternRow | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("campaign_patterns")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle<CampaignPatternRow>();
+    if (error) {
+      console.warn(
+        "[reasoning-log.getCampaignPatternById] read failed:",
+        error.message
+      );
+      return null;
+    }
+    return data ?? null;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.getCampaignPatternById] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return null;
   }
 }
 
