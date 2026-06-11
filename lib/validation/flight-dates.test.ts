@@ -17,18 +17,18 @@ describe("validateFlightDates", () => {
     expect(err?.code).toBe("flight_end_before_start");
   });
 
-  it("rejects dates more than 2 years out", () => {
-    expect(validateFlightDates("2028-07-01", "2028-08-01", NOW)?.code).toBe(
+  it("rejects dates more than 1 year out", () => {
+    expect(validateFlightDates("2027-07-01", "2027-08-01", NOW)?.code).toBe(
       "flight_too_far_out"
     );
     // Start inside the window, end beyond it
-    expect(validateFlightDates("2026-07-01", "2028-07-01", NOW)?.code).toBe(
+    expect(validateFlightDates("2026-07-01", "2027-07-01", NOW)?.code).toBe(
       "flight_too_far_out"
     );
   });
 
-  it("accepts dates exactly at the 2-year boundary", () => {
-    expect(validateFlightDates("2028-06-10", "2028-06-11", NOW)).toBeNull();
+  it("accepts dates exactly at the 1-year boundary", () => {
+    expect(validateFlightDates("2027-06-10", "2027-06-11", NOW)).toBeNull();
   });
 
   it("rejects malformed dates", () => {

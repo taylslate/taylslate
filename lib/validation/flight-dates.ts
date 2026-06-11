@@ -2,7 +2,7 @@
 // shared by the brief intake form (client) and the brief endpoint
 // (server). Pure function: no I/O, safe to import from either side.
 
-export const MAX_FLIGHT_YEARS_OUT = 2;
+export const MAX_FLIGHT_YEARS_OUT = 1;
 
 export interface FlightDateError {
   code: "flight_invalid_date" | "flight_end_before_start" | "flight_too_far_out";
@@ -42,7 +42,7 @@ export function validateFlightDates(
   if (startDate.getTime() > max.getTime() || endDate.getTime() > max.getTime()) {
     return {
       code: "flight_too_far_out",
-      message: `Flight dates must be within the next ${MAX_FLIGHT_YEARS_OUT} years.`,
+      message: `Flight dates must be within the next ${MAX_FLIGHT_YEARS_OUT} year${MAX_FLIGHT_YEARS_OUT === 1 ? "" : "s"}.`,
     };
   }
   return null;
