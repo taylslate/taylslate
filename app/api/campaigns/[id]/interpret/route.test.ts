@@ -12,6 +12,8 @@ const {
   mockGetPatternById,
   mockGetLatestForCampaign,
   mockGetReasoning,
+  mockClaimLock,
+  mockReleaseLock,
 } = vi.hoisted(() => ({
   mockGetAuthenticatedUser: vi.fn(),
   mockGetCampaignById: vi.fn(),
@@ -24,6 +26,8 @@ const {
   mockGetPatternById: vi.fn(),
   mockGetLatestForCampaign: vi.fn(),
   mockGetReasoning: vi.fn(),
+  mockClaimLock: vi.fn(),
+  mockReleaseLock: vi.fn(),
 }));
 
 vi.mock("@/lib/data/queries", () => ({
@@ -52,6 +56,11 @@ vi.mock("@/lib/data/reasoning-log", () => ({
   getCampaignPatternById: mockGetPatternById,
   getLatestCampaignPatternForCampaign: mockGetLatestForCampaign,
   getCampaignReasoning: mockGetReasoning,
+}));
+
+vi.mock("@/lib/data/interpretation-lock", () => ({
+  claimInterpretation: mockClaimLock,
+  releaseInterpretation: mockReleaseLock,
 }));
 
 import { POST } from "./route";
@@ -175,6 +184,7 @@ function llmUserContent(): string {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
   mockGetAuthenticatedUser.mockResolvedValue(USER);
   mockGetCampaignById.mockResolvedValue(CAMPAIGN);
   mockLogEvent.mockResolvedValue(null);
@@ -191,9 +201,12 @@ beforeEach(() => {
     convictionScores: [],
     analogs: [],
   });
+  mockClaimLock.mockResolvedValue("acquired");
+  mockReleaseLock.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -215,10 +228,12 @@ describe("POST /api/campaigns/[id]/interpret", () => {
     expect(body.lateral_rings[0].ring_hypothesis_id).toBe("ring_2");
 
     // Critical wiring: analogs retrieved by brand-confirmed derivations and
-    // injected into the prompt's pattern library context.
+    // injected into the prompt's pattern library context, excluding the
+    // campaign's own prior pattern rows.
     expect(mockRetrieveAnalogs).toHaveBeenCalledWith({
       aovBucket: "high",
       category: "premium wellness",
+      excludeCampaignId: "camp_1",
     });
     expect(llmUserContent()).toContain("## Pattern library context");
     expect(llmUserContent()).toContain("ColdCo");
@@ -239,10 +254,15 @@ describe("POST /api/campaigns/[id]/interpret", () => {
       2,
       expect.objectContaining({ kind: "lateral", label: "overlanding & van-life" })
     );
-    // Both cited analogs exist in the library.
+    // Both cited analogs exist in the library; each row carries the FK back
+    // to the library pattern it was retrieved from (migration 022).
     expect(mockRecordAnalog).toHaveBeenCalledTimes(2);
     expect(mockRecordAnalog).toHaveBeenCalledWith(
-      expect.objectContaining({ campaignPatternId: "pat_1", analogName: "ColdCo" })
+      expect.objectContaining({
+        campaignPatternId: "pat_1",
+        analogName: "ColdCo",
+        analogPatternId: "lib_1",
+      })
     );
     expect(mockLogEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -433,7 +453,8 @@ describe("POST /api/campaigns/[id]/interpret", () => {
           goals: ["test_channel", "direct_response"],
           budget_total: 25000,
           exclusions_text: "No competitor sauna brands.",
-          exclusions_parsed: ["competitor sauna brands"],
+          // Server-side parse of the raw text — not the LLM's version.
+          exclusions_parsed: ["No competitor sauna brands."],
         }),
       })
     );
@@ -541,6 +562,7 @@ describe("POST /api/campaigns/[id]/interpret", () => {
     expect(mockRetrieveAnalogs).toHaveBeenCalledWith({
       aovBucket: "high",
       category: "premium wellness",
+      excludeCampaignId: "camp_1",
     });
     const content = llmUserContent();
     // New full top-level values are canonical in the prompt...
@@ -672,5 +694,301 @@ describe("POST /api/campaigns/[id]/interpret", () => {
     const res = await call();
     expect(res.status).toBe(400);
     expect((await res.json()).code).toBe("brief_not_submitted");
+  });
+});
+
+// ============================================================
+// Layer 4 amendment — Codex review fixes
+// ============================================================
+
+// A pattern row the "winner" of a concurrent race persisted: created after
+// submitted_at, carrying the stored interpretation blob for replay.
+const COMPLETED_PATTERN = {
+  id: "pat_done",
+  campaign_id: "camp_1",
+  customer_id: "user_1",
+  created_at: "2026-06-10T12:05:00.000Z",
+  product_attributes: {
+    brand_name: "SaunaBox",
+    interpretation: interpretation(),
+  },
+  customer_description: "Affluent men 30-55.",
+  aov_bucket: "high",
+  scoring_weights: null,
+};
+
+const PRIOR_PATTERN_BASE = {
+  id: "pat_prior",
+  campaign_id: "camp_old",
+  customer_id: "user_1",
+  created_at: "2026-03-01T00:00:00.000Z",
+  product_attributes: {
+    brand_name: "SaunaBox",
+    category: "premium wellness",
+    product_description: "Portable infrared sauna kits.",
+    aov_bucket: "high",
+    aov_reasoning: "",
+    key_attributes: ["mobile use case"],
+    customer_summary: "Affluent recovery-focused men 30-55.",
+  },
+  customer_description: "Men into recovery.",
+  aov_bucket: "high",
+  scoring_weights: null,
+};
+
+describe("POST /api/campaigns/[id]/interpret — Layer 4 amendment", () => {
+  it("concurrent double-POST: one LLM call, one pattern row, loser replays the winner", async () => {
+    vi.useFakeTimers();
+    try {
+      // First request wins the sentinel claim; second sees "exists".
+      mockClaimLock
+        .mockResolvedValueOnce("acquired")
+        .mockResolvedValue("exists");
+      mockCallLLM.mockResolvedValue(
+        llmMessage(JSON.stringify(interpretation()))
+      );
+      // Replay-guard reads (both requests) see nothing; the loser's poll
+      // after the wait interval finds the winner's persisted row.
+      mockGetLatestForCampaign
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(COMPLETED_PATTERN);
+
+      const winner = call();
+      const loser = call();
+      await vi.advanceTimersByTimeAsync(2000);
+      const [res1, res2] = await Promise.all([winner, loser]);
+      const [body1, body2] = [await res1.json(), await res2.json()];
+
+      expect(mockCallLLM).toHaveBeenCalledTimes(1);
+      expect(mockRecordPattern).toHaveBeenCalledTimes(1);
+      expect(mockClaimLock).toHaveBeenCalledTimes(2);
+      expect(res1.status).toBe(200);
+      expect(res2.status).toBe(200);
+      expect(body1.primary_ring.ring_label).toBe(
+        "protocol-driven recovery & biohacking"
+      );
+      expect(body2.campaign_pattern_id).toBe("pat_done");
+      expect(body2.primary_ring.ring_label).toBe(
+        "protocol-driven recovery & biohacking"
+      );
+      // Success keeps the sentinel — the replay guard owns refreshes.
+      expect(mockReleaseLock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("releases the sentinel on LLM failure so refresh can retry", async () => {
+    mockCallLLM.mockRejectedValue(new Error("api down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const body = await (await call()).json();
+
+    expect(body).toEqual({ error: "interpretation_failed", reason: "llm_error" });
+    expect(mockReleaseLock).toHaveBeenCalledWith("camp_1", SUBMITTED_AT);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it("releases the sentinel when persistence fails (no replayable row)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    mockRecordPattern.mockResolvedValue(null);
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    const body = await (await call()).json();
+
+    expect(body.campaign_pattern_id).toBeNull();
+    expect(mockReleaseLock).toHaveBeenCalledWith("camp_1", SUBMITTED_AT);
+  });
+
+  it("returning brand with changed product: confirmed re-derivation drives retrieval and persistence", async () => {
+    mockGetPatternById.mockResolvedValue(PRIOR_PATTERN_BASE);
+    mockGetCampaignById.mockResolvedValue({
+      ...CAMPAIGN,
+      brief: {
+        version: 2,
+        customer_context: {
+          reused_from_pattern_id: "pat_prior",
+          product_url: "https://homespa.com",
+          changed_fields: {
+            product_url: {
+              before: "https://saunabox.com",
+              after: "https://homespa.com",
+            },
+          },
+          // Brand-confirmed re-derivation from the new URL — canonical
+          // over the prior pattern's attributes.
+          product_attributes: {
+            brand_name: "SaunaBox",
+            category: "home spa equipment",
+            product_description: "Built-in home spa and sauna installs.",
+            aov_bucket: "mid",
+            aov_reasoning: "Installs from $150.",
+            key_attributes: ["home install"],
+          },
+        },
+        goals: ["scale_winner"],
+        flight: { mode: "preset", preset: "asap" },
+        submitted_at: SUBMITTED_AT,
+      },
+    });
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    await call();
+
+    // Retrieval keyed off the NEW derivation, not the prior pattern.
+    expect(mockRetrieveAnalogs).toHaveBeenCalledWith({
+      aovBucket: "mid",
+      category: "home spa equipment",
+      excludeCampaignId: "camp_1",
+    });
+    expect(llmUserContent()).toContain("home spa equipment");
+    const input = mockRecordPattern.mock.calls[0][0];
+    expect(input.aovBucket).toBe("mid");
+    expect(input.productAttributes).toEqual(
+      expect.objectContaining({ category: "home spa equipment" })
+    );
+  });
+
+  it("fails with a security warning when the reused pattern belongs to another user", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockGetPatternById.mockResolvedValue({
+      ...PRIOR_PATTERN_BASE,
+      customer_id: "someone_else",
+    });
+    mockGetCampaignById.mockResolvedValue({
+      ...CAMPAIGN,
+      brief: {
+        version: 2,
+        customer_context: { reused_from_pattern_id: "pat_prior" },
+        goals: ["test_channel"],
+        flight: { mode: "preset", preset: "asap" },
+        submitted_at: SUBMITTED_AT,
+      },
+    });
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toEqual({
+      error: "interpretation_failed",
+      reason: "reused_pattern_forbidden",
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("SECURITY")
+    );
+    expect(mockCallLLM).not.toHaveBeenCalled();
+    expect(mockRecordPattern).not.toHaveBeenCalled();
+    expect(mockReleaseLock).toHaveBeenCalledWith("camp_1", SUBMITTED_AT);
+    expect(mockLogEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "brief.interpretation_failed",
+        payload: { reason: "reused_pattern_forbidden" },
+      })
+    );
+  });
+
+  it("returns 503 NO_API_KEY when ANTHROPIC_API_KEY is missing", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body.code).toBe("NO_API_KEY");
+    expect(mockCallLLM).not.toHaveBeenCalled();
+    expect(mockReleaseLock).toHaveBeenCalledWith("camp_1", SUBMITTED_AT);
+  });
+
+  it("parses exclusions server-side, ignoring whatever the LLM emitted", async () => {
+    mockGetCampaignById.mockResolvedValue({
+      ...CAMPAIGN,
+      brief: {
+        ...FRESH_BRIEF,
+        exclusions_text: "Plunge, Therabody; also\nBig Sauna, plunge",
+      },
+    });
+    mockCallLLM.mockResolvedValue(
+      llmMessage(
+        JSON.stringify(
+          interpretation({
+            campaign_pattern: {
+              ...interpretation().campaign_pattern,
+              exclusions_parsed: ["HALLUCINATED ENTRY"],
+            },
+          })
+        )
+      )
+    );
+
+    const body = await (await call()).json();
+
+    const expected = ["Plunge", "Therabody", "also", "Big Sauna"];
+    expect(body.campaign_pattern.exclusions_parsed).toEqual(expected);
+    expect(
+      mockRecordPattern.mock.calls[0][0].productAttributes.brief_context
+        .exclusions_parsed
+    ).toEqual(expected);
+  });
+
+  it("accepts zero lateral rings with a warning", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockCallLLM.mockResolvedValue(
+      llmMessage(JSON.stringify(interpretation({ lateral_rings: [] })))
+    );
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.lateral_rings).toEqual([]);
+    expect(mockRecordRing).toHaveBeenCalledTimes(1); // primary only
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("zero lateral rings")
+    );
+  });
+
+  it("runs fresh on a malformed submitted_at instead of colliding with replay", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockGetCampaignById.mockResolvedValue({
+      ...CAMPAIGN,
+      brief: { ...FRESH_BRIEF, submitted_at: "not-a-timestamp" },
+    });
+    // A stored row exists — an unguarded NaN comparison could misfire here.
+    mockGetLatestForCampaign.mockResolvedValue(COMPLETED_PATTERN);
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    const body = await (await call()).json();
+
+    expect(mockCallLLM).toHaveBeenCalledTimes(1); // fresh run, no replay
+    expect(body.campaign_pattern_id).toBe("pat_1");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("not a parseable timestamp"),
+      "not-a-timestamp"
+    );
+    expect(mockClaimLock).toHaveBeenCalledWith("camp_1", "not-a-timestamp");
+  });
+
+  it("normalizes an unnormalized aov_bucket before retrieval, weights, and persistence", async () => {
+    mockGetCampaignById.mockResolvedValue({
+      ...CAMPAIGN,
+      brief: {
+        ...FRESH_BRIEF,
+        product: { ...FRESH_BRIEF.product, aov_bucket: " HIGH " },
+      },
+    });
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    await call();
+
+    expect(mockRetrieveAnalogs).toHaveBeenCalledWith(
+      expect.objectContaining({ aovBucket: "high" })
+    );
+    const input = mockRecordPattern.mock.calls[0][0];
+    expect(input.aovBucket).toBe("high");
+    expect(input.scoringWeights).toEqual(
+      expect.objectContaining({ purchasePower: 0.2 })
+    );
   });
 });

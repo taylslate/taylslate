@@ -170,6 +170,8 @@ export interface RecordAnalogMatchInput {
   analogName: string;
   reasoning?: string | null;
   similarityScore?: number | null;
+  /** The campaign_patterns row the analog was retrieved from (migration 022). */
+  analogPatternId?: string | null;
 }
 
 export async function recordAnalogMatch(
@@ -181,6 +183,7 @@ export async function recordAnalogMatch(
       analog_name: input.analogName,
       reasoning: input.reasoning ?? null,
       similarity_score: input.similarityScore ?? null,
+      analog_pattern_id: input.analogPatternId ?? null,
     });
     if (error) {
       console.warn(

@@ -7,6 +7,7 @@ const { builder, supabaseAdmin } = vi.hoisted(() => {
   const builder = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    or: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn(),
   };
@@ -154,6 +155,29 @@ describe("retrieveAnalogCampaigns", () => {
     expect(result).toEqual([]);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it("excludes the calling campaign's own rows with a NULL-safe filter", async () => {
+    builder.limit.mockResolvedValueOnce({ data: [], error: null });
+    await retrieveAnalogCampaigns({
+      aovBucket: "high",
+      category: "wellness",
+      excludeCampaignId: "camp_1",
+    });
+    // NULL-safe: seeded library rows have campaign_id NULL and must survive
+    // the exclusion (a bare .neq() would drop them).
+    expect(builder.or).toHaveBeenCalledWith(
+      "campaign_id.is.null,campaign_id.neq.camp_1"
+    );
+  });
+
+  it("applies no exclusion filter when excludeCampaignId is omitted", async () => {
+    builder.limit.mockResolvedValueOnce({ data: [], error: null });
+    await retrieveAnalogCampaigns({
+      aovBucket: "high",
+      category: "wellness",
+    });
+    expect(builder.or).not.toHaveBeenCalled();
   });
 
   it("returns [] when supabase throws", async () => {

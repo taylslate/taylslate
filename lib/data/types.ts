@@ -200,6 +200,12 @@ export interface CampaignBriefV2 {
      * customer_text / exclusions_text / product_url, not from here.
      */
     changed_fields?: Partial<Record<BriefChangedFieldKey, BriefChangedField>>;
+    /**
+     * Brand-confirmed re-derivation when the returning brand changed the
+     * product URL. Canonical over the prior pattern's product attributes
+     * for category, AOV bucket, and analog retrieval.
+     */
+    product_attributes?: ProductDerivation;
   };
   goals?: BriefGoal[];
   goals_context?: string;
@@ -952,6 +958,8 @@ export interface AnalogMatchRow {
   analog_name: string;
   reasoning: string | null;
   similarity_score: number | null;
+  /** FK to the campaign_patterns row the analog came from (migration 022). */
+  analog_pattern_id: string | null;
   created_at: string;
 }
 

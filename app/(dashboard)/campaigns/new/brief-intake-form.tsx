@@ -213,9 +213,24 @@ export default function BriefIntakeForm({
     return { mode: "preset", preset: flightChoice };
   };
 
+  // Reuse path: the check-in changed the product URL, so the brand must
+  // confirm a fresh derivation before submit. Once active, the live URL is
+  // the ProductSection field (seeded from the panel, possibly edited
+  // since) — mirroring how exclusions are handled.
+  const reuseProductActive =
+    !!checkInDelta &&
+    !!returning &&
+    checkInDelta.productUrl.trim().length > 0 &&
+    (returning.prior.productUrl ?? "").trim() !==
+      checkInDelta.productUrl.trim();
+  const reuseProductUrl = reuseProductActive
+    ? product.url
+    : (checkInDelta?.productUrl ?? "");
+
   /**
    * Field-level before/after for the returning-brand delta path. Product
-   * URL and customer description come from the check-in panel; exclusions
+   * URL and customer description come from the check-in panel (product URL
+   * from the live product section once a change activates it); exclusions
    * from the live Section 3 field (seeded from the panel, possibly edited
    * since). Only fields that actually changed get an entry.
    */
@@ -233,7 +248,7 @@ export default function BriefIntakeForm({
         changed[key] = { before, after: after.trim() || null };
       }
     };
-    compare("product_url", returning.prior.productUrl, checkInDelta.productUrl);
+    compare("product_url", returning.prior.productUrl, reuseProductUrl);
     compare(
       "customer_description",
       returning.prior.customerText,
@@ -257,6 +272,14 @@ export default function BriefIntakeForm({
     }
     if (!reusing && !customerText.trim()) {
       setError("Tell us about your customer — that's the part we can't infer.");
+      return;
+    }
+    if (reusing && reuseProductActive && !product.derivation) {
+      setError(
+        product.deriving
+          ? "Still reading your new product URL — one moment."
+          : "Your product URL changed — read it and confirm the playback card first."
+      );
       return;
     }
     if (goals.size === 0) {
@@ -298,11 +321,16 @@ export default function BriefIntakeForm({
       if (checkInDelta && Object.keys(changedFields).length > 0) {
         // Delta path: the brief carries the new full values (customer_text,
         // exclusions_text, product_url) — Layer 4 reads those, not the
-        // priors — plus the field-level changes record for audit.
+        // priors — plus the field-level changes record for audit. A changed
+        // product URL also carries the brand-confirmed re-derivation, which
+        // Layer 4 treats as canonical over the prior pattern's attributes.
         body.customer_context = {
           reused_from_pattern_id: returning.patternId,
-          product_url: checkInDelta.productUrl || null,
+          product_url: reuseProductUrl.trim() || null,
           changed_fields: changedFields,
+          ...(reuseProductActive && product.derivation
+            ? { product_attributes: product.derivation }
+            : {}),
         };
         body.customer_text = checkInDelta.customerText || undefined;
       } else {
@@ -355,6 +383,23 @@ export default function BriefIntakeForm({
           // The panel's exclusions become the Section 3 field — one source
           // of truth; further edits there stay tracked via buildChangedFields.
           setExclusions(delta.exclusionsText);
+          // Product URL changed: re-derive from the new URL so the brand
+          // confirms a fresh read-back card before submit. The confirmed
+          // derivation overrides the prior pattern in Layer 4.
+          const urlChanged =
+            delta.productUrl.trim().length > 0 &&
+            (returning.prior.productUrl ?? "").trim() !==
+              delta.productUrl.trim();
+          if (urlChanged) {
+            setProduct((p) => ({
+              ...p,
+              url: delta.productUrl,
+              derivation: null,
+              fallbackMode: false,
+              deriveError: null,
+            }));
+            deriveProduct({ url: delta.productUrl.trim() });
+          }
           setMode("decisions");
         }}
         onStartFresh={() => setMode("full")}
@@ -428,6 +473,22 @@ export default function BriefIntakeForm({
           </>
         )}
 
+        {reusing && reuseProductActive && (
+          <section aria-labelledby="section-product-update">
+            <SectionHeading
+              id="section-product-update"
+              index={1}
+              title="Product update"
+              hint="Your URL changed — here's our fresh read. Correct anything that's off."
+            />
+            <ProductSection
+              state={product}
+              onChange={setProduct}
+              onDerive={deriveProduct}
+            />
+          </section>
+        )}
+
         {reusing && checkInDelta && changedFieldKeys.length > 0 && (
           <div className="p-4 rounded-xl border border-[var(--brand-teal)]/40 bg-[var(--brand-teal)]/[0.05] text-sm text-[var(--brand-text-secondary)]">
             <span className="font-semibold text-[var(--brand-text)]">
@@ -441,7 +502,7 @@ export default function BriefIntakeForm({
         <section aria-labelledby="section-campaign">
           <SectionHeading
             id="section-campaign"
-            index={reusing ? 1 : 3}
+            index={reusing ? (reuseProductActive ? 2 : 1) : 3}
             title="Campaign"
             hint="The decisions only you can make."
           />

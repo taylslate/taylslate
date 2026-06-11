@@ -212,6 +212,10 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 
 Things that respond to real customer signal once the product is live.
 
+## Post-Launch Hardening
+
+- Cleanup cron for `interpretation_locks` rows older than ~10 minutes — handles orphaned locks from crashed Node processes (the interpret endpoint releases on failure paths, but a hard crash mid-run leaves the sentinel until the brief is resubmitted).
+
 ## Customer-Driven
 
 These are real product capabilities, but building them before customers ask is speculative. Listed here so they don't get forgotten, not as a promise to build them.

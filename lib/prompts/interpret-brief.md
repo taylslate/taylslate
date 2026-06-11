@@ -53,8 +53,7 @@ Output:
 {
   "campaign_pattern": {
     "customer_summary": "Affluent men 30-55 already spending on recovery — they own or covet a cold plunge, follow protocol-driven health voices, and buy $1,000+ wellness hardware without a discount. The mobility line in the brief is a real signal, not marketing copy: part of this customer base lives or travels in vehicles and can't install fixed equipment.",
-    "interpretation_confidence": "high",
-    "exclusions_parsed": ["competing sauna brands"]
+    "interpretation_confidence": "high"
   },
   "primary_ring": {
     "ring_label": "protocol-driven recovery & biohacking",
@@ -97,8 +96,7 @@ Output:
 {
   "campaign_pattern": {
     "customer_summary": "A narrow, role-defined buyer: revenue leaders at mid-market B2B companies who personally feel forecast pain every Monday pipeline call. This is not a broad 'business listener' play — the ICP is maybe 100k people in North America, and the campaign wins on precision, not reach.",
-    "interpretation_confidence": "medium",
-    "exclusions_parsed": []
+    "interpretation_confidence": "medium"
   },
   "primary_ring": {
     "ring_label": "sales leadership & RevOps practitioners",
@@ -135,8 +133,7 @@ Output:
 {
   "campaign_pattern": {
     "customer_summary": "Mass-market wellness triers — mostly women 25-45 who buy low-commitment health upgrades on host enthusiasm rather than research. At $29/month the economics need broad reach and repeat-read frequency, not niche precision; the LTV case rests on subscription retention, so trust-heavy hosts matter more than topical fit.",
-    "interpretation_confidence": "high",
-    "exclusions_parsed": []
+    "interpretation_confidence": "high"
   },
   "primary_ring": {
     "ring_label": "broad lifestyle & wellness-curious",
@@ -175,8 +172,7 @@ Respond with a single JSON object only — no preamble, no explanation, no markd
 {
   "campaign_pattern": {
     "customer_summary": string,        // your read of who the customer actually is, 2-4 sentences
-    "interpretation_confidence": "high" | "medium" | "low" | "speculative",
-    "exclusions_parsed": string[]      // structured parse of the brief's exclusions text; [] if none
+    "interpretation_confidence": "high" | "medium" | "low" | "speculative"
   },
   "primary_ring": {
     "ring_label": string,              // short label, e.g. "biohacking-adjacent wellness"

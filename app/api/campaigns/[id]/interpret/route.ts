@@ -17,6 +17,10 @@
 // effect, refresh after success); the stored result is replayed instead of
 // re-calling the LLM and polluting analog retrieval with duplicate rows.
 // Resubmitting the brief updates submitted_at, so edits re-interpret.
+// The replay check alone is read-then-act and racy — an interpretation_locks
+// sentinel row (migration 022) makes it atomic: exactly one concurrent POST
+// claims the (campaign, brief version) key; losers wait and replay the
+// winner's stored result.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser, getCampaignById } from "@/lib/data/queries";
@@ -29,6 +33,11 @@ import {
   recordCampaignPattern,
   recordRingHypothesis,
 } from "@/lib/data/reasoning-log";
+import {
+  claimInterpretation,
+  releaseInterpretation,
+} from "@/lib/data/interpretation-lock";
+import { parseExclusions } from "@/lib/utils/parse-exclusions";
 import { retrieveAnalogCampaigns } from "@/lib/discovery/pattern-library-retrieval";
 import {
   callLLMWithFallback,
@@ -52,6 +61,13 @@ const MAX_LLM_TOKENS = 4096;
 // The prompt asks for 2-4 laterals, 6 max. More than 6 persists anyway —
 // let the data show what the model wanted to do — but gets a warning.
 const LATERAL_SOFT_CAP = 6;
+// Lock-loser wait: poll for the winner's persisted result. 20 × 2s covers
+// a slow LLM pass; on timeout the loser returns a soft "in_progress" and
+// the page's refresh path replays the winner's stored row.
+const LOCK_WAIT_INTERVAL_MS = 2000;
+const LOCK_WAIT_MAX_ATTEMPTS = 20;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -77,52 +93,99 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     );
   }
 
+  const submittedAt = brief.submitted_at;
+  // NaN guard: a malformed submitted_at can't be ordered against row
+  // timestamps — skip replay entirely (fresh run) rather than risking a
+  // wrong replay. The sentinel below is keyed on the raw string, so the
+  // claim still works.
+  const submittedMs = Date.parse(submittedAt);
+  if (Number.isNaN(submittedMs)) {
+    console.warn(
+      "[interpret] brief.submitted_at is not a parseable timestamp:",
+      submittedAt
+    );
+  }
+
   // Idempotency guard — replay a stored interpretation for this brief
   // version instead of running a second one.
   const existing = await getLatestCampaignPatternForCampaign(id);
-  if (
-    existing &&
+  if (existing && !Number.isNaN(submittedMs)) {
     // Date-parse both sides: Supabase emits +00:00-suffixed timestamps,
     // submitted_at is Z-suffixed — string comparison would misorder.
-    Date.parse(existing.created_at) > Date.parse(brief.submitted_at)
-  ) {
-    const replayed = await replayInterpretation(existing);
-    if (replayed) return NextResponse.json(replayed);
-    // A newer row without a stored interpretation wasn't written by this
-    // endpoint — fall through to a fresh run.
+    const createdMs = Date.parse(existing.created_at);
+    if (!Number.isNaN(createdMs) && createdMs >= submittedMs) {
+      const replayed = await replayInterpretation(existing);
+      if (replayed) return NextResponse.json(replayed);
+      // A newer row without a stored interpretation wasn't written by this
+      // endpoint — fall through to a fresh run.
+    }
   }
 
-  const resolved = await resolveBrief(brief, campaign.budget_total ?? null);
-  if (!resolved) {
+  // Atomic claim on (campaign, brief version) — closes the race where two
+  // concurrent POSTs both pass the replay check above.
+  if ((await claimInterpretation(id, submittedAt)) === "exists") {
+    const waited = await waitForWinner(id, submittedAt, submittedMs);
+    if (waited === "timeout") {
+      return interpretationFailed(id, user.id, "in_progress");
+    }
+    if (waited !== "run_fresh") return NextResponse.json(waited);
+    // Winner failed and released — we now hold the lock; run fresh.
+  }
+
+  // Every early return below this point must release the sentinel: a
+  // failure leaves no replayable row, and a kept lock would turn the
+  // page's "refresh to try again" into a dead end.
+  const failAndRelease = async (
+    reason: Parameters<typeof interpretationFailed>[2]
+  ) => {
+    await releaseInterpretation(id, submittedAt);
+    return interpretationFailed(id, user.id, reason);
+  };
+
+  const resolved = await resolveBrief(brief, campaign.budget_total ?? null, user.id);
+  if ("error" in resolved) {
+    if (resolved.error === "forbidden") {
+      return failAndRelease("reused_pattern_forbidden");
+    }
+    await releaseInterpretation(id, submittedAt);
     return NextResponse.json(
       { error: "Reused campaign pattern not found" },
       { status: 400 }
     );
   }
 
+  // Defensive normalization — earlier layers should only ship low/mid/high,
+  // but the bucket drives retrieval, weight tilt, and a CHECK-constrained
+  // column, so unnormalized values must not get this far.
+  resolved.aovBucket = normalizeAovBucket(resolved.aovBucket);
+  resolved.derivation.aov_bucket =
+    normalizeAovBucket(resolved.derivation.aov_bucket) ?? "mid";
+
   // Layer 1 wiring: analogs retrieved by category + AOV bucket from the
   // brand-confirmed derivations, injected into the prompt's pattern
-  // library context. Empty library is a valid result.
+  // library context. Empty library is a valid result. The campaign's own
+  // prior pattern rows are excluded — a re-interpretation must not cite
+  // its own stale interpretation as an analog.
   const analogs =
     resolved.aovBucket && resolved.category
       ? await retrieveAnalogCampaigns({
           aovBucket: resolved.aovBucket,
           category: resolved.category,
+          excludeCampaignId: id,
         })
       : [];
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    await releaseInterpretation(id, submittedAt);
+    return noApiKeyResponse();
+  }
 
   let client: Anthropic;
   try {
     client = createLLMClient();
   } catch {
-    return NextResponse.json(
-      {
-        error:
-          "AI interpretation is not configured. Please add an ANTHROPIC_API_KEY environment variable.",
-        code: "NO_API_KEY",
-      },
-      { status: 503 }
-    );
+    await releaseInterpretation(id, submittedAt);
+    return noApiKeyResponse();
   }
 
   let message: Anthropic.Message;
@@ -138,23 +201,23 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       "[interpret] LLM call threw:",
       err instanceof Error ? err.message : err
     );
-    return interpretationFailed(id, user.id, "llm_error");
+    return failAndRelease("llm_error");
   }
 
   if (message.stop_reason === "refusal") {
-    return interpretationFailed(id, user.id, "refusal");
+    return failAndRelease("refusal");
   }
 
   const textBlock = message.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {
-    return interpretationFailed(id, user.id, "no_text_block");
+    return failAndRelease("no_text_block");
   }
 
   // Parse fully before persisting anything — malformed output must leave
   // zero partial rows.
   const parsed = parseInterpretation(textBlock.text);
   if ("failure" in parsed) {
-    return interpretationFailed(id, user.id, parsed.failure);
+    return failAndRelease(parsed.failure);
   }
   const output = parsed.output;
 
@@ -172,6 +235,12 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     analogs
   );
 
+  if (!response.campaign_pattern_id) {
+    // Fail-soft persistence left no replayable row — release so a refresh
+    // can re-run instead of waiting on a lock that will never resolve.
+    await releaseInterpretation(id, submittedAt);
+  }
+
   await logEvent({
     eventType: "brief.interpretation_completed",
     entityType: "campaign",
@@ -188,6 +257,50 @@ export async function POST(_request: NextRequest, context: RouteContext) {
   });
 
   return NextResponse.json(response);
+}
+
+function noApiKeyResponse() {
+  return NextResponse.json(
+    {
+      error:
+        "AI interpretation is not configured. Please add an ANTHROPIC_API_KEY environment variable.",
+      code: "NO_API_KEY",
+    },
+    { status: 503 }
+  );
+}
+
+/**
+ * Lock-loser path: another request owns this brief version (usually the
+ * page effect double-firing). Poll until the winner's pattern row lands and
+ * replay it, take over the lock if the winner failed and released, or time
+ * out to a soft "in_progress".
+ */
+async function waitForWinner(
+  campaignId: string,
+  briefSubmittedAt: string,
+  submittedMs: number
+): Promise<BriefInterpretation | "run_fresh" | "timeout"> {
+  for (let attempt = 0; attempt < LOCK_WAIT_MAX_ATTEMPTS; attempt++) {
+    await sleep(LOCK_WAIT_INTERVAL_MS);
+    const row = await getLatestCampaignPatternForCampaign(campaignId);
+    if (row) {
+      const createdMs = Date.parse(row.created_at);
+      // With an unparseable submitted_at, any row with a stored
+      // interpretation was written under this same lock key — replay it.
+      const matchesBriefVersion = Number.isNaN(submittedMs)
+        ? true
+        : !Number.isNaN(createdMs) && createdMs >= submittedMs;
+      if (matchesBriefVersion) {
+        const replayed = await replayInterpretation(row);
+        if (replayed) return replayed;
+      }
+    }
+    if ((await claimInterpretation(campaignId, briefSubmittedAt)) === "acquired") {
+      return "run_fresh";
+    }
+  }
+  return "timeout";
 }
 
 // ============================================================
@@ -217,19 +330,24 @@ interface ResolvedBrief {
   } | null;
 }
 
+type ResolveBriefFailure = { error: "not_found" | "forbidden" };
+
 /**
  * Resolve the interpretation inputs from the brief. Returning-brand briefs
  * (customer_context.reused_from_pattern_id) take product attributes from
- * the prior pattern row — the reuse path never re-derives product — while
- * new full values at the brief top level (customer_text, exclusions_text)
- * are canonical. The changed_fields record is audit context for the
- * prompt, not a source of values. Returns null only when a reused pattern
- * row can't be loaded.
+ * the prior pattern row — unless the brand changed product URL and
+ * confirmed a re-derivation, stored at customer_context.product_attributes,
+ * which is canonical over the prior pattern — while new full values at the
+ * brief top level (customer_text, exclusions_text) are canonical. The
+ * changed_fields record is audit context for the prompt, not a source of
+ * values. Fails when a reused pattern row can't be loaded or belongs to a
+ * different user.
  */
 async function resolveBrief(
   brief: CampaignBriefV2,
-  budgetTotal: number | null
-): Promise<ResolvedBrief | null> {
+  budgetTotal: number | null,
+  userId: string
+): Promise<ResolvedBrief | ResolveBriefFailure> {
   const reusedPatternId = brief.customer_context?.reused_from_pattern_id;
 
   const common = {
@@ -241,9 +359,23 @@ async function resolveBrief(
 
   if (reusedPatternId) {
     const prior = await getCampaignPatternById(reusedPatternId);
-    if (!prior) return null;
+    if (!prior) return { error: "not_found" };
+    // Layer 3 validates ownership at submit; re-check here because the
+    // reused id feeds another customer's data into this brand's prompt and
+    // pattern row if it ever slips through.
+    if (prior.customer_id !== userId) {
+      console.warn(
+        `[interpret] SECURITY: user ${userId} attempted to interpret with reused pattern ${reusedPatternId} owned by ${prior.customer_id}`
+      );
+      return { error: "forbidden" };
+    }
 
-    const derivation = extractDerivation(prior.product_attributes);
+    // Brand-confirmed re-derivation (product changed) overrides the prior
+    // pattern for category, AOV bucket, and analog retrieval.
+    const overrideAttrs = brief.customer_context?.product_attributes;
+    const derivation = overrideAttrs
+      ? extractDerivation(overrideAttrs as unknown as Record<string, unknown>)
+      : extractDerivation(prior.product_attributes);
     const attrs = prior.product_attributes ?? {};
     const previousSummary =
       readStringAttr(attrs, "customer_summary") ||
@@ -254,7 +386,9 @@ async function resolveBrief(
       ...common,
       derivation,
       category: derivation.category,
-      aovBucket: prior.aov_bucket ?? derivation.aov_bucket ?? null,
+      aovBucket: overrideAttrs
+        ? derivation.aov_bucket
+        : (prior.aov_bucket ?? derivation.aov_bucket ?? null),
       customerText: brief.customer_text ?? prior.customer_description ?? "",
       exclusionsText: brief.exclusions_text ?? "",
       returning: {
@@ -317,6 +451,15 @@ function extractDerivation(
 function readStringAttr(obj: Record<string, unknown>, key: string): string {
   const value = obj[key];
   return typeof value === "string" ? value : "";
+}
+
+/** Defensive: trim/lowercase and map to a valid bucket, else null. */
+function normalizeAovBucket(value: unknown): AovBucket | null {
+  if (typeof value !== "string") return null;
+  const bucket = value.trim().toLowerCase();
+  return bucket === "low" || bucket === "mid" || bucket === "high"
+    ? bucket
+    : null;
 }
 
 // ============================================================
@@ -432,7 +575,6 @@ interface ParsedRing {
 interface ParsedInterpretation {
   customer_summary: string;
   interpretation_confidence: ConvictionBand;
-  exclusions_parsed: string[];
   primary_ring: ParsedRing;
   lateral_rings: ParsedRing[];
 }
@@ -481,17 +623,21 @@ function parseInterpretation(raw: string): ParseResult {
     }
   }
 
+  // The prompt asks for at least 2 laterals; zero is accepted (the primary
+  // read alone is still an interpretation) but warned — Layer 5 must
+  // render the lateral section gracefully when empty.
+  if (laterals.length === 0) {
+    console.warn(
+      "[interpret] LLM returned zero lateral rings — accepting with primary only"
+    );
+  }
+
   return {
     output: {
       customer_summary: customerSummary,
       interpretation_confidence: readConfidence(
         pattern?.interpretation_confidence
       ),
-      exclusions_parsed: Array.isArray(pattern?.exclusions_parsed)
-        ? pattern.exclusions_parsed.filter(
-            (v): v is string => typeof v === "string"
-          )
-        : [],
       primary_ring: primary,
       lateral_rings: laterals,
     },
@@ -562,12 +708,15 @@ async function persistInterpretation(
   analogs: CampaignPatternRow[]
 ): Promise<BriefInterpretation> {
   const weights = effectiveWeightsForBucket(resolved.aovBucket);
+  // Server-side parse of the raw exclusions text — a deterministic split,
+  // not something the LLM output schema is trusted with.
+  const exclusionsParsed = parseExclusions(resolved.exclusionsText);
 
   const interpretationBlob = {
     campaign_pattern: {
       customer_summary: output.customer_summary,
       interpretation_confidence: output.interpretation_confidence,
-      exclusions_parsed: output.exclusions_parsed,
+      exclusions_parsed: exclusionsParsed,
     },
     primary_ring: output.primary_ring,
     lateral_rings: output.lateral_rings,
@@ -586,7 +735,7 @@ async function persistInterpretation(
         budget_total: resolved.budgetTotal,
         flight: resolved.flight ?? null,
         exclusions_text: resolved.exclusionsText,
-        exclusions_parsed: output.exclusions_parsed,
+        exclusions_parsed: exclusionsParsed,
       },
       // Full parsed LLM response — training data, and the replay source
       // for the idempotency guard.
@@ -603,7 +752,7 @@ async function persistInterpretation(
     console.error(
       "[interpret] recordCampaignPattern failed — returning interpretation without persistence"
     );
-    return toResponse(null, output, new Map());
+    return toResponse(null, output, new Map(), exclusionsParsed);
   }
 
   const ringIds = new Map<string, string | null>();
@@ -632,7 +781,7 @@ async function persistInterpretation(
 
   await recordAnalogCitations(patternId, output, analogs);
 
-  return toResponse(patternId, output, ringIds);
+  return toResponse(patternId, output, ringIds, exclusionsParsed);
 }
 
 /**
@@ -647,36 +796,48 @@ async function recordAnalogCitations(
   output: ParsedInterpretation,
   analogs: CampaignPatternRow[]
 ): Promise<void> {
-  const libraryNames = new Map<string, string>();
+  const library = new Map<string, { canonical: string; patternId: string }>();
   for (const row of analogs) {
     const name = readStringAttr(row.product_attributes ?? {}, "brand_name");
-    if (name.trim()) libraryNames.set(name.trim().toLowerCase(), name.trim());
+    if (name.trim()) {
+      library.set(name.trim().toLowerCase(), {
+        canonical: name.trim(),
+        patternId: row.id,
+      });
+    }
   }
 
-  const citedBy = new Map<string, string[]>();
+  const citedBy = new Map<
+    string,
+    { analogPatternId: string; ringLabels: string[] }
+  >();
   const allRings = [output.primary_ring, ...output.lateral_rings];
   for (const ring of allRings) {
     for (const cited of ring.analog_campaigns) {
       const key = cited.trim().toLowerCase();
       if (!key) continue;
-      const canonical = libraryNames.get(key);
-      if (!canonical) {
+      const match = library.get(key);
+      if (!match) {
         console.warn(
           `[interpret] LLM cited analog "${cited}" not in the pattern library context — skipping analog_matches row`
         );
         continue;
       }
-      const rings = citedBy.get(canonical) ?? [];
-      rings.push(ring.ring_label);
-      citedBy.set(canonical, rings);
+      const entry = citedBy.get(match.canonical) ?? {
+        analogPatternId: match.patternId,
+        ringLabels: [],
+      };
+      entry.ringLabels.push(ring.ring_label);
+      citedBy.set(match.canonical, entry);
     }
   }
 
-  for (const [analogName, ringLabels] of citedBy) {
+  for (const [analogName, { analogPatternId, ringLabels }] of citedBy) {
     await recordAnalogMatch({
       campaignPatternId: patternId,
       analogName,
       reasoning: `Cited by ring(s): ${ringLabels.join(", ")}`,
+      analogPatternId,
     });
   }
 }
@@ -684,7 +845,8 @@ async function recordAnalogCitations(
 function toResponse(
   patternId: string | null,
   output: ParsedInterpretation,
-  ringIds: Map<string, string | null>
+  ringIds: Map<string, string | null>,
+  exclusionsParsed: string[]
 ): BriefInterpretation {
   const toRing = (ring: ParsedRing): InterpretedRing => ({
     ring_hypothesis_id: ringIds.get(ring.ring_label) ?? null,
@@ -698,7 +860,7 @@ function toResponse(
     campaign_pattern: {
       customer_summary: output.customer_summary,
       interpretation_confidence: output.interpretation_confidence,
-      exclusions_parsed: output.exclusions_parsed,
+      exclusions_parsed: exclusionsParsed,
     },
     primary_ring: toRing(output.primary_ring),
     lateral_rings: output.lateral_rings.map(toRing),
@@ -744,19 +906,27 @@ async function replayInterpretation(
     if (label && !ringIds.has(label)) ringIds.set(label, id);
   }
 
-  return toResponse(pattern.id, {
-    customer_summary: readStringAttr(patternData, "customer_summary"),
-    interpretation_confidence: readConfidence(
-      patternData.interpretation_confidence
-    ),
-    exclusions_parsed: Array.isArray(patternData.exclusions_parsed)
-      ? patternData.exclusions_parsed.filter(
-          (v): v is string => typeof v === "string"
-        )
-      : [],
-    primary_ring: primary,
-    lateral_rings: laterals,
-  }, ringIds);
+  // Stored blob carries exclusions_parsed: server-parsed on new rows,
+  // LLM-parsed on rows written before the Layer 4 amendment. Both replay.
+  const exclusionsParsed = Array.isArray(patternData.exclusions_parsed)
+    ? patternData.exclusions_parsed.filter(
+        (v): v is string => typeof v === "string"
+      )
+    : [];
+
+  return toResponse(
+    pattern.id,
+    {
+      customer_summary: readStringAttr(patternData, "customer_summary"),
+      interpretation_confidence: readConfidence(
+        patternData.interpretation_confidence
+      ),
+      primary_ring: primary,
+      lateral_rings: laterals,
+    },
+    ringIds,
+    exclusionsParsed
+  );
 }
 
 // ============================================================
@@ -766,7 +936,13 @@ async function replayInterpretation(
 async function interpretationFailed(
   campaignId: string,
   actorId: string,
-  reason: "llm_error" | "refusal" | "no_text_block" | "malformed_json"
+  reason:
+    | "llm_error"
+    | "refusal"
+    | "no_text_block"
+    | "malformed_json"
+    | "in_progress"
+    | "reused_pattern_forbidden"
 ) {
   await logEvent({
     eventType: "brief.interpretation_failed",

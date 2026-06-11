@@ -402,6 +402,68 @@ describe("POST /api/campaigns/brief", () => {
     }
   });
 
+  it("accepts a brand-confirmed product re-derivation on the delta path", async () => {
+    mockGetCampaignPatternById.mockResolvedValue({
+      id: "pat_1",
+      customer_id: USER.id,
+      product_attributes: { brand_name: "SaunaBox" },
+    });
+    const productAttributes = {
+      brand_name: "SaunaBox",
+      category: "home spa equipment",
+      product_description: "Built-in home spa installs.",
+      aov_bucket: "mid",
+      aov_reasoning: "Installs from $150.",
+      key_attributes: ["home install"],
+    };
+
+    const res = await call({
+      ...DELTA_SUBMIT,
+      customer_context: {
+        ...DELTA_SUBMIT.customer_context,
+        product_attributes: productAttributes,
+      },
+    });
+    expect(res.status).toBe(200);
+
+    const created = mockCreateCampaign.mock.calls[0][0];
+    expect(created.brief.customer_context.product_attributes).toEqual(
+      productAttributes
+    );
+  });
+
+  it("rejects a malformed product_attributes re-derivation", async () => {
+    mockGetCampaignPatternById.mockResolvedValue({
+      id: "pat_1",
+      customer_id: USER.id,
+      product_attributes: { brand_name: "SaunaBox" },
+    });
+
+    const badShapes = [
+      "not an object",
+      { brand_name: "", category: "wellness", aov_bucket: "mid" },
+      { brand_name: "SaunaBox", category: "  ", aov_bucket: "mid" },
+      { brand_name: "SaunaBox", category: "wellness", aov_bucket: "HUGE" },
+      {
+        brand_name: "SaunaBox",
+        category: "wellness",
+        aov_bucket: "mid",
+        key_attributes: [42],
+      },
+    ];
+    for (const product_attributes of badShapes) {
+      const res = await call({
+        ...DELTA_SUBMIT,
+        customer_context: {
+          ...DELTA_SUBMIT.customer_context,
+          product_attributes,
+        },
+      });
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe("invalid_product_attributes");
+    }
+  });
+
   it("nothing-changed path stays the fast lane (no changed_fields required)", async () => {
     mockGetCampaignPatternById.mockResolvedValue({
       id: "pat_1",

@@ -32,6 +32,7 @@ import type {
   BriefGoal,
   BriefProduct,
   CampaignBriefV2,
+  ProductDerivation,
 } from "@/lib/data/types";
 
 const MIN_BUDGET = 5000;
@@ -55,6 +56,8 @@ interface BriefRequestBody {
     delta_text?: string;
     product_url?: string | null;
     changed_fields?: Partial<Record<BriefChangedFieldKey, BriefChangedField>>;
+    /** Brand-confirmed re-derivation when the product URL changed. */
+    product_attributes?: ProductDerivation;
   };
   goals?: BriefGoal[];
   goals_context?: string;
@@ -223,6 +226,24 @@ const CHANGED_FIELD_KEYS: BriefChangedFieldKey[] = [
   "exclusions",
 ];
 
+/** Shape check for a brand-confirmed product re-derivation. */
+function isValidProductAttributes(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.brand_name === "string" &&
+    v.brand_name.trim().length > 0 &&
+    typeof v.category === "string" &&
+    v.category.trim().length > 0 &&
+    (v.aov_bucket === "low" || v.aov_bucket === "mid" || v.aov_bucket === "high") &&
+    (v.key_attributes === undefined ||
+      (Array.isArray(v.key_attributes) &&
+        v.key_attributes.every((a) => typeof a === "string")))
+  );
+}
+
 /** Shape check for the check-in's field-level changes record. */
 function isValidChangedFields(value: unknown): boolean {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -256,6 +277,19 @@ async function validateSubmit(
       return {
         message: "Invalid changed fields record",
         code: "invalid_changed_fields",
+        field: "customer_context",
+      };
+    }
+    // Re-derivation from a changed product URL. Layer 4 treats this as
+    // canonical over the prior pattern, so it must arrive well-formed.
+    const productAttributes = body.customer_context?.product_attributes;
+    if (
+      productAttributes !== undefined &&
+      !isValidProductAttributes(productAttributes)
+    ) {
+      return {
+        message: "Invalid product attributes",
+        code: "invalid_product_attributes",
         field: "customer_context",
       };
     }

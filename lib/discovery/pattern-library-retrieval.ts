@@ -24,6 +24,12 @@ const FETCH_CEILING = 100;
 export interface BriefInput {
   aovBucket: AovBucket;
   category: string;
+  /**
+   * Exclude the calling campaign's own pattern rows — re-interpretation
+   * after a brief edit must not cite the stale prior interpretation of the
+   * same campaign as an analog.
+   */
+  excludeCampaignId?: string;
 }
 
 export async function retrieveAnalogCampaigns(
@@ -32,10 +38,18 @@ export async function retrieveAnalogCampaigns(
   if (!brief?.aovBucket || !brief.category?.trim()) return [];
 
   try {
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("campaign_patterns")
       .select("*")
-      .eq("aov_bucket", brief.aovBucket)
+      .eq("aov_bucket", brief.aovBucket);
+    if (brief.excludeCampaignId) {
+      // NULL-safe exclusion: seeded library rows have campaign_id NULL and
+      // a bare .neq() would drop them (SQL NULL <> x is not true).
+      query = query.or(
+        `campaign_id.is.null,campaign_id.neq.${brief.excludeCampaignId}`
+      );
+    }
+    const { data, error } = await query
       .order("created_at", { ascending: false })
       .limit(FETCH_CEILING);
 
