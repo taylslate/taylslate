@@ -243,12 +243,46 @@ describe("BriefIntakeForm — first-time brand", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/product URL/i);
     expect(mockPush).not.toHaveBeenCalled();
   });
+
+  it("rejects an inverted flight date range before submitting", async () => {
+    const fetchMock = stubFetchRoutes();
+    const user = userEvent.setup();
+    renderForm();
+    await deriveViaUrl(user);
+
+    await user.type(
+      screen.getByPlaceholderText(/Who buys this/),
+      "Affluent men 30-55 into recovery."
+    );
+    await user.click(screen.getByRole("button", { name: "Test the channel" }));
+    await user.type(screen.getByLabelText("Budget (USD)"), "25000");
+    await user.click(screen.getByRole("button", { name: "Pick dates" }));
+    fireEvent.change(screen.getByLabelText("Flight start date"), {
+      target: { value: "2026-08-15" },
+    });
+    fireEvent.change(screen.getByLabelText("Flight end date"), {
+      target: { value: "2026-07-01" },
+    });
+
+    await user.click(screen.getByRole("button", { name: /See how I/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/end date/i);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(
+      findCall(fetchMock, (url, body) => url === "/api/campaigns/brief" && body.stage === "submit")
+    ).toBeUndefined();
+  });
 });
 
 describe("BriefIntakeForm — returning-brand check-in", () => {
   const RETURNING = {
     patternId: "pat_1",
     previousSummary: "affluent recovery-focused men 30-55",
+    prior: {
+      productUrl: "https://saunabox.com",
+      customerText: "Affluent men 30-55 into recovery.",
+      exclusionsText: "No competitor sauna brands.",
+    },
   };
 
   it("first-time brand sees the full form, not the check-in", () => {
@@ -293,14 +327,76 @@ describe("BriefIntakeForm — returning-brand check-in", () => {
     expect(body.customer_text).toBeUndefined();
   });
 
-  it("free-text delta is carried into customer_context.delta_text", async () => {
+  it("'what's changed' panel shows the prior values pre-filled", async () => {
+    stubFetchRoutes();
+    const user = userEvent.setup();
+    renderForm({ returning: RETURNING });
+
+    await user.click(
+      screen.getByRole("button", { name: /what.s changed/i })
+    );
+
+    expect(screen.getByLabelText("Product URL")).toHaveValue(
+      "https://saunabox.com"
+    );
+    expect(screen.getByLabelText("Customer description")).toHaveValue(
+      "Affluent men 30-55 into recovery."
+    );
+    expect(screen.getByLabelText("Exclusions")).toHaveValue(
+      "No competitor sauna brands."
+    );
+  });
+
+  it("edited fields produce a changed_fields record plus new full values", async () => {
     const fetchMock = stubFetchRoutes();
     const user = userEvent.setup();
     renderForm({ returning: RETURNING });
 
-    await user.type(
-      screen.getByPlaceholderText(/New product line/),
-      "Launched a $99 entry SKU"
+    await user.click(
+      screen.getByRole("button", { name: /what.s changed/i })
+    );
+    const customerInput = screen.getByLabelText("Customer description");
+    await user.clear(customerInput);
+    await user.type(customerInput, "Affluent men and women 30-60.");
+    await user.click(
+      screen.getByRole("button", { name: /Continue with this update/ })
+    );
+
+    // Recap names exactly the field that changed.
+    expect(screen.getByText(/Updated:/)).toBeInTheDocument();
+    expect(screen.getByText(/customer description/)).toBeInTheDocument();
+
+    await fillCampaignSection(user);
+    await user.click(screen.getByRole("button", { name: /See how I/ }));
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalled());
+    const submit = findCall(
+      fetchMock,
+      (url, body) => url === "/api/campaigns/brief" && body.stage === "submit"
+    );
+    const body = JSON.parse((submit?.[1] as RequestInit).body as string);
+    expect(body.customer_context).toEqual({
+      reused_from_pattern_id: "pat_1",
+      product_url: "https://saunabox.com",
+      changed_fields: {
+        customer_description: {
+          before: "Affluent men 30-55 into recovery.",
+          after: "Affluent men and women 30-60.",
+        },
+      },
+    });
+    expect(body.customer_text).toBe("Affluent men and women 30-60.");
+    // Prior exclusions seeded into Section 3 and carried as a full value.
+    expect(body.exclusions_text).toBe("No competitor sauna brands.");
+  });
+
+  it("an unedited 'what's changed' panel submits as the fast lane", async () => {
+    const fetchMock = stubFetchRoutes();
+    const user = userEvent.setup();
+    renderForm({ returning: RETURNING });
+
+    await user.click(
+      screen.getByRole("button", { name: /what.s changed/i })
     );
     await user.click(
       screen.getByRole("button", { name: /Continue with this update/ })
@@ -315,10 +411,8 @@ describe("BriefIntakeForm — returning-brand check-in", () => {
       (url, body) => url === "/api/campaigns/brief" && body.stage === "submit"
     );
     const body = JSON.parse((submit?.[1] as RequestInit).body as string);
-    expect(body.customer_context).toEqual({
-      reused_from_pattern_id: "pat_1",
-      delta_text: "Launched a $99 entry SKU",
-    });
+    expect(body.customer_context).toEqual({ reused_from_pattern_id: "pat_1" });
+    expect(body.customer_text).toBeUndefined();
   });
 
   it("'treat this as a new brief' escape hatch drops to the full intake", async () => {

@@ -14,17 +14,24 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
+  BriefChangedField,
+  BriefChangedFieldKey,
   BriefFlight,
   BriefFlightPreset,
   BriefGoal,
   ProductDerivation,
 } from "@/lib/data/types";
+import { validateFlightDates } from "@/lib/validation/flight-dates";
 import ProductSection, { type ProductState } from "./product-section";
-import ReturningCheckIn from "./returning-check-in";
+import ReturningCheckIn, {
+  type CheckInDelta,
+  type PriorBriefValues,
+} from "./returning-check-in";
 
 export interface ReturningContext {
   patternId: string;
   previousSummary: string | null;
+  prior: PriorBriefValues;
 }
 
 interface Props {
@@ -34,6 +41,12 @@ interface Props {
 }
 
 const MAX_GOALS = 3;
+
+const CHANGED_FIELD_LABELS: Record<BriefChangedFieldKey, string> = {
+  product_url: "product URL",
+  customer_description: "customer description",
+  exclusions: "exclusions",
+};
 
 const GOAL_OPTIONS: { value: BriefGoal; label: string }[] = [
   { value: "test_channel", label: "Test the channel" },
@@ -66,7 +79,10 @@ export default function BriefIntakeForm({
   const [mode, setMode] = useState<"checkin" | "decisions" | "full">(
     returning ? "checkin" : "full"
   );
-  const [deltaText, setDeltaText] = useState<string | null>(null);
+  // Edited full values from the check-in's "what's changed" panel; null on
+  // the "nothing has changed" fast lane. Diffed against returning.prior at
+  // submit so later edits (e.g. the exclusions field below) are tracked.
+  const [checkInDelta, setCheckInDelta] = useState<CheckInDelta | null>(null);
 
   const [campaignId, setCampaignId] = useState<string | null>(initialDraftId);
   const draftPromiseRef = useRef<Promise<string | null> | null>(null);
@@ -197,6 +213,36 @@ export default function BriefIntakeForm({
     return { mode: "preset", preset: flightChoice };
   };
 
+  /**
+   * Field-level before/after for the returning-brand delta path. Product
+   * URL and customer description come from the check-in panel; exclusions
+   * from the live Section 3 field (seeded from the panel, possibly edited
+   * since). Only fields that actually changed get an entry.
+   */
+  const buildChangedFields = (): Partial<
+    Record<BriefChangedFieldKey, BriefChangedField>
+  > => {
+    if (!checkInDelta || !returning) return {};
+    const changed: Partial<Record<BriefChangedFieldKey, BriefChangedField>> = {};
+    const compare = (
+      key: BriefChangedFieldKey,
+      before: string | null,
+      after: string
+    ) => {
+      if ((before ?? "").trim() !== after.trim()) {
+        changed[key] = { before, after: after.trim() || null };
+      }
+    };
+    compare("product_url", returning.prior.productUrl, checkInDelta.productUrl);
+    compare(
+      "customer_description",
+      returning.prior.customerText,
+      checkInDelta.customerText
+    );
+    compare("exclusions", returning.prior.exclusionsText, exclusions);
+    return changed;
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
@@ -227,6 +273,13 @@ export default function BriefIntakeForm({
       setError("Pick a flight window.");
       return;
     }
+    if (flight.mode === "dates" && flight.start_date && flight.end_date) {
+      const dateError = validateFlightDates(flight.start_date, flight.end_date);
+      if (dateError) {
+        setError(dateError.message);
+        return;
+      }
+    }
 
     setIsSubmitting(true);
 
@@ -241,10 +294,23 @@ export default function BriefIntakeForm({
     };
 
     if (reusing) {
-      body.customer_context = {
-        reused_from_pattern_id: returning.patternId,
-        ...(deltaText ? { delta_text: deltaText } : {}),
-      };
+      const changedFields = buildChangedFields();
+      if (checkInDelta && Object.keys(changedFields).length > 0) {
+        // Delta path: the brief carries the new full values (customer_text,
+        // exclusions_text, product_url) — Layer 4 reads those, not the
+        // priors — plus the field-level changes record for audit.
+        body.customer_context = {
+          reused_from_pattern_id: returning.patternId,
+          product_url: checkInDelta.productUrl || null,
+          changed_fields: changedFields,
+        };
+        body.customer_text = checkInDelta.customerText || undefined;
+      } else {
+        // Fast lane: nothing changed (or the panel was submitted unedited).
+        body.customer_context = {
+          reused_from_pattern_id: returning.patternId,
+        };
+      }
     } else {
       body.product = {
         ...product.derivation,
@@ -279,12 +345,16 @@ export default function BriefIntakeForm({
     return (
       <ReturningCheckIn
         previousSummary={returning.previousSummary}
+        prior={returning.prior}
         onNothingChanged={() => {
-          setDeltaText(null);
+          setCheckInDelta(null);
           setMode("decisions");
         }}
         onDelta={(delta) => {
-          setDeltaText(delta);
+          setCheckInDelta(delta);
+          // The panel's exclusions become the Section 3 field — one source
+          // of truth; further edits there stay tracked via buildChangedFields.
+          setExclusions(delta.exclusionsText);
           setMode("decisions");
         }}
         onStartFresh={() => setMode("full")}
@@ -293,6 +363,9 @@ export default function BriefIntakeForm({
   }
 
   const reusing = mode === "decisions" && returning;
+  const changedFieldKeys = reusing
+    ? (Object.keys(buildChangedFields()) as BriefChangedFieldKey[])
+    : [];
 
   return (
     <div className="p-8 max-w-2xl">
@@ -355,12 +428,12 @@ export default function BriefIntakeForm({
           </>
         )}
 
-        {reusing && deltaText && (
+        {reusing && checkInDelta && changedFieldKeys.length > 0 && (
           <div className="p-4 rounded-xl border border-[var(--brand-teal)]/40 bg-[var(--brand-teal)]/[0.05] text-sm text-[var(--brand-text-secondary)]">
             <span className="font-semibold text-[var(--brand-text)]">
-              What&rsquo;s changed:
+              Updated:
             </span>{" "}
-            {deltaText}
+            {changedFieldKeys.map((k) => CHANGED_FIELD_LABELS[k]).join(", ")}
           </div>
         )}
 

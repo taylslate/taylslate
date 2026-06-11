@@ -172,14 +172,34 @@ export interface BriefProduct extends ProductDerivation {
   url?: string | null;
 }
 
+/** Fields the returning-brand check-in lets the brand edit directly. */
+export type BriefChangedFieldKey =
+  | "product_url"
+  | "customer_description"
+  | "exclusions";
+
+export interface BriefChangedField {
+  before: string | null;
+  after: string | null;
+}
+
 export interface CampaignBriefV2 {
   version: 2;
   product?: BriefProduct;
   customer_text?: string;
-  /** Returning-brand check-in: prior pattern reused and/or delta text. */
+  /** Returning-brand check-in: prior pattern reused and/or what changed. */
   customer_context?: {
     reused_from_pattern_id?: string;
+    /** Legacy free-text delta; no longer written by the intake form. */
     delta_text?: string;
+    /** New full product URL on the returning-brand path. */
+    product_url?: string | null;
+    /**
+     * Field-level before/after for fields the brand edited in the
+     * check-in. Audit record — Layer 4 reads the new full values from
+     * customer_text / exclusions_text / product_url, not from here.
+     */
+    changed_fields?: Partial<Record<BriefChangedFieldKey, BriefChangedField>>;
   };
   goals?: BriefGoal[];
   goals_context?: string;

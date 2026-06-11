@@ -46,12 +46,29 @@ export default async function NewCampaignPage() {
       null;
   }
 
+  // Prior values for the "Yes, here's what's changed" editable check-in:
+  // the latest submitted v2 brief holds the brand's last confirmed answers
+  // (campaigns are already sorted newest-first). The pattern row's
+  // customer_description backstops briefs from the reuse path that carry
+  // no customer_text of their own.
+  const lastSubmitted = campaigns.find(
+    (c) => isBriefV2(c.brief) && c.brief.submitted_at
+  );
+  const lastBrief =
+    lastSubmitted && isBriefV2(lastSubmitted.brief) ? lastSubmitted.brief : null;
+  const prior = {
+    productUrl: lastBrief?.product?.url ?? null,
+    customerText:
+      lastBrief?.customer_text ?? pattern?.customer_description ?? null,
+    exclusionsText: lastBrief?.exclusions_text ?? null,
+  };
+
   return (
     <BriefIntakeForm
       prefillUrl={profile?.brand_website ?? ""}
       initialDraftId={existingDraft?.id ?? null}
       returning={
-        pattern ? { patternId: pattern.id, previousSummary } : null
+        pattern ? { patternId: pattern.id, previousSummary, prior } : null
       }
     />
   );

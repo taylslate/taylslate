@@ -19,11 +19,15 @@ import {
   ensureProfile,
   getAuthenticatedUser,
   getCampaignById,
+  getRecentUnsubmittedDraft,
   updateCampaignBrief,
 } from "@/lib/data/queries";
 import { getCampaignPatternById } from "@/lib/data/reasoning-log";
 import { logEvent } from "@/lib/data/events";
+import { validateFlightDates } from "@/lib/validation/flight-dates";
 import type {
+  BriefChangedField,
+  BriefChangedFieldKey,
   BriefFlight,
   BriefGoal,
   BriefProduct,
@@ -49,12 +53,21 @@ interface BriefRequestBody {
   customer_context?: {
     reused_from_pattern_id?: string;
     delta_text?: string;
+    product_url?: string | null;
+    changed_fields?: Partial<Record<BriefChangedFieldKey, BriefChangedField>>;
   };
   goals?: BriefGoal[];
   goals_context?: string;
   budget_total?: number;
   flight?: BriefFlight;
   exclusions_text?: string;
+}
+
+/** Structured validation error: message for humans, code/field for clients. */
+interface ValidationError {
+  message: string;
+  code?: string;
+  field?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -78,7 +91,15 @@ export async function POST(request: NextRequest) {
   }
 
   // campaigns.user_id references profiles(id); make sure the row exists.
-  await ensureProfile(user);
+  try {
+    await ensureProfile(user);
+  } catch (err) {
+    console.error("[campaigns/brief] ensureProfile failed:", err);
+    return NextResponse.json(
+      { error: "Failed to initialize user profile" },
+      { status: 500 }
+    );
+  }
 
   // Ownership check when updating an existing row.
   if (body.campaign_id) {
@@ -92,6 +113,12 @@ export async function POST(request: NextRequest) {
     if (body.campaign_id) {
       // Draft already exists — nothing to do.
       return NextResponse.json({ campaign_id: body.campaign_id });
+    }
+    // Idempotency: a recent unsubmitted draft (double-fired blur, page
+    // reload mid-intake) is reused instead of orphaning a new row.
+    const recentDraft = await getRecentUnsubmittedDraft(user.id);
+    if (recentDraft) {
+      return NextResponse.json({ campaign_id: recentDraft.id });
     }
     const campaign = await createCampaign({
       user_id: user.id,
@@ -117,7 +144,14 @@ export async function POST(request: NextRequest) {
 
   const validationError = await validateSubmit(body, user.id);
   if (validationError) {
-    return NextResponse.json({ error: validationError }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: validationError.message,
+        ...(validationError.code ? { code: validationError.code } : {}),
+        ...(validationError.field ? { field: validationError.field } : {}),
+      },
+      { status: 400 }
+    );
   }
 
   const brief: CampaignBriefV2 = {
@@ -174,6 +208,7 @@ export async function POST(request: NextRequest) {
     payload: {
       reused_from_pattern_id:
         body.customer_context?.reused_from_pattern_id ?? null,
+      changed_fields: Object.keys(body.customer_context?.changed_fields ?? {}),
       goals: body.goals ?? [],
       budget_total: body.budget_total ?? null,
     },
@@ -182,11 +217,31 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ campaign_id: campaignId });
 }
 
-/** Returns an error string, or null if the submit body is valid. */
+const CHANGED_FIELD_KEYS: BriefChangedFieldKey[] = [
+  "product_url",
+  "customer_description",
+  "exclusions",
+];
+
+/** Shape check for the check-in's field-level changes record. */
+function isValidChangedFields(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return Object.entries(value).every(([key, entry]) => {
+    if (!CHANGED_FIELD_KEYS.includes(key as BriefChangedFieldKey)) return false;
+    if (typeof entry !== "object" || entry === null) return false;
+    const { before, after } = entry as Record<string, unknown>;
+    const ok = (v: unknown) => typeof v === "string" || v === null;
+    return ok(before) && ok(after);
+  });
+}
+
+/** Returns a structured error, or null if the submit body is valid. */
 async function validateSubmit(
   body: BriefRequestBody,
   userId: string
-): Promise<string | null> {
+): Promise<ValidationError | null> {
   const reusedPatternId = body.customer_context?.reused_from_pattern_id;
 
   if (reusedPatternId) {
@@ -194,15 +249,23 @@ async function validateSubmit(
     // Layer 4 interpretation prompt.
     const pattern = await getCampaignPatternById(reusedPatternId);
     if (!pattern || pattern.customer_id !== userId) {
-      return "Reused campaign pattern not found";
+      return { message: "Reused campaign pattern not found" };
+    }
+    const changedFields = body.customer_context?.changed_fields;
+    if (changedFields !== undefined && !isValidChangedFields(changedFields)) {
+      return {
+        message: "Invalid changed fields record",
+        code: "invalid_changed_fields",
+        field: "customer_context",
+      };
     }
   } else {
     // Fresh brief: product and customer truth are required.
     if (!body.product || !body.product.brand_name?.trim()) {
-      return "Product details are required";
+      return { message: "Product details are required" };
     }
     if (!body.customer_text?.trim()) {
-      return "Tell us about your customer";
+      return { message: "Tell us about your customer" };
     }
   }
 
@@ -212,27 +275,31 @@ async function validateSubmit(
     body.goals.length > MAX_GOALS ||
     body.goals.some((g) => !VALID_GOALS.includes(g))
   ) {
-    return `Pick 1-${MAX_GOALS} campaign goals`;
+    return { message: `Pick 1-${MAX_GOALS} campaign goals` };
   }
 
   if (typeof body.budget_total !== "number" || body.budget_total < MIN_BUDGET) {
-    return `Budget must be at least $${MIN_BUDGET.toLocaleString()}`;
+    return { message: `Budget must be at least $${MIN_BUDGET.toLocaleString()}` };
   }
 
   const flight = body.flight;
   if (!flight) {
-    return "Pick a flight window";
+    return { message: "Pick a flight window" };
   }
   if (flight.mode === "preset") {
     if (!flight.preset || !VALID_PRESETS.includes(flight.preset)) {
-      return "Pick a flight window preset";
+      return { message: "Pick a flight window preset" };
     }
   } else if (flight.mode === "dates") {
     if (!flight.start_date || !flight.end_date) {
-      return "Pick flight start and end dates";
+      return { message: "Pick flight start and end dates" };
+    }
+    const dateError = validateFlightDates(flight.start_date, flight.end_date);
+    if (dateError) {
+      return { message: dateError.message, code: dateError.code, field: "flight" };
     }
   } else {
-    return "Invalid flight window";
+    return { message: "Invalid flight window" };
   }
 
   return null;

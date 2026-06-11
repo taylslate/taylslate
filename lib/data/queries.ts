@@ -30,6 +30,7 @@ import type {
   Wave12DealStatus,
   UserRole,
 } from "./types";
+import { isBriefV2 } from "./types";
 
 export const VIEW_AS_COOKIE = "taylslate_view_as";
 
@@ -1317,6 +1318,31 @@ export async function getCampaignsForUser(userId: string): Promise<Campaign[]> {
     .order("created_at", { ascending: false });
   if (error || !data) return [];
   return data as Campaign[];
+}
+
+/**
+ * Wave 14 2A amendment: most recent unsubmitted v2 intake draft within the
+ * window, so stage='draft' calls without a campaign_id reuse one row
+ * instead of orphaning a new draft per call.
+ */
+export async function getRecentUnsubmittedDraft(
+  userId: string,
+  windowMinutes = 30
+): Promise<Campaign | null> {
+  const supabase = await createClient();
+  const since = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("status", "draft")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false });
+  if (error || !data) return null;
+  const draft = (data as Campaign[]).find(
+    (c) => isBriefV2(c.brief) && !c.brief.submitted_at
+  );
+  return draft ?? null;
 }
 
 export async function getCampaignById(id: string): Promise<Campaign | null> {

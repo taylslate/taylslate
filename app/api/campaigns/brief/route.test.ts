@@ -8,6 +8,7 @@ const {
   mockEnsureProfile,
   mockLogEvent,
   mockGetCampaignPatternById,
+  mockGetRecentUnsubmittedDraft,
 } = vi.hoisted(() => ({
   mockGetAuthenticatedUser: vi.fn(),
   mockGetCampaignById: vi.fn(),
@@ -16,6 +17,7 @@ const {
   mockEnsureProfile: vi.fn(),
   mockLogEvent: vi.fn(),
   mockGetCampaignPatternById: vi.fn(),
+  mockGetRecentUnsubmittedDraft: vi.fn(),
 }));
 
 vi.mock("@/lib/data/queries", () => ({
@@ -24,6 +26,7 @@ vi.mock("@/lib/data/queries", () => ({
   createCampaign: mockCreateCampaign,
   updateCampaignBrief: mockUpdateCampaignBrief,
   ensureProfile: mockEnsureProfile,
+  getRecentUnsubmittedDraft: mockGetRecentUnsubmittedDraft,
 }));
 
 vi.mock("@/lib/data/events", () => ({
@@ -76,6 +79,7 @@ beforeEach(() => {
   mockCreateCampaign.mockResolvedValue({ id: "camp_new", user_id: USER.id });
   mockUpdateCampaignBrief.mockResolvedValue(true);
   mockLogEvent.mockResolvedValue(null);
+  mockGetRecentUnsubmittedDraft.mockResolvedValue(null);
 });
 
 describe("POST /api/campaigns/brief", () => {
@@ -241,5 +245,181 @@ describe("POST /api/campaigns/brief", () => {
   it("does not fire brief.submitted when validation fails", async () => {
     await call({ ...VALID_SUBMIT, budget_total: 100 });
     expect(mockLogEvent).not.toHaveBeenCalled();
+  });
+
+  // ---- Layer 3 amendment: server-side draft idempotency ----
+
+  it("draft without campaign_id reuses a recent unsubmitted draft", async () => {
+    mockGetRecentUnsubmittedDraft.mockResolvedValue({
+      id: "camp_recent",
+      user_id: USER.id,
+    });
+    const res = await call({ stage: "draft" });
+    expect(await res.json()).toEqual({ campaign_id: "camp_recent" });
+    expect(mockGetRecentUnsubmittedDraft).toHaveBeenCalledWith(USER.id);
+    expect(mockCreateCampaign).not.toHaveBeenCalled();
+  });
+
+  it("draft creates a new row when no recent draft exists", async () => {
+    const res = await call({ stage: "draft" });
+    expect(await res.json()).toEqual({ campaign_id: "camp_new" });
+    expect(mockCreateCampaign).toHaveBeenCalled();
+  });
+
+  // ---- Layer 3 amendment: ensureProfile failure handling ----
+
+  it("returns 500 when ensureProfile throws, without creating a campaign", async () => {
+    mockEnsureProfile.mockRejectedValue(new Error("insert failed"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await call({ stage: "draft" });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "Failed to initialize user profile" });
+    expect(mockCreateCampaign).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  // ---- Layer 3 amendment: flight date validation ----
+
+  it("rejects an inverted flight date range with a structured error", async () => {
+    const res = await call({
+      ...VALID_SUBMIT,
+      flight: { mode: "dates", start_date: "2026-08-15", end_date: "2026-07-01" },
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("flight_end_before_start");
+    expect(body.field).toBe("flight");
+    expect(body.error).toMatch(/end date/i);
+  });
+
+  it("rejects flight dates more than 2 years in the future", async () => {
+    const res = await call({
+      ...VALID_SUBMIT,
+      flight: { mode: "dates", start_date: "2099-01-01", end_date: "2099-02-01" },
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("flight_too_far_out");
+    expect(body.field).toBe("flight");
+  });
+
+  it("rejects malformed flight dates", async () => {
+    const res = await call({
+      ...VALID_SUBMIT,
+      flight: { mode: "dates", start_date: "07/01/2026", end_date: "2026-08-15" },
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("flight_invalid_date");
+  });
+
+  // ---- Layer 3 amendment: returning-brand field-level changes ----
+
+  const DELTA_SUBMIT = {
+    stage: "submit",
+    customer_context: {
+      reused_from_pattern_id: "pat_1",
+      product_url: "https://saunabox.com/v2",
+      changed_fields: {
+        product_url: {
+          before: "https://saunabox.com",
+          after: "https://saunabox.com/v2",
+        },
+        customer_description: {
+          before: "Affluent men 30-55.",
+          after: "Affluent men and women 30-60 into recovery.",
+        },
+      },
+    },
+    customer_text: "Affluent men and women 30-60 into recovery.",
+    exclusions_text: "No competitor sauna brands.",
+    goals: ["scale_winner"],
+    budget_total: 30000,
+    flight: { mode: "preset", preset: "asap" },
+  };
+
+  it("delta submit stores changed_fields and the new full values", async () => {
+    mockGetCampaignPatternById.mockResolvedValue({
+      id: "pat_1",
+      customer_id: USER.id,
+      product_attributes: { brand_name: "SaunaBox" },
+    });
+
+    const res = await call(DELTA_SUBMIT);
+    expect(res.status).toBe(200);
+
+    const created = mockCreateCampaign.mock.calls[0][0];
+    expect(created.brief.customer_text).toBe(
+      "Affluent men and women 30-60 into recovery."
+    );
+    expect(created.brief.exclusions_text).toBe("No competitor sauna brands.");
+    expect(created.brief.customer_context).toEqual({
+      reused_from_pattern_id: "pat_1",
+      product_url: "https://saunabox.com/v2",
+      changed_fields: {
+        product_url: {
+          before: "https://saunabox.com",
+          after: "https://saunabox.com/v2",
+        },
+        customer_description: {
+          before: "Affluent men 30-55.",
+          after: "Affluent men and women 30-60 into recovery.",
+        },
+      },
+    });
+    expect(mockLogEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "brief.submitted",
+        payload: expect.objectContaining({
+          changed_fields: ["product_url", "customer_description"],
+        }),
+      })
+    );
+  });
+
+  it("rejects a malformed changed_fields record", async () => {
+    mockGetCampaignPatternById.mockResolvedValue({
+      id: "pat_1",
+      customer_id: USER.id,
+      product_attributes: {},
+    });
+
+    const badShapes = [
+      { bogus_key: { before: "a", after: "b" } },
+      { customer_description: "not an object" },
+      { customer_description: { before: 42, after: "x" } },
+    ];
+    for (const changed_fields of badShapes) {
+      const res = await call({
+        ...DELTA_SUBMIT,
+        customer_context: {
+          reused_from_pattern_id: "pat_1",
+          changed_fields,
+        },
+      });
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe("invalid_changed_fields");
+    }
+  });
+
+  it("nothing-changed path stays the fast lane (no changed_fields required)", async () => {
+    mockGetCampaignPatternById.mockResolvedValue({
+      id: "pat_1",
+      customer_id: USER.id,
+      product_attributes: { brand_name: "SaunaBox" },
+    });
+    const res = await call({
+      stage: "submit",
+      customer_context: { reused_from_pattern_id: "pat_1" },
+      goals: ["test_channel"],
+      budget_total: 10000,
+      flight: { mode: "preset", preset: "asap" },
+    });
+    expect(res.status).toBe(200);
+    expect(mockLogEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ changed_fields: [] }),
+      })
+    );
   });
 });

@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser, getCampaignById } from "@/lib/data/queries";
 import { logEvent } from "@/lib/data/events";
 import { stripHtml } from "@/lib/utils/strip-html";
+import { safeFetch } from "@/lib/security/safe-fetch";
 import { callLLMWithFallback, createLLMClient, loadPrompt } from "@/lib/llm/client";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { AovBucket, ProductDerivation } from "@/lib/data/types";
@@ -115,10 +116,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return derivationFailed(id, user.id, "no_text_block");
   }
 
-  const derivation = parseDerivation(textBlock.text);
-  if (!derivation) {
-    return derivationFailed(id, user.id, "malformed_json");
+  const parsed = parseDerivation(textBlock.text);
+  if ("failure" in parsed) {
+    return derivationFailed(id, user.id, parsed.failure);
   }
+  const derivation = parsed.derivation;
 
   await logEvent({
     eventType: "brief.url_derived",
@@ -131,40 +133,45 @@ export async function POST(request: NextRequest, context: RouteContext) {
   return NextResponse.json(derivation);
 }
 
-/** Fetch the URL and return stripped page text, or null on any failure. */
+/**
+ * Fetch the URL and return stripped page text, or null on any failure.
+ * safeFetch validates every hop (initial URL and each redirect target)
+ * against private address ranges — a brand URL must never reach internal
+ * services. Blocked targets collapse to url_unreachable like any other
+ * fetch failure.
+ */
 async function fetchPageText(url: string): Promise<string | null> {
-  let parsed: URL;
+  const res = await safeFetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    headers: {
+      // Some product pages block default fetch UAs; present as a browser.
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      Accept: "text/html,application/xhtml+xml",
+    },
+  });
+  if (!res || !res.ok) return null;
   try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return null;
-  }
-
-  try {
-    const res = await fetch(parsed.toString(), {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: {
-        // Some product pages block default fetch UAs; present as a browser.
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml",
-      },
-    });
-    if (!res.ok) return null;
     const html = await res.text();
     const text = stripHtml(html);
     return text.length > 0 ? text : null;
   } catch {
-    // Timeout, DNS failure, TLS error — all collapse to url_unreachable.
     return null;
   }
 }
 
-/** Parse and normalize the LLM's JSON. Returns null if unparseable. */
-function parseDerivation(raw: string): ProductDerivation | null {
+type ParseResult =
+  | { derivation: ProductDerivation }
+  | { failure: "malformed_json" | "empty_required_fields" };
+
+/**
+ * Parse and normalize the LLM's JSON. Unparseable output fails as
+ * malformed_json; an empty brand_name, category, or product_description
+ * fails as empty_required_fields — a read-back card with blank required
+ * fields teaches the brand nothing, so it's a derivation failure, not a
+ * default.
+ */
+function parseDerivation(raw: string): ParseResult {
   // Models occasionally wrap JSON in markdown fences despite instructions.
   const unfenced = raw
     .trim()
@@ -175,14 +182,14 @@ function parseDerivation(raw: string): ProductDerivation | null {
   try {
     const value = JSON.parse(unfenced);
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
-      return null;
+      return { failure: "malformed_json" };
     }
     parsed = value as Record<string, unknown>;
   } catch {
-    return null;
+    return { failure: "malformed_json" };
   }
 
-  return {
+  const derivation: ProductDerivation = {
     brand_name: readString(parsed, "brand_name"),
     category: readString(parsed, "category"),
     product_description: readString(parsed, "product_description"),
@@ -190,6 +197,17 @@ function parseDerivation(raw: string): ProductDerivation | null {
     aov_reasoning: readString(parsed, "aov_reasoning"),
     key_attributes: readStringArray(parsed, "key_attributes"),
   };
+
+  const requiredEmpty = [
+    derivation.brand_name,
+    derivation.category,
+    derivation.product_description,
+  ].some((v) => !v.trim());
+  if (requiredEmpty) {
+    return { failure: "empty_required_fields" };
+  }
+
+  return { derivation };
 }
 
 function readString(obj: Record<string, unknown>, key: string): string {

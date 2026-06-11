@@ -1,12 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { mockGetAuthenticatedUser, mockGetCampaignById, mockLogEvent, mockCallLLM } =
-  vi.hoisted(() => ({
-    mockGetAuthenticatedUser: vi.fn(),
-    mockGetCampaignById: vi.fn(),
-    mockLogEvent: vi.fn(),
-    mockCallLLM: vi.fn(),
-  }));
+const {
+  mockGetAuthenticatedUser,
+  mockGetCampaignById,
+  mockLogEvent,
+  mockCallLLM,
+  mockLookup,
+} = vi.hoisted(() => ({
+  mockGetAuthenticatedUser: vi.fn(),
+  mockGetCampaignById: vi.fn(),
+  mockLogEvent: vi.fn(),
+  mockCallLLM: vi.fn(),
+  mockLookup: vi.fn(),
+}));
+
+// The SSRF guard DNS-resolves every fetched hostname; resolve to a public
+// address by default so tests never touch the network.
+vi.mock("node:dns/promises", () => ({ lookup: mockLookup }));
 
 vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: mockGetAuthenticatedUser,
@@ -78,6 +88,7 @@ beforeEach(() => {
   mockGetAuthenticatedUser.mockResolvedValue(USER);
   mockGetCampaignById.mockResolvedValue(CAMPAIGN);
   mockLogEvent.mockResolvedValue(null);
+  mockLookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
 });
 
 afterEach(() => {
@@ -153,6 +164,80 @@ describe("POST /api/campaigns/[id]/derive-product", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("rejects literal private-IP URLs without fetching (SSRF guard)", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    for (const url of [
+      "http://10.0.0.5/",
+      "http://172.16.0.1/",
+      "http://192.168.1.1/",
+      "http://127.0.0.1:3000/",
+      "http://169.254.169.254/latest/meta-data",
+    ]) {
+      const body = await (await call({ url })).json();
+      expect(body).toEqual({ error: "url_unreachable", fallback_required: true });
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("blocks a redirect to a private address (SSRF guard on the target)", async () => {
+    const fetchSpy = vi.fn(async () => ({
+      ok: false,
+      status: 302,
+      headers: new Headers({ location: "http://169.254.169.254/latest/meta-data" }),
+    }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const body = await (await call({ url: "https://saunabox.com" })).json();
+    expect(body).toEqual({ error: "url_unreachable", fallback_required: true });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(mockCallLLM).not.toHaveBeenCalled();
+  });
+
+  it("follows a redirect to a public address and derives normally", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 301,
+        headers: new Headers({ location: "https://saunabox.com/home" }),
+      })
+      .mockResolvedValueOnce(
+        htmlResponse("<html><body><h1>SaunaBox</h1></body></html>")
+      );
+    vi.stubGlobal("fetch", fetchSpy);
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(ECOMMERCE_DERIVATION)));
+
+    const body = await (await call({ url: "https://saunabox.com" })).json();
+    expect(body).toEqual(ECOMMERCE_DERIVATION);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[1][0]).toBe("https://saunabox.com/home");
+  });
+
+  it("blocks hostnames that resolve to a private address", async () => {
+    mockLookup.mockResolvedValue([{ address: "10.0.0.8", family: 4 }]);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const body = await (await call({ url: "https://internal.corp.example" })).json();
+    expect(body).toEqual({ error: "url_unreachable", fallback_required: true });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("gives up after the redirect cap", async () => {
+    const fetchSpy = vi.fn(async () => ({
+      ok: false,
+      status: 302,
+      headers: new Headers({ location: "https://saunabox.com/loop" }),
+    }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const body = await (await call({ url: "https://saunabox.com" })).json();
+    expect(body).toEqual({ error: "url_unreachable", fallback_required: true });
+    expect(fetchSpy).toHaveBeenCalledTimes(6); // initial + 5 redirects
+  });
+
   it("returns derivation_failed when the LLM emits malformed JSON", async () => {
     stubFetch(async () => htmlResponse("<html><body>SaunaBox</body></html>"));
     mockCallLLM.mockResolvedValue(llmMessage("Sure! Here's the derivation: {brand"));
@@ -193,22 +278,50 @@ describe("POST /api/campaigns/[id]/derive-product", () => {
     expect(body.brand_name).toBe("SaunaBox");
   });
 
-  it("fills missing fields with empty values and logs a warning", async () => {
+  it("fills missing optional fields with defaults when required fields are present", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     stubFetch(async () => htmlResponse("<html><body>Acme</body></html>"));
     mockCallLLM.mockResolvedValue(
-      llmMessage(JSON.stringify({ brand_name: "Acme", aov_bucket: "low" }))
+      llmMessage(
+        JSON.stringify({
+          brand_name: "Acme",
+          category: "tools",
+          product_description: "Industrial widgets.",
+          aov_bucket: "low",
+        })
+      )
     );
 
     const body = await (await call({ url: "https://acme.com" })).json();
 
     expect(body.brand_name).toBe("Acme");
-    expect(body.category).toBe("");
-    expect(body.product_description).toBe("");
     expect(body.aov_reasoning).toBe("");
     expect(body.key_attributes).toEqual([]);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("missing field"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("fails derivation when a required field is missing or empty", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    stubFetch(async () => htmlResponse("<html><body>Acme</body></html>"));
+
+    const cases = [
+      { ...ECOMMERCE_DERIVATION, brand_name: "" },
+      { ...ECOMMERCE_DERIVATION, product_description: "   " },
+      { brand_name: "Acme", aov_bucket: "low" }, // category + description missing
+    ];
+    for (const payload of cases) {
+      mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(payload)));
+      const res = await call({ url: "https://acme.com" });
+      expect(await res.json()).toEqual({ error: "derivation_failed" });
+    }
+    expect(mockLogEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "brief.url_derivation_failed",
+        payload: { reason: "empty_required_fields" },
+      })
     );
     warnSpy.mockRestore();
   });
