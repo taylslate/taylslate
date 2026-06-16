@@ -602,7 +602,11 @@ export type DomainEventType =
   | "brief.url_derivation_failed"
   | "brief.submitted"
   | "brief.interpretation_completed"
-  | "brief.interpretation_failed";
+  | "brief.interpretation_failed"
+  // Wave 14 Phase 2A Layer 5 — interpretation confirm + refine loop
+  | "brief.refinement_submitted"
+  | "brief.refinement_failed"
+  | "brief.interpretation_confirmed";
 
 export type DomainEntityType =
   | "deal"

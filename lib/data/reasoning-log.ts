@@ -216,6 +216,38 @@ export async function recordRingHypothesis(
   }
 }
 
+/**
+ * Update a single ring's brand_decision (Wave 14 Phase 2A Layer 5).
+ * The confirm step writes confirmed/rejected/added_by_brand; the refine step
+ * marks a replaced ring 'refined'. Fail-soft like the rest of this module:
+ * returns false on any failure (the caller decides whether to surface it).
+ */
+export async function updateRingDecision(
+  ringHypothesisId: string,
+  decision: BrandDecision
+): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("ring_hypotheses")
+      .update({ brand_decision: decision })
+      .eq("id", ringHypothesisId);
+    if (error) {
+      console.warn(
+        "[reasoning-log.updateRingDecision] update failed:",
+        error.message
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.updateRingDecision] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return false;
+  }
+}
+
 // ============================================================
 // conviction_scores
 // ============================================================
