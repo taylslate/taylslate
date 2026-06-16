@@ -50,13 +50,28 @@ describe("callLLMWithFallback", () => {
     mockCreate.mockResolvedValue(message("end_turn"));
     const result = await callLLMWithFallback(input);
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(mockCreate).toHaveBeenCalledWith({
-      model: FALLBACK_MODEL,
-      max_tokens: 1024,
-      system: "sys",
-      messages: [{ role: "user", content: "page text" }],
-    });
+    expect(mockCreate).toHaveBeenCalledWith(
+      {
+        model: FALLBACK_MODEL,
+        max_tokens: 1024,
+        system: "sys",
+        messages: [{ role: "user", content: "page text" }],
+      },
+      {} // no per-request bounds passed → empty options
+    );
     expect(result.stop_reason).toBe("end_turn");
+  });
+
+  it("passes per-request timeout and maxRetries through to both calls", async () => {
+    vi.stubEnv("LLM_MODEL", "claude-fable-5");
+    mockCreate
+      .mockResolvedValueOnce(message("refusal"))
+      .mockResolvedValueOnce(message("end_turn", "{}"));
+
+    await callLLMWithFallback({ ...input, timeoutMs: 60000, maxRetries: 0 });
+
+    expect(mockCreate.mock.calls[0][1]).toEqual({ timeout: 60000, maxRetries: 0 });
+    expect(mockCreate.mock.calls[1][1]).toEqual({ timeout: 60000, maxRetries: 0 });
   });
 
   it("retries once with claude-opus-4-8 on refusal from a configured model", async () => {

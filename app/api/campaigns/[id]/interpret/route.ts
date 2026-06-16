@@ -10,7 +10,7 @@
 //   "We hit an issue interpreting your brief. Refresh to try again."
 //
 // Pattern library writes are fail-soft per Phase 1's contract — a failed
-// recordCampaignPattern() never blocks the interpretation from returning.
+// persistInterpretationAtomic() never blocks the interpretation from returning.
 //
 // Idempotency: a campaign_patterns row newer than brief.submitted_at means
 // interpretation already ran for this brief version (double-fired page
@@ -20,7 +20,12 @@
 // The replay check alone is read-then-act and racy — an interpretation_locks
 // sentinel row (migration 022) makes it atomic: exactly one concurrent POST
 // claims the (campaign, brief version) key; losers wait and replay the
-// winner's stored result.
+// winner's stored result. The persist itself is one transaction (migration
+// 024), so the campaign_patterns row only becomes visible once the whole
+// interpretation is committed — that row's existence is the completion
+// sentinel, and a loser reads a complete interpretation or none. A crashed
+// writer leaves no orphan pattern row, and its claimed lock expires by TTL
+// (LOCK_TTL_MS) so the next request can steal it.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser, getCampaignById } from "@/lib/data/queries";
@@ -29,10 +34,9 @@ import {
   getCampaignPatternById,
   getCampaignReasoning,
   getLatestCampaignPatternForCampaign,
-  recordAnalogMatch,
-  recordCampaignPattern,
-  recordRingHypothesis,
+  persistInterpretationAtomic,
 } from "@/lib/data/reasoning-log";
+import type { PersistInterpretationAnalog } from "@/lib/data/reasoning-log";
 import {
   claimInterpretation,
   releaseInterpretation,
@@ -58,6 +62,12 @@ import type {
 } from "@/lib/data/types";
 
 const MAX_LLM_TOKENS = 4096;
+// Per-call LLM bound. The endpoint runs under the interpretation lock, so the
+// worst case (primary + refusal-fallback = two sequential calls) must stay
+// under LOCK_TTL_MS (180s): 2 × 60s = 120s, leaving 60s headroom. Without
+// this bound the SDK default (10-min timeout × retries) is unbounded.
+const LLM_TIMEOUT_MS = 60_000;
+const LLM_MAX_RETRIES = 0;
 // The prompt asks for 2-4 laterals, 6 max. More than 6 persists anyway —
 // let the data show what the model wanted to do — but gets a warning.
 const LATERAL_SOFT_CAP = 6;
@@ -195,6 +205,8 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       system: loadPrompt("interpret-brief.md"),
       userContent: buildUserContent(resolved, analogs),
       maxTokens: MAX_LLM_TOKENS,
+      timeoutMs: LLM_TIMEOUT_MS,
+      maxRetries: LLM_MAX_RETRIES,
     });
   } catch (err) {
     console.error(
@@ -722,7 +734,26 @@ async function persistInterpretation(
     lateral_rings: output.lateral_rings,
   };
 
-  const patternId = await recordCampaignPattern({
+  const rings = [
+    {
+      kind: "primary" as const,
+      label: output.primary_ring.ring_label,
+      reasoning: output.primary_ring.reasoning || null,
+      confidence: output.primary_ring.confidence,
+    },
+    ...output.lateral_rings.map((ring) => ({
+      kind: "lateral" as const,
+      label: ring.ring_label,
+      reasoning: ring.reasoning || null,
+      confidence: ring.confidence,
+    })),
+  ];
+
+  // Pattern + every ring + every analog persist in ONE transaction (migration
+  // 024). The campaign_patterns row only becomes visible once the whole
+  // interpretation is committed, so a concurrent lock-loser can never replay a
+  // half-written interpretation, and a crash leaves no orphan pattern row.
+  const persisted = await persistInterpretationAtomic({
     campaignId,
     customerId: userId,
     productAttributes: {
@@ -744,58 +775,39 @@ async function persistInterpretation(
     customerDescription: resolved.customerText || null,
     aovBucket: resolved.aovBucket,
     scoringWeights: weights as unknown as Record<string, unknown>,
+    rings,
+    analogs: resolveAnalogCitations(output, analogs),
   });
 
-  if (!patternId) {
-    // Fail-soft: the brand still gets their interpretation; ring/analog
-    // rows are skipped because they need the pattern foreign key.
+  if (!persisted) {
+    // Fail-soft: the brand still gets their interpretation; the reasoning
+    // rows are skipped. No replayable row exists, so the caller releases the
+    // lock and a refresh re-runs.
     console.error(
-      "[interpret] recordCampaignPattern failed — returning interpretation without persistence"
+      "[interpret] persistInterpretationAtomic failed — returning interpretation without persistence"
     );
     return toResponse(null, output, new Map(), exclusionsParsed);
   }
 
   const ringIds = new Map<string, string | null>();
-  ringIds.set(
-    output.primary_ring.ring_label,
-    await recordRingHypothesis({
-      campaignPatternId: patternId,
-      kind: "primary",
-      label: output.primary_ring.ring_label,
-      reasoning: output.primary_ring.reasoning || null,
-      confidence: output.primary_ring.confidence,
-    })
-  );
-  for (const ring of output.lateral_rings) {
-    ringIds.set(
-      ring.ring_label,
-      await recordRingHypothesis({
-        campaignPatternId: patternId,
-        kind: "lateral",
-        label: ring.ring_label,
-        reasoning: ring.reasoning || null,
-        confidence: ring.confidence,
-      })
-    );
+  for (const [label, id] of Object.entries(persisted.ringIds)) {
+    if (!ringIds.has(label)) ringIds.set(label, id);
   }
 
-  await recordAnalogCitations(patternId, output, analogs);
-
-  return toResponse(patternId, output, ringIds, exclusionsParsed);
+  return toResponse(persisted.patternId, output, ringIds, exclusionsParsed);
 }
 
 /**
- * One analog_matches row per unique cited analog that matches a campaign
- * in the retrieved library context (case-insensitive brand name). A cited
- * name with no library match is never fabricated into a row — warn and
- * skip; the interpretation_confidence label already captures the
- * speculative state.
+ * Resolve cited analogs into analog_matches rows for atomic persistence: one
+ * per unique cited analog that matches a campaign in the retrieved library
+ * context (case-insensitive brand name). A cited name with no library match
+ * is never fabricated into a row — warn and skip; the
+ * interpretation_confidence label already captures the speculative state.
  */
-async function recordAnalogCitations(
-  patternId: string,
+function resolveAnalogCitations(
   output: ParsedInterpretation,
   analogs: CampaignPatternRow[]
-): Promise<void> {
+): PersistInterpretationAnalog[] {
   const library = new Map<string, { canonical: string; patternId: string }>();
   for (const row of analogs) {
     const name = readStringAttr(row.product_attributes ?? {}, "brand_name");
@@ -832,14 +844,15 @@ async function recordAnalogCitations(
     }
   }
 
+  const result: PersistInterpretationAnalog[] = [];
   for (const [analogName, { analogPatternId, ringLabels }] of citedBy) {
-    await recordAnalogMatch({
-      campaignPatternId: patternId,
+    result.push({
       analogName,
       reasoning: `Cited by ring(s): ${ringLabels.join(", ")}`,
       analogPatternId,
     });
   }
+  return result;
 }
 
 function toResponse(

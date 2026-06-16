@@ -5,7 +5,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // by recordCampaignPattern / recordRingHypothesis which both call
 // .insert().select().single()), and `directInsert` resolves at insert()
 // itself (used by the void-returning helpers).
-const { directInsert, insertChain, readers, supabaseAdmin } = vi.hoisted(() => {
+const { directInsert, insertChain, readers, rpc, supabaseAdmin } = vi.hoisted(() => {
+  const rpc = vi.fn();
   const insertChain = {
     select: vi.fn().mockReturnThis(),
     single: vi.fn(),
@@ -42,8 +43,9 @@ const { directInsert, insertChain, readers, supabaseAdmin } = vi.hoisted(() => {
       order: readers.order,
       single: readers.single,
     })),
+    rpc,
   };
-  return { directInsert, insertChain, readers, supabaseAdmin };
+  return { directInsert, insertChain, readers, rpc, supabaseAdmin };
 });
 
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin }));
@@ -55,6 +57,7 @@ import {
   recordAnalogMatch,
   recordFounderAnnotation,
   getCampaignReasoning,
+  persistInterpretationAtomic,
 } from "./reasoning-log";
 
 beforeEach(() => {
@@ -346,5 +349,98 @@ describe("getCampaignReasoning", () => {
       convictionScores: [],
       analogs: [],
     });
+  });
+});
+
+// ============================================================
+// persistInterpretationAtomic (migration 024 RPC wrapper)
+// ============================================================
+
+describe("persistInterpretationAtomic", () => {
+  const input = {
+    campaignId: "c1",
+    customerId: "u1",
+    productAttributes: { brand_name: "SaunaBox" },
+    customerDescription: "Affluent men 30-55.",
+    aovBucket: "high" as const,
+    scoringWeights: { purchasePower: 0.2 },
+    rings: [
+      {
+        kind: "primary" as const,
+        label: "recovery",
+        reasoning: "fits",
+        confidence: "high" as const,
+      },
+    ],
+    analogs: [
+      { analogName: "ColdCo", reasoning: "cited", analogPatternId: "lib_1" },
+    ],
+  };
+
+  it("maps the rpc result into { patternId, ringIds } and snake-cases the args", async () => {
+    rpc.mockResolvedValue({
+      data: { pattern_id: "pat_1", ring_ids: { recovery: "ring_1" } },
+      error: null,
+    });
+
+    const result = await persistInterpretationAtomic(input);
+
+    expect(result).toEqual({ patternId: "pat_1", ringIds: { recovery: "ring_1" } });
+    expect(rpc).toHaveBeenCalledWith(
+      "persist_interpretation",
+      expect.objectContaining({
+        p_campaign_id: "c1",
+        p_customer_id: "u1",
+        p_product_attributes: { brand_name: "SaunaBox" },
+        p_aov_bucket: "high",
+        p_rings: [
+          {
+            kind: "primary",
+            label: "recovery",
+            reasoning: "fits",
+            confidence: "high",
+          },
+        ],
+        p_analogs: [
+          {
+            analog_name: "ColdCo",
+            reasoning: "cited",
+            analog_pattern_id: "lib_1",
+          },
+        ],
+      })
+    );
+  });
+
+  it("defaults ringIds to {} when the rpc omits ring_ids", async () => {
+    rpc.mockResolvedValue({ data: { pattern_id: "pat_1" }, error: null });
+    const result = await persistInterpretationAtomic(input);
+    expect(result).toEqual({ patternId: "pat_1", ringIds: {} });
+  });
+
+  it("returns null without calling the rpc when customerId is missing", async () => {
+    const result = await persistInterpretationAtomic({
+      ...input,
+      customerId: null,
+    });
+    expect(result).toBeNull();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the rpc errors", async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: "boom" } });
+    expect(await persistInterpretationAtomic(input)).toBeNull();
+  });
+
+  it("returns null when the rpc returns no pattern_id", async () => {
+    rpc.mockResolvedValue({ data: { ring_ids: {} }, error: null });
+    expect(await persistInterpretationAtomic(input)).toBeNull();
+  });
+
+  it("never throws when the rpc itself throws", async () => {
+    rpc.mockImplementation(() => {
+      throw new Error("network down");
+    });
+    await expect(persistInterpretationAtomic(input)).resolves.toBeNull();
   });
 });

@@ -6,9 +6,7 @@ const {
   mockLogEvent,
   mockCallLLM,
   mockRetrieveAnalogs,
-  mockRecordPattern,
-  mockRecordRing,
-  mockRecordAnalog,
+  mockPersistAtomic,
   mockGetPatternById,
   mockGetLatestForCampaign,
   mockGetReasoning,
@@ -20,9 +18,7 @@ const {
   mockLogEvent: vi.fn(),
   mockCallLLM: vi.fn(),
   mockRetrieveAnalogs: vi.fn(),
-  mockRecordPattern: vi.fn(),
-  mockRecordRing: vi.fn(),
-  mockRecordAnalog: vi.fn(),
+  mockPersistAtomic: vi.fn(),
   mockGetPatternById: vi.fn(),
   mockGetLatestForCampaign: vi.fn(),
   mockGetReasoning: vi.fn(),
@@ -50,9 +46,7 @@ vi.mock("@/lib/discovery/pattern-library-retrieval", () => ({
 }));
 
 vi.mock("@/lib/data/reasoning-log", () => ({
-  recordCampaignPattern: mockRecordPattern,
-  recordRingHypothesis: mockRecordRing,
-  recordAnalogMatch: mockRecordAnalog,
+  persistInterpretationAtomic: mockPersistAtomic,
   getCampaignPatternById: mockGetPatternById,
   getLatestCampaignPatternForCampaign: mockGetLatestForCampaign,
   getCampaignReasoning: mockGetReasoning,
@@ -182,6 +176,25 @@ function llmUserContent(): string {
   return mockCallLLM.mock.calls[0][0].userContent;
 }
 
+// Input handed to the single atomic-persist call.
+function persistInput() {
+  return mockPersistAtomic.mock.calls[0][0];
+}
+
+// Default atomic-persist: derive ring ids from the rings array by label so
+// the route can map ids back into the response (primary → ring_1, etc.).
+function defaultPersist() {
+  return async (input: {
+    rings: Array<{ label: string }>;
+  }): Promise<{ patternId: string; ringIds: Record<string, string> }> => {
+    const ringIds: Record<string, string> = {};
+    input.rings.forEach((r, i) => {
+      ringIds[r.label] = `ring_${i + 1}`;
+    });
+    return { patternId: "pat_1", ringIds };
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
@@ -189,10 +202,7 @@ beforeEach(() => {
   mockGetCampaignById.mockResolvedValue(CAMPAIGN);
   mockLogEvent.mockResolvedValue(null);
   mockRetrieveAnalogs.mockResolvedValue(LIBRARY);
-  mockRecordPattern.mockResolvedValue("pat_1");
-  let ringSeq = 0;
-  mockRecordRing.mockImplementation(async () => `ring_${++ringSeq}`);
-  mockRecordAnalog.mockResolvedValue(undefined);
+  mockPersistAtomic.mockImplementation(defaultPersist());
   mockGetLatestForCampaign.mockResolvedValue(null);
   mockGetPatternById.mockResolvedValue(null);
   mockGetReasoning.mockResolvedValue({
@@ -239,29 +249,31 @@ describe("POST /api/campaigns/[id]/interpret", () => {
     expect(llmUserContent()).toContain("ColdCo");
     expect(llmUserContent()).toContain("Recovery-obsessed men");
 
-    expect(mockRecordPattern).toHaveBeenCalledTimes(1);
-    expect(mockRecordRing).toHaveBeenCalledTimes(3);
-    expect(mockRecordRing).toHaveBeenNthCalledWith(
-      1,
+    // One atomic persist carries the pattern + all rings + all analogs.
+    expect(mockPersistAtomic).toHaveBeenCalledTimes(1);
+    const rings = persistInput().rings;
+    expect(rings).toHaveLength(3);
+    expect(rings[0]).toEqual(
       expect.objectContaining({
-        campaignPatternId: "pat_1",
         kind: "primary",
         label: "protocol-driven recovery & biohacking",
         confidence: "high",
       })
     );
-    expect(mockRecordRing).toHaveBeenNthCalledWith(
-      2,
+    expect(rings[1]).toEqual(
       expect.objectContaining({ kind: "lateral", label: "overlanding & van-life" })
     );
-    // Both cited analogs exist in the library; each row carries the FK back
-    // to the library pattern it was retrieved from (migration 022).
-    expect(mockRecordAnalog).toHaveBeenCalledTimes(2);
-    expect(mockRecordAnalog).toHaveBeenCalledWith(
+    // Both cited analogs exist in the library; each carries the FK back to the
+    // library pattern it was retrieved from (migration 022).
+    const analogs = persistInput().analogs;
+    expect(analogs).toHaveLength(2);
+    expect(analogs).toContainEqual(
+      expect.objectContaining({ analogName: "ColdCo", analogPatternId: "lib_1" })
+    );
+    expect(analogs).toContainEqual(
       expect.objectContaining({
-        campaignPatternId: "pat_1",
-        analogName: "ColdCo",
-        analogPatternId: "lib_1",
+        analogName: "HeatWorks",
+        analogPatternId: "lib_2",
       })
     );
     expect(mockLogEvent).toHaveBeenCalledWith(
@@ -296,9 +308,9 @@ describe("POST /api/campaigns/[id]/interpret", () => {
     const body = await (await call()).json();
 
     expect(body.campaign_pattern_id).toBe("pat_1");
-    expect(mockRecordPattern).toHaveBeenCalledTimes(1);
-    expect(mockRecordRing).toHaveBeenCalledTimes(2);
-    expect(mockRecordAnalog).not.toHaveBeenCalled();
+    expect(mockPersistAtomic).toHaveBeenCalledTimes(1);
+    expect(persistInput().rings).toHaveLength(2);
+    expect(persistInput().analogs).toHaveLength(0);
     expect(llmUserContent()).toContain(
       "Pattern library is empty — reason from first principles"
     );
@@ -323,7 +335,7 @@ describe("POST /api/campaigns/[id]/interpret", () => {
     const body = await (await call()).json();
 
     expect(body.lateral_rings).toHaveLength(4);
-    expect(mockRecordRing).toHaveBeenCalledTimes(5); // primary + 4
+    expect(persistInput().rings).toHaveLength(5); // primary + 4
   });
 
   it("persists all rings with a warning when the LLM exceeds the soft cap", async () => {
@@ -349,10 +361,8 @@ describe("POST /api/campaigns/[id]/interpret", () => {
     const body = await (await call()).json();
 
     expect(body.lateral_rings).toHaveLength(7); // no truncation
-    expect(mockRecordRing).toHaveBeenCalledTimes(8);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("soft cap")
-    );
+    expect(persistInput().rings).toHaveLength(8);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("soft cap"));
   });
 
   it("skips analog rows for cited brands not in the library, with a warning", async () => {
@@ -372,20 +382,19 @@ describe("POST /api/campaigns/[id]/interpret", () => {
 
     await call();
 
-    expect(mockRecordAnalog).toHaveBeenCalledTimes(2); // ColdCo + HeatWorks only
+    const analogs = persistInput().analogs;
+    expect(analogs).toHaveLength(2); // ColdCo + HeatWorks only
     expect(
-      mockRecordAnalog.mock.calls.some(
-        ([input]) => input.analogName === "Plunge"
-      )
+      analogs.some((a: { analogName: string }) => a.analogName === "Plunge")
     ).toBe(false);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('"Plunge" not in the pattern library context')
     );
   });
 
-  it("still returns the interpretation when recordCampaignPattern fails", async () => {
+  it("still returns the interpretation when persistence fails", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mockRecordPattern.mockResolvedValue(null);
+    mockPersistAtomic.mockResolvedValue(null);
     mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
 
     const res = await call();
@@ -397,8 +406,6 @@ describe("POST /api/campaigns/[id]/interpret", () => {
       "protocol-driven recovery & biohacking"
     );
     expect(body.primary_ring.ring_hypothesis_id).toBeNull();
-    expect(mockRecordRing).not.toHaveBeenCalled(); // no FK to hang rings on
-    expect(mockRecordAnalog).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalled();
   });
 
@@ -411,10 +418,11 @@ describe("POST /api/campaigns/[id]/interpret", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body).toEqual({ error: "interpretation_failed", reason: "malformed_json" });
-    expect(mockRecordPattern).not.toHaveBeenCalled();
-    expect(mockRecordRing).not.toHaveBeenCalled();
-    expect(mockRecordAnalog).not.toHaveBeenCalled();
+    expect(body).toEqual({
+      error: "interpretation_failed",
+      reason: "malformed_json",
+    });
+    expect(mockPersistAtomic).not.toHaveBeenCalled();
     expect(mockLogEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: "brief.interpretation_failed",
@@ -431,7 +439,7 @@ describe("POST /api/campaigns/[id]/interpret", () => {
     const body = await (await call()).json();
 
     expect(body).toEqual({ error: "interpretation_failed", reason: "refusal" });
-    expect(mockRecordPattern).not.toHaveBeenCalled();
+    expect(mockPersistAtomic).not.toHaveBeenCalled();
   });
 
   it("stores AOV-tilted effective weights for a high-AOV brief", async () => {
@@ -439,7 +447,7 @@ describe("POST /api/campaigns/[id]/interpret", () => {
 
     await call();
 
-    const input = mockRecordPattern.mock.calls[0][0];
+    const input = persistInput();
     expect(input.aovBucket).toBe("high");
     expect(input.scoringWeights).toEqual(
       expect.objectContaining({ purchasePower: 0.2, reach: 0.05 })
@@ -472,7 +480,7 @@ describe("POST /api/campaigns/[id]/interpret", () => {
 
     await call();
 
-    expect(mockRecordPattern.mock.calls[0][0].scoringWeights).toEqual({
+    expect(persistInput().scoringWeights).toEqual({
       audienceFit: 0.4,
       adEngagement: 0.3,
       sponsorRetention: 0.2,
@@ -499,7 +507,9 @@ describe("POST /api/campaigns/[id]/interpret", () => {
 
     await call();
 
-    const confidences = mockRecordRing.mock.calls.map(([i]) => i.confidence);
+    const confidences = persistInput().rings.map(
+      (r: { confidence: string }) => r.confidence
+    );
     expect(confidences).toEqual([
       "high", // primary
       "medium",
@@ -575,9 +585,7 @@ describe("POST /api/campaigns/[id]/interpret", () => {
       '- customer_description: before "Men into recovery." → after "Now also seeing lots of women 25-40 buying for home spas."'
     );
     // The new pattern records the canonical customer text.
-    expect(mockRecordPattern.mock.calls[0][0].customerDescription).toContain(
-      "women 25-40"
-    );
+    expect(persistInput().customerDescription).toContain("women 25-40");
   });
 
   it("falls back to prior pattern values when a returning brand changed nothing", async () => {
@@ -616,46 +624,7 @@ describe("POST /api/campaigns/[id]/interpret", () => {
     const content = llmUserContent();
     expect(content).toContain("Men into recovery."); // prior raw description
     expect(content).toContain("Delta since last campaign: no changes reported.");
-    expect(mockRecordPattern.mock.calls[0][0].customerDescription).toBe(
-      "Men into recovery."
-    );
-  });
-
-  it("replays a stored interpretation instead of re-calling the LLM", async () => {
-    mockGetLatestForCampaign.mockResolvedValue({
-      id: "pat_done",
-      campaign_id: "camp_1",
-      customer_id: "user_1",
-      created_at: "2026-06-10T12:05:00.000Z", // after submitted_at
-      product_attributes: {
-        brand_name: "SaunaBox",
-        interpretation: interpretation(),
-      },
-      customer_description: "Affluent men 30-55.",
-      aov_bucket: "high",
-      scoring_weights: null,
-    });
-    mockGetReasoning.mockResolvedValue({
-      pattern: null,
-      rings: [
-        { id: "ring_a", label: "protocol-driven recovery & biohacking" },
-        { id: "ring_b", label: "overlanding & van-life" },
-        { id: "ring_c", label: "cold-climate remote workers" },
-      ],
-      convictionScores: [],
-      analogs: [],
-    });
-
-    const res = await call();
-    const body = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(mockCallLLM).not.toHaveBeenCalled();
-    expect(mockRecordPattern).not.toHaveBeenCalled();
-    expect(body.campaign_pattern_id).toBe("pat_done");
-    expect(body.primary_ring.ring_hypothesis_id).toBe("ring_a");
-    expect(body.lateral_rings[0].ring_hypothesis_id).toBe("ring_b");
-    expect(body.lateral_rings[1].ring_hypothesis_id).toBe("ring_c");
+    expect(persistInput().customerDescription).toBe("Men into recovery.");
   });
 
   it("runs fresh when the latest pattern predates the brief submission", async () => {
@@ -698,11 +667,27 @@ describe("POST /api/campaigns/[id]/interpret", () => {
 });
 
 // ============================================================
-// Layer 4 amendment — Codex review fixes
+// Layer 4 amendment — Codex review fixes (lock lifecycle)
 // ============================================================
 
+// Ring ids matching the interpretation() fixture's labels — used to align a
+// winner's atomic-persist result with a loser's replay so the two responses
+// are identical.
+const FIXTURE_RING_IDS = {
+  "protocol-driven recovery & biohacking": "ring_a",
+  "overlanding & van-life": "ring_b",
+  "cold-climate remote workers": "ring_c",
+};
+const FIXTURE_REASONING_RINGS = [
+  { id: "ring_a", label: "protocol-driven recovery & biohacking" },
+  { id: "ring_b", label: "overlanding & van-life" },
+  { id: "ring_c", label: "cold-climate remote workers" },
+];
+
 // A pattern row the "winner" of a concurrent race persisted: created after
-// submitted_at, carrying the stored interpretation blob for replay.
+// submitted_at, carrying the stored interpretation blob for replay. Its
+// exclusions_parsed matches the server-side parse of FRESH_BRIEF.exclusions_text
+// so a replayed response is byte-identical to the winner's built response.
 const COMPLETED_PATTERN = {
   id: "pat_done",
   campaign_id: "camp_1",
@@ -710,7 +695,12 @@ const COMPLETED_PATTERN = {
   created_at: "2026-06-10T12:05:00.000Z",
   product_attributes: {
     brand_name: "SaunaBox",
-    interpretation: interpretation(),
+    interpretation: interpretation({
+      campaign_pattern: {
+        ...interpretation().campaign_pattern,
+        exclusions_parsed: ["No competitor sauna brands."],
+      },
+    }),
   },
   customer_description: "Affluent men 30-55.",
   aov_bucket: "high",
@@ -737,7 +727,7 @@ const PRIOR_PATTERN_BASE = {
 };
 
 describe("POST /api/campaigns/[id]/interpret — Layer 4 amendment", () => {
-  it("concurrent double-POST: one LLM call, one pattern row, loser replays the winner", async () => {
+  it("concurrent double-POST returns identical, complete interpretations", async () => {
     vi.useFakeTimers();
     try {
       // First request wins the sentinel claim; second sees "exists".
@@ -747,8 +737,20 @@ describe("POST /api/campaigns/[id]/interpret — Layer 4 amendment", () => {
       mockCallLLM.mockResolvedValue(
         llmMessage(JSON.stringify(interpretation()))
       );
-      // Replay-guard reads (both requests) see nothing; the loser's poll
-      // after the wait interval finds the winner's persisted row.
+      // The winner persists atomically as pat_done with ids aligned to the
+      // fixture; the loser replays that same row.
+      mockPersistAtomic.mockResolvedValue({
+        patternId: "pat_done",
+        ringIds: FIXTURE_RING_IDS,
+      });
+      mockGetReasoning.mockResolvedValue({
+        pattern: null,
+        rings: FIXTURE_REASONING_RINGS,
+        convictionScores: [],
+        analogs: [],
+      });
+      // Replay-guard reads (both requests) see nothing; the loser's poll after
+      // the wait interval finds the winner's persisted row.
       mockGetLatestForCampaign
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
@@ -760,23 +762,90 @@ describe("POST /api/campaigns/[id]/interpret — Layer 4 amendment", () => {
       const [res1, res2] = await Promise.all([winner, loser]);
       const [body1, body2] = [await res1.json(), await res2.json()];
 
+      // Exactly one LLM call and one atomic persist across both requests.
       expect(mockCallLLM).toHaveBeenCalledTimes(1);
-      expect(mockRecordPattern).toHaveBeenCalledTimes(1);
+      expect(mockPersistAtomic).toHaveBeenCalledTimes(1);
       expect(mockClaimLock).toHaveBeenCalledTimes(2);
       expect(res1.status).toBe(200);
       expect(res2.status).toBe(200);
-      expect(body1.primary_ring.ring_label).toBe(
-        "protocol-driven recovery & biohacking"
-      );
-      expect(body2.campaign_pattern_id).toBe("pat_done");
-      expect(body2.primary_ring.ring_label).toBe(
-        "protocol-driven recovery & biohacking"
-      );
+
+      // Both responses are identical AND complete (every ring carries an id).
+      expect(body1).toEqual(body2);
+      for (const body of [body1, body2]) {
+        expect(body.campaign_pattern_id).toBe("pat_done");
+        expect(body.primary_ring.ring_hypothesis_id).toBe("ring_a");
+        expect(
+          body.lateral_rings.map(
+            (r: { ring_hypothesis_id: string | null }) => r.ring_hypothesis_id
+          )
+        ).toEqual(["ring_b", "ring_c"]);
+        expect(
+          [body.primary_ring, ...body.lateral_rings].every(
+            (r: { ring_hypothesis_id: string | null }) =>
+              r.ring_hypothesis_id !== null
+          )
+        ).toBe(true);
+      }
       // Success keeps the sentinel — the replay guard owns refreshes.
       expect(mockReleaseLock).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("partial-write recovery: after an orphaned crash, the retry reclaims and re-interprets", async () => {
+    // A prior request claimed the lock then crashed mid-write — the process
+    // died before the atomic persist committed or the lock was released,
+    // leaving an orphan with no pattern row. The TTL steal that frees that
+    // orphan is unit-tested in interpretation-lock.test.ts; here the expired
+    // lock has been stolen, so the retry's claim succeeds and a fresh
+    // interpretation runs to completion.
+    mockGetLatestForCampaign.mockResolvedValue(null); // crash left no pattern row
+    mockClaimLock.mockResolvedValue("acquired"); // orphan stolen → reclaimed
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(mockCallLLM).toHaveBeenCalledTimes(1);
+    expect(mockPersistAtomic).toHaveBeenCalledTimes(1);
+    expect(body.campaign_pattern_id).toBe("pat_1");
+    expect(body.primary_ring.ring_hypothesis_id).toBe("ring_1");
+    expect(
+      [body.primary_ring, ...body.lateral_rings].every(
+        (r: { ring_hypothesis_id: string | null }) => r.ring_hypothesis_id !== null
+      )
+    ).toBe(true);
+    // Success keeps the sentinel.
+    expect(mockReleaseLock).not.toHaveBeenCalled();
+  });
+
+  it("idempotent replay after completion: no LLM call, no re-persist, same result", async () => {
+    // A completed interpretation already exists for this brief version.
+    mockGetLatestForCampaign.mockResolvedValue(COMPLETED_PATTERN);
+    mockGetReasoning.mockResolvedValue({
+      pattern: null,
+      rings: FIXTURE_REASONING_RINGS,
+      convictionScores: [],
+      analogs: [],
+    });
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    // The replay guard short-circuits before the LLM, the persist, and even
+    // the lock claim.
+    expect(mockCallLLM).not.toHaveBeenCalled();
+    expect(mockPersistAtomic).not.toHaveBeenCalled();
+    expect(mockClaimLock).not.toHaveBeenCalled();
+    expect(body.campaign_pattern_id).toBe("pat_done");
+    expect(body.primary_ring.ring_hypothesis_id).toBe("ring_a");
+    expect(body.lateral_rings.map((r: { ring_label: string }) => r.ring_label)).toEqual([
+      "overlanding & van-life",
+      "cold-climate remote workers",
+    ]);
   });
 
   it("releases the sentinel on LLM failure so refresh can retry", async () => {
@@ -792,7 +861,7 @@ describe("POST /api/campaigns/[id]/interpret — Layer 4 amendment", () => {
 
   it("releases the sentinel when persistence fails (no replayable row)", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    mockRecordPattern.mockResolvedValue(null);
+    mockPersistAtomic.mockResolvedValue(null);
     mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
 
     const body = await (await call()).json();
@@ -843,7 +912,7 @@ describe("POST /api/campaigns/[id]/interpret — Layer 4 amendment", () => {
       excludeCampaignId: "camp_1",
     });
     expect(llmUserContent()).toContain("home spa equipment");
-    const input = mockRecordPattern.mock.calls[0][0];
+    const input = persistInput();
     expect(input.aovBucket).toBe("mid");
     expect(input.productAttributes).toEqual(
       expect.objectContaining({ category: "home spa equipment" })
@@ -875,11 +944,9 @@ describe("POST /api/campaigns/[id]/interpret — Layer 4 amendment", () => {
       error: "interpretation_failed",
       reason: "reused_pattern_forbidden",
     });
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("SECURITY")
-    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("SECURITY"));
     expect(mockCallLLM).not.toHaveBeenCalled();
-    expect(mockRecordPattern).not.toHaveBeenCalled();
+    expect(mockPersistAtomic).not.toHaveBeenCalled();
     expect(mockReleaseLock).toHaveBeenCalledWith("camp_1", SUBMITTED_AT);
     expect(mockLogEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -927,8 +994,7 @@ describe("POST /api/campaigns/[id]/interpret — Layer 4 amendment", () => {
     const expected = ["Plunge", "Therabody", "also", "Big Sauna"];
     expect(body.campaign_pattern.exclusions_parsed).toEqual(expected);
     expect(
-      mockRecordPattern.mock.calls[0][0].productAttributes.brief_context
-        .exclusions_parsed
+      persistInput().productAttributes.brief_context.exclusions_parsed
     ).toEqual(expected);
   });
 
@@ -943,7 +1009,7 @@ describe("POST /api/campaigns/[id]/interpret — Layer 4 amendment", () => {
 
     expect(res.status).toBe(200);
     expect(body.lateral_rings).toEqual([]);
-    expect(mockRecordRing).toHaveBeenCalledTimes(1); // primary only
+    expect(persistInput().rings).toHaveLength(1); // primary only
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("zero lateral rings")
     );
@@ -985,7 +1051,7 @@ describe("POST /api/campaigns/[id]/interpret — Layer 4 amendment", () => {
     expect(mockRetrieveAnalogs).toHaveBeenCalledWith(
       expect.objectContaining({ aovBucket: "high" })
     );
-    const input = mockRecordPattern.mock.calls[0][0];
+    const input = persistInput();
     expect(input.aovBucket).toBe("high");
     expect(input.scoringWeights).toEqual(
       expect.objectContaining({ purchasePower: 0.2 })

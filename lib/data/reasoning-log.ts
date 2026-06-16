@@ -62,6 +62,108 @@ export async function recordCampaignPattern(
 }
 
 // ============================================================
+// Atomic interpretation persist (Wave 14 Phase 2A, migration 024)
+// ============================================================
+
+export interface PersistInterpretationRing {
+  // 'primary' or 'lateral' — see RecordRingHypothesisInput.kind.
+  kind: "primary" | "lateral";
+  label: string;
+  reasoning: string | null;
+  confidence: "high" | "medium" | "low" | "speculative";
+}
+
+export interface PersistInterpretationAnalog {
+  analogName: string;
+  reasoning: string | null;
+  /** campaign_patterns row the analog was retrieved from (migration 022). */
+  analogPatternId: string | null;
+}
+
+export interface PersistInterpretationInput {
+  campaignId: string | null | undefined;
+  customerId: string | null | undefined;
+  productAttributes: Record<string, unknown>;
+  customerDescription?: string | null;
+  aovBucket?: "low" | "mid" | "high" | null;
+  scoringWeights?: Record<string, unknown> | null;
+  rings: PersistInterpretationRing[];
+  analogs: PersistInterpretationAnalog[];
+}
+
+export interface PersistInterpretationResult {
+  patternId: string;
+  /** Ring hypothesis ids keyed by ring label, for response reconstruction. */
+  ringIds: Record<string, string>;
+}
+
+/**
+ * Persist a full brief interpretation — campaign_pattern + every ring +
+ * every analog match — in ONE Postgres transaction via the
+ * persist_interpretation RPC (migration 024). Either the whole interpretation
+ * becomes visible or none of it does, so a concurrent lock-loser reading the
+ * pattern row back can never observe a half-written interpretation, and a
+ * crash mid-write leaves no orphan pattern row.
+ *
+ * IMPORTANT: call this only AFTER the LLM has returned. The transaction opens
+ * and closes entirely inside this RPC (milliseconds); the model call must
+ * never sit inside the transaction boundary.
+ *
+ * Fail-soft like the rest of this module: returns null on any failure (the
+ * caller still returns the interpretation to the brand, just unpersisted).
+ */
+export async function persistInterpretationAtomic(
+  input: PersistInterpretationInput
+): Promise<PersistInterpretationResult | null> {
+  if (!input.customerId) return null;
+  try {
+    const { data, error } = await supabaseAdmin.rpc("persist_interpretation", {
+      p_campaign_id: input.campaignId ?? null,
+      p_customer_id: input.customerId,
+      p_product_attributes: input.productAttributes,
+      p_customer_description: input.customerDescription ?? null,
+      p_aov_bucket: input.aovBucket ?? null,
+      p_scoring_weights: input.scoringWeights ?? null,
+      p_rings: input.rings.map((r) => ({
+        kind: r.kind,
+        label: r.label,
+        reasoning: r.reasoning,
+        confidence: r.confidence,
+      })),
+      p_analogs: input.analogs.map((a) => ({
+        analog_name: a.analogName,
+        reasoning: a.reasoning,
+        analog_pattern_id: a.analogPatternId,
+      })),
+    });
+    if (error || !data) {
+      console.warn(
+        "[reasoning-log.persistInterpretationAtomic] rpc failed:",
+        error?.message
+      );
+      return null;
+    }
+    const result = data as {
+      pattern_id?: string;
+      ring_ids?: Record<string, string>;
+    };
+    if (!result.pattern_id) {
+      console.warn(
+        "[reasoning-log.persistInterpretationAtomic] rpc returned no pattern_id"
+      );
+      return null;
+    }
+    return { patternId: result.pattern_id, ringIds: result.ring_ids ?? {} };
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.persistInterpretationAtomic] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+// ============================================================
 // ring_hypotheses
 // ============================================================
 

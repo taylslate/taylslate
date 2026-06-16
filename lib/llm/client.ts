@@ -28,6 +28,13 @@ export interface CallLLMInput {
   userContent: string;
   maxTokens: number;
   client?: Anthropic;
+  // Per-request bound applied to BOTH the primary and the refusal-fallback
+  // call. Omit to inherit the SDK defaults (10-min timeout, 2 retries).
+  // Callers that run under a time-bounded lock (the Layer 4 interpret
+  // endpoint) must set these so the worst case — two sequential calls — stays
+  // below the lock TTL. See lib/data/interpretation-lock.ts LOCK_TTL_MS.
+  timeoutMs?: number;
+  maxRetries?: number;
 }
 
 export async function callLLMWithFallback(
@@ -36,12 +43,19 @@ export async function callLLMWithFallback(
   const client = input.client ?? createLLMClient();
   const model = getLLMModel();
 
-  const primary = await client.messages.create({
-    model,
-    max_tokens: input.maxTokens,
-    system: input.system,
-    messages: [{ role: "user", content: input.userContent }],
-  });
+  const options: { timeout?: number; maxRetries?: number } = {};
+  if (input.timeoutMs !== undefined) options.timeout = input.timeoutMs;
+  if (input.maxRetries !== undefined) options.maxRetries = input.maxRetries;
+
+  const primary = await client.messages.create(
+    {
+      model,
+      max_tokens: input.maxTokens,
+      system: input.system,
+      messages: [{ role: "user", content: input.userContent }],
+    },
+    options
+  );
 
   if (primary.stop_reason !== "refusal" || model === FALLBACK_MODEL) {
     return primary;
@@ -51,12 +65,15 @@ export async function callLLMWithFallback(
     stop_details: (primary as { stop_details?: unknown }).stop_details,
   });
 
-  return client.messages.create({
-    model: FALLBACK_MODEL,
-    max_tokens: input.maxTokens,
-    system: input.system,
-    messages: [{ role: "user", content: input.userContent }],
-  });
+  return client.messages.create(
+    {
+      model: FALLBACK_MODEL,
+      max_tokens: input.maxTokens,
+      system: input.system,
+      messages: [{ role: "user", content: input.userContent }],
+    },
+    options
+  );
 }
 
 const promptCache = new Map<string, string>();

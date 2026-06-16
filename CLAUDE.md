@@ -62,7 +62,7 @@ Waves 1-3 laid the foundation (Supabase migration from seed data, deal transacti
 
 **Wave 14 Phase 1 (April 30, shipped): Discovery agent foundation.** Migration 019 applied (pattern library tables: `campaign_patterns`, `ring_hypotheses`, `conviction_scores`, `analog_matches`, `founder_annotations`; `show_profiles.brand_history`; `shows.audience_purchase_power`). `lib/data/reasoning-log.ts` with 5 record helpers + reader, fail-soft contract matching `event-log.ts`. Scoring weight tunability refactor — `lib/scoring/weights.ts` now exports `getEffectiveWeights()` with per-request overrides plus AOV-aware tilt; new optional `topicalRelevance` and `purchasePower` dimensions default to 0 for backwards compatibility. All Phase 1 helpers ship dormant — Phase 2 wires them into the discovery agent at each AI decision point.
 
-**Total: 318 tests passing. Migrations 001–023 confirmed applied — 015/016/018 (Wave 13 financial layer) were reconciled via migration 023 and verified by introspection.**
+**Total: 501 tests passing. Migrations 001–023 confirmed applied — 015/016/018 (Wave 13 financial layer) were reconciled via migration 023 and verified by introspection. Migration 024 (Layer 4 atomic persist — `persist_interpretation` function) is written but NOT yet applied: paste it into the Supabase SQL Editor and confirm via introspection (function present in `pg_proc`, EXECUTE granted to `service_role`, and PostgREST resolves the first `.rpc()` after a schema-cache reload) before it counts as applied.**
 
 **Next: Wave 14 Phase 2 — Discovery Agent UX (pre-launch must-do).** Wires Phase 1 dormant infrastructure into the brand-facing UI. See backlog and "Wave 14 Scope" section below.
 
