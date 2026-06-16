@@ -62,7 +62,7 @@ Waves 1-3 laid the foundation (Supabase migration from seed data, deal transacti
 
 **Wave 14 Phase 1 (April 30, shipped): Discovery agent foundation.** Migration 019 applied (pattern library tables: `campaign_patterns`, `ring_hypotheses`, `conviction_scores`, `analog_matches`, `founder_annotations`; `show_profiles.brand_history`; `shows.audience_purchase_power`). `lib/data/reasoning-log.ts` with 5 record helpers + reader, fail-soft contract matching `event-log.ts`. Scoring weight tunability refactor — `lib/scoring/weights.ts` now exports `getEffectiveWeights()` with per-request overrides plus AOV-aware tilt; new optional `topicalRelevance` and `purchasePower` dimensions default to 0 for backwards compatibility. All Phase 1 helpers ship dormant — Phase 2 wires them into the discovery agent at each AI decision point.
 
-**Total: 318 tests passing. Migrations 001-019 applied.**
+**Total: 318 tests passing. Migrations 001–023 confirmed applied — 015/016/018 (Wave 13 financial layer) were reconciled via migration 023 and verified by introspection.**
 
 **Next: Wave 14 Phase 2 — Discovery Agent UX (pre-launch must-do).** Wires Phase 1 dormant infrastructure into the brand-facing UI. See backlog and "Wave 14 Scope" section below.
 
@@ -326,6 +326,8 @@ Complete type system in `lib/data/types.ts`. Key entities:
 - Check constraints: `ALTER TABLE ... DROP CONSTRAINT IF EXISTS; ... ADD CONSTRAINT`
 
 **Rationale:** Chris pastes migrations into Supabase SQL Editor (not CLI). Partial failures break naive re-runs. Every migration must be safely re-runnable.
+
+**Migration verification — "applied" means confirmed SQL execution.** A migration is "applied" only when its objects are confirmed present in the database by introspection — never on the strength of code shipping or a file existing in the repo. The Wave 13 financial layer (015/016/018) was recorded as applied but never ran in production; the gap stayed invisible because `logEventLog()` fails soft, payouts only insert after a real settlement, and Wave 13 payment writes only error on a real charge — none of those paths ran. After pasting any migration into the SQL Editor, run an introspection check confirming the specific objects it should have created, then update migration status. Reconciled in migration 023.
 
 **Data API grants — REQUIRED on every new table in `public` (Supabase breaking change, effective Oct 30, 2026):**
 
