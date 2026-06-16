@@ -67,6 +67,9 @@ const MAX_LLM_TOKENS = 4096;
 // under LOCK_TTL_MS (180s): 2 × 60s = 120s, leaving 60s headroom. Without
 // this bound the SDK default (10-min timeout × retries) is unbounded.
 const LLM_TIMEOUT_MS = 60_000;
+// LLM_MAX_RETRIES must stay 0 — non-zero retries multiply against
+// LLM_TIMEOUT_MS and can exceed LOCK_TTL_MS (180s), causing valid
+// in-flight interpretations to have their locks stolen by TTL expiry.
 const LLM_MAX_RETRIES = 0;
 // The prompt asks for 2-4 laterals, 6 max. More than 6 persists anyway —
 // let the data show what the model wanted to do — but gets a warning.
