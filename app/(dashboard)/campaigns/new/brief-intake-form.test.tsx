@@ -415,6 +415,71 @@ describe("BriefIntakeForm — returning-brand check-in", () => {
     expect(body.customer_text).toBeUndefined();
   });
 
+  it("drops a stale re-derive response when the URL changes again mid-flight", async () => {
+    // Brand opens "what's changed", sets URL A (slow read), goes back, and
+    // sets URL B (fast read). B resolves first, then the stale A resolves
+    // last — A must not overwrite B's derivation.
+    const makeDeferred = () => {
+      let resolve!: (v: unknown) => void;
+      const promise = new Promise((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    };
+    const dA = makeDeferred();
+    const dB = makeDeferred();
+    const DERIV_A = { ...DERIVATION, brand_name: "Brand A (stale)" };
+    const DERIV_B = { ...DERIVATION, brand_name: "Brand B (latest)" };
+
+    const fetchMock = vi.fn((url: unknown, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(init.body as string) : {};
+      if (url === "/api/campaigns/brief" && body.stage === "draft") {
+        return Promise.resolve(jsonRes({ campaign_id: "camp_1" }));
+      }
+      if (typeof url === "string" && url.endsWith("/derive-product")) {
+        if (body.url === "https://a.example") return dA.promise;
+        if (body.url === "https://b.example") return dB.promise;
+      }
+      return Promise.resolve(jsonRes({ error: "unexpected fetch" }, 500));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    renderForm({ returning: RETURNING });
+
+    // First edit → derive A (kept pending).
+    await user.click(screen.getByRole("button", { name: /what.s changed/i }));
+    const urlA = screen.getByLabelText("Product URL");
+    await user.clear(urlA);
+    await user.type(urlA, "https://a.example");
+    await user.click(
+      screen.getByRole("button", { name: /Continue with this update/ })
+    );
+
+    // Back to the check-in, change the URL again → derive B (kept pending).
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    await user.click(screen.getByRole("button", { name: /what.s changed/i }));
+    const urlB = screen.getByLabelText("Product URL");
+    await user.clear(urlB);
+    await user.type(urlB, "https://b.example");
+    await user.click(
+      screen.getByRole("button", { name: /Continue with this update/ })
+    );
+
+    // Resolve out of order: latest (B) first, then the stale (A).
+    dB.resolve(jsonRes(DERIV_B));
+    expect(await screen.findByDisplayValue("Brand B (latest)")).toBeInTheDocument();
+
+    dA.resolve(jsonRes(DERIV_A));
+    // Let the stale handler run; it must early-return without committing.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.getByLabelText("Brand name")).toHaveValue("Brand B (latest)");
+    expect(
+      screen.queryByDisplayValue("Brand A (stale)")
+    ).not.toBeInTheDocument();
+  });
+
   it("'treat this as a new brief' escape hatch drops to the full intake", async () => {
     stubFetchRoutes();
     const user = userEvent.setup();

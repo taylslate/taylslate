@@ -86,6 +86,12 @@ export default function BriefIntakeForm({
 
   const [campaignId, setCampaignId] = useState<string | null>(initialDraftId);
   const draftPromiseRef = useRef<Promise<string | null> | null>(null);
+  // Monotonic request id for product derivation. A rapid double-edit of the
+  // URL fires overlapping deriveProduct calls whose responses can resolve out
+  // of order; only the latest may commit. Without this, an earlier (stale)
+  // response could overwrite the current derivation and then be sent as the
+  // canonical product_attributes override at submit.
+  const deriveSeqRef = useRef(0);
 
   // Section 1 — product (state owned here, rendered by ProductSection)
   const [product, setProduct] = useState<ProductState>({
@@ -144,8 +150,14 @@ export default function BriefIntakeForm({
   };
 
   const deriveProduct = async (input: { url?: string; paragraph?: string }) => {
+    // Claim the latest slot. Any older in-flight call is now stale and must
+    // not commit; this call shows the spinner because it is the latest.
+    const seq = ++deriveSeqRef.current;
+    const isStale = () => seq !== deriveSeqRef.current;
+
     setProduct((p) => ({ ...p, deriving: true, deriveError: null }));
     const id = await ensureDraft();
+    if (isStale()) return;
     if (!id) {
       setProduct((p) => ({
         ...p,
@@ -161,6 +173,9 @@ export default function BriefIntakeForm({
         body: JSON.stringify(input),
       });
       const data = await res.json();
+      // A newer derive superseded this one while it was in flight — drop the
+      // stale response rather than overwrite the current derivation.
+      if (isStale()) return;
       if (data.error === "url_unreachable") {
         setProduct((p) => ({
           ...p,
@@ -187,6 +202,7 @@ export default function BriefIntakeForm({
         source: input.url ? "url" : "paragraph",
       }));
     } catch {
+      if (isStale()) return;
       setProduct((p) => ({
         ...p,
         deriving: false,
