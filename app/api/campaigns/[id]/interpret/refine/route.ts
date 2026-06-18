@@ -1,14 +1,18 @@
 // Wave 14 Phase 2A Layer 5 — ring refinement endpoint.
 //
 // POST { ring_hypothesis_id, refinement_text } → the brand says one ring is
-// off. Ask the LLM for a replacement ring shaped by the correction, persist
-// it as a new 'pending' row, and mark the old ring 'refined' (it stays in
-// the DB as training data; the page filters refined rows out of the view).
+// off. Ask the LLM for a replacement ring shaped by the correction, then
+// persist the new 'pending' row AND mark the old ring 'refined' atomically
+// (migration 025 persist_refinement RPC). The old ring stays in the DB as
+// training data; the page filters refined rows out of the view.
 //
-// Soft-error contract (200, error field): { error: "refinement_failed",
-// reason } — the page keeps the old ring and shows an inline retry. The new
-// ring is only persisted, and the old one only marked refined, once the LLM
-// has returned a usable ring — a failed refinement never loses the old ring.
+// Two failure contracts, by cause:
+//   * LLM-level (refusal / malformed / no text / call threw): soft 200
+//     { error: "refinement_failed", reason } — the page keeps the old ring
+//     and shows an inline retry. Nothing is written, so retry is safe.
+//   * Persistence-level (the atomic RPC failed): hard 500. The brand can't
+//     fix a DB failure by rephrasing, so it is surfaced, not swallowed.
+//   * A ring already 'refined' (stale request): 400 { code: "ring_refined" }.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser, getCampaignById } from "@/lib/data/queries";
@@ -16,8 +20,7 @@ import { logEvent } from "@/lib/data/events";
 import {
   getCampaignReasoning,
   getLatestCampaignPatternForCampaign,
-  recordRingHypothesis,
-  updateRingDecision,
+  persistRefinementAtomic,
 } from "@/lib/data/reasoning-log";
 import {
   buildPatternContext,
@@ -80,6 +83,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (!ringRow) {
     return NextResponse.json({ error: "Ring not found" }, { status: 404 });
   }
+  // A ring already superseded by a refinement can't be refined again — the
+  // page never offers it, so this only fires on a stale/malformed request.
+  if (ringRow.brand_decision === "refined") {
+    return NextResponse.json(
+      { error: "Ring already refined", code: "ring_refined" },
+      { status: 400 }
+    );
+  }
   const kind: Exclude<RingHypothesisKind, "confirmed"> =
     ringRow.kind === "primary" ? "primary" : "lateral";
 
@@ -139,20 +150,32 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
   const ring = parsed.ring;
 
-  // Persist the new ring BEFORE marking the old one refined — if the insert
-  // fails we keep the old ring rather than orphaning the slot.
-  const newId = await recordRingHypothesis({
+  // Atomic persist (migration 025): insert the replacement ring AND mark the
+  // old ring 'refined' in one transaction. Either both land or neither does —
+  // no orphaned slot. A persistence failure is a hard 500 now (not a soft
+  // 200), because unlike an LLM hiccup the brand can't fix it by rephrasing.
+  const persisted = await persistRefinementAtomic({
+    oldRingId: ringId,
     campaignPatternId: pattern.id,
     kind,
     label: ring.ring_label,
     reasoning: ring.reasoning || null,
     confidence: ring.confidence,
-    brandDecision: "pending",
   });
-  if (!newId) {
-    return refinementFailed(id, user.id, "persist_failed");
+  if (!persisted) {
+    await logEvent({
+      eventType: "brief.refinement_failed",
+      entityType: "campaign",
+      entityId: id,
+      actorId: user.id,
+      payload: { mode: "refine", reason: "persist_failed" },
+    });
+    return NextResponse.json(
+      { error: "Failed to save refinement", code: "persist_failed" },
+      { status: 500 }
+    );
   }
-  await updateRingDecision(ringId, "refined");
+  const newId = persisted.newRingId;
 
   await logEvent({
     eventType: "brief.refinement_submitted",

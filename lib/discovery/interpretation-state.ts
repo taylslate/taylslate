@@ -43,19 +43,26 @@ export function reconstructInterpretation(
 ): ReconstructedInterpretation | null {
   const live = rings.filter((r) => r.brand_decision !== "refined");
 
-  // Stable order: oldest first. Brand-added rings (created later) append
-  // after the original laterals, which is the order the brand built them in.
-  const byCreated = (a: RingHypothesisRow, b: RingHypothesisRow) =>
-    Date.parse(a.created_at) - Date.parse(b.created_at);
+  // Stable order by slot_position (migration 025), NOT created_at: a refined
+  // ring's replacement inherits its predecessor's slot, so it keeps the same
+  // visual position even though it was created later. created_at is only a
+  // tie-break (and a fallback for rows the backfill hasn't reached / collisions
+  // among brand-added rings).
+  const bySlot = (a: RingHypothesisRow, b: RingHypothesisRow) => {
+    const sa = a.slot_position ?? Number.MAX_SAFE_INTEGER;
+    const sb = b.slot_position ?? Number.MAX_SAFE_INTEGER;
+    if (sa !== sb) return sa - sb;
+    return Date.parse(a.created_at) - Date.parse(b.created_at);
+  };
 
   const primaryRow = live
     .filter((r) => r.kind === "primary")
-    .sort(byCreated)[0];
+    .sort(bySlot)[0];
   if (!primaryRow) return null;
 
   const lateralRows = live
     .filter((r) => r.kind === "lateral")
-    .sort(byCreated);
+    .sort(bySlot);
 
   const analogsByLabel = analogMap(pattern);
   const toRing = (row: RingHypothesisRow): InterpretedRing => ({

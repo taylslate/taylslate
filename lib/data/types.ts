@@ -939,6 +939,11 @@ export interface RingHypothesisRow {
   // backwards compatibility; not written by new code.
   brand_confirmed: boolean | null;
   brand_decision: BrandDecision;
+  // Stable display slot within a pattern (migration 025). primary=0, laterals
+  // 1..n; a refinement inherits its predecessor's slot, a brand-added ring
+  // takes the next slot. Reconstruction sorts by this, not created_at.
+  // Nullable for rows written before migration 025 backfilled.
+  slot_position: number | null;
 }
 
 export interface ConvictionScoreRow {

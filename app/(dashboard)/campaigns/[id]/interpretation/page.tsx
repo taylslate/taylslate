@@ -59,6 +59,11 @@ export default async function InterpretationPage({
     }
   }
 
+  // A pattern exists but reconstruction yielded nothing usable (a save that
+  // left no replayable rings). The client must show the refresh banner, NOT
+  // re-run a fresh interpretation onto the existing pattern.
+  const patternEmpty = Boolean(pattern) && initialInterpretation === null;
+
   return (
     <InterpretationClient
       campaignId={id}
@@ -67,6 +72,7 @@ export default async function InterpretationPage({
       prefillUrl={prefillUrl}
       initialInterpretation={initialInterpretation}
       initialDecisions={initialDecisions}
+      patternEmpty={patternEmpty}
     />
   );
 }

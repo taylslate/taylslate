@@ -52,6 +52,13 @@ interface Props {
   initialInterpretation: BriefInterpretation | null;
   /** ring_hypothesis_id → persisted brand_decision (durable defaults). */
   initialDecisions: Record<string, BrandDecision> | null;
+  /**
+   * A pattern row exists but reconstruction produced no usable rings (a save
+   * that left nothing replayable). Distinct from first visit (no pattern):
+   * the page must NOT re-run a fresh interpretation, it must show the
+   * "couldn't save — refresh" banner with every CTA disabled.
+   */
+  patternEmpty: boolean;
 }
 
 function includeFromConfidence(c: ConvictionBand): boolean {
@@ -104,14 +111,26 @@ export default function InterpretationClient({
   prefillUrl,
   initialInterpretation,
   initialDecisions,
+  patternEmpty,
 }: Props) {
   const router = useRouter();
 
   const [interpretation, setInterpretation] = useState<BriefInterpretation | null>(
     initialInterpretation
   );
-  const [loading, setLoading] = useState(!initialInterpretation);
+  // No spinner when we already know the pattern is empty — go straight to the
+  // banner. Only a genuine first visit (no pattern, not empty) interprets.
+  const [loading, setLoading] = useState(!initialInterpretation && !patternEmpty);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Pattern exists but has no usable rings — render the refresh banner with
+  // CTAs disabled. Set true either from the server (patternEmpty) or after a
+  // fresh interpret returns a blob with no primary ring.
+  const [emptyRings, setEmptyRings] = useState(patternEmpty);
+  // Refine/add fetches in flight, lifted to the page so Confirm can't fire
+  // mid-mutation (a refine swap or add must land before the brand confirms).
+  const [refinesInFlight, setRefinesInFlight] = useState(0);
+  const onRefiningChange = (active: boolean) =>
+    setRefinesInFlight((n) => (active ? n + 1 : Math.max(0, n - 1)));
 
   const [primary, setPrimary] = useState<RingSlot | null>(() =>
     initialInterpretation
@@ -131,7 +150,9 @@ export default function InterpretationClient({
   // the /interpret endpoint is idempotent (lock + replay).
   const ran = useRef(false);
   useEffect(() => {
-    if (initialInterpretation || ran.current) return;
+    // Skip the fresh interpret on a durable reload AND on an empty pattern —
+    // re-running would overwrite (or replay onto) a pattern that already exists.
+    if (initialInterpretation || patternEmpty || ran.current) return;
     ran.current = true;
     (async () => {
       try {
@@ -151,6 +172,13 @@ export default function InterpretationClient({
           return;
         }
         const interp = data as BriefInterpretation;
+        // A blob with no usable primary ring is an empty interpretation —
+        // surface the refresh banner instead of a broken page.
+        if (!interp.primary_ring?.ring_label) {
+          setEmptyRings(true);
+          setLoading(false);
+          return;
+        }
         const slots = buildSlots(interp, null);
         setInterpretation(interp);
         setPrimary(slots.primary);
@@ -161,7 +189,7 @@ export default function InterpretationClient({
         setLoading(false);
       }
     })();
-  }, [campaignId, initialInterpretation]);
+  }, [campaignId, initialInterpretation, patternEmpty]);
 
   if (loading) {
     return (
@@ -170,6 +198,31 @@ export default function InterpretationClient({
           <Spinner />
           Reading your brief…
         </div>
+      </Shell>
+    );
+  }
+
+  // Pattern exists but produced no usable rings. Same guard pattern as
+  // persistenceFailed: show the refresh banner with every CTA disabled. There
+  // are no rings to refine and nothing to add into, so only a disabled Confirm
+  // is rendered.
+  if (emptyRings) {
+    return (
+      <Shell>
+        <div
+          role="alert"
+          className="mb-6 p-4 rounded-xl border border-[var(--brand-warning)]/40 bg-[var(--brand-warning)]/[0.06] text-sm text-[var(--brand-text)]"
+        >
+          We read your brief but couldn&rsquo;t save the interpretation. Refresh
+          to try again.
+        </div>
+        <button
+          type="button"
+          disabled
+          className="w-full flex items-center justify-center gap-2 bg-[var(--brand-blue)] disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl text-sm font-semibold"
+        >
+          Confirm interpretation and discover shows
+        </button>
       </Shell>
     );
   }
@@ -309,6 +362,7 @@ export default function InterpretationClient({
           campaignId={campaignId}
           startOverHref={startOverHref}
           onRefined={applyRefine}
+          onRefiningChange={onRefiningChange}
         />
       </section>
 
@@ -335,6 +389,7 @@ export default function InterpretationClient({
               startOverHref={startOverHref}
               onRefined={applyRefine}
               onInclude={setInclude}
+              onRefiningChange={onRefiningChange}
             />
           ))}
           {laterals.length === 0 && (
@@ -348,6 +403,7 @@ export default function InterpretationClient({
           campaignId={campaignId}
           disabled={persistenceFailed}
           onAdded={appendAddedRing}
+          onRefiningChange={onRefiningChange}
         />
       </section>
 
@@ -385,7 +441,7 @@ export default function InterpretationClient({
         <button
           type="button"
           onClick={handleConfirm}
-          disabled={confirming || persistenceFailed}
+          disabled={confirming || persistenceFailed || refinesInFlight > 0}
           className="w-full flex items-center justify-center gap-2 bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl text-sm font-semibold transition-all"
         >
           {confirming ? (
@@ -422,6 +478,7 @@ function RingCard({
   startOverHref,
   onRefined,
   onInclude,
+  onRefiningChange,
 }: {
   slot: RingSlot;
   isPrimary?: boolean;
@@ -430,6 +487,8 @@ function RingCard({
   startOverHref: string;
   onRefined: (slotId: string, ring: InterpretedRing) => void;
   onInclude?: (slotId: string, include: boolean) => void;
+  /** Notify the page that a refine fetch started (true) / ended (false). */
+  onRefiningChange: (active: boolean) => void;
 }) {
   const [refineOpen, setRefineOpen] = useState(false);
   const [text, setText] = useState("");
@@ -439,10 +498,19 @@ function RingCard({
   const maxedOut = slot.refineCount >= MAX_REFINEMENTS;
   const noId = !slot.ring.ring_hypothesis_id;
 
+  // Abort an in-flight refine if the card unmounts (navigation away mid-fetch),
+  // so the resolve handler can't setState on an unmounted component.
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   const submitRefine = async () => {
-    if (!text.trim() || !slot.ring.ring_hypothesis_id) return;
+    // Enforce the cap here too, not just by disabling the button.
+    if (!text.trim() || !slot.ring.ring_hypothesis_id || maxedOut) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setSubmitting(true);
     setError(null);
+    onRefiningChange(true);
     try {
       const res = await fetch(`/api/campaigns/${campaignId}/interpret/refine`, {
         method: "POST",
@@ -451,20 +519,26 @@ function RingCard({
           ring_hypothesis_id: slot.ring.ring_hypothesis_id,
           refinement_text: text.trim(),
         }),
+        signal: controller.signal,
       });
       const data = await res.json();
       if (data?.error || !data?.ring) {
         setError("Couldn't refine that. Try rephrasing.");
         setSubmitting(false);
+        onRefiningChange(false);
         return;
       }
       onRefined(slot.slotId, data.ring as InterpretedRing);
       setText("");
       setRefineOpen(false);
       setSubmitting(false);
+      onRefiningChange(false);
     } catch {
+      // Aborted on unmount — the component is gone, skip all state updates.
+      if (controller.signal.aborted) return;
       setError("Network error. Try again.");
       setSubmitting(false);
+      onRefiningChange(false);
     }
   };
 
@@ -532,9 +606,9 @@ function RingCard({
         )}
         <button
           type="button"
-          disabled={disabled || noId}
+          disabled={disabled || noId || maxedOut}
           onClick={() => setRefineOpen((v) => !v)}
-          className="ml-auto text-xs font-semibold text-[var(--brand-blue)] hover:underline disabled:opacity-40 disabled:no-underline"
+          className="ml-auto text-xs font-semibold text-[var(--brand-blue)] hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
         >
           {isPrimary ? "That’s not quite right — refine" : "Refine"}
         </button>
@@ -591,39 +665,53 @@ function AddRing({
   campaignId,
   disabled,
   onAdded,
+  onRefiningChange,
 }: {
   campaignId: string;
   disabled: boolean;
   onAdded: (ring: InterpretedRing) => void;
+  /** Notify the page that an add fetch started (true) / ended (false). */
+  onRefiningChange: (active: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   const submit = async () => {
     if (!text.trim()) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setSubmitting(true);
     setError(null);
+    onRefiningChange(true);
     try {
       const res = await fetch(`/api/campaigns/${campaignId}/interpret/add-ring`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ framing_text: text.trim() }),
+        signal: controller.signal,
       });
       const data = await res.json();
       if (data?.error || !data?.ring) {
         setError("Couldn't build that ring. Try rephrasing.");
         setSubmitting(false);
+        onRefiningChange(false);
         return;
       }
       onAdded(data.ring as InterpretedRing);
       setText("");
       setOpen(false);
       setSubmitting(false);
+      onRefiningChange(false);
     } catch {
+      if (controller.signal.aborted) return;
       setError("Network error. Try again.");
       setSubmitting(false);
+      onRefiningChange(false);
     }
   };
 

@@ -7,8 +7,7 @@ const {
   mockCallLLM,
   mockGetLatestForCampaign,
   mockGetReasoning,
-  mockRecordRing,
-  mockUpdateRingDecision,
+  mockPersistRefinement,
 } = vi.hoisted(() => ({
   mockGetAuthenticatedUser: vi.fn(),
   mockGetCampaignById: vi.fn(),
@@ -16,8 +15,7 @@ const {
   mockCallLLM: vi.fn(),
   mockGetLatestForCampaign: vi.fn(),
   mockGetReasoning: vi.fn(),
-  mockRecordRing: vi.fn(),
-  mockUpdateRingDecision: vi.fn(),
+  mockPersistRefinement: vi.fn(),
 }));
 
 vi.mock("@/lib/data/queries", () => ({
@@ -33,8 +31,7 @@ vi.mock("@/lib/llm/client", () => ({
 vi.mock("@/lib/data/reasoning-log", () => ({
   getLatestCampaignPatternForCampaign: mockGetLatestForCampaign,
   getCampaignReasoning: mockGetReasoning,
-  recordRingHypothesis: mockRecordRing,
-  updateRingDecision: mockUpdateRingDecision,
+  persistRefinementAtomic: mockPersistRefinement,
 }));
 
 import { POST } from "./route";
@@ -114,8 +111,7 @@ beforeEach(() => {
     convictionScores: [],
     analogs: [],
   });
-  mockRecordRing.mockResolvedValue("ring_3");
-  mockUpdateRingDecision.mockResolvedValue(true);
+  mockPersistRefinement.mockResolvedValue({ newRingId: "ring_3", slotPosition: 1 });
 });
 
 afterEach(() => {
@@ -124,7 +120,7 @@ afterEach(() => {
 });
 
 describe("POST /api/campaigns/[id]/interpret/refine", () => {
-  it("inserts a new pending ring and marks the old one refined", async () => {
+  it("persists the refinement atomically and returns the new ring", async () => {
     mockCallLLM.mockResolvedValue(llmMessage(refinedRingJSON()));
 
     const res = await call({ ring_hypothesis_id: "ring_2", refinement_text: "more van-life" });
@@ -134,13 +130,14 @@ describe("POST /api/campaigns/[id]/interpret/refine", () => {
     expect(body.ring.ring_hypothesis_id).toBe("ring_3");
     expect(body.ring.ring_label).toBe("van-life & overlanding");
 
-    expect(mockRecordRing).toHaveBeenCalledTimes(1);
-    expect(mockRecordRing.mock.calls[0][0]).toMatchObject({
+    expect(mockPersistRefinement).toHaveBeenCalledTimes(1);
+    expect(mockPersistRefinement.mock.calls[0][0]).toMatchObject({
+      oldRingId: "ring_2",
       campaignPatternId: "pat_1",
       kind: "lateral",
-      brandDecision: "pending",
+      label: "van-life & overlanding",
+      confidence: "medium",
     });
-    expect(mockUpdateRingDecision).toHaveBeenCalledWith("ring_2", "refined");
     expect(mockLogEvent.mock.calls[0][0].eventType).toBe(
       "brief.refinement_submitted"
     );
@@ -149,35 +146,54 @@ describe("POST /api/campaigns/[id]/interpret/refine", () => {
   it("keeps primary kind when refining the primary ring", async () => {
     mockCallLLM.mockResolvedValue(llmMessage(refinedRingJSON()));
     await call({ ring_hypothesis_id: "ring_1", refinement_text: "tweak" });
-    expect(mockRecordRing.mock.calls[0][0].kind).toBe("primary");
+    expect(mockPersistRefinement.mock.calls[0][0].kind).toBe("primary");
   });
 
-  it("soft-fails on malformed LLM output without touching rings", async () => {
+  it("soft-fails on malformed LLM output without persisting", async () => {
     mockCallLLM.mockResolvedValue(llmMessage("not json"));
     const res = await call({ ring_hypothesis_id: "ring_2", refinement_text: "x" });
     const body = await res.json();
+    expect(res.status).toBe(200);
     expect(body.error).toBe("refinement_failed");
     expect(body.reason).toBe("malformed_json");
-    expect(mockRecordRing).not.toHaveBeenCalled();
-    expect(mockUpdateRingDecision).not.toHaveBeenCalled();
+    expect(mockPersistRefinement).not.toHaveBeenCalled();
   });
 
   it("soft-fails on refusal", async () => {
     mockCallLLM.mockResolvedValue(llmMessage("{}", "refusal"));
     const res = await call({ ring_hypothesis_id: "ring_2", refinement_text: "x" });
     const body = await res.json();
+    expect(res.status).toBe(200);
     expect(body.error).toBe("refinement_failed");
     expect(body.reason).toBe("refusal");
+    expect(mockPersistRefinement).not.toHaveBeenCalled();
   });
 
-  it("does not mark the old ring refined when the new ring fails to persist", async () => {
+  it("returns 500 (not a soft 200) when the atomic persist fails", async () => {
     mockCallLLM.mockResolvedValue(llmMessage(refinedRingJSON()));
-    mockRecordRing.mockResolvedValue(null);
+    mockPersistRefinement.mockResolvedValue(null); // RPC error → null
     const res = await call({ ring_hypothesis_id: "ring_2", refinement_text: "x" });
     const body = await res.json();
-    expect(body.error).toBe("refinement_failed");
-    expect(body.reason).toBe("persist_failed");
-    expect(mockUpdateRingDecision).not.toHaveBeenCalled();
+    expect(res.status).toBe(500);
+    expect(body.code).toBe("persist_failed");
+  });
+
+  it("400s with a structured error when refining an already-refined ring", async () => {
+    mockGetReasoning.mockResolvedValue({
+      pattern: PATTERN,
+      rings: [
+        RINGS[0],
+        { ...RINGS[1], brand_decision: "refined" },
+      ],
+      convictionScores: [],
+      analogs: [],
+    });
+    const res = await call({ ring_hypothesis_id: "ring_2", refinement_text: "x" });
+    const body = await res.json();
+    expect(res.status).toBe(400);
+    expect(body.code).toBe("ring_refined");
+    expect(mockCallLLM).not.toHaveBeenCalled();
+    expect(mockPersistRefinement).not.toHaveBeenCalled();
   });
 
   it("404s when the ring is not part of the campaign's pattern", async () => {

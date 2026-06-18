@@ -122,7 +122,13 @@ function existingRings(attrs: Record<string, unknown>): ExistingRing[] {
   return out.filter((r) => r.ring_label);
 }
 
-/** Parse one ring JSON from raw LLM text. Mirrors interpret/route.ts. */
+/**
+ * Parse one ring JSON from raw LLM text. Stricter than a forgiving read: a
+ * usable ring MUST carry a non-empty ring_label, an EXPLICIT valid confidence
+ * band (no silent default to 'speculative'), and non-empty reasoning. Missing
+ * any of those → 'malformed', so the refine/add-ring routes soft-fail and ask
+ * the brand to rephrase rather than persisting a hollow ring.
+ */
 export function parseProposedRing(raw: string): ParseProposedRingResult {
   const unfenced = raw
     .trim()
@@ -141,17 +147,24 @@ export function parseProposedRing(raw: string): ParseProposedRingResult {
   const label = readString(record, "ring_label");
   if (!label.trim()) return { error: "malformed" };
 
+  const confidence = readConfidence(record.confidence);
+  if (!confidence) return { error: "malformed" };
+
+  const reasoning = readString(record, "reasoning");
+  if (!reasoning.trim()) return { error: "malformed" };
+
   return {
     ring: {
       ring_label: label,
-      confidence: readConfidence(record.confidence),
-      reasoning: readString(record, "reasoning"),
+      confidence,
+      reasoning,
       analog_campaigns: readStringArray(record.analog_campaigns),
     },
   };
 }
 
-function readConfidence(value: unknown): ConvictionBand {
+/** A valid confidence band, or null when absent/unrecognized (→ malformed). */
+function readConfidence(value: unknown): ConvictionBand | null {
   if (
     value === "high" ||
     value === "medium" ||
@@ -160,11 +173,7 @@ function readConfidence(value: unknown): ConvictionBand {
   ) {
     return value;
   }
-  console.warn(
-    "[ring-proposal] invalid confidence from LLM, defaulting to speculative:",
-    value
-  );
-  return "speculative";
+  return null;
 }
 
 function readString(obj: Record<string, unknown>, key: string): string {

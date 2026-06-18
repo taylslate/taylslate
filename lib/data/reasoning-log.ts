@@ -180,6 +180,9 @@ export interface RecordRingHypothesisInput {
   // migration 021. Phase 2A interpretation writes pending; the confirm
   // step transitions rings to confirmed/rejected/refined/added_by_brand.
   brandDecision?: BrandDecision;
+  // Stable display slot (migration 025). Add-ring passes the next available
+  // slot; omitted elsewhere (interpretation/refinement set it in the RPC).
+  slotPosition?: number | null;
 }
 
 export async function recordRingHypothesis(
@@ -196,6 +199,7 @@ export async function recordRingHypothesis(
         confidence: input.confidence,
         confidence_score: input.confidenceScore ?? null,
         brand_decision: input.brandDecision ?? "pending",
+        slot_position: input.slotPosition ?? null,
       })
       .select("id")
       .single<{ id: string }>();
@@ -245,6 +249,134 @@ export async function updateRingDecision(
       err instanceof Error ? err.message : err
     );
     return false;
+  }
+}
+
+// ============================================================
+// Atomic ring refinement (Wave 14 Phase 2A Layer 5, migration 025)
+// ============================================================
+
+export interface PersistRefinementInput {
+  oldRingId: string;
+  campaignPatternId: string;
+  kind: "primary" | "lateral";
+  label: string;
+  reasoning: string | null;
+  confidence: "high" | "medium" | "low" | "speculative";
+}
+
+export interface PersistRefinementResult {
+  newRingId: string;
+  slotPosition: number | null;
+}
+
+/**
+ * Insert a refined replacement ring AND mark the old ring 'refined' in ONE
+ * transaction via the persist_refinement RPC (migration 025). Replaces the
+ * old non-atomic insert-then-update sequence: either both land or neither
+ * does, so a mid-write failure can never orphan a slot. The replacement
+ * inherits the predecessor's slot_position so the page keeps stable ordering.
+ *
+ * Fail-soft like the rest of this module: returns null on any RPC failure.
+ * The route maps null to a 500 (a persistence failure is no longer silently
+ * soft-failed to 200).
+ */
+export async function persistRefinementAtomic(
+  input: PersistRefinementInput
+): Promise<PersistRefinementResult | null> {
+  try {
+    const { data, error } = await supabaseAdmin.rpc("persist_refinement", {
+      p_old_ring_id: input.oldRingId,
+      p_campaign_pattern_id: input.campaignPatternId,
+      p_kind: input.kind,
+      p_label: input.label,
+      p_reasoning: input.reasoning,
+      p_confidence: input.confidence,
+    });
+    if (error || !data) {
+      console.warn(
+        "[reasoning-log.persistRefinementAtomic] rpc failed:",
+        error?.message
+      );
+      return null;
+    }
+    const result = data as { new_ring_id?: string; slot_position?: number | null };
+    if (!result.new_ring_id) {
+      console.warn(
+        "[reasoning-log.persistRefinementAtomic] rpc returned no new_ring_id"
+      );
+      return null;
+    }
+    return {
+      newRingId: result.new_ring_id,
+      slotPosition: result.slot_position ?? null,
+    };
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.persistRefinementAtomic] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+// ============================================================
+// Atomic interpretation confirmation (Wave 14 Phase 2A Layer 5, migration 025)
+// ============================================================
+
+// Validation failures inside persist_confirmation raise with this SQLSTATE —
+// an unknown ring, a refined ring, or an invalid decision. Surfaced by
+// PostgREST in error.code; the route maps it to a 400. Any other failure is a
+// genuine DB error → 500.
+const CONFIRMATION_VALIDATION_SQLSTATE = "PT400";
+
+export type PersistConfirmationResult =
+  | { ok: true; confirmed: number; rejected: number }
+  | { ok: false; reason: "validation" | "error" };
+
+/**
+ * Write every brand decision for a confirmed interpretation in ONE
+ * transaction via the persist_confirmation RPC (migration 025). The function
+ * validates each {id, decision} inside the transaction — the ring must belong
+ * to the pattern AND not be 'refined', and the decision must be one the brand
+ * can set — so a bad entry rolls the whole confirm back rather than committing
+ * a partial state.
+ *
+ * Returns a discriminated result: 'validation' for a malformed/stale request
+ * (route → 400), 'error' for any genuine DB failure (route → 500). Never
+ * throws.
+ */
+export async function persistConfirmationAtomic(
+  campaignPatternId: string,
+  decisions: Array<{ id?: string; decision?: string }>
+): Promise<PersistConfirmationResult> {
+  try {
+    const { data, error } = await supabaseAdmin.rpc("persist_confirmation", {
+      p_campaign_pattern_id: campaignPatternId,
+      p_decisions: decisions,
+    });
+    if (error) {
+      const validation =
+        error.code === CONFIRMATION_VALIDATION_SQLSTATE ||
+        (error.message ?? "").includes("persist_confirmation:");
+      console.warn(
+        "[reasoning-log.persistConfirmationAtomic] rpc failed:",
+        error.message
+      );
+      return { ok: false, reason: validation ? "validation" : "error" };
+    }
+    const result = (data ?? {}) as { confirmed?: number; rejected?: number };
+    return {
+      ok: true,
+      confirmed: result.confirmed ?? 0,
+      rejected: result.rejected ?? 0,
+    };
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.persistConfirmationAtomic] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return { ok: false, reason: "error" };
   }
 }
 

@@ -38,6 +38,7 @@ function ring(overrides: Partial<RingHypothesisRow>): RingHypothesisRow {
     confidence_score: null,
     brand_confirmed: null,
     brand_decision: "pending",
+    slot_position: null,
     ...overrides,
   };
 }
@@ -81,6 +82,24 @@ describe("reconstructInterpretation", () => {
     const result = reconstructInterpretation(PATTERN, rings)!;
     expect(result.decisions).toEqual({ p1: "pending", l1: "added_by_brand" });
     expect(result.decisions).not.toHaveProperty("l2_old");
+  });
+
+  it("orders laterals by slot_position, not created_at (refinement keeps its slot)", () => {
+    // The replacement for slot 1 was created LAST (12:00:05) but must stay
+    // ahead of the slot-2 lateral created earlier (12:00:02). created_at order
+    // would put it last; slot_position order keeps it first.
+    const rings: RingHypothesisRow[] = [
+      ring({ id: "p1", kind: "primary", label: "protocol recovery", confidence: "high", slot_position: 0, created_at: "2026-06-10T12:00:00.000Z" }),
+      ring({ id: "l1_old", label: "overlanding", brand_decision: "refined", slot_position: 1, created_at: "2026-06-10T12:00:01.000Z" }),
+      ring({ id: "l2", label: "endurance athletes", slot_position: 2, created_at: "2026-06-10T12:00:02.000Z" }),
+      ring({ id: "l1_new", label: "van-life & overlanding", slot_position: 1, created_at: "2026-06-10T12:00:05.000Z" }),
+    ];
+
+    const result = reconstructInterpretation(PATTERN, rings)!;
+    expect(result.interpretation.lateral_rings.map((r) => r.ring_label)).toEqual([
+      "van-life & overlanding", // slot 1 (the refinement)
+      "endurance athletes", // slot 2
+    ]);
   });
 
   it("returns null when there is no non-refined primary", () => {

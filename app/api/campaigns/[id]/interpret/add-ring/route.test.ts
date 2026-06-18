@@ -6,6 +6,7 @@ const {
   mockLogEvent,
   mockCallLLM,
   mockGetLatestForCampaign,
+  mockGetReasoning,
   mockRecordRing,
 } = vi.hoisted(() => ({
   mockGetAuthenticatedUser: vi.fn(),
@@ -13,6 +14,7 @@ const {
   mockLogEvent: vi.fn(),
   mockCallLLM: vi.fn(),
   mockGetLatestForCampaign: vi.fn(),
+  mockGetReasoning: vi.fn(),
   mockRecordRing: vi.fn(),
 }));
 
@@ -28,6 +30,7 @@ vi.mock("@/lib/llm/client", () => ({
 }));
 vi.mock("@/lib/data/reasoning-log", () => ({
   getLatestCampaignPatternForCampaign: mockGetLatestForCampaign,
+  getCampaignReasoning: mockGetReasoning,
   recordRingHypothesis: mockRecordRing,
 }));
 
@@ -73,6 +76,15 @@ beforeEach(() => {
   mockGetCampaignById.mockResolvedValue({ id: "camp_1", user_id: "user_1" });
   mockLogEvent.mockResolvedValue(null);
   mockGetLatestForCampaign.mockResolvedValue(PATTERN);
+  mockGetReasoning.mockResolvedValue({
+    pattern: PATTERN,
+    rings: [
+      { id: "ring_p", slot_position: 0 },
+      { id: "ring_l", slot_position: 1 },
+    ],
+    convictionScores: [],
+    analogs: [],
+  });
   mockRecordRing.mockResolvedValue("ring_new");
 });
 
@@ -106,6 +118,22 @@ describe("POST /api/campaigns/[id]/interpret/add-ring", () => {
       brandDecision: "added_by_brand",
     });
     expect(mockLogEvent.mock.calls[0][0].payload.mode).toBe("add");
+  });
+
+  it("appends the added ring at the next slot_position", async () => {
+    mockCallLLM.mockResolvedValue(
+      llmMessage(
+        JSON.stringify({
+          ring_label: "busy parents",
+          confidence: "medium",
+          reasoning: "Convenience buyers.",
+          analog_campaigns: [],
+        })
+      )
+    );
+    // existing rings occupy slots 0 and 1 → next available is 2
+    await call({ framing_text: "what about parents?" });
+    expect(mockRecordRing.mock.calls[0][0].slotPosition).toBe(2);
   });
 
   it("soft-fails on malformed LLM output", async () => {

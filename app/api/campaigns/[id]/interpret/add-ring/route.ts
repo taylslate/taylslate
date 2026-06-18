@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser, getCampaignById } from "@/lib/data/queries";
 import { logEvent } from "@/lib/data/events";
 import {
+  getCampaignReasoning,
   getLatestCampaignPatternForCampaign,
   recordRingHypothesis,
 } from "@/lib/data/reasoning-log";
@@ -120,6 +121,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
   const ring = parsed.ring;
 
+  // Append at the next slot so the brand-added ring lands after the existing
+  // rings and stays there on reload (migration 025 slot_position). Computed
+  // over ALL rings (including refined) so a refined ring's freed slot isn't
+  // reused. Single-brand, sequential UI — a benign tie falls back to
+  // created_at in reconstruction.
+  const reasoning = await getCampaignReasoning(pattern.id);
+  const nextSlot =
+    reasoning.rings.reduce((max, r) => {
+      const slot = typeof r.slot_position === "number" ? r.slot_position : -1;
+      return slot > max ? slot : max;
+    }, -1) + 1;
+
   const newId = await recordRingHypothesis({
     campaignPatternId: pattern.id,
     kind: "lateral",
@@ -127,6 +140,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     reasoning: ring.reasoning || null,
     confidence: ring.confidence,
     brandDecision: "added_by_brand",
+    slotPosition: nextSlot,
   });
   if (!newId) {
     return addRingFailed(id, user.id, "persist_failed");

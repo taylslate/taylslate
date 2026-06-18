@@ -58,6 +58,8 @@ import {
   recordFounderAnnotation,
   getCampaignReasoning,
   persistInterpretationAtomic,
+  persistRefinementAtomic,
+  persistConfirmationAtomic,
 } from "./reasoning-log";
 
 beforeEach(() => {
@@ -169,6 +171,32 @@ describe("recordRingHypothesis", () => {
     });
     expect(directInsert).toHaveBeenCalledWith(
       expect.objectContaining({ brand_decision: "added_by_brand" })
+    );
+  });
+
+  it("forwards slotPosition to the insert (add-ring path)", async () => {
+    await recordRingHypothesis({
+      campaignPatternId: "p1",
+      kind: "lateral",
+      label: "busy parents",
+      confidence: "medium",
+      brandDecision: "added_by_brand",
+      slotPosition: 4,
+    });
+    expect(directInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ slot_position: 4 })
+    );
+  });
+
+  it("defaults slot_position to null when omitted", async () => {
+    await recordRingHypothesis({
+      campaignPatternId: "p1",
+      kind: "primary",
+      label: "x",
+      confidence: "high",
+    });
+    expect(directInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ slot_position: null })
     );
   });
 
@@ -442,5 +470,127 @@ describe("persistInterpretationAtomic", () => {
       throw new Error("network down");
     });
     await expect(persistInterpretationAtomic(input)).resolves.toBeNull();
+  });
+});
+
+// ============================================================
+// persistRefinementAtomic (migration 025 RPC wrapper)
+// ============================================================
+
+describe("persistRefinementAtomic", () => {
+  const input = {
+    oldRingId: "ring_2",
+    campaignPatternId: "pat_1",
+    kind: "lateral" as const,
+    label: "van-life & overlanding",
+    reasoning: "Sharper vehicle-based framing.",
+    confidence: "medium" as const,
+  };
+
+  it("maps the rpc result and snake-cases the args", async () => {
+    rpc.mockResolvedValue({
+      data: { new_ring_id: "ring_3", slot_position: 1 },
+      error: null,
+    });
+
+    const result = await persistRefinementAtomic(input);
+
+    expect(result).toEqual({ newRingId: "ring_3", slotPosition: 1 });
+    expect(rpc).toHaveBeenCalledWith(
+      "persist_refinement",
+      expect.objectContaining({
+        p_old_ring_id: "ring_2",
+        p_campaign_pattern_id: "pat_1",
+        p_kind: "lateral",
+        p_label: "van-life & overlanding",
+        p_reasoning: "Sharper vehicle-based framing.",
+        p_confidence: "medium",
+      })
+    );
+  });
+
+  it("returns null when the rpc errors", async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: "boom" } });
+    expect(await persistRefinementAtomic(input)).toBeNull();
+  });
+
+  it("returns null when the rpc returns no new_ring_id", async () => {
+    rpc.mockResolvedValue({ data: { slot_position: 1 }, error: null });
+    expect(await persistRefinementAtomic(input)).toBeNull();
+  });
+
+  it("never throws when the rpc itself throws", async () => {
+    rpc.mockImplementation(() => {
+      throw new Error("network down");
+    });
+    await expect(persistRefinementAtomic(input)).resolves.toBeNull();
+  });
+});
+
+// ============================================================
+// persistConfirmationAtomic (migration 025 RPC wrapper)
+// ============================================================
+
+describe("persistConfirmationAtomic", () => {
+  const decisions = [
+    { id: "ring_1", decision: "confirmed" },
+    { id: "ring_2", decision: "rejected" },
+  ];
+
+  it("returns counts and snake-cases the args on success", async () => {
+    rpc.mockResolvedValue({
+      data: { confirmed: 1, rejected: 1 },
+      error: null,
+    });
+
+    const result = await persistConfirmationAtomic("pat_1", decisions);
+
+    expect(result).toEqual({ ok: true, confirmed: 1, rejected: 1 });
+    expect(rpc).toHaveBeenCalledWith("persist_confirmation", {
+      p_campaign_pattern_id: "pat_1",
+      p_decisions: decisions,
+    });
+  });
+
+  it("reports a validation failure when the rpc raises PT400", async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { code: "PT400", message: "persist_confirmation: ring x not valid" },
+    });
+    expect(await persistConfirmationAtomic("pat_1", decisions)).toEqual({
+      ok: false,
+      reason: "validation",
+    });
+  });
+
+  it("reports a validation failure from the message fallback (no code)", async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { message: "persist_confirmation: invalid decision foo" },
+    });
+    expect(await persistConfirmationAtomic("pat_1", decisions)).toEqual({
+      ok: false,
+      reason: "validation",
+    });
+  });
+
+  it("reports a plain DB error as reason 'error'", async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { code: "57014", message: "statement timeout" },
+    });
+    expect(await persistConfirmationAtomic("pat_1", decisions)).toEqual({
+      ok: false,
+      reason: "error",
+    });
+  });
+
+  it("never throws when the rpc itself throws", async () => {
+    rpc.mockImplementation(() => {
+      throw new Error("network down");
+    });
+    await expect(
+      persistConfirmationAtomic("pat_1", decisions)
+    ).resolves.toEqual({ ok: false, reason: "error" });
   });
 });

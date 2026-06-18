@@ -1,10 +1,13 @@
 // Wave 14 Phase 2A Layer 5 — interpretation confirm endpoint.
 //
 // POST { rings: [{ id, decision }] } → the brand has confirmed the
-// interpretation. Write each ring's final brand_decision: 'confirmed' for an
-// included ring, 'rejected' for a skipped one, 'added_by_brand' preserved for
-// brand-added rings. Refined rows are left as-is (the page never sends them).
-// The client redirects to the discovery view after a 200.
+// interpretation. Write every ring's final brand_decision atomically
+// (migration 025 persist_confirmation RPC): 'confirmed' for an included ring,
+// 'rejected' for a skipped one, 'added_by_brand' preserved for brand-added
+// rings. The RPC validates each entry INSIDE the transaction — the ring must
+// belong to this pattern AND not be 'refined' — so a partial confirm can
+// never commit, and a refined/unknown/invalid entry is rejected (400), not
+// silently skipped. The client redirects to the discovery view after a 200.
 //
 // Scope (Phase 2A): this writes confirmed ring hypotheses and stops there.
 // Running discovery from the confirmed rings is 2B.
@@ -13,15 +16,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser, getCampaignById } from "@/lib/data/queries";
 import { logEvent } from "@/lib/data/events";
 import {
-  getCampaignReasoning,
   getLatestCampaignPatternForCampaign,
-  updateRingDecision,
+  persistConfirmationAtomic,
 } from "@/lib/data/reasoning-log";
-import type { BrandDecision } from "@/lib/data/types";
-
-// The brand can only resolve a visible ring to one of these. 'refined' and
-// 'pending' are never written by confirm.
-const ALLOWED: BrandDecision[] = ["confirmed", "rejected", "added_by_brand"];
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -60,33 +57,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
   }
 
-  // Only rings that belong to this campaign's pattern may be written.
-  const reasoning = await getCampaignReasoning(pattern.id);
-  const validIds = new Set(
-    reasoning.rings
-      .map((r) => (typeof r.id === "string" ? r.id : null))
-      .filter((v): v is string => v !== null)
-  );
-
-  let confirmed = 0;
-  let rejected = 0;
-  for (const entry of body.rings) {
-    const ringId = entry.id;
-    const decision = entry.decision as BrandDecision;
-    if (
-      !ringId ||
-      !validIds.has(ringId) ||
-      !ALLOWED.includes(decision)
-    ) {
-      // Unknown id or decision — skip defensively rather than 400 the whole
-      // confirm over one bad entry.
-      continue;
+  // Atomic, validated write (migration 025). The function rejects any entry
+  // that names a ring outside this pattern, names a refined ring, or carries a
+  // decision the brand can't set — raising and rolling the whole confirm back.
+  const result = await persistConfirmationAtomic(pattern.id, body.rings);
+  if (!result.ok) {
+    if (result.reason === "validation") {
+      return NextResponse.json(
+        { error: "One or more rings can't be confirmed", code: "invalid_rings" },
+        { status: 400 }
+      );
     }
-    const ok = await updateRingDecision(ringId, decision);
-    if (ok) {
-      if (decision === "rejected") rejected++;
-      else confirmed++;
-    }
+    return NextResponse.json(
+      { error: "Failed to confirm interpretation", code: "confirm_failed" },
+      { status: 500 }
+    );
   }
 
   await logEvent({
@@ -96,10 +81,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     actorId: user.id,
     payload: {
       campaign_pattern_id: pattern.id,
-      confirmed_ring_count: confirmed,
-      rejected_ring_count: rejected,
+      confirmed_ring_count: result.confirmed,
+      rejected_ring_count: result.rejected,
     },
   });
 
-  return NextResponse.json({ ok: true, confirmed_ring_count: confirmed });
+  return NextResponse.json({ ok: true, confirmed_ring_count: result.confirmed });
 }

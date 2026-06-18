@@ -113,6 +113,7 @@ function renderClient(
       prefillUrl="https://saunabox.com"
       initialInterpretation={interp()}
       initialDecisions={null}
+      patternEmpty={false}
       {...props}
     />
   );
@@ -299,6 +300,96 @@ describe("InterpretationClient", () => {
     expect(screen.getByTestId("confirm-summary")).toHaveTextContent(
       /small test before scaling/i
     );
+  });
+
+  it("disables Confirm while a refine is in flight (Layer 5 amendment)", async () => {
+    const fetchMock = vi.fn(async (url: unknown) => {
+      const u = String(url);
+      // refine never resolves → it stays "in flight" for the assertion
+      if (u.endsWith("/refine")) return new Promise(() => {});
+      return jsonRes(interp());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderClient();
+
+    const confirm = screen.getByRole("button", {
+      name: /confirm interpretation and discover shows/i,
+    });
+    expect(confirm).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: /not quite right/i }));
+    await user.type(screen.getByLabelText(/refine protocol recovery/i), "hmm");
+    await user.click(screen.getByRole("button", { name: "Submit refinement" }));
+
+    expect(confirm).toBeDisabled();
+  });
+
+  it("empty-rings: shows the refresh banner with CTAs disabled and runs no interpret", () => {
+    const fetchMock = stubFetch();
+    renderClient({
+      initialInterpretation: null,
+      initialDecisions: null,
+      patternEmpty: true,
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /couldn.t save the interpretation/i
+    );
+    expect(
+      screen.getByRole("button", {
+        name: /confirm interpretation and discover shows/i,
+      })
+    ).toBeDisabled();
+    // no rings → no refine/add controls
+    expect(screen.queryByRole("button", { name: /refine/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /add a ring i missed/i })
+    ).not.toBeInTheDocument();
+    // an existing-but-empty pattern must NOT trigger a fresh interpretation
+    expect(findCall(fetchMock, "/interpret")).toBeFalsy();
+  });
+
+  it("enforces the 3-refinement cap: the Refine button is disabled after the 3rd", async () => {
+    stubFetch();
+    const user = userEvent.setup();
+    renderClient();
+
+    for (let i = 0; i < 3; i++) {
+      await user.click(screen.getByRole("button", { name: /not quite right/i }));
+      await user.type(screen.getByLabelText(/refine /i), "again");
+      await user.click(screen.getByRole("button", { name: "Submit refinement" }));
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("button", { name: "Submit refinement" })
+        ).not.toBeInTheDocument()
+      );
+    }
+
+    // 4th attempt is blocked at the UI level — the button is disabled.
+    expect(
+      screen.getByRole("button", { name: /not quite right/i })
+    ).toBeDisabled();
+  });
+
+  it("aborts an in-flight refine on unmount", async () => {
+    const abortSpy = vi.spyOn(AbortController.prototype, "abort");
+    const fetchMock = vi.fn(async (url: unknown) => {
+      const u = String(url);
+      if (u.endsWith("/refine")) return new Promise(() => {}); // never resolves
+      return jsonRes(interp());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    const { unmount } = renderClient();
+
+    await user.click(screen.getByRole("button", { name: /not quite right/i }));
+    await user.type(screen.getByLabelText(/refine protocol recovery/i), "hmm");
+    await user.click(screen.getByRole("button", { name: "Submit refinement" }));
+
+    unmount();
+    expect(abortSpy).toHaveBeenCalled();
+    abortSpy.mockRestore();
   });
 
   it("reload is durable: a refined ring still shows on the second mount", async () => {
