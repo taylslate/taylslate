@@ -134,6 +134,7 @@ interface DepsHarness {
   recordCalls: RecordConvictionScoreInput[];
   events: LogEventInput[];
   persistCalls: Array<Partial<Show>>;
+  reasoningCalls: number;
   clearCalls: () => number;
 }
 
@@ -144,10 +145,12 @@ function makeDeps(opts: {
   platforms?: Platform[];
   persistShow?: ConvictionDiscoveryDeps["persistShow"];
   discover?: ConvictionDiscoveryDeps["discover"];
+  generateReasoning?: ConvictionDiscoveryDeps["generateReasoning"];
 } = {}): DepsHarness {
   const recordCalls: RecordConvictionScoreInput[] = [];
   const events: LogEventInput[] = [];
   const persistCalls: Array<Partial<Show>> = [];
+  const harness = { reasoningCalls: 0 };
   let clearCount = 0;
   let seq = 0;
 
@@ -179,13 +182,31 @@ function makeDeps(opts: {
     recordScore: async (input) => {
       recordCalls.push(input);
     },
+    // Default: a no-op stand-in for the real Layer 4 module (the orchestrator's
+    // job is to call it and persist whatever reasoning it attaches — the LLM
+    // behavior is exercised in conviction-reasoning.test.ts). Tests that assert
+    // the wiring inject their own.
+    generateReasoning:
+      opts.generateReasoning ??
+      (async () => {
+        harness.reasoningCalls++;
+      }),
     emit: async (e) => {
       events.push(e);
       return null;
     },
   };
 
-  return { deps, recordCalls, events, persistCalls, clearCalls: () => clearCount };
+  return {
+    deps,
+    recordCalls,
+    events,
+    persistCalls,
+    get reasoningCalls() {
+      return harness.reasoningCalls;
+    },
+    clearCalls: () => clearCount,
+  };
 }
 
 // ============================================================
@@ -491,6 +512,50 @@ describe("runConvictionDiscovery", () => {
     const rows = recordCalls.filter((r) => r.showId === "uuid-shared");
     expect(rows).toHaveLength(1); // one (show, ring) row, not two
     expect(result.keptShowCount).toBe(1); // collapsed to one distinct real id
+  });
+
+  it("generates reasoning in pass and persists it onto the conviction_scores row", async () => {
+    // Inject a Layer 4 stand-in that stamps each kept entry the way the real
+    // module would (mutate-in-place), and assert the prose reaches recordScore.
+    const generateReasoning: ConvictionDiscoveryDeps["generateReasoning"] = async (
+      _campaignId,
+      groups
+    ) => {
+      for (const group of groups) {
+        for (const entry of group.shows) {
+          entry.reasoning = `reasoned:${entry.show.id}:${group.ring.id}`;
+        }
+      }
+    };
+    const { deps, recordCalls } = makeDeps({
+      discovered: [recoveryShow()],
+      rings: [makeRing({ id: "ring-a" })],
+      generateReasoning,
+    });
+
+    await runConvictionDiscovery("camp-1", deps);
+
+    expect(recordCalls).toHaveLength(1);
+    expect(recordCalls[0].reasoning).toBe("reasoned:discovered-podscan-recovery:ring-a");
+  });
+
+  it("persists null reasoning when Layer 4 fails soft (left every entry null)", async () => {
+    // The real module is fail-soft, but defense-in-depth: even a generator that
+    // throws must not abort the run, and the row still writes with null prose.
+    const generateReasoning: ConvictionDiscoveryDeps["generateReasoning"] = async () => {
+      throw new Error("reasoning blew up");
+    };
+    const { deps, recordCalls } = makeDeps({
+      discovered: [recoveryShow()],
+      rings: [makeRing()],
+      generateReasoning,
+    });
+
+    const result = await runConvictionDiscovery("camp-1", deps);
+
+    expect(result.scoredCount).toBe(1);
+    expect(recordCalls).toHaveLength(1);
+    expect(recordCalls[0].reasoning).toBeNull();
   });
 
   it("no regression: a single-ring campaign scores correctly", async () => {

@@ -14,14 +14,18 @@
 //   6. scores every candidate against every confirmed ring,
 //   7. keeps every show that hits `medium` band or above on ANY ring
 //      (more results, not fewer — filter/paginate is downstream),
-//   8. persists kept shows (createShow → real UUID + Layer 1 PP auto-fill,
+//   8. generates per-ring reasoning prose IN PASS (Layer 4 — one LLM call per
+//      ring, concurrent, fail-soft to a template) and attaches it to each kept
+//      entry,
+//   9. persists kept shows (createShow → real UUID + Layer 1 PP auto-fill,
 //      idempotent by slug) and records one conviction_scores row per
-//      (show, ring), fail-soft,
-//   9. emits `conviction.scored`.
+//      (show, ring) — reasoning included — fail-soft,
+//  10. emits `conviction.scored`.
 //
-// DATA-LAYER ONLY. No reasoning prose (Layer 4), no /campaigns/[id] view
-// (Layer 5), no test/scale tier split (2C). Dependencies are injected so the
-// orchestration is testable without a live DB or Podscan.
+// No /campaigns/[id] view (Layer 5), no test/scale tier split (2C). Reasoning
+// is delegated to ./conviction-reasoning (injected dep) so the scorer itself
+// stays LLM-free and the orchestration is testable without a live DB, Podscan,
+// or model.
 // ============================================================
 
 import type {
@@ -39,6 +43,7 @@ import {
   type DiscoveryResult,
 } from "./discover-shows";
 import { scoreShowConviction, type ConvictionScore } from "@/lib/scoring/conviction";
+import { generateGroupReasoning } from "./conviction-reasoning";
 import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
 import { getCampaignById, createShow } from "@/lib/data/queries";
 import {
@@ -57,6 +62,10 @@ export interface ScoredShowEntry {
   score: ConvictionScore;
   /** Real shows.id after persistence; null if createShow failed/was skipped. */
   persistedShowId: string | null;
+  /** Layer 4 reasoning prose; null until generateGroupReasoning fills it
+   *  (LLM prose or templated fallback). Persisted onto the conviction_scores
+   *  row's `reasoning` column. */
+  reasoning: string | null;
 }
 
 export interface ScoredRingGroup {
@@ -91,6 +100,14 @@ export interface ConvictionDiscoveryDeps {
   ) => Promise<Show | null>;
   clearScores: (patternId: string) => Promise<boolean>;
   recordScore: (input: RecordConvictionScoreInput) => Promise<void>;
+  /** Layer 4: attach reasoning prose to each kept entry in place (LLM per ring,
+   *  fail-soft to a template). Injected so the orchestrator stays testable
+   *  without a live model. */
+  generateReasoning: (
+    campaignId: string,
+    groups: ScoredRingGroup[],
+    pattern: CampaignPatternRow
+  ) => Promise<void>;
   emit: (input: LogEventInput) => Promise<unknown>;
 }
 
@@ -102,6 +119,7 @@ const defaultDeps: ConvictionDiscoveryDeps = {
   persistShow: createShow,
   clearScores: clearConvictionScores,
   recordScore: recordConvictionScore,
+  generateReasoning: generateGroupReasoning,
   emit: logEvent,
 };
 
@@ -173,7 +191,7 @@ export function scoreCandidatesAgainstRings(
       const composite = clamp100(Math.round(raw.composite * daiModifier(show)));
       const score: ConvictionScore = { ...raw, composite };
       if (isMediumOrAbove(score.band)) {
-        shows.push({ show, score, persistedShowId: null });
+        shows.push({ show, score, persistedShowId: null, reasoning: null });
       }
     }
     shows.sort((a, b) => b.score.composite - a.score.composite);
@@ -243,6 +261,16 @@ export async function runConvictionDiscovery(
 
   const groups = scoreCandidatesAgainstRings(candidates, rings, pattern);
 
+  // Layer 4: attach reasoning prose to each kept entry IN PASS — the in-memory
+  // groups carry the Layer 2 drivers + full Show objects (neither persisted),
+  // which is exactly what the prose needs to name a real driver without
+  // fabricating one. Wrapped in callSafe + internally fail-soft: a reasoning
+  // failure leaves entry.reasoning null (or a template) and never aborts the
+  // scoring run.
+  await callSafe("generateReasoning", () =>
+    deps.generateReasoning(campaignId, groups, pattern)
+  );
+
   // Replace prior scores for this pattern (re-run safety: no unique constraint
   // on conviction_scores, and the surface sorts by composite). Wrapped so a
   // throw can't abort the run; undefined (threw) or false both surface the note.
@@ -287,7 +315,8 @@ export async function runConvictionDiscovery(
           purchasePowerScore: entry.score.purchasePower,
           compositeScore: entry.score.composite,
           convictionBand: entry.score.band,
-          // reasoning → Layer 4; tier → 2C. Both null here.
+          reasoning: entry.reasoning, // Layer 4 (LLM prose or template); null if it failed soft.
+          // tier → 2C; null here.
         });
         scoredCount++;
       } catch (err) {

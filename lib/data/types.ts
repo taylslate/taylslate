@@ -648,7 +648,10 @@ export type DomainEventType =
   | "brief.refinement_failed"
   | "brief.interpretation_confirmed"
   // Wave 14 Phase 2B Layer 3 — conviction scoring run finished
-  | "conviction.scored";
+  | "conviction.scored"
+  // Wave 14 Phase 2B Layer 4 — batched per-ring reasoning prose
+  | "conviction.reasoning_generated"
+  | "conviction.reasoning_failed";
 
 export type DomainEntityType =
   | "deal"
