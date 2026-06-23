@@ -125,8 +125,41 @@ export interface Show {
   data_sources?: string[]; // e.g. ["seed"], ["discovery"], ["podscan"], ["agent_import"]
   last_api_refresh?: string;
 
+  /**
+   * Wave 14 Phase 2B (migration 026). Simulcast surfaces — populated only when
+   * a podcast + long-form YouTube record for the same show are merged into one
+   * record (lib/discovery mergeSimulcasts). Null/undefined for single-surface
+   * shows, which is every show while discovery is podcast-only.
+   */
+  surfaces?: ShowSurfaces;
+  /**
+   * Wave 14 Phase 2B (migration 026). Medium-specific scoring priors (CPM
+   * range, engagement weight, frequency norms). Populated light for launch;
+   * structure reserved for full medium-aware scoring math (deferred).
+   */
+  medium_priors?: Record<string, unknown>;
+
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Wave 14 Phase 2B (migration 026). Simulcast surface payload: the same show
+ * present on both podcast and long-form YouTube, merged into one record. Light
+ * shape — one key per surface the show appears on; absent keys mean the show is
+ * not on that surface. Forward-compatible with medium-aware scoring math.
+ */
+export interface ShowSurfaces {
+  podcast?: {
+    rss_url?: string;
+    audience_size?: number;
+    rate_card?: ShowRateCard;
+  };
+  youtube?: {
+    youtube_channel_id?: string;
+    audience_size?: number;
+    rate_card?: ShowRateCard;
+  };
 }
 
 // ---- Campaigns (Brand Side) ----
@@ -613,7 +646,9 @@ export type DomainEventType =
   // Wave 14 Phase 2A Layer 5 — interpretation confirm + refine loop
   | "brief.refinement_submitted"
   | "brief.refinement_failed"
-  | "brief.interpretation_confirmed";
+  | "brief.interpretation_confirmed"
+  // Wave 14 Phase 2B Layer 3 — conviction scoring run finished
+  | "conviction.scored";
 
 export type DomainEntityType =
   | "deal"

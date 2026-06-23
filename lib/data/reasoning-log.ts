@@ -12,7 +12,11 @@
 // Phase 1 ships these helpers; Phase 2 wires them into the discovery agent.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import type { BrandDecision, CampaignPatternRow } from "@/lib/data/types";
+import type {
+  BrandDecision,
+  CampaignPatternRow,
+  RingHypothesisRow,
+} from "@/lib/data/types";
 
 // ============================================================
 // campaign_patterns
@@ -424,6 +428,78 @@ export async function recordConvictionScore(
       "[reasoning-log.recordConvictionScore] threw:",
       err instanceof Error ? err.message : err
     );
+  }
+}
+
+// ============================================================
+// Wave 14 Phase 2B Layer 3 — orchestrator readers/writers
+// ============================================================
+
+/**
+ * Confirmed rings for a campaign pattern — the rings Layer 3 scores against.
+ * Returns only rows the brand kept: brand_decision IN ('confirmed',
+ * 'added_by_brand'). Rejected / refined / pending rings are excluded (a
+ * refined ring's replacement carries its own confirmed/pending decision).
+ * Ordered by slot_position so callers see primary first, then laterals.
+ *
+ * Fail-soft like the rest of this module: returns [] on any failure.
+ */
+export async function getConfirmedRings(
+  campaignPatternId: string
+): Promise<RingHypothesisRow[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("ring_hypotheses")
+      .select("*")
+      .eq("campaign_pattern_id", campaignPatternId)
+      .in("brand_decision", ["confirmed", "added_by_brand"])
+      .order("slot_position", { ascending: true, nullsFirst: false });
+    if (error) {
+      console.warn(
+        "[reasoning-log.getConfirmedRings] read failed:",
+        error.message
+      );
+      return [];
+    }
+    return (data ?? []) as RingHypothesisRow[];
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.getConfirmedRings] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return [];
+  }
+}
+
+/**
+ * Delete all conviction scores for a campaign pattern. Layer 3 re-runs use
+ * replace semantics (clear, then re-insert) because conviction_scores has no
+ * unique constraint on (show, ring) and the surface sorts by composite — an
+ * append would double-list a show on re-run. Fail-soft: returns false on
+ * failure so a clear miss never blocks a fresh scoring run.
+ */
+export async function clearConvictionScores(
+  campaignPatternId: string
+): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("conviction_scores")
+      .delete()
+      .eq("campaign_pattern_id", campaignPatternId);
+    if (error) {
+      console.warn(
+        "[reasoning-log.clearConvictionScores] delete failed:",
+        error.message
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.clearConvictionScores] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return false;
   }
 }
 

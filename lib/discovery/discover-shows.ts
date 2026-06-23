@@ -12,7 +12,7 @@
 // 4. Claude scores the final fit using brand context + keywords
 // ============================================================
 
-import type { Show } from "@/lib/data/types";
+import type { Show, ShowSurfaces } from "@/lib/data/types";
 import { getPodscanClientSafe, type PodscanPodcast } from "@/lib/enrichment/podscan";
 import { getYouTubeClientSafe } from "@/lib/enrichment/youtube";
 import { buildYouTubeQuery, buildDiscoveryQueries } from "./category-mapping";
@@ -234,4 +234,145 @@ async function discoverFromYoutube(
     errors.push(`YouTube discovery failed: ${err instanceof Error ? err.message : "unknown error"}`);
     return [];
   }
+}
+
+// ============================================================
+// SHOW-TYPE GENRE EXCLUSION (Wave 14 Phase 2B Layer 3, spec §11)
+//
+// Sleep / Meditation / ASMR shows are excluded from results ENTIRELY — a hard
+// genre filter applied BEFORE scoring, regardless of audience overlap. These
+// don't fit the host-read DTC model (DAI-sold, listeners tuning out to fall
+// asleep, no conversion playbook). The brand never sees them to override:
+// that's intended — a platform fit call, not a brand call. Empty-calorie
+// results (e.g. "Get Sleepy" ranking high) are a launch credibility hit.
+//
+// Tolerant of taxonomy variants: matches the genre word at a word boundary
+// across a show's categories, audience_interests, AND name (so a sleep cast
+// whose Podscan category is generic but whose identity is unmistakable —
+// "Get Sleepy" — is still caught). Conservative families only: sleep,
+// meditation, asmr. The tradeoff — a metaphorical title ("Sleepless CEO")
+// could be over-excluded — is deliberately accepted: this is a hard platform
+// fit filter, and missing one borderline business show beats surfacing sleep
+// inventory at launch.
+// ============================================================
+
+export const EXCLUDED_GENRE_PATTERNS: RegExp[] = [
+  /\bsleep/i, // sleep, sleepy, sleepcast, sleep sounds, sleep stories
+  /\bmeditat/i, // meditation, meditations, guided meditation, meditative
+  /\basmr\b/i, // asmr
+];
+
+// Clinical / scientific framing means the show is ABOUT sleep (or the mind) as
+// a health topic — sleep medicine, apnea, insomnia research, neuroscience —
+// not a sleep-AID genre show (sleepcasts, sleep sounds). Those are legitimate
+// host-read health shows a recovery/wellness brand may want, so they are NOT
+// hard-excluded. Deliberately narrow: only unambiguous clinical terms a
+// sleep-aid show would essentially never use, to avoid re-opening the
+// false-negative door (a sleepcast that merely markets itself as "science").
+// Best-effort and calibratable — log misses to SCORING_CALIBRATION.md.
+const GENRE_CLINICAL_EXEMPTION =
+  /\b(apnea|insomnia|medicine|medical|clinic|clinical|neuroscience|disorder|diagnosis|physician)\b/i;
+
+function genreHaystack(show: Show): string {
+  return [
+    show.name,
+    ...(show.categories ?? []),
+    ...(show.audience_interests ?? []),
+  ]
+    .join(" ")
+    .toLowerCase()
+    .replace(/[_\-]+/g, " ");
+}
+
+/** True if a show is a Sleep / Meditation / ASMR genre show (hard-excluded). */
+export function isExcludedGenre(show: Show): boolean {
+  const hay = genreHaystack(show);
+  if (!EXCLUDED_GENRE_PATTERNS.some((re) => re.test(hay))) return false;
+  // Matched a genre word, but exempt clinical/scientific health shows.
+  if (GENRE_CLINICAL_EXEMPTION.test(hay)) return false;
+  return true;
+}
+
+/** Drop Sleep / Meditation / ASMR shows before scoring (§11 hard filter). */
+export function excludeExcludedGenres(shows: Show[]): Show[] {
+  return shows.filter((s) => !isExcludedGenre(s));
+}
+
+// ============================================================
+// SIMULCAST MERGE (Wave 14 Phase 2B Layer 3)
+//
+// A simulcast is one show published on both podcast and long-form YouTube
+// (same audience, same reads). Discovery may surface both surfaces as separate
+// Show records; we fold them into ONE record so the universe doesn't
+// double-list. Light by design: identity is matched by normalized name, the
+// podcast record stays primary (podcast is the launch focus and carries CPM
+// rate cards), and both surfaces are attached to `surfaces`. Scoring math
+// stays medium-agnostic for launch — medium-differentiated scoring is deferred.
+//
+// INERT until YouTube discovery lands: 2A briefs are podcast-only, so there is
+// no YouTube record to fold. Ships now so the discovery layer is not re-touched
+// when YouTube discovery arrives (forward-compat; the minimal medium fold-in).
+// ============================================================
+
+function normalizeShowName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export function mergeSimulcasts(shows: Show[]): Show[] {
+  // Index podcast records by normalized name; first occurrence is the primary.
+  const podcastByName = new Map<string, Show>();
+  for (const s of shows) {
+    if (s.platform !== "podcast") continue;
+    const key = normalizeShowName(s.name);
+    if (key && !podcastByName.has(key)) podcastByName.set(key, s);
+  }
+
+  // Map each podcast primary's id → the YouTube surface to attach, and track
+  // which YouTube records get folded so they aren't emitted standalone.
+  const youtubeSurfaceFor = new Map<string, NonNullable<ShowSurfaces["youtube"]>>();
+  const foldedYoutubeIds = new Set<string>();
+  for (const s of shows) {
+    if (s.platform !== "youtube") continue;
+    const key = normalizeShowName(s.name);
+    const primary = key ? podcastByName.get(key) : undefined;
+    if (!primary) continue;
+    youtubeSurfaceFor.set(primary.id, {
+      youtube_channel_id: s.youtube_channel_id,
+      audience_size: s.audience_size,
+      rate_card: s.rate_card,
+    });
+    foldedYoutubeIds.add(s.id);
+  }
+
+  const out: Show[] = [];
+  for (const s of shows) {
+    if (s.platform === "youtube") {
+      if (foldedYoutubeIds.has(s.id)) continue; // folded into a podcast primary
+      out.push(s);
+      continue;
+    }
+    const yt = youtubeSurfaceFor.get(s.id);
+    if (!yt) {
+      out.push(s);
+      continue;
+    }
+    // Shallow-clone the primary so we never mutate the caller's array.
+    out.push({
+      ...s,
+      surfaces: {
+        ...(s.surfaces ?? {}),
+        podcast: s.surfaces?.podcast ?? {
+          rss_url: s.rss_url,
+          audience_size: s.audience_size,
+          rate_card: s.rate_card,
+        },
+        youtube: yt,
+      },
+    });
+  }
+  return out;
 }
