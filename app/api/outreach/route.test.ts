@@ -24,8 +24,9 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }));
 
+const sendEmail = vi.fn().mockResolvedValue({ ok: true, id: "msg_test" });
 vi.mock("@/lib/email/send", () => ({
-  sendEmail: vi.fn().mockResolvedValue({ ok: true, id: "msg_test" }),
+  sendEmail: (...args: unknown[]) => sendEmail(...args),
 }));
 
 vi.mock("@/lib/io/tokens", () => ({
@@ -108,7 +109,12 @@ describe("POST /api/outreach", () => {
       brand_identity: "Aurora Sleep — better sleep",
       brand_website: "https://aurora.example",
     });
-    getCampaignById.mockResolvedValue({ id: "c1", user_id: "u1", name: "Spring Launch" });
+    getCampaignById.mockResolvedValue({
+      id: "c1",
+      user_id: "u1",
+      name: "Spring Launch — June 2026",
+      brief: { version: 2, product: { brand_name: "Aurora Sleep" } },
+    });
     createOutreach.mockResolvedValue({ id: "o1" });
 
     const res = await POST(jsonReq(validBody) as never);
@@ -122,6 +128,13 @@ describe("POST /api/outreach", () => {
     expect(draft.brand_profile_id).toBe("bp1");
     expect(draft.sent_to_email).toBe("host@daily.fm");
     expect(draft.proposed_cpm).toBe(28);
+
+    // The from-name is the brand-confirmed brief product name, not the
+    // brand-identity paragraph (the original GTM-blocking bug).
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(sendEmail.mock.calls[0][0].from).toBe(
+      "Aurora Sleep <outreach@taylslate.com>"
+    );
   });
 
   it("surfaces unique-constraint failures as 409", async () => {

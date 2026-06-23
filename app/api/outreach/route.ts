@@ -13,14 +13,12 @@ import { signOutreachToken } from "@/lib/io/tokens";
 import { renderOutreachEmail } from "@/lib/email/templates/outreach";
 import { sendEmail } from "@/lib/email/send";
 import { recordEvent } from "@/lib/data/event-log";
-import { isBriefV2 } from "@/lib/data/types";
 import type {
-  BrandProfile,
-  Campaign,
   Outreach,
   OutreachPlacement,
 } from "@/lib/data/types";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { resolveBrandName } from "./_shared";
 
 interface CreateOutreachBody {
   campaign_id: string;
@@ -79,43 +77,6 @@ function validate(body: CreateOutreachBody): string | null {
   }
   if (body.pitch_body.length > 5000) return "pitch_body too long";
   return null;
-}
-
-/**
- * Resolve a clean brand name for the outreach from-line.
- *
- * Prefers the Wave 14 2A brand-confirmed product name carried on the campaign
- * brief (`campaign.brief.product.brand_name`) — required and validated at brief
- * submit, so it's the canonical source. Falls back to the campaign name with
- * its "— {Month Year}" suffix stripped (covers the returning-brand reuse path
- * and most legacy campaigns), then, only as a last resort, the first clause of
- * the free-text brand-identity paragraph — the field whose mis-use caused
- * paragraph-length from-names in the first place. The email template normalizes
- * the result again, so a paragraph can never reach the wire even if every
- * branch here misses.
- */
-function resolveBrandName(campaign: Campaign, brandProfile: BrandProfile): string {
-  const brief = campaign.brief;
-  if (isBriefV2(brief) && brief.product?.brand_name?.trim()) {
-    return brief.product.brand_name.trim();
-  }
-
-  // Reuse path / legacy: deriveCampaignName builds "{Brand} — {Month Year}"
-  // with an em-dash, so split on that specifically (a hyphen may be part of the
-  // brand name itself). Ignore the draft/no-brand placeholder names.
-  const fromCampaignName = campaign.name?.split("—")[0]?.trim();
-  if (
-    fromCampaignName &&
-    fromCampaignName !== "Campaign" &&
-    fromCampaignName !== "Untitled campaign"
-  ) {
-    return fromCampaignName;
-  }
-
-  const fromIdentity = brandProfile.brand_identity?.split(/[.,—–-]/)[0]?.trim();
-  if (fromIdentity) return fromIdentity;
-
-  return "Sponsorship";
 }
 
 export async function POST(request: NextRequest) {
