@@ -47,6 +47,44 @@ describe("renderOutreachEmail", () => {
     expect(out.text).toContain("https://app/outreach/abc");
     expect(out.text).toContain("Episodes: 4");
   });
+
+  it("falls back to 'Sponsorship' when the brand name is empty", () => {
+    const out = renderOutreachEmail({ ...baseInput, brand_name: "" });
+    expect(out.from).toBe("Sponsorship <outreach@taylslate.com>");
+    expect(out.subject).toBe("Sponsorship x The Daily Briefing — quick intro");
+    expect(out.html).toContain(">Sponsorship</div>");
+  });
+
+  it("falls back to 'Sponsorship' when the brand name is whitespace only", () => {
+    const out = renderOutreachEmail({ ...baseInput, brand_name: "   \n  " });
+    expect(out.from).toBe("Sponsorship <outreach@taylslate.com>");
+  });
+
+  // Regression: the from-name was once derived from a free-text brand-identity
+  // paragraph, which leaked into the from-line, subject, and footer. A paragraph
+  // must now be structurally impossible to render anywhere.
+  it("never leaks a paragraph into the from-name, subject, or body", () => {
+    const paragraph =
+      "We are a premium cold-plunge and sauna company helping busy founders " +
+      "recover faster between deep-work sessions and high-stakes meetings " +
+      "every single day of the week";
+    const out = renderOutreachEmail({ ...baseInput, brand_name: paragraph });
+
+    const fromName = out.from.replace(" <outreach@taylslate.com>", "");
+    expect(fromName.length).toBeLessThanOrEqual(60);
+    expect(out.from).not.toContain("every single day");
+    expect(out.subject).not.toContain("every single day");
+    expect(out.html).not.toContain("every single day");
+  });
+
+  it("uses only the first line of a multi-line brand name", () => {
+    const out = renderOutreachEmail({
+      ...baseInput,
+      brand_name: "Aurora Sleep\nWe make mattresses for tired founders.",
+    });
+    expect(out.from).toBe("Aurora Sleep <outreach@taylslate.com>");
+    expect(out.subject).toBe("Aurora Sleep x The Daily Briefing — quick intro");
+  });
 });
 
 describe("renderBrandNotification", () => {

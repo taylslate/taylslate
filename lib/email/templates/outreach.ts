@@ -76,11 +76,38 @@ function fmtDate(iso: string): string {
   });
 }
 
+// A from-name must be a name, never a paragraph. The upstream resolver can in
+// principle still hand us a long free-text value (legacy data, a future caller);
+// this collapses any input to something that can only render as a name across
+// the subject, From line, and footer. Structural backstop, not the primary fix.
+const MAX_BRAND_NAME_LENGTH = 60;
+
+function normalizeBrandName(raw: string | null | undefined): string {
+  const firstLine = (raw ?? "").split(/\r?\n/)[0] ?? "";
+  const cleaned = firstLine
+    // Strip header-injection chars; replace control chars with spaces.
+    .replace(/[<>"\\]/g, "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return "Sponsorship";
+  if (cleaned.length <= MAX_BRAND_NAME_LENGTH) return cleaned;
+
+  // Over the cap: cut at the last word boundary within the cap so we never emit
+  // a mid-word fragment; hard-cut if the first word alone exceeds the cap.
+  const capped = cleaned.slice(0, MAX_BRAND_NAME_LENGTH);
+  const lastSpace = capped.lastIndexOf(" ");
+  const truncated = (lastSpace > 0 ? capped.slice(0, lastSpace) : capped).trim();
+  return truncated || "Sponsorship";
+}
+
 /**
  * Brands send under their own from-name with reply-to set to a Taylslate-tracked
  * address (so we capture replies into the conversation thread later). The send
  * domain stays @taylslate.com to satisfy SPF/DKIM until brand-domain sending
- * lands in a later wave.
+ * lands in a later wave. Expects an already-normalized name; the char-strip
+ * stays as belt-and-suspenders.
  */
 function buildFromAndReply(brandName: string): { from: string; reply_to: string } {
   const safeName = brandName.replace(/[<>"\\]/g, "").trim() || "Sponsorship";
@@ -91,8 +118,11 @@ function buildFromAndReply(brandName: string): { from: string; reply_to: string 
 }
 
 export function renderOutreachEmail(input: OutreachEmailInput): RenderedOutreachEmail {
-  const subject = `${input.brand_name} x ${input.show_name} — quick intro`;
-  const { from, reply_to } = buildFromAndReply(input.brand_name);
+  // Normalize once so the brand name can only ever render as a name across the
+  // subject, From line, and footer — never a paragraph.
+  const brandName = normalizeBrandName(input.brand_name);
+  const subject = `${brandName} x ${input.show_name} — quick intro`;
+  const { from, reply_to } = buildFromAndReply(brandName);
 
   const termsRowsHtml = [
     ["Proposed CPM", `$${input.proposed_cpm.toFixed(2)}`],
@@ -123,7 +153,7 @@ export function renderOutreachEmail(input: OutreachEmailInput): RenderedOutreach
       <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
         <div style="padding:24px 28px 8px;">
           <div style="font-size:12px;color:#6b7280;letter-spacing:0.04em;text-transform:uppercase;margin-bottom:4px;">From</div>
-          <div style="font-size:16px;font-weight:600;color:#111827;">${escapeHtml(input.brand_name)}</div>
+          <div style="font-size:16px;font-weight:600;color:#111827;">${escapeHtml(brandName)}</div>
           ${
             input.brand_url
               ? `<div style="font-size:12px;color:#6b7280;margin-top:2px;">${escapeHtml(input.brand_url)}</div>`
@@ -154,7 +184,7 @@ export function renderOutreachEmail(input: OutreachEmailInput): RenderedOutreach
 
       <div style="font-size:11px;color:#9ca3af;text-align:center;margin-top:20px;line-height:1.5;">
         Payments and contracting powered by Taylslate.<br/>
-        You're receiving this because ${escapeHtml(input.brand_name)} reached out about a sponsorship opportunity for ${escapeHtml(input.show_name)}.
+        You're receiving this because ${escapeHtml(brandName)} reached out about a sponsorship opportunity for ${escapeHtml(input.show_name)}.
       </div>
     </div>
   </body>
