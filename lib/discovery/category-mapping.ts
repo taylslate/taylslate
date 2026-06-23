@@ -102,6 +102,20 @@ const INTEREST_TO_YOUTUBE_TERMS: Record<string, string[]> = {
 };
 
 /**
+ * True if `name` is a recognized Podscan interest bucket — i.e. it resolves to
+ * category IDs (INTEREST_TO_PODSCAN) and/or per-interest search terms
+ * (INTEREST_SEARCH_TERMS). The source of truth callers validate against so a
+ * near-miss bucket name (e.g. "Health and Wellness") is caught instead of
+ * silently mapping to nothing. Byte-for-byte; keys are case/punctuation exact.
+ */
+export function isKnownPodscanInterest(name: string): boolean {
+  return (
+    Object.prototype.hasOwnProperty.call(INTEREST_TO_PODSCAN, name) ||
+    Object.prototype.hasOwnProperty.call(INTEREST_SEARCH_TERMS, name)
+  );
+}
+
+/**
  * Convert campaign brief interests to Podscan category IDs.
  */
 export function mapInterestsToPodscanCategoryIds(interests: string[]): string[] {

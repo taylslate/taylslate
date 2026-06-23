@@ -14,6 +14,8 @@ import {
   isMediumOrAbove,
   daiModifier,
   buildDiscoveryBrief,
+  mapTopicsToInterests,
+  INTEREST_TOPIC_RULES,
   type ConvictionDiscoveryDeps,
 } from "./conviction-discovery";
 import {
@@ -22,6 +24,7 @@ import {
   mergeSimulcasts,
   type DiscoveryResult,
 } from "./discover-shows";
+import { isKnownPodscanInterest } from "./category-mapping";
 import { PURCHASE_POWER_SCORE } from "@/lib/scoring/purchase-power";
 import type {
   Show,
@@ -310,17 +313,59 @@ describe("scoreCandidatesAgainstRings (pure)", () => {
 });
 
 describe("buildDiscoveryBrief", () => {
-  it("derives keywords from category + key_attributes + ring labels, platforms passthrough", () => {
+  it("derives keywords from the CATEGORY only — drops sentence-like attributes + ring labels", () => {
     const brief = buildDiscoveryBrief(
-      makePattern("mid"),
+      makePattern("mid"), // category "recovery hardware", key_attributes ["cold plunge","sauna"]
       [makeRing({ label: "endurance athletes" })],
       ["podcast"]
     );
     expect(brief.platforms).toEqual(["podcast"]);
     expect(brief.keywords).toContain("recovery hardware");
-    expect(brief.keywords).toContain("cold plunge");
-    expect(brief.keywords).toContain("endurance athletes");
-    expect(brief.keywords.length).toBeLessThanOrEqual(8);
+    expect(brief.keywords).not.toContain("cold plunge"); // key_attribute → dropped
+    expect(brief.keywords).not.toContain("endurance athletes"); // ring label → dropped
+    expect(brief.keywords.length).toBeLessThanOrEqual(6);
+  });
+
+  it("splits a delimited category (/ & , ;) into clean keyword fragments", () => {
+    const brief = buildDiscoveryBrief(
+      makePattern("mid", { category: "protein snacks / functional food", key_attributes: [] }),
+      [],
+      ["podcast"]
+    );
+    expect(brief.keywords).toEqual(["protein snacks", "functional food"]);
+  });
+
+  it("maps product + ring topics into target_interests so category targeting fires", () => {
+    const brief = buildDiscoveryBrief(
+      makePattern("mid", { category: "protein snacks", key_attributes: [] }),
+      [makeRing({ label: "busy parents & family convenience" })],
+      ["podcast"]
+    );
+    expect(brief.target_interests).toContain("Health & Wellness"); // protein
+    expect(brief.target_interests).toContain("Parenting & Family"); // parents/family ring
+    // every emitted interest is a real Podscan bucket (no near-miss keys)
+    for (const i of brief.target_interests) expect(isKnownPodscanInterest(i)).toBe(true);
+  });
+});
+
+describe("mapTopicsToInterests", () => {
+  it("matches buckets by topic keyword, in priority order, capped at 3", () => {
+    const got = mapTopicsToInterests(
+      "protein nutrition for entrepreneurs and busy parents who love running and cooking"
+    );
+    expect(got).toContain("Health & Wellness");
+    expect(got.length).toBeLessThanOrEqual(3);
+    expect(got[0]).toBe("Health & Wellness"); // highest-priority match leads
+  });
+
+  it("returns [] when no topic matches (keyword-only fallback)", () => {
+    expect(mapTopicsToInterests("zxqw blorptide kelvinate")).toEqual([]);
+  });
+
+  it("every rule bucket resolves byte-for-byte in category-mapping (no silent near-miss)", () => {
+    for (const rule of INTEREST_TOPIC_RULES) {
+      expect(isKnownPodscanInterest(rule.interest), rule.interest).toBe(true);
+    }
   });
 });
 

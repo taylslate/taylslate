@@ -402,12 +402,52 @@ async function persistCandidate(
 }
 
 /**
- * Build the discovery brief from the confirmed interpretation. Keyword-driven:
- * the 2A pattern carries no structured interest buckets to map onto Podscan
- * category IDs, so candidates are found by text search over the product
- * category + key attributes + ring labels. Broadening the pool via
- * interest→category mapping is a discovery-quality concern outside Layer 3
- * (2B consumes the structure, not the breadth).
+ * Maps free-text product/ring topics onto Podscan interest buckets. Priority
+ * order: the first ten are PRIMARY buckets (category-ID targeting + per-interest
+ * search terms); the last two ("Science", "Food & Cooking") are search-terms-
+ * only (extra breadth, no category IDs). Every `interest` here MUST be a
+ * byte-for-byte key in category-mapping.ts (INTEREST_TO_PODSCAN /
+ * INTEREST_SEARCH_TERMS) — a near-miss silently maps to nothing and reproduces
+ * the empty-query bug. The guard test in conviction-discovery.test.ts asserts
+ * this via isKnownPodscanInterest, so a typo fails CI loudly.
+ */
+export const INTEREST_TOPIC_RULES: Array<{ interest: string; pattern: RegExp }> = [
+  { interest: "Health & Wellness", pattern: /\b(health|wellness|wellbeing|fitness|nutrition|protein|supplement|supplements|diet|dietary|recovery|biohack|biohacking|workout|gym|weight|calorie|sugar|collagen|whey|vitamin|fasting|gut|longevity|hydration|electrolyte|probiotic|keto|vegan|organic|snack|snacks|functional food|skincare|beauty|mental health|glp)\b/i },
+  { interest: "Business & Finance", pattern: /\b(business|finance|financial|invest|investing|investment|money|entrepreneur|entrepreneurship|startup|founder|marketing|sales|ecommerce|e-commerce|saas|crypto|real estate|wealth|b2b)\b/i },
+  { interest: "Technology", pattern: /\b(tech|technology|software|hardware|ai|artificial intelligence|gadget|gadgets|developer|programming|cyber|robotics)\b/i },
+  { interest: "Self-Improvement", pattern: /\b(self.?improvement|motivation|motivational|mindset|productivity|habit|habits|personal development|personal growth|discipline|coaching)\b/i },
+  { interest: "Sports", pattern: /\b(sport|sports|athlete|athletic|running|runner|cycling|basketball|football|soccer|golf|tennis|endurance|marathon|crossfit|strength training)\b/i },
+  { interest: "Parenting & Family", pattern: /\b(parent|parents|parenting|family|kid|kids|mom|mother|motherhood|dad|father|fatherhood|baby|toddler|pregnancy|newborn)\b/i },
+  { interest: "Education", pattern: /\b(education|educational|learning|teaching|student|academic|knowledge)\b/i },
+  { interest: "Comedy", pattern: /\b(comedy|comedian|humor|funny|stand.?up)\b/i },
+  { interest: "True Crime", pattern: /\b(true crime|murder|detective|forensic|forensics)\b/i },
+  { interest: "Entertainment", pattern: /\b(entertainment|tv show|tv shows|film|movie|movies|celebrity|pop culture|gaming)\b/i },
+  { interest: "Science", pattern: /\b(science|scientific|research|neuroscience|biology|physics|chemistry)\b/i },
+  { interest: "Food & Cooking", pattern: /\b(cooking|recipe|recipes|chef|culinary)\b/i },
+];
+
+/**
+ * Map combined product + ring topic text onto Podscan interest buckets (in
+ * priority order, capped) so category-ID targeting + per-interest queries fire —
+ * the breadth that turns a 0-candidate query into a real pool. Empty when no
+ * topic matches (the brief then falls back to keyword-only discovery).
+ */
+export function mapTopicsToInterests(topicText: string): string[] {
+  const t = topicText.toLowerCase();
+  return INTEREST_TOPIC_RULES.filter((r) => r.pattern.test(t))
+    .map((r) => r.interest)
+    .slice(0, 3); // cap per-interest fan-out + category-ID breadth
+}
+
+/**
+ * Build the discovery brief from the confirmed interpretation. Two parts:
+ *  - keywords: short product terms from the CATEGORY only (split on / & , ;),
+ *    deduped. The verbose key_attributes are deliberately NOT used — they are
+ *    sentence-like ("subscription model (Subscribe & Save 20%)") and poison
+ *    Podscan's text search.
+ *  - target_interests: product + ring topics mapped to Podscan buckets, so
+ *    category-ID filtering and per-interest queries fire (without this the
+ *    single keyword query returns ~nothing for most briefs).
  */
 export function buildDiscoveryBrief(
   pattern: CampaignPatternRow,
@@ -421,10 +461,13 @@ export function buildDiscoveryBrief(
     : [];
   const ringLabels = rings.map((r) => r.label).filter((l): l is string => !!l);
 
-  const keywords = dedupeStrings([category, ...keyAttributes, ...ringLabels]).slice(0, 8);
+  const keywords = dedupeStrings(category.split(/[/&,;]+/)).slice(0, 6);
+
+  const topicText = [category, ...keyAttributes, ...ringLabels].join(" ");
+  const target_interests = mapTopicsToInterests(topicText);
 
   return {
-    target_interests: [],
+    target_interests,
     keywords,
     platforms: platforms as string[],
   };
