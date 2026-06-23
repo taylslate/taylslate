@@ -7,6 +7,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isBrandSide } from "@/lib/nav/items";
+import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
 import type {
   Profile,
   Show,
@@ -111,6 +112,7 @@ function transformShow(row: Record<string, unknown>): Show {
     audience_size: (row.audience_size as number) ?? 0,
     demographics: (row.demographics as Show["demographics"]) ?? {},
     audience_interests: (row.audience_interests as string[]) ?? [],
+    audience_purchase_power: row.audience_purchase_power as number | undefined,
     rate_card: (row.rate_card as Show["rate_card"]) ?? {},
     price_type: (row.price_type as Show["price_type"]) ?? "cpm",
     min_buy: row.min_buy as number | undefined,
@@ -928,8 +930,17 @@ export async function createShow(
   // Use admin client to bypass RLS — shows table lacks INSERT policy for anon users
   const slug = generateSlug(showData.name);
 
+  // New-show ingest applies the purchase-power proxy (Wave 14 Phase 2B
+  // Layer 1) so every persisted show carries audience_purchase_power going
+  // forward. Respect an explicitly-provided value (non-clobber); only derive
+  // from categories when the caller didn't set it.
+  const audience_purchase_power =
+    showData.audience_purchase_power ??
+    categoriesToPurchasePowerScore(showData.categories ?? []);
+
   const dbRow = flattenShowForDB({
     ...showData,
+    audience_purchase_power,
     slug,
     is_claimed: showData.is_claimed ?? false,
     is_verified: showData.is_verified ?? false,

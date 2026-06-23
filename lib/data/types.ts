@@ -85,6 +85,13 @@ export interface Show {
   audience_size: number; // avg downloads/ep (podcast) or avg views (youtube)
   demographics: ShowDemographics;
   audience_interests: string[];
+  /**
+   * Estimated audience purchase power 0-100 (Wave 14 Phase 2B). Derived from
+   * a category proxy (lib/scoring/purchase-power) and persisted to
+   * shows.audience_purchase_power; one of three non-gating conviction
+   * dimensions. Optional: undefined on shows ingested before the proxy ran.
+   */
+  audience_purchase_power?: number;
 
   // Pricing — the gold
   rate_card: ShowRateCard;
@@ -905,6 +912,12 @@ export type RingHypothesisKind = "primary" | "lateral" | "confirmed";
 export type ConvictionBand = "high" | "medium" | "low" | "speculative";
 
 export type ConvictionTier = "test" | "scale" | "dropped";
+
+// Wave 14 Phase 2B. Coarse audience-affluence tier from a category proxy
+// (lib/scoring/purchase-power). Collapses to the shows.audience_purchase_power
+// int via fixed anchors high=80 / medium=50 / low=25. One of three NON-GATING
+// conviction dimensions — never a hard filter.
+export type PurchasePowerTier = "high" | "medium" | "low";
 
 // Wave 14 Phase 2A. Five-state brand decision on a proposed ring hypothesis.
 // Replaces the boolean brand_confirmed flag; see migration 021.
