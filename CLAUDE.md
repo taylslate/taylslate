@@ -410,7 +410,7 @@ docs/
 - **CPM pricing:** Ad Spot Price = (Downloads ÷ 1,000) × CPM Rate. Range: $15-$50.
 - **Placements:** Pre-roll, mid-roll (standard, highest rate), post-roll.
 - **Price types:** CPM-based (pay per actual download) or Flat Rate (fixed price with make-good if underdelivery >10%).
-- **YouTube:** Long-form integrated reads. Flat-fee pricing typical (not CPM). $2K-$20K based on cultural significance. Content is evergreen.
+- **YouTube:** Long-form integrated reads. Flat-fee pricing typical (not CPM). $2K-$15K based on cultural significance. Content is evergreen.
 - **YouTube Shorts:** Excluded from Taylslate at launch. Different read mechanics, no proven conversion playbook.
 - **Simulcast:** Many podcasters publish a YouTube video version. Treated as one channel with two surfaces. Same audience overlap, same pricing.
 - **IO structure:** Per-episode line items with format, post date, guaranteed downloads, show name, placement, scripted Y/N, personal experience Y/N, reader type, evergreen/dated, pixel Y/N, gross rate, gross CPM, price type, net due.
