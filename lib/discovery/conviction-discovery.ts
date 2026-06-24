@@ -37,6 +37,7 @@ import type {
 } from "@/lib/data/types";
 import {
   discoverShows,
+  excludeDeadYouTube,
   excludeExcludedGenres,
   mergeSimulcasts,
   type DiscoveryBrief,
@@ -255,8 +256,13 @@ export async function runConvictionDiscovery(
   }
   errors.push(...discovery.errors);
 
-  // §11 hard genre filter BEFORE scoring → fold simulcasts → fill PP.
-  const candidates = mergeSimulcasts(excludeExcludedGenres(discovery.discovered));
+  // Hard filters BEFORE scoring → fold simulcasts → fill PP.
+  // §11 Sleep/ASMR genre exclusion + Phase 2C Layer 1b zero-view YouTube
+  // (dead inventory; drop before merge so a dead YT surface can't price a
+  // simulcast). Both run on raw discovered shows, before any scoring.
+  const candidates = mergeSimulcasts(
+    excludeDeadYouTube(excludeExcludedGenres(discovery.discovered))
+  );
   fillPurchasePower(candidates);
 
   const groups = scoreCandidatesAgainstRings(candidates, rings, pattern);

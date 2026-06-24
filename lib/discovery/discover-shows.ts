@@ -299,6 +299,33 @@ export function excludeExcludedGenres(shows: Show[]): Show[] {
 }
 
 // ============================================================
+// ZERO-VIEW YOUTUBE HARD FILTER (Wave 14 Phase 2C Layer 1b)
+//
+// A discovery-quality filter in the same family as the Sleep/ASMR genre
+// exclusion above — applied BEFORE scoring, not a scoring change. YouTube
+// view counts are public and reliable, so a 0-view channel is dead
+// inventory. Because YouTube is flat-fee priced, leaving it in would stamp
+// a real-looking $2K price on a channel nobody watches — the
+// priced-empty-calorie credibility hit. Excluded here so these are never
+// conviction-scored or surfaced.
+//
+// Asymmetry with podcasts is intentional: a podcast with 0 downloads is
+// kept (Podscan often lacks reach data for a live show; it flows to
+// needs_quote in Layer 1), but a public YouTube view count of 0 is
+// trustworthy enough to drop the channel outright.
+// ============================================================
+
+/** True if a show is a zero-view YouTube channel (dead inventory). */
+export function isDeadYouTube(show: Show): boolean {
+  return show.platform === "youtube" && (show.audience_size ?? 0) <= 0;
+}
+
+/** Drop zero-view YouTube channels before scoring (Phase 2C Layer 1b). */
+export function excludeDeadYouTube(shows: Show[]): Show[] {
+  return shows.filter((s) => !isDeadYouTube(s));
+}
+
+// ============================================================
 // SIMULCAST MERGE (Wave 14 Phase 2B Layer 3)
 //
 // A simulcast is one show published on both podcast and long-form YouTube
