@@ -651,7 +651,9 @@ export type DomainEventType =
   | "conviction.scored"
   // Wave 14 Phase 2B Layer 4 — batched per-ring reasoning prose
   | "conviction.reasoning_generated"
-  | "conviction.reasoning_failed";
+  | "conviction.reasoning_failed"
+  // Wave 14 Phase 2C Layer 2 — test/scale/dropped portfolio split completed
+  | "portfolio.tiered";
 
 export type DomainEntityType =
   | "deal"
@@ -950,6 +952,15 @@ export type RingHypothesisKind = "primary" | "lateral" | "confirmed";
 export type ConvictionBand = "high" | "medium" | "low" | "speculative";
 
 export type ConvictionTier = "test" | "scale" | "dropped";
+
+// Wave 14 Phase 2C (migration 028). How a per-show spot cost was derived;
+// persisted to conviction_scores.cost_basis (controlled vocabulary). Gates
+// whether cost is allowed to decide the test/scale split: 'rate_card' (real
+// onboarded) and 'derived' (podcast downloads × CPM) are gate-worthy;
+// 'flat_fee' (non-onboarded YouTube) is conviction-only, cost never gates.
+// Canonical home so the data layer can type the persisted column without
+// importing from lib/discovery (lib/discovery/spot-cost.ts re-exports this).
+export type CostBasis = "derived" | "flat_fee" | "rate_card";
 
 // Wave 14 Phase 2B. Coarse audience-affluence tier from a category proxy
 // (lib/scoring/purchase-power). Collapses to the shows.audience_purchase_power

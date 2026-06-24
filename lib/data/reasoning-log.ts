@@ -16,6 +16,8 @@ import type {
   BrandDecision,
   CampaignPatternRow,
   ConvictionScoreRow,
+  ConvictionTier,
+  CostBasis,
   RingHypothesisRow,
   Show,
 } from "@/lib/data/types";
@@ -766,6 +768,151 @@ export interface ConvictionUniverse {
   rings: RingHypothesisRow[];
   groups: ConvictionUniverseGroup[];
   hasScores: boolean;
+}
+
+// ============================================================
+// Wave 14 Phase 2C Layer 2 — tier classifier persistence
+// ============================================================
+
+/**
+ * All conviction_scores rows for a campaign pattern, typed. Single round trip,
+ * fail-soft (returns [] on any failure). The tier pass (lib/discovery/
+ * tier-portfolio.ts) reads these to roll up per show and classify; unlike
+ * getConvictionUniverse it does NOT filter to confirmed rings or embed shows —
+ * the pass must see every row so it can rewrite `tier` on all of them.
+ */
+export async function getConvictionScoresForPattern(
+  campaignPatternId: string
+): Promise<ConvictionScoreRow[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("conviction_scores")
+      .select("*")
+      .eq("campaign_pattern_id", campaignPatternId)
+      .order("composite_score", { ascending: false });
+    if (error) {
+      console.warn(
+        "[reasoning-log.getConvictionScoresForPattern] read failed:",
+        error.message
+      );
+      return [];
+    }
+    return (data ?? []) as ConvictionScoreRow[];
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.getConvictionScoresForPattern] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return [];
+  }
+}
+
+/** The campaign id + budget (in DOLLARS) behind a campaign pattern. */
+export interface CampaignContextForPattern {
+  campaignId: string;
+  budgetTotalDollars: number;
+}
+
+/**
+ * Resolve a campaign pattern to its campaign id + budget. conviction_scores
+ * has NO campaign_id — it links via campaign_pattern_id → campaign_patterns
+ * .campaign_id → campaigns.budget_total. One round trip via the FK embed.
+ * Fail-soft (null on any failure, or when the pattern has no campaign).
+ *
+ * budget_total is DECIMAL dollars; coerced to a finite number here. The
+ * dollars→cents conversion is the caller's single boundary (spot-cost
+ * dollarsToCents) — this reader stays in dollars.
+ */
+export async function getCampaignContextForPattern(
+  campaignPatternId: string
+): Promise<CampaignContextForPattern | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("campaign_patterns")
+      .select("campaign_id, campaigns(budget_total)")
+      .eq("id", campaignPatternId)
+      .maybeSingle<{
+        campaign_id: string | null;
+        campaigns: { budget_total: number | string | null } | null;
+      }>();
+    if (error) {
+      console.warn(
+        "[reasoning-log.getCampaignContextForPattern] read failed:",
+        error.message
+      );
+      return null;
+    }
+    if (!data?.campaign_id) return null;
+    const raw = data.campaigns?.budget_total;
+    const budget = typeof raw === "string" ? Number(raw) : raw ?? 0;
+    return {
+      campaignId: data.campaign_id,
+      budgetTotalDollars: Number.isFinite(budget) ? Number(budget) : 0,
+    };
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.getCampaignContextForPattern] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+export interface UpdateConvictionTierCostInput {
+  campaignPatternId: string;
+  showId: string;
+  tier: ConvictionTier;
+  perSpotCents: number | null;
+  threeSpotCents: number | null;
+  cpmUsedCents: number | null;
+  costBasis: CostBasis | null;
+  costIsEstimate: boolean;
+  needsQuote: boolean;
+}
+
+/**
+ * Write a show's classified tier + derived cost onto EVERY conviction_scores
+ * row for that (pattern, show) — the table is per-(show, ring) but tier and
+ * cost are per-show, so all of a show's ring rows carry the same values. An
+ * UPDATE, not an insert: 2B already wrote these rows with tier null.
+ *
+ * Fail-soft like the rest of this module — returns false on failure, never
+ * throws. Columns are added by migration 028; before that migration runs the
+ * UPDATE errors and returns false (swallowed), which is why the pass is not
+ * wired into the live flow until 028 is introspected.
+ */
+export async function updateConvictionTierCost(
+  input: UpdateConvictionTierCostInput
+): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("conviction_scores")
+      .update({
+        tier: input.tier,
+        per_spot_cents: input.perSpotCents,
+        three_spot_cents: input.threeSpotCents,
+        cpm_used_cents: input.cpmUsedCents,
+        cost_basis: input.costBasis,
+        cost_is_estimate: input.costIsEstimate,
+        needs_quote: input.needsQuote,
+      })
+      .eq("campaign_pattern_id", input.campaignPatternId)
+      .eq("show_id", input.showId);
+    if (error) {
+      console.warn(
+        "[reasoning-log.updateConvictionTierCost] update failed:",
+        error.message
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.updateConvictionTierCost] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return false;
+  }
 }
 
 /**

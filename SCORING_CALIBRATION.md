@@ -49,3 +49,33 @@ known blunt edges, each tied to an already-deferred item. **Recorded, not fixed.
    - Deferred fix: **category-proxy calibration** (refine the §6 mapping — e.g.
      down-weight `business` when it co-occurs with personal-dev / motivation
      signals). Calibration only; PP stays a blunt, non-gating dimension for 2B.
+
+---
+
+## Phase 2C — test/scale tier defaults (June 24, 2026)
+
+First-pass tier-classifier constants (`lib/discovery/tier-portfolio.ts`). Shipped
+as defaults; **calibrate the cuts against real campaigns, don't over-engineer
+relative-within-campaign banding** (spec §"Tier + threshold logic").
+
+- `THREE_SPOT_THRESHOLD = 0.25` — a show's 3-spot cost must be ≤ 25% of the
+  campaign budget to be **affordable** (→ test); over → scale. The 3-spot test
+  floor (99% of podcast tests). Override per campaign if the brand opts out.
+- `MIN_TEST_SHOWS = 3` — below this many test shows → `test_underfilled`, so
+  Layer 4 surfaces tight-budget UX (single-spot / raise-budget) instead of an
+  empty primary section.
+- `MEDIUM_FLOOR` — **reuses** `BAND_MEDIUM_COMPOSITE` (= 50) from
+  `lib/scoring/conviction.ts`, not a forked constant. Composite < 50 → bench.
+- **Tier gate is affordability + composite, NOT the conviction band.** Pre-flight
+  Flag 7: audience-fit is pinned to a neutral 50 at launch (deferred item #2
+  above), so the `high` band is structurally unreachable — a band gate would
+  render scale empty. Revisit and tighten to band-aware once demographics
+  enrichment decompresses the bands.
+- **Cost confidence gates whether cost decides the split.** `rate_card` /
+  `derived` are gate-worthy (affordability runs); `flat_fee` (non-onboarded
+  YouTube) is conviction-only — its price is an untrusted guess, so it never
+  sorts a channel into scale on cost. Flips to gate-worthy automatically when the
+  channel onboards (`flat_fee` → `rate_card`), no code change.
+- **Rounding (Codex gate):** `dollarsToCents` rounds half-UP with a
+  magnitude-scaled epsilon so IEEE-754 half-cents (e.g. `(200093/1000)×35` =
+  $7003.255) don't silently round a cent low at the affordability boundary.

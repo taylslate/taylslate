@@ -174,6 +174,22 @@ export async function getShowsByAgent(agentId: string): Promise<Show[]> {
   return data.map(transformShow);
 }
 
+/**
+ * Batch-load shows by id (Wave 14 Phase 2C — the tier pass resolves the shows
+ * behind a pattern's conviction_scores to derive per-show cost). Empty input
+ * short-circuits; order is not guaranteed (callers key by id).
+ */
+export async function getShowsByIds(ids: string[]): Promise<Show[]> {
+  if (ids.length === 0) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("shows")
+    .select("*")
+    .in("id", ids);
+  if (error || !data) return [];
+  return data.map(transformShow);
+}
+
 // ---- Deals ----
 
 export async function getAllDealsForUser(userId: string): Promise<Deal[]> {

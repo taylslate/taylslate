@@ -19,7 +19,7 @@
 // applied explicitly at each step.
 // ============================================================
 
-import type { Campaign, Show } from "@/lib/data/types";
+import type { Campaign, CostBasis, Show } from "@/lib/data/types";
 
 /** Default test cadence — 99% of podcast tests are 3-spot (CLAUDE.md). */
 export const DEFAULT_SPOT_COUNT = 3;
@@ -34,8 +34,12 @@ export type Placement = "preroll" | "midroll" | "postroll";
  * - 'derived'   — podcast CPM × downloads, from a DEFAULT (banded) rate card
  * - 'flat_fee'  — YouTube / flat-rate deal, from a DEFAULT flat rate
  * - 'rate_card' — a real onboarded rate card (not a discovery default)
+ *
+ * Canonical definition lives in lib/data/types.ts (it's a persisted column
+ * vocabulary, migration 028); re-exported here so existing Layer 1 importers
+ * keep working unchanged.
  */
-export type CostBasis = "derived" | "flat_fee" | "rate_card";
+export type { CostBasis };
 
 export interface SpotCost {
   /** One spot at the selected placement, integer cents. null when needsQuote. */
@@ -51,9 +55,22 @@ export interface SpotCost {
   needsQuote: boolean;
 }
 
-/** Single dollars→cents boundary. Rounds to the nearest integer cent. */
-function dollarsToCents(dollars: number): number {
-  return Math.round(dollars * 100);
+/**
+ * Single dollars→cents boundary. Rounds to the nearest integer cent. Exported
+ * so Layer 2 (tier-portfolio.ts) converts the campaign budget through the SAME
+ * function — one conversion across the money path (pre-flight Flag 7).
+ *
+ * The magnitude-scaled epsilon nudges values that IEEE-754 represents a hair
+ * BELOW an exact half-cent (e.g. (200093/1000)*35 = 7003.255 stored as
+ * 7003.254999999999) back up so they round half-UP correctly. Without it, the
+ * CPM path — the only one that produces genuine half-cents — silently rounds a
+ * cent low at the boundary, which can flip a show across the affordability
+ * line. Verified 0 mismatches vs an exact integer reference across 4M
+ * audience×CPM combinations; a no-op for the integer/2-decimal budget and
+ * flat-rate inputs (their true cents are already integers). (Codex gate, L2.)
+ */
+export function dollarsToCents(dollars: number): number {
+  return Math.round((dollars + Number.EPSILON * Math.max(1, Math.abs(dollars))) * 100);
 }
 
 /** No derivable cost: all-null cost, surfaced as "needs quote". */

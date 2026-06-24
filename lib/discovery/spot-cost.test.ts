@@ -53,6 +53,21 @@ describe("deriveSpotCost — podcast CPM path", () => {
     expect(cost.needsQuote).toBe(false);
   });
 
+  it("rounds a genuine half-cent half-UP (IEEE-754 boundary, Codex gate)", () => {
+    // (200093 / 1000) × $35 = $7003.255 exactly → 700326 cents (half-up).
+    // The raw float (200093/1000)*35 is 7003.254999999999, which a naive
+    // Math.round(d*100) would round DOWN to 700325 — a cent low, which can
+    // flip a show across the affordability line. dollarsToCents corrects it.
+    const show = makeShow({
+      audience_size: 200093,
+      rate_card: { preroll_cpm: 25, midroll_cpm: 35, postroll_cpm: 18 },
+    });
+    const cost = deriveSpotCost(show);
+    expect(cost.perSpotCents).toBe(700326);
+    expect(cost.threeSpotCents).toBe(2100978); // exactly 3 × perSpot
+    expect(cost.threeSpotCents).toBe(cost.perSpotCents! * DEFAULT_SPOT_COUNT);
+  });
+
   it("prices pre-roll against preroll_cpm (a distinct unit, not mid-roll)", () => {
     const show = makeShow({
       audience_size: 50000,
