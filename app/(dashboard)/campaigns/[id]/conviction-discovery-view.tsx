@@ -143,20 +143,41 @@ export default function ConvictionDiscoveryView({
 
   const [discovering, setDiscovering] = useState(false);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
+  // Soft "another run owns the lock" notice (409 from the server-side discovery
+  // mutex) — distinct from a hard error: nothing is wrong, another tab/run is
+  // mid-flight, so we never re-fire (that would just 409 again).
+  const [discoverNotice, setDiscoverNotice] = useState<string | null>(null);
   // Synchronous concurrent-fire latch — see file header. Reset only after the
   // POST settles, never in an effect cleanup (so a StrictMode remount can't
   // re-fire).
   const inFlightRef = useRef(false);
+  // Once-per-mount auto-fire guard. The inFlightRef latch stops *concurrent*
+  // fires; this stops a *sequential* re-fire if the auto-fire effect re-runs
+  // (e.g. a dep identity churns) after the first POST already settled. Auto-fire
+  // is a once-per-visit action; the manual "Re-run discovery" button is the
+  // explicit re-trigger and is NOT gated by this.
+  const autoFiredRef = useRef(false);
 
   const runDiscovery = useCallback(async () => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     setDiscovering(true);
     setDiscoverError(null);
+    setDiscoverNotice(null);
     try {
       const res = await fetch(`/api/campaigns/${campaignId}/discover`, {
         method: "POST",
       });
+      // 409: the server-side mutex says another run owns discovery for this
+      // campaign right now (a second tab, or a reload mid-run). The duplicate
+      // spend was already prevented server-side; surface a soft notice and do
+      // NOT re-fire. The user refreshes once the other run lands.
+      if (res.status === 409) {
+        setDiscoverNotice(
+          "Discovery is already running for this campaign — it may be open in another tab. It'll appear here once that run finishes."
+        );
+        return;
+      }
       if (!res.ok) {
         let msg = "Discovery couldn't finish. Try again.";
         try {
@@ -186,6 +207,8 @@ export default function ConvictionDiscoveryView({
     if (universe.hasScores) return;
     if (universe.rings.length === 0) return;
     if (discoveryRan) return;
+    if (autoFiredRef.current) return;
+    autoFiredRef.current = true;
     runDiscovery();
   }, [universe.hasScores, universe.rings.length, discoveryRan, runDiscovery]);
 
@@ -203,32 +226,48 @@ export default function ConvictionDiscoveryView({
   }
 
   if (!universe.hasScores) {
-    const loading = discovering || isPending || !discoveryRan;
-    if (discoverError && !loading) {
-      return (
-        <Shell campaignId={campaignId} campaignName={campaignName} router={router}>
+    // Explicit phase ordering (each checked before the next):
+    //   1. actively running / refreshing → loading
+    //   2. 409 notice → another run owns discovery; soft, no re-fire
+    //   3. hard error → retry
+    //   4. ran but kept nothing → empty (no re-fire)
+    //   5. otherwise → pre-fire frame; the auto-fire effect is about to run
+    const body = (() => {
+      if (discovering || isPending) {
+        return <DiscoveringState ringCount={universe.rings.length} />;
+      }
+      if (discoverNotice) {
+        return (
+          <CenteredState
+            title="Discovery is already running"
+            body={discoverNotice}
+            action={{ label: "Refresh", onClick: () => router.refresh() }}
+          />
+        );
+      }
+      if (discoverError) {
+        return (
           <CenteredState
             title="Discovery didn't complete"
             body={discoverError}
             action={{ label: "Try again", onClick: runDiscovery }}
           />
-        </Shell>
-      );
-    }
-    if (discoveryRan && !loading) {
-      return (
-        <Shell campaignId={campaignId} campaignName={campaignName} router={router}>
+        );
+      }
+      if (discoveryRan) {
+        return (
           <CenteredState
             title="No shows cleared the bar for these rings"
             body="Discovery ran but found no shows at medium conviction or above for your confirmed rings. Refine the interpretation to widen the rings, or re-run discovery."
             action={{ label: "Re-run discovery", onClick: runDiscovery }}
           />
-        </Shell>
-      );
-    }
+        );
+      }
+      return <DiscoveringState ringCount={universe.rings.length} />;
+    })();
     return (
       <Shell campaignId={campaignId} campaignName={campaignName} router={router}>
-        <DiscoveringState ringCount={universe.rings.length} />
+        {body}
       </Shell>
     );
   }

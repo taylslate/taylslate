@@ -308,6 +308,25 @@ describe("ConvictionDiscoveryView — not-yet-scored states", () => {
       expect.objectContaining({ method: "POST" })
     );
   });
+
+  it("shows a soft notice (no re-fire) when the server returns 409 (another tab running)", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({ code: "discovery_in_progress" }),
+    })) as unknown as typeof fetch;
+
+    renderView({
+      universe: universe([{ ring: ring(), shows: [] }], false),
+      discoveryRan: false,
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText(/may be open in another tab/i)).toBeInTheDocument()
+    );
+    // The duplicate spend is prevented server-side; the client must not re-fire.
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ============================================================
