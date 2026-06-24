@@ -96,6 +96,15 @@ describe("deriveSpotCost — podcast CPM path", () => {
     expect(cost.costBasis).toBeNull();
     expect(cost.isEstimate).toBe(false);
   });
+
+  it("treats a non-finite audience_size like ≤ 0 → needsQuote (never NaN cents)", () => {
+    const show = makeShow({ audience_size: Number.NaN });
+    const cost = deriveSpotCost(show);
+    expect(cost.needsQuote).toBe(true);
+    expect(cost.perSpotCents).toBeNull(); // not NaN
+    expect(cost.threeSpotCents).toBeNull();
+    expect(Number.isNaN(cost.perSpotCents as number)).toBe(false);
+  });
 });
 
 describe("deriveSpotCost — YouTube / flat-fee path", () => {

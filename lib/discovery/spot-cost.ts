@@ -121,7 +121,15 @@ export function deriveSpotCost(
   // pre/post are distinct purchasable units, never collapsed into a
   // midroll ?? preroll ?? postroll chain.
   const cpm = show.rate_card[`${placement}_cpm`];
-  if (show.audience_size <= 0 || cpm == null || cpm <= 0) {
+  // A non-finite audience_size (NaN/Infinity) is treated exactly like ≤ 0 →
+  // needsQuote, so a malformed reach value can never yield NaN cents and break
+  // the "never returns a non-cost" contract.
+  if (
+    !Number.isFinite(show.audience_size) ||
+    show.audience_size <= 0 ||
+    cpm == null ||
+    cpm <= 0
+  ) {
     return { ...NEEDS_QUOTE };
   }
 
