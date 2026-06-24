@@ -275,7 +275,6 @@ export default function ConvictionDiscoveryView({
   // ---- Scored universe ----
   return (
     <ScoredUniverse
-      campaignId={campaignId}
       campaignName={campaignName}
       budgetTotal={budgetTotal}
       universe={universe}
@@ -291,7 +290,6 @@ export default function ConvictionDiscoveryView({
 // ============================================================
 
 function ScoredUniverse({
-  campaignId,
   campaignName,
   budgetTotal,
   universe,
@@ -299,7 +297,6 @@ function ScoredUniverse({
   rerunning,
   router,
 }: {
-  campaignId: string;
   campaignName: string;
   budgetTotal: number | null;
   universe: ConvictionUniverse;
@@ -480,17 +477,24 @@ function ScoredUniverse({
         )}
       </div>
 
-      {/* ---- Footer CTA ---- */}
+      {/* ---- Footer ---- */}
       <div className="px-8 py-4 border-t border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] flex items-center">
         <span className="text-xs text-[var(--brand-text-muted)]">
           Conviction scoring · audience fit is unmeasured at launch and shown as
           such.
         </span>
+        {/* Media plan handoff is 2C. The legacy plan page reads scored_shows /
+            selected_show_ids, which the v2 conviction path doesn't write, so it
+            would bounce the brand straight back here — render a disabled
+            affordance, not a working-looking CTA, until 2C wires the adapter. */}
         <button
-          onClick={() => router.push(`/campaigns/${campaignId}/plan`)}
-          className="ml-auto px-6 py-2.5 rounded-xl bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold transition-all"
+          type="button"
+          disabled
+          title="Media plan handoff ships next (2C)"
+          aria-label="Media plan — coming next"
+          className="ml-auto px-6 py-2.5 rounded-xl bg-[var(--brand-border)]/40 text-[var(--brand-text-muted)] text-sm font-semibold cursor-not-allowed select-none"
         >
-          Build media plan
+          Media plan — next
         </button>
       </div>
     </div>

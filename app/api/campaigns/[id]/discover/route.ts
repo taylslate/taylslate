@@ -38,7 +38,8 @@ export async function POST(_request: NextRequest, context: RouteContext) {
   // calls are never double-spent. The view's in-memory latch only guards a
   // single mount; this is the cross-mount guard. Fail-open: a lock-infra error
   // degrades to "acquired", never a blocked discovery.
-  if ((await claimDiscovery(id)) === "exists") {
+  const claim = await claimDiscovery(id);
+  if (claim.status === "exists") {
     return NextResponse.json(
       {
         error: "Discovery is already running for this campaign.",
@@ -50,7 +51,8 @@ export async function POST(_request: NextRequest, context: RouteContext) {
 
   // Release on EVERY exit path (success, guard 400, throw 500) — discovery is
   // re-runnable, so the lock lives only for this run. A `return` inside the try
-  // still runs the finally; releaseDiscovery is fail-soft and never throws.
+  // still runs the finally; releaseDiscovery is fail-soft and never throws. The
+  // release is fenced by claim.token so a TTL-stolen successor's lock is safe.
   try {
     let result;
     try {
@@ -93,6 +95,6 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       errors: result.errors,
     });
   } finally {
-    await releaseDiscovery(id);
+    await releaseDiscovery(id, claim.token);
   }
 }

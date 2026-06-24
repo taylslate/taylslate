@@ -13,12 +13,15 @@
 // Lock lifecycle (claimed -> released | stolen):
 //   claimed  — a row exists; a writer is running discovery for this campaign.
 //   released — the run finished (success OR failure) and the route deleted the
-//              row in a finally. Discovery is intentionally re-runnable, so the
+//              row in a finally, FENCED by the claim's created_at so it can only
+//              delete its own row. Discovery is intentionally re-runnable, so the
 //              lock is NOT a permanent marker (contrast interpretation_locks).
 //   stolen   — a claimed row older than DISCOVERY_LOCK_TTL_MS is a crash-orphan
 //              (the writer died without releasing); the next claim deletes and
-//              re-inserts it. The TTL is set above the worst-case run so a slow
-//              live writer is never stolen.
+//              re-inserts it. The created_at fence means that even if a slow run
+//              is wrongly stolen (a run CAN exceed the TTL — see the token doc on
+//              ClaimResult), the stolen writer's late release won't delete the
+//              successor's newer-created_at row.
 //
 // Fail-open on infrastructure errors: an unreachable/missing lock table
 // degrades to the pre-lock behavior (possible duplicate run), never a blocked
@@ -38,26 +41,61 @@ const UNIQUE_VIOLATION = "23505";
 // (the predecessor is long gone before 300s elapse).
 export const DISCOVERY_LOCK_TTL_MS = 300_000;
 
-export type ClaimResult = "acquired" | "exists";
+export type ClaimResult =
+  | {
+      status: "acquired";
+      /**
+       * The claimed row's created_at — a fencing token. releaseDiscovery deletes
+       * ONLY this exact row, so a slow predecessor whose lock was TTL-stolen
+       * cannot delete the SUCCESSOR's live lock (the successor's row carries a
+       * newer created_at). This matters because a run is not reliably shorter
+       * than the TTL: the Podscan client honors an uncapped Retry-After sleep
+       * (lib/enrichment/podscan.ts), so a rate-limited run can exceed 300s, get
+       * stolen, then finish and release. Null only on the fail-open path, where
+       * there is no row to fence and release falls back to a best-effort
+       * delete-by-campaign_id (the pre-fence behavior — acceptable degradation).
+       */
+      token: string | null;
+    }
+  | { status: "exists" };
+
+/** Insert a lock row and read back its created_at (the fence token). Returns
+ *  the token on success, or the error so the caller can branch on a unique
+ *  violation vs. an infra failure. */
+async function insertLock(
+  campaignId: string
+): Promise<{
+  token: string | null;
+  error: { code?: string; message?: string } | null;
+}> {
+  const { data, error } = await supabaseAdmin
+    .from("discovery_locks")
+    .insert({ campaign_id: campaignId })
+    .select("created_at")
+    .single();
+  return {
+    token: (data?.created_at as string | undefined) ?? null,
+    error: error ?? null,
+  };
+}
 
 /**
- * Try to claim the discovery slot for a campaign. "exists" means another
- * request (a concurrent tab / reload mid-run) already owns it; the route turns
- * that into a 409 and runs nothing. A claimed lock older than the TTL is a
+ * Try to claim the discovery slot for a campaign. `{status:"exists"}` means
+ * another request (a concurrent tab / reload mid-run) already owns it; the route
+ * turns that into a 409 and runs nothing. `{status:"acquired", token}` carries
+ * the fence token for release. A claimed lock older than the TTL is a
  * crash-orphan and is stolen.
  */
 export async function claimDiscovery(campaignId: string): Promise<ClaimResult> {
   try {
-    const { error } = await supabaseAdmin
-      .from("discovery_locks")
-      .insert({ campaign_id: campaignId });
-    if (!error) return "acquired";
-    if (error.code !== UNIQUE_VIOLATION) {
+    const first = await insertLock(campaignId);
+    if (!first.error) return { status: "acquired", token: first.token };
+    if (first.error.code !== UNIQUE_VIOLATION) {
       console.warn(
         "[discovery-lock.claimDiscovery] insert failed, failing open:",
-        error.message
+        first.error.message
       );
-      return "acquired";
+      return { status: "acquired", token: null };
     }
 
     // A lock already exists. Steal it only if it is an expired crash-orphan:
@@ -75,45 +113,52 @@ export async function claimDiscovery(campaignId: string): Promise<ClaimResult> {
         "[discovery-lock.claimDiscovery] stale-lock delete failed:",
         deleteError.message
       );
-      return "exists";
+      return { status: "exists" };
     }
     if (!count) {
       // Nothing stale to steal — a live writer still owns the lock.
-      return "exists";
+      return { status: "exists" };
     }
 
     // We removed an expired lock; re-claim. Another racer may have re-inserted
     // first, in which case we cleanly fall back to loser.
-    const { error: reclaimError } = await supabaseAdmin
-      .from("discovery_locks")
-      .insert({ campaign_id: campaignId });
-    if (!reclaimError) return "acquired";
-    if (reclaimError.code === UNIQUE_VIOLATION) return "exists";
+    const second = await insertLock(campaignId);
+    if (!second.error) return { status: "acquired", token: second.token };
+    if (second.error.code === UNIQUE_VIOLATION) return { status: "exists" };
     console.warn(
       "[discovery-lock.claimDiscovery] reclaim insert failed, failing open:",
-      reclaimError.message
+      second.error.message
     );
-    return "acquired";
+    return { status: "acquired", token: null };
   } catch (err) {
     console.warn(
       "[discovery-lock.claimDiscovery] threw, failing open:",
       err instanceof Error ? err.message : err
     );
-    return "acquired";
+    return { status: "acquired", token: null };
   }
 }
 
 /**
  * Release the discovery slot. Called in a finally on every run path (success or
- * failure) so the next "Re-run discovery" can re-claim. Fail-soft — a leaked
- * lock from a crashed process is reclaimed by the TTL steal in claimDiscovery.
+ * failure) so the next "Re-run discovery" can re-claim. Pass the token from
+ * claimDiscovery: the delete is fenced to that exact row so a late release after
+ * a TTL steal can never clobber the successor's live lock. A null token (the
+ * fail-open path) falls back to a best-effort delete-by-campaign_id. Fail-soft —
+ * a leaked lock is reclaimed by the TTL steal in claimDiscovery regardless.
  */
-export async function releaseDiscovery(campaignId: string): Promise<void> {
+export async function releaseDiscovery(
+  campaignId: string,
+  token: string | null
+): Promise<void> {
   try {
-    const { error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("discovery_locks")
       .delete()
       .eq("campaign_id", campaignId);
+    // Fence by created_at when we have it — delete only the row we claimed.
+    if (token) query = query.eq("created_at", token);
+    const { error } = await query;
     if (error) {
       console.warn(
         "[discovery-lock.releaseDiscovery] delete failed:",

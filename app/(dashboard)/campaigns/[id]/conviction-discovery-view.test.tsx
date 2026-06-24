@@ -155,6 +155,17 @@ describe("ConvictionDiscoveryView — scored universe", () => {
     expect(screen.getByText("70")).toBeInTheDocument();
   });
 
+  it("renders the media-plan handoff as a disabled affordance (2C), not a working CTA", async () => {
+    renderView({ universe: universe([{ ring: ring(), shows: [entry(score())] }]) });
+
+    const cta = screen.getByRole("button", { name: /media plan/i });
+    expect(cta).toBeDisabled();
+    // The legacy plan page would bounce a v2 campaign (no scored_shows); the CTA
+    // must not navigate there.
+    await userEvent.click(cta);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
   it("renders conviction band badges", () => {
     const u = universe([
       {

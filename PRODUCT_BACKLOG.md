@@ -149,6 +149,10 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - Acceptance criterion: never show a naked match percentage as the primary artifact. Any score must be paired with the conversion hypothesis and the dimension(s) driving it.
 - Wires `recordConvictionScore()` from Phase 1's reasoning-log
 
+**2B follow-ups (deferred from the Layer 5 build, June 2026):**
+- **Clear conviction scores on (re-)confirm.** A brand who discovers, then goes back and *refines* a ring and re-confirms, lands on the discovery view with stale `conviction_scores` still present, so `getConvictionUniverse` reports `hasScores=true` and the view does not auto-fire — the refined ring renders empty until the brand clicks "Re-run discovery." Fix: call `clearConvictionScores(pattern.id)` in the 2A confirm route (`app/api/campaigns/[id]/interpret/confirm`) so a re-confirm always re-fires fresh discovery. Small (~3 lines), correctness-only, non-corrupting today (stale rows are dropped, not shown). Codex-flagged during Layer 5 review.
+- **Media-plan handoff adapter (belongs in 2C).** The Layer 5 discovery view shows a *disabled* "Media plan — next" affordance because the legacy plan page reads `scored_shows` / `selected_show_ids`, which the v2 conviction path doesn't write. 2C must add an adapter that converts the picked conviction shows into the plan page's input (or replace the plan entry) and re-enable the CTA.
+
 ### 2C — Test portfolio + scale tier dual output (~3 days)
 - Discovery returns two distinct lists from one analysis
 - Test portfolio: 3-spot floor as default budget filter, fits within campaign budget
