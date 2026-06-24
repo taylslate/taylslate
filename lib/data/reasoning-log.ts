@@ -15,7 +15,9 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import type {
   BrandDecision,
   CampaignPatternRow,
+  ConvictionScoreRow,
   RingHypothesisRow,
+  Show,
 } from "@/lib/data/types";
 
 // ============================================================
@@ -731,6 +733,99 @@ export async function getCampaignReasoning(
   } catch (err) {
     console.warn(
       "[reasoning-log.getCampaignReasoning] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return empty;
+  }
+}
+
+// ============================================================
+// Wave 14 Phase 2B Layer 5 — discovery view read
+// ============================================================
+
+/** One scored show within a ring group: the conviction_scores row plus the
+ *  embedded shows row (null only if the FK target vanished — ON DELETE CASCADE
+ *  makes this effectively unreachable, but the view guards for it anyway). */
+export interface ConvictionUniverseShow {
+  score: ConvictionScoreRow;
+  show: Show | null;
+}
+
+/** One ring and the shows that scored medium+ against it, composite desc. */
+export interface ConvictionUniverseGroup {
+  ring: RingHypothesisRow;
+  shows: ConvictionUniverseShow[];
+}
+
+/** The full scored universe for a campaign pattern, ready for Layer 5 to
+ *  render. `rings` is the confirmed ring order (primary first); `groups`
+ *  mirrors it. `hasScores` is the trigger gate: false means discovery has not
+ *  run yet for this pattern (confirmed rings exist, no conviction_scores), so
+ *  the view auto-fires POST /discover. */
+export interface ConvictionUniverse {
+  rings: RingHypothesisRow[];
+  groups: ConvictionUniverseGroup[];
+  hasScores: boolean;
+}
+
+/**
+ * Assemble the scored universe for a campaign pattern: confirmed rings grouped
+ * with their conviction_scores rows and the embedded show. Read-only, fail-soft
+ * (returns an empty universe on any failure — the view then shows its empty /
+ * not-yet-discovered state rather than crashing).
+ *
+ * The shows row is embedded via the conviction_scores.show_id FK in one round
+ * trip (PostgREST nested select); scores are ordered composite desc by the
+ * query and bucketed into the confirmed-ring order from getConfirmedRings.
+ * Scores whose ring is not a *confirmed* ring (e.g. a ring later rejected after
+ * a re-interpret) are dropped — the view only renders rings the brand kept.
+ */
+export async function getConvictionUniverse(
+  campaignPatternId: string
+): Promise<ConvictionUniverse> {
+  const empty: ConvictionUniverse = { rings: [], groups: [], hasScores: false };
+  try {
+    const rings = await getConfirmedRings(campaignPatternId);
+
+    const { data, error } = await supabaseAdmin
+      .from("conviction_scores")
+      .select("*, shows(*)")
+      .eq("campaign_pattern_id", campaignPatternId)
+      .order("composite_score", { ascending: false });
+    if (error) {
+      console.warn(
+        "[reasoning-log.getConvictionUniverse] read failed:",
+        error.message
+      );
+      // Rings may still be confirmed even if the scores read failed; return
+      // them with hasScores:false so the view can offer a (re-)discovery run.
+      return { rings, groups: [], hasScores: false };
+    }
+
+    const rows = (data ?? []) as Array<
+      ConvictionScoreRow & { shows: Show | null }
+    >;
+
+    // Bucket scores by ring id (rows arrive composite desc, so each bucket is
+    // already sorted). Split the embedded `shows` off the flat row.
+    const byRing = new Map<string, ConvictionUniverseShow[]>();
+    for (const row of rows) {
+      if (!row.ring_hypothesis_id) continue;
+      const { shows, ...score } = row;
+      const bucket = byRing.get(row.ring_hypothesis_id) ?? [];
+      bucket.push({ score: score as ConvictionScoreRow, show: shows ?? null });
+      byRing.set(row.ring_hypothesis_id, bucket);
+    }
+
+    const groups: ConvictionUniverseGroup[] = rings.map((ring) => ({
+      ring,
+      shows: byRing.get(ring.id) ?? [],
+    }));
+
+    return { rings, groups, hasScores: rows.length > 0 };
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.getConvictionUniverse] threw:",
       err instanceof Error ? err.message : err
     );
     return empty;
