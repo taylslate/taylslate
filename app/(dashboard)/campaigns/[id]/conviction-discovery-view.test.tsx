@@ -63,6 +63,14 @@ function score(over: Partial<ConvictionScoreRow> = {}): ConvictionScoreRow {
     conviction_band: "medium",
     reasoning: "Probable fit — strong topical overlap with this ring.",
     tier: null,
+    per_spot_cents: null,
+    three_spot_cents: null,
+    cpm_used_cents: null,
+    cost_basis: null,
+    cost_is_estimate: null,
+    needs_quote: null,
+    brand_saved: null,
+    brand_dismissed: null,
     ...over,
   };
 }

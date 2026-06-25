@@ -1021,6 +1021,19 @@ export interface ConvictionScoreRow {
   conviction_band: ConvictionBand | null;
   reasoning: string | null;
   tier: ConvictionTier | null;
+  // Wave 14 Phase 2C (migration 028) — per-show derived cost + tier curation.
+  // Per-show values written to ALL of a show's ring rows by the tier pass; null
+  // until tierCampaignPortfolio runs (or when persistence fails soft → the view
+  // computes them on read). All integer cents; cpm_used_cents null for flat-fee.
+  per_spot_cents: number | null;
+  three_spot_cents: number | null;
+  cpm_used_cents: number | null;
+  cost_basis: CostBasis | null;
+  cost_is_estimate: boolean | null;
+  needs_quote: boolean | null;
+  // Brand watchlist curation on the scale tier (write actions are Layer 4).
+  brand_saved: boolean | null;
+  brand_dismissed: boolean | null;
 }
 
 export interface AnalogMatchRow {

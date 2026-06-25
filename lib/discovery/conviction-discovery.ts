@@ -55,6 +55,10 @@ import {
   type RecordConvictionScoreInput,
 } from "@/lib/data/reasoning-log";
 import { logEvent, type LogEventInput } from "@/lib/data/events";
+import {
+  tierCampaignPortfolio,
+  type TierPortfolioResult,
+} from "./tier-portfolio";
 
 // ---- Public result types ----
 
@@ -110,6 +114,11 @@ export interface ConvictionDiscoveryDeps {
     pattern: CampaignPatternRow
   ) => Promise<void>;
   emit: (input: LogEventInput) => Promise<unknown>;
+  /** Phase 2C Layer 3: after 2B scores persist, derive cost + classify the
+   *  test/scale/dropped split and persist tier+cost onto conviction_scores.
+   *  Standalone + fail-soft (collects its own errors, never throws); injected
+   *  so the orchestrator stays testable without a live DB. */
+  tierPortfolio: (campaignPatternId: string) => Promise<TierPortfolioResult>;
 }
 
 const defaultDeps: ConvictionDiscoveryDeps = {
@@ -122,6 +131,7 @@ const defaultDeps: ConvictionDiscoveryDeps = {
   recordScore: recordConvictionScore,
   generateReasoning: generateGroupReasoning,
   emit: logEvent,
+  tierPortfolio: (patternId) => tierCampaignPortfolio(patternId),
 };
 
 // ---- Band helpers ----
@@ -354,6 +364,20 @@ export async function runConvictionDiscovery(
       },
     })
   );
+
+  // Phase 2C Layer 3: tier the universe we just scored — derive per-show cost
+  // (Layer 1), classify test/scale/dropped (Layer 2), persist tier+cost onto
+  // conviction_scores, emit portfolio.tiered. Skipped when nothing scored (no
+  // rows to tier). Fail-soft on TWO levels: the pass collects its own errors
+  // and never throws, and callSafe guards an unexpected throw — so a tiering
+  // failure surfaces a note but never blocks the scored universe from
+  // rendering (the view falls back to compute-on-read).
+  if (scoredCount > 0) {
+    const tiering = await callSafe("tierPortfolio", () =>
+      deps.tierPortfolio(pattern.id)
+    );
+    if (tiering?.errors.length) errors.push(...tiering.errors);
+  }
 
   return {
     campaignId,

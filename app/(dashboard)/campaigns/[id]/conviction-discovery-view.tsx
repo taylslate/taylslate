@@ -47,6 +47,7 @@ import type {
   ConvictionUniverseGroup,
   ConvictionUniverseShow,
 } from "@/lib/data/reasoning-log";
+import type { TieredUniverse } from "@/lib/discovery/tiered-universe";
 
 // ---- Honest-launch flags ----
 
@@ -124,6 +125,11 @@ interface ConvictionDiscoveryViewProps {
    *  the auto-fire so a genuinely empty result does not re-fire on every load
    *  (hasScores alone can't tell "never ran" from "ran, found nothing"). */
   discoveryRan: boolean;
+  /** Phase 2C Layer 3: the test/scale/bench partitions + per-show cost the
+   *  loader computed. Plumbed here as the seam for the Layer 4 dual-output view;
+   *  intentionally unrendered today (2B grouped-by-ring rendering still owns the
+   *  UI until Layer 4 replaces it). */
+  tiered?: TieredUniverse;
 }
 
 type RingFilter = "all" | string;

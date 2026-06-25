@@ -159,6 +159,14 @@ function makeRow(overrides: Partial<ConvictionScoreRow> = {}): ConvictionScoreRo
     conviction_band: "medium",
     reasoning: null,
     tier: null,
+    per_spot_cents: null,
+    three_spot_cents: null,
+    cpm_used_cents: null,
+    cost_basis: null,
+    cost_is_estimate: null,
+    needs_quote: null,
+    brand_saved: null,
+    brand_dismissed: null,
     ...overrides,
   };
 }

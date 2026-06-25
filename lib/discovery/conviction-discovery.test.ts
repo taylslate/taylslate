@@ -136,6 +136,8 @@ interface DepsHarness {
   persistCalls: Array<Partial<Show>>;
   reasoningCalls: number;
   clearCalls: () => number;
+  /** Pattern ids passed to the Phase 2C tier pass, in call order. */
+  tierCalls: string[];
 }
 
 function makeDeps(opts: {
@@ -146,10 +148,12 @@ function makeDeps(opts: {
   persistShow?: ConvictionDiscoveryDeps["persistShow"];
   discover?: ConvictionDiscoveryDeps["discover"];
   generateReasoning?: ConvictionDiscoveryDeps["generateReasoning"];
+  tierPortfolio?: ConvictionDiscoveryDeps["tierPortfolio"];
 } = {}): DepsHarness {
   const recordCalls: RecordConvictionScoreInput[] = [];
   const events: LogEventInput[] = [];
   const persistCalls: Array<Partial<Show>> = [];
+  const tierCalls: string[] = [];
   const harness = { reasoningCalls: 0 };
   let clearCount = 0;
   let seq = 0;
@@ -195,6 +199,24 @@ function makeDeps(opts: {
       events.push(e);
       return null;
     },
+    // Phase 2C Layer 3: capture the pattern id the orchestrator hands the tier
+    // pass. Default returns a clean result; tests inject a throwing/erroring
+    // override to exercise the fail-soft guard.
+    tierPortfolio:
+      opts.tierPortfolio ??
+      (async (patternId) => {
+        tierCalls.push(patternId);
+        return {
+          campaignPatternId: patternId,
+          testCount: 0,
+          scaleCount: 0,
+          droppedCount: 0,
+          testUnderfilled: true,
+          showsClassified: 0,
+          persisted: 0,
+          errors: [],
+        };
+      }),
   };
 
   return {
@@ -202,6 +224,7 @@ function makeDeps(opts: {
     recordCalls,
     events,
     persistCalls,
+    tierCalls,
     get reasoningCalls() {
       return harness.reasoningCalls;
     },
@@ -594,5 +617,64 @@ describe("runConvictionDiscovery", () => {
     const result = await runConvictionDiscovery("camp-1", deps);
     expect(result.rings).toHaveLength(0);
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  // ---- Phase 2C Layer 3: tier-pass wiring ----
+
+  it("runs the tier pass once with the pattern id after scoring persists", async () => {
+    const { deps, tierCalls } = makeDeps({
+      discovered: [recoveryShow()],
+      rings: [makeRing()],
+    });
+    const result = await runConvictionDiscovery("camp-1", deps);
+
+    expect(result.scoredCount).toBeGreaterThan(0);
+    expect(tierCalls).toEqual(["cp-1"]); // exactly once, with pattern.id
+  });
+
+  it("skips the tier pass when nothing scored", async () => {
+    // offTopic alone never clears medium → scoredCount 0 → no rows to tier.
+    const { deps, tierCalls } = makeDeps({
+      discovered: [offTopicShow()],
+      rings: [makeRing()],
+    });
+    const result = await runConvictionDiscovery("camp-1", deps);
+
+    expect(result.scoredCount).toBe(0);
+    expect(tierCalls).toHaveLength(0);
+  });
+
+  it("fail-soft: a throwing tier pass never aborts the scored universe", async () => {
+    const { deps } = makeDeps({
+      discovered: [recoveryShow()],
+      rings: [makeRing()],
+      tierPortfolio: async () => {
+        throw new Error("tiering blew up");
+      },
+    });
+    // callSafe guards the throw — the run still returns the scored universe.
+    const result = await runConvictionDiscovery("camp-1", deps);
+    expect(result.scoredCount).toBeGreaterThan(0);
+    expect(result.rings.length).toBeGreaterThan(0);
+  });
+
+  it("surfaces tier-pass soft errors on the result without aborting", async () => {
+    const { deps } = makeDeps({
+      discovered: [recoveryShow()],
+      rings: [makeRing()],
+      tierPortfolio: async (patternId) => ({
+        campaignPatternId: patternId,
+        testCount: 0,
+        scaleCount: 0,
+        droppedCount: 0,
+        testUnderfilled: true,
+        showsClassified: 1,
+        persisted: 0,
+        errors: ["persist returned false for show x."],
+      }),
+    });
+    const result = await runConvictionDiscovery("camp-1", deps);
+    expect(result.scoredCount).toBeGreaterThan(0);
+    expect(result.errors).toContain("persist returned false for show x.");
   });
 });

@@ -807,6 +807,48 @@ export async function getConvictionScoresForPattern(
   }
 }
 
+/** A conviction_scores row with its embedded shows row (null only if the FK
+ *  target vanished). The flat per-(show, ring) shape the tier reader rolls up. */
+export type ConvictionScoreWithShow = ConvictionScoreRow & { show: Show | null };
+
+/**
+ * All conviction_scores rows for a pattern WITH the embedded show, flat (not
+ * grouped/filtered to confirmed rings like getConvictionUniverse). One round
+ * trip via the conviction_scores.show_id FK, composite desc, fail-soft ([]).
+ * The Phase 2C tiered reader (lib/discovery/tiered-universe) consumes this: it
+ * must see every row + the full Show to roll up per show and derive/read cost.
+ */
+export async function getConvictionScoresWithShowsForPattern(
+  campaignPatternId: string
+): Promise<ConvictionScoreWithShow[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("conviction_scores")
+      .select("*, shows(*)")
+      .eq("campaign_pattern_id", campaignPatternId)
+      .order("composite_score", { ascending: false });
+    if (error) {
+      console.warn(
+        "[reasoning-log.getConvictionScoresWithShowsForPattern] read failed:",
+        error.message
+      );
+      return [];
+    }
+    return ((data ?? []) as Array<ConvictionScoreRow & { shows: Show | null }>).map(
+      (row) => {
+        const { shows, ...score } = row;
+        return { ...(score as ConvictionScoreRow), show: shows ?? null };
+      }
+    );
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.getConvictionScoresWithShowsForPattern] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return [];
+  }
+}
+
 /** The campaign id + budget (in DOLLARS) behind a campaign pattern. */
 export interface CampaignContextForPattern {
   campaignId: string;

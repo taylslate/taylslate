@@ -5,6 +5,10 @@ import {
   type ConvictionUniverse,
 } from "@/lib/data/reasoning-log";
 import { listEventsForEntity } from "@/lib/data/events";
+import {
+  getTieredUniverse,
+  type TieredUniverse,
+} from "@/lib/discovery/tiered-universe";
 import { isBriefV2 } from "@/lib/data/types";
 import { notFound } from "next/navigation";
 import CampaignDetail from "./campaign-detail";
@@ -31,13 +35,18 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
   if (isBriefV2(campaign.brief)) {
     const pattern = await getLatestCampaignPatternForCampaign(id);
     let universe: ConvictionUniverse = { rings: [], groups: [], hasScores: false };
+    let tiered: TieredUniverse | undefined;
     let discoveryRan = false;
     if (pattern) {
-      const [scored, events] = await Promise.all([
+      // Phase 2C Layer 3: load the per-ring 2B universe (current rendering) AND
+      // the test/scale/bench partitions (the Layer 4 seam) in one pass.
+      const [scored, tieredScored, events] = await Promise.all([
         getConvictionUniverse(pattern.id),
+        getTieredUniverse(pattern.id),
         listEventsForEntity("campaign", id),
       ]);
       universe = scored;
+      tiered = tieredScored;
       discoveryRan = events.some((e) => e.event_type === "conviction.scored");
     }
     return (
@@ -46,6 +55,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         campaignName={campaign.name}
         budgetTotal={campaign.budget_total ?? null}
         universe={universe}
+        tiered={tiered}
         discoveryRan={discoveryRan}
       />
     );
