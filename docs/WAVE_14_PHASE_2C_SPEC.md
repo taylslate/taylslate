@@ -102,6 +102,16 @@ A pure function: `classifyTier({ compositeScore, threeSpotCents, costBasis, need
 
 **Tests (~8):** orchestrator pass tiers a full universe and persists; loader returns three partitions; scale shows carry budget delta; reasoning is read from persisted scores (no LLM call in the path); `brand_saved`/`brand_dismissed` round-trips; persistence failure → compute-on-read fallback, no crash; simulcast show resolves a single cost via medium; `needs_quote` show appears in bench with the marker.
 
+### Layer 3.5 — Confirmed-ring filter (correctness follow-up, own Codex gate)
+
+Codex flagged (Layer 4 review, HIGH): `getTieredUniverse` and `tierCampaignPortfolio` read **all** `conviction_scores` rows for a pattern, but unlike `getConvictionUniverse` they do **not** filter to confirmed rings. So if a brand rejects a ring without re-running discovery, that ring's shows can leak into the tiered output (and the test cart) until a re-run clears + re-scopes. Narrow trigger, but it's a money path — a show the brand rejected can reappear as buyable — so close it before Layer 5 stacks override-recompute on top.
+
+- **Fix lives in the Layer 3 rollup, not Layer 4.** A view-side filter would be wrong because the rollup picks the top-composite ring per show — filtering after rollup could drop a show whose top-composite ring was rejected but which still has a valid confirmed ring. Filter to confirmed rings **before** `rollupShowComposite`, so the rollup only ever considers confirmed-ring rows.
+- Mirror exactly how `getConvictionUniverse` determines confirmed rings (same source of truth — do not invent a second definition).
+- Apply in both `tierCampaignPortfolio` (the persist pass) and `getTieredUniverse` (the read path), so persisted tiers and compute-on-read agree.
+- **Tests (~3):** a show whose only ring is rejected → absent from the tiered universe; a show with one rejected + one confirmed ring → present, rolled up from the confirmed ring only; persist pass and read path agree on the same campaign.
+- **Codex gate:** correctness/money path → `/codex:rescue` (manual fallback + note if it hangs).
+
 ### Layer 4 — Dual-output discovery view + media-plan CTA wiring (~1 day)
 
 Extend `/campaigns/[id]` (do not fork it):
@@ -121,6 +131,7 @@ Extend `/campaigns/[id]` (do not fork it):
 - **Placement override** (`preroll` / `midroll` / `postroll`, default `midroll`): campaign-level default plus per-show. Re-prices against the chosen placement's CPM and re-runs classification — a show unaffordable at mid-roll may land in test at post-roll. The selected placement travels with the show into the media-plan handoff (placement is already a Wave 7 line-item field).
 - **Per-show CPM/cost edit** (inline): editing the estimated CPM recomputes that show's cost and re-runs its classification. Also closes the "CPM editable downstream but not visibly editable" polish item at the discovery layer.
 - Each override fires a recompute + rewrite of `tier`/cost on `conviction_scores`, and a domain event.
+- **Request-scope footgun (from Layer 3):** `tierCampaignPortfolio`'s default `loadShowsByIds` uses the cookie-based server Supabase client, so it only works inside a request scope (fine for the `/discover` route). Layer 5 re-runs the pass on overrides — **do it within a request scope or inject admin deps**, or the show load silently returns nothing and the recompute tiers an empty universe.
 
 **Tests (~7):** spot-count change recomputes + reshuffles + rewrites persistence; placement change re-prices against the right CPM and can move a show across tiers; per-show CPM edit recomputes that show's tier only; override on a scale show can move it to test; recompute is idempotent (same inputs → same tiers); override fires the domain event; reset-to-default restores derived costs at mid-roll.
 
