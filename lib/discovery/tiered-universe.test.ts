@@ -11,11 +11,16 @@ import {
   type TieredUniverseDeps,
 } from "./tiered-universe";
 import { dollarsToCents } from "./spot-cost";
-import { THREE_SPOT_THRESHOLD } from "./tier-portfolio";
+import {
+  THREE_SPOT_THRESHOLD,
+  tierCampaignPortfolio,
+  type TierPortfolioDeps,
+} from "./tier-portfolio";
 import type {
   ConvictionScoreRow,
   ConvictionTier,
   CostBasis,
+  RingHypothesisRow,
   Show,
 } from "@/lib/data/types";
 import type { ConvictionScoreWithShow } from "@/lib/data/reasoning-log";
@@ -72,10 +77,22 @@ function makeRow(
 
 function makeDeps(
   rows: ConvictionScoreWithShow[],
-  budgetDollars: number | null = BUDGET_DOLLARS
+  budgetDollars: number | null = BUDGET_DOLLARS,
+  /** Confirmed ring ids (Layer 3.5). Defaults to every distinct ring present in
+   *  the rows, so the filter is a no-op unless a test narrows it deliberately. */
+  confirmedRingIds?: string[]
 ): TieredUniverseDeps {
+  const confirmed =
+    confirmedRingIds ??
+    [
+      ...new Set(
+        rows.map((r) => r.ring_hypothesis_id).filter((id): id is string => !!id)
+      ),
+    ];
   return {
     loadScoresWithShows: async () => rows,
+    loadConfirmedRings: async () =>
+      confirmed.map((id) => ({ id }) as RingHypothesisRow),
     loadCampaignCtx: async () =>
       budgetDollars == null
         ? null
@@ -266,5 +283,82 @@ describe("getTieredUniverse — per-show rollup across rings", () => {
     expect(all[0].composite).toBe(88);
     expect(all[0].ringHypothesisId).toBe("ring-b");
     expect(all[0].reasoning).toBe("winning ring");
+  });
+});
+
+describe("getTieredUniverse — confirmed-ring filter (Layer 3.5)", () => {
+  it("a show whose only ring was rejected is absent from the whole universe", async () => {
+    const rows = [
+      makeRow({ show_id: "keep", ring_hypothesis_id: "ring-ok", show: makeShow({ id: "keep" }) }),
+      makeRow({ show_id: "gone", ring_hypothesis_id: "ring-rejected", show: makeShow({ id: "gone" }) }),
+    ];
+    const u = await getTieredUniverse(PATTERN, makeDeps(rows, BUDGET_DOLLARS, ["ring-ok"]));
+
+    const allIds = [...u.test, ...u.scale, ...u.bench].map((s) => s.showId);
+    expect(allIds).toEqual(["keep"]);
+    expect(allIds).not.toContain("gone");
+  });
+
+  it("a rejected+confirmed show is present, rolled up from the confirmed ring only", async () => {
+    // The rejected ring has the HIGHER composite — a pre-fix rollup would have
+    // surfaced it. After the filter the confirmed ring governs the entry.
+    const rows = [
+      makeRow({
+        ring_hypothesis_id: "ring-rejected",
+        composite_score: 88,
+        conviction_band: "high",
+        reasoning: "rejected-ring prose",
+      }),
+      makeRow({
+        ring_hypothesis_id: "ring-ok",
+        composite_score: 70,
+        conviction_band: "medium",
+        reasoning: "confirmed-ring prose",
+      }),
+    ];
+    const u = await getTieredUniverse(PATTERN, makeDeps(rows, BUDGET_DOLLARS, ["ring-ok"]));
+
+    const all = [...u.test, ...u.scale, ...u.bench];
+    expect(all).toHaveLength(1);
+    expect(all[0].composite).toBe(70);
+    expect(all[0].ringHypothesisId).toBe("ring-ok");
+    expect(all[0].band).toBe("medium");
+    expect(all[0].reasoning).toBe("confirmed-ring prose");
+  });
+
+  it("persist pass and read path agree on the surviving show set for one campaign", async () => {
+    // show-A + show-C on the confirmed ring; show-B only on a rejected ring.
+    const rows = [
+      makeRow({ show_id: "show-A", ring_hypothesis_id: "ring-ok", show: makeShow({ id: "show-A" }) }),
+      makeRow({ show_id: "show-B", ring_hypothesis_id: "ring-rejected", show: makeShow({ id: "show-B" }) }),
+      makeRow({ show_id: "show-C", ring_hypothesis_id: "ring-ok", show: makeShow({ id: "show-C" }) }),
+    ];
+    const confirmed = ["ring-ok"];
+    const showById = new Map(rows.map((r) => [r.show_id as string, r.show as Show]));
+
+    // Read path.
+    const u = await getTieredUniverse(PATTERN, makeDeps(rows, BUDGET_DOLLARS, confirmed));
+    const readIds = new Set([...u.test, ...u.scale, ...u.bench].map((s) => s.showId));
+
+    // Persist path — same rows, same confirmed-ring set.
+    const persistedIds: string[] = [];
+    const portfolioDeps: TierPortfolioDeps = {
+      loadScores: async () => rows,
+      loadConfirmedRings: async () =>
+        confirmed.map((id) => ({ id }) as RingHypothesisRow),
+      loadCampaignCtx: async () => ({ campaignId: "camp-1", budgetTotalDollars: BUDGET_DOLLARS }),
+      loadShowsByIds: async (ids) =>
+        new Map(ids.filter((id) => showById.has(id)).map((id) => [id, showById.get(id)!])),
+      persist: async (input) => {
+        persistedIds.push(input.showId);
+        return true;
+      },
+      emit: async () => null,
+    };
+    await tierCampaignPortfolio(PATTERN, portfolioDeps);
+
+    expect(readIds).toEqual(new Set(["show-A", "show-C"]));
+    expect(new Set(persistedIds)).toEqual(readIds);
+    expect(readIds.has("show-B")).toBe(false);
   });
 });

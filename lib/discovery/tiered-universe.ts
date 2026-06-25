@@ -25,16 +25,19 @@ import type {
   ConvictionBand,
   ConvictionTier,
   CostBasis,
+  RingHypothesisRow,
   Show,
 } from "@/lib/data/types";
 import {
   getConvictionScoresWithShowsForPattern,
   getCampaignContextForPattern,
+  getConfirmedRings,
   type ConvictionScoreWithShow,
   type CampaignContextForPattern,
 } from "@/lib/data/reasoning-log";
 import {
   classifyTier,
+  filterToConfirmedRings,
   rollupShowComposite,
   THREE_SPOT_THRESHOLD,
   MIN_TEST_SHOWS,
@@ -87,6 +90,12 @@ export interface TieredUniverseDeps {
   loadScoresWithShows: (
     campaignPatternId: string
   ) => Promise<ConvictionScoreWithShow[]>;
+  /** Layer 3.5: confirmed rings (getConfirmedRings) — the same source of truth
+   *  getConvictionUniverse uses to drop rejected-ring rows before rollup, so a
+   *  rejected show can't leak into the tiered output / test cart. */
+  loadConfirmedRings: (
+    campaignPatternId: string
+  ) => Promise<RingHypothesisRow[]>;
   loadCampaignCtx: (
     campaignPatternId: string
   ) => Promise<CampaignContextForPattern | null>;
@@ -94,6 +103,7 @@ export interface TieredUniverseDeps {
 
 const defaultDeps: TieredUniverseDeps = {
   loadScoresWithShows: getConvictionScoresWithShowsForPattern,
+  loadConfirmedRings: getConfirmedRings,
   loadCampaignCtx: getCampaignContextForPattern,
 };
 
@@ -141,10 +151,23 @@ export async function getTieredUniverse(
   // (rounding up could make the displayed ceiling ≥ a scale row's cost).
   const ceilingCents = Math.floor(THREE_SPOT_THRESHOLD * testBudgetCents);
 
+  // Layer 3.5: drop rows for rings the brand did not keep BEFORE rollup, so a
+  // ring rejected without re-running discovery can't leak its shows into the
+  // tiered output / test cart. Same confirmed-ring source of truth as
+  // getConvictionUniverse (getConfirmedRings). Guarded → empty set on failure.
+  let confirmedRingIds = new Set<string>();
+  try {
+    const confirmedRings = await deps.loadConfirmedRings(campaignPatternId);
+    confirmedRingIds = new Set(confirmedRings.map((r) => r.id));
+  } catch {
+    confirmedRingIds = new Set<string>();
+  }
+  const confirmedRows = filterToConfirmedRings(rows, confirmedRingIds);
+
   // First non-null embedded show per show id (all of a show's ring rows embed
   // the same show; guard the rare null).
   const showById = new Map<string, Show | null>();
-  for (const row of rows) {
+  for (const row of confirmedRows) {
     if (!row.show_id) continue;
     if (!showById.has(row.show_id) || (showById.get(row.show_id) == null && row.show)) {
       showById.set(row.show_id, row.show ?? null);
@@ -152,7 +175,7 @@ export async function getTieredUniverse(
   }
 
   // Collapse per-(show, ring) → one entry per show at its highest composite.
-  const rollup = rollupShowComposite(rows);
+  const rollup = rollupShowComposite(confirmedRows);
 
   const test: TieredShow[] = [];
   const scale: TieredShow[] = [];
