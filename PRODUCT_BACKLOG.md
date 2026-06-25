@@ -153,13 +153,19 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - **Clear conviction scores on (re-)confirm.** A brand who discovers, then goes back and *refines* a ring and re-confirms, lands on the discovery view with stale `conviction_scores` still present, so `getConvictionUniverse` reports `hasScores=true` and the view does not auto-fire — the refined ring renders empty until the brand clicks "Re-run discovery." Fix: call `clearConvictionScores(pattern.id)` in the 2A confirm route (`app/api/campaigns/[id]/interpret/confirm`) so a re-confirm always re-fires fresh discovery. Small (~3 lines), correctness-only, non-corrupting today (stale rows are dropped, not shown). Codex-flagged during Layer 5 review.
 - **Media-plan handoff adapter (belongs in 2C).** The Layer 5 discovery view shows a *disabled* "Media plan — next" affordance because the legacy plan page reads `scored_shows` / `selected_show_ids`, which the v2 conviction path doesn't write. 2C must add an adapter that converts the picked conviction shows into the plan page's input (or replace the plan entry) and re-enable the CTA.
 
-### 2C — Test portfolio + scale tier dual output (~3 days)
-- Discovery returns two distinct lists from one analysis
-- Test portfolio: 3-spot floor as default budget filter, fits within campaign budget
-- Scale tier: high-conviction shows that exceed test budget, with "deferred — fits future budget" framing
-- Per-show 3-spot total cost displayed
-- Brand picks from test list; scale tier saved as watch list
-- Acceptance criterion: output reads like a diagnostic test plan, not a shopping cart. The brand should understand which audience rings are being sampled and what a successful test would teach.
+### 2C — Test portfolio + scale tier dual output (~3 days) — SHIPPED
+- ~~Two distinct lists from one analysis (test / scale / bench)~~ — done
+- ~~3-spot floor as default budget filter; scale tier "deferred" framing; per-show 3-spot cost~~ — done
+- ~~Brand picks from test list; scale saved as watchlist; CTA → Wave 7 plan handoff~~ — done
+- ~~Rejected-ring filter (3.5): confirmed-ring filter before rollup, both persist + read paths~~ — done
+- Layers 1/1b/2/3/3.5/4 shipped; migration 028 applied. Layer 5 (overrides) remaining — optional.
+
+#### 2C deferred follow-ups (post-Layer-4, non-blocking)
+- **flat_fee meter-vs-plan** — budget meter excludes flat_fee (untrusted YouTube estimate, per 2C spec) but the media plan prices it. Moot at launch (podcast-only discovery → ~no flat_fee shows). Resolve when YouTube discovery/onboarding ships. **Scope:** Wave 7 / 2D.
+- **scale-watchlist tier validation** — save/dismiss endpoint doesn't validate the show is actually in the scale tier; zero-row writes undetected. Low harm (brand's own campaign, fail-soft). **Effort:** ~1 hour.
+- **plan-handoff non-atomic double-write** — writes `scored_shows` + `selected_show_ids` separately; degrades safely (plan page redirects back if selections missing). **Effort:** ~1 hour.
+- **Q5 stale-tier invariant note** — confirmed-ring stale-tier safety holds only because every persisted row has composite ≥ MEDIUM_FLOOR (the sole ring-dependent input to `classifyTier`). If a future change ever persists below-floor rows, reopen Codex Q5 (add the defensive confirmed-only recompute). **Trigger to watch, not a task.**
+- **Layer 5 request-scope footgun** — `tierCampaignPortfolio`'s default `loadShowsByIds` uses the cookie server client (request-scope only). Layer 5 override re-runs must run in a request scope or inject admin deps, or the show load returns empty. **Build note for Layer 5.**
 
 ### 2D — Founder annotations + show brand history + promo code capture (~2 days)
 - Founder annotation UI: capture "why this show is right" reasoning that metadata can't infer (Wires `recordFounderAnnotation()`)
