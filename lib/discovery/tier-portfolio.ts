@@ -29,6 +29,7 @@ import type {
   ConvictionScoreRow,
   ConvictionTier,
   CostBasis,
+  RingHypothesisRow,
   Show,
 } from "@/lib/data/types";
 import {
@@ -40,6 +41,7 @@ import {
 import { BAND_MEDIUM_COMPOSITE } from "@/lib/scoring/conviction";
 import {
   getCampaignContextForPattern,
+  getConfirmedRings,
   getConvictionScoresForPattern,
   updateConvictionTierCost,
   type CampaignContextForPattern,
@@ -148,10 +150,45 @@ export function rollupShowComposite(
   return byShow;
 }
 
+// ---- Confirmed-ring filter (Layer 3.5) ----
+
+/**
+ * Keep only the conviction_scores rows whose ring the brand confirmed — the
+ * SAME source of truth getConvictionUniverse uses (getConfirmedRings →
+ * brand_decision IN ('confirmed','added_by_brand')). Rows for a rejected /
+ * refined / pending ring are dropped BEFORE rollupShowComposite, so a ring the
+ * brand rejected WITHOUT re-running discovery cannot leak its shows into the
+ * tiered output or the test cart (a re-run clears + rescopes; this guards the
+ * no-re-run window).
+ *
+ * MUST run before the rollup, never after: rollupShowComposite keeps each show's
+ * highest-composite ring, so a post-rollup filter would wrongly drop a show
+ * whose top-composite ring was rejected but which still has a valid confirmed
+ * ring. Filtering first lets that show survive, rolled up from its confirmed
+ * ring only.
+ *
+ * A null ring_hypothesis_id can't be a confirmed ring, so it's dropped — mirrors
+ * getConvictionUniverse, which skips null-ring rows.
+ */
+export function filterToConfirmedRings<
+  T extends Pick<ConvictionScoreRow, "ring_hypothesis_id">
+>(rows: T[], confirmedRingIds: ReadonlySet<string>): T[] {
+  return rows.filter(
+    (row) =>
+      row.ring_hypothesis_id != null &&
+      confirmedRingIds.has(row.ring_hypothesis_id)
+  );
+}
+
 // ---- Campaign-level pass (standalone, fail-soft, dep-injected) ----
 
 export interface TierPortfolioDeps {
   loadScores: (campaignPatternId: string) => Promise<ConvictionScoreRow[]>;
+  /** Layer 3.5: confirmed rings (getConfirmedRings) — the same source of truth
+   *  getConvictionUniverse uses to drop rejected-ring rows before rollup. */
+  loadConfirmedRings: (
+    campaignPatternId: string
+  ) => Promise<RingHypothesisRow[]>;
   loadCampaignCtx: (
     campaignPatternId: string
   ) => Promise<CampaignContextForPattern | null>;
@@ -162,6 +199,7 @@ export interface TierPortfolioDeps {
 
 const defaultDeps: TierPortfolioDeps = {
   loadScores: getConvictionScoresForPattern,
+  loadConfirmedRings: getConfirmedRings,
   loadCampaignCtx: getCampaignContextForPattern,
   loadShowsByIds: async (ids) => {
     const shows = await getShowsByIds(ids);
@@ -253,7 +291,20 @@ export async function tierCampaignPortfolio(
     );
   }
 
-  const rollup = rollupShowComposite(rows);
+  // Layer 3.5: drop rows for rings the brand did not keep BEFORE rolling up, so
+  // a rejected ring's shows can't get classified/persisted into test or scale.
+  // Same confirmed-ring source of truth as getConvictionUniverse (getConfirmedRings).
+  let confirmedRingIds = new Set<string>();
+  try {
+    const confirmedRings = await deps.loadConfirmedRings(campaignPatternId);
+    confirmedRingIds = new Set(confirmedRings.map((r) => r.id));
+  } catch (err) {
+    result.errors.push(`loadConfirmedRings failed: ${msg(err)}`);
+  }
+
+  const rollup = rollupShowComposite(
+    filterToConfirmedRings(rows, confirmedRingIds)
+  );
   const showIds = [...rollup.keys()];
 
   let showsById = new Map<string, Show>();

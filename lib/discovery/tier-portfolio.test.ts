@@ -6,7 +6,11 @@ import { describe, it, expect, vi } from "vitest";
 // the import doesn't require env. Matches conviction-discovery.test.ts.
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 
-import type { ConvictionScoreRow, Show } from "@/lib/data/types";
+import type {
+  ConvictionScoreRow,
+  RingHypothesisRow,
+  Show,
+} from "@/lib/data/types";
 import { dollarsToCents } from "./spot-cost";
 import {
   classifyTier,
@@ -227,6 +231,9 @@ function makeDeps(args: {
   shows: Show[];
   budgetTotalDollars?: number;
   campaignId?: string | null;
+  /** Confirmed ring ids (Layer 3.5). Defaults to every distinct ring present in
+   *  the rows, so the filter is a no-op unless a test narrows it deliberately. */
+  confirmedRingIds?: string[];
 }): {
   deps: TierPortfolioDeps;
   persistCalls: UpdateConvictionTierCostInput[];
@@ -235,8 +242,19 @@ function makeDeps(args: {
   const persistCalls: UpdateConvictionTierCostInput[] = [];
   const emitted: { eventType: string; entityId: string }[] = [];
   const showMap = new Map(args.shows.map((s) => [s.id, s]));
+  const confirmedRingIds =
+    args.confirmedRingIds ??
+    [
+      ...new Set(
+        args.rows
+          .map((r) => r.ring_hypothesis_id)
+          .filter((id): id is string => !!id)
+      ),
+    ];
   const deps: TierPortfolioDeps = {
     loadScores: async () => args.rows,
+    loadConfirmedRings: async () =>
+      confirmedRingIds.map((id) => ({ id }) as RingHypothesisRow),
     loadCampaignCtx: async () =>
       args.campaignId === null
         ? null
@@ -322,5 +340,57 @@ describe("tierCampaignPortfolio — campaign-level pass", () => {
       eventType: "portfolio.tiered",
       entityId: "campaign-1",
     });
+  });
+});
+
+describe("tierCampaignPortfolio — confirmed-ring filter (Layer 3.5)", () => {
+  it("drops a rejected-ring-only show, keeps confirmed-ring shows", async () => {
+    // show-A scored on a confirmed ring; show-B ONLY on a ring the brand later
+    // rejected. Both would be affordable test shows — but show-B must not be
+    // classified or persisted (its only ring is gone).
+    const rows = [
+      makeRow({ show_id: "show-A", ring_hypothesis_id: "ring-confirmed", composite_score: 70 }),
+      makeRow({ show_id: "show-B", ring_hypothesis_id: "ring-rejected", composite_score: 90 }),
+    ];
+    const shows = [
+      makeShow({ id: "show-A", audience_size: 10_000 }),
+      makeShow({ id: "show-B", audience_size: 10_000 }),
+    ];
+    const { deps, persistCalls } = makeDeps({
+      rows,
+      shows,
+      confirmedRingIds: ["ring-confirmed"],
+    });
+    const result = await tierCampaignPortfolio("pattern-1", deps);
+
+    expect(result.showsClassified).toBe(1);
+    expect(result.testCount).toBe(1);
+    expect(persistCalls.map((c) => c.showId)).toEqual(["show-A"]);
+    expect(persistCalls.find((c) => c.showId === "show-B")).toBeUndefined();
+  });
+
+  it("rolls a multi-ring show up from the CONFIRMED ring only (not the higher rejected ring)", async () => {
+    // One show on two rings: a rejected ring with the higher composite (88 →
+    // would be test) and the confirmed ring with a sub-floor composite (40 →
+    // dropped). Filtering BEFORE rollup means the confirmed ring governs, so the
+    // show is classified 'dropped'. The pre-fix rollup would have picked 88.
+    const rows = [
+      makeRow({ show_id: "show-A", ring_hypothesis_id: "ring-rejected", composite_score: 88 }),
+      makeRow({ show_id: "show-A", ring_hypothesis_id: "ring-confirmed", composite_score: 40 }),
+    ];
+    const shows = [makeShow({ id: "show-A", audience_size: 10_000 })];
+    const { deps, persistCalls } = makeDeps({
+      rows,
+      shows,
+      confirmedRingIds: ["ring-confirmed"],
+    });
+    const result = await tierCampaignPortfolio("pattern-1", deps);
+
+    expect(result.showsClassified).toBe(1);
+    expect(result.testCount).toBe(0);
+    expect(result.droppedCount).toBe(1);
+    expect(persistCalls).toHaveLength(1);
+    expect(persistCalls[0].showId).toBe("show-A");
+    expect(persistCalls[0].tier).toBe("dropped");
   });
 });
