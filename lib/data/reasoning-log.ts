@@ -957,6 +957,57 @@ export async function updateConvictionTierCost(
   }
 }
 
+export interface UpdateScaleShowCurationInput {
+  campaignPatternId: string;
+  showId: string;
+  /** Set the watchlist "saved" flag (Layer 4 scale tier). Omit to leave as-is. */
+  brandSaved?: boolean;
+  /** Set the watchlist "dismissed" flag. Omit to leave as-is. */
+  brandDismissed?: boolean;
+}
+
+/**
+ * Write the brand's scale-tier watchlist curation (brand_saved / brand_dismissed)
+ * onto EVERY conviction_scores row for that (pattern, show) — the table is
+ * per-(show, ring) but curation is per-show. Only the provided flags are written
+ * (a partial UPDATE), so saving doesn't clobber a prior dismiss and vice-versa.
+ *
+ * Fail-soft like the rest of this module: returns false on failure (incl. an
+ * empty patch or pre-028 columns), never throws. Columns are added by migration
+ * 028; before it runs the UPDATE errors and returns false (swallowed).
+ */
+export async function updateScaleShowCuration(
+  input: UpdateScaleShowCurationInput
+): Promise<boolean> {
+  const patch: { brand_saved?: boolean; brand_dismissed?: boolean } = {};
+  if (input.brandSaved !== undefined) patch.brand_saved = input.brandSaved;
+  if (input.brandDismissed !== undefined)
+    patch.brand_dismissed = input.brandDismissed;
+  if (Object.keys(patch).length === 0) return false;
+
+  try {
+    const { error } = await supabaseAdmin
+      .from("conviction_scores")
+      .update(patch)
+      .eq("campaign_pattern_id", input.campaignPatternId)
+      .eq("show_id", input.showId);
+    if (error) {
+      console.warn(
+        "[reasoning-log.updateScaleShowCuration] update failed:",
+        error.message
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.updateScaleShowCuration] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return false;
+  }
+}
+
 /**
  * Assemble the scored universe for a campaign pattern: confirmed rings grouped
  * with their conviction_scores rows and the embedded show. Read-only, fail-soft

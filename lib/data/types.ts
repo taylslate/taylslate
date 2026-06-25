@@ -653,7 +653,11 @@ export type DomainEventType =
   | "conviction.reasoning_generated"
   | "conviction.reasoning_failed"
   // Wave 14 Phase 2C Layer 2 — test/scale/dropped portfolio split completed
-  | "portfolio.tiered";
+  | "portfolio.tiered"
+  // Wave 14 Phase 2C Layer 4 — scale-tier watchlist curation + promotion
+  | "scale_show.saved"
+  | "scale_show.dismissed"
+  | "scale_show.promoted_to_test";
 
 export type DomainEntityType =
   | "deal"
