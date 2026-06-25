@@ -1,23 +1,30 @@
 "use client";
 
-// Wave 14 Phase 2B Layer 5 — discovery view.
+// Wave 14 Phase 2C Layer 4 — dual-output discovery view.
 //
 // Renders the conviction-scored show universe for a v2 (2A-interpreted)
-// campaign: shows grouped by confirmed ring (primary first), each card showing
-// the composite + conviction band, the three sub-scores, and the reasoning
-// prose. Filter (don't prune) by ring and by band; per-ring pagination. This is
-// the "more results, not fewer" surface — the test/scale split is 2C, not here.
+// campaign as the brand's actual shopping decision: a TEST PORTFOLIO (buy now,
+// affordable at the 3-spot floor, selectable), a SCALE TIER (deferred — wanted
+// but over the test budget; a curated watchlist), and a collapsed BENCH (Other
+// matches). Tier is the primary grouping; ring + band become filters. Selecting
+// ≥1 test show enables the "Media plan — next" CTA, which hands the selected
+// test IDs to the legacy Wave 7 plan builder via campaigns.scored_shows /
+// selected_show_ids (the plan-handoff adapter).
 //
-// TRIGGER: the discover POST runs 3-6 concurrent LLM calls (Layer 4) and is
-// slow, so it gets a real loading state. On first landing (rings confirmed, no
-// scores, discovery never ran) the view auto-fires it once; afterwards a manual
-// "Re-run discovery" affordance reruns it. The fire is guarded by a SYNCHRONOUS
-// in-flight latch (inFlightRef) — set before the await so two concurrent
-// triggers (the auto-fire effect + a manual click, or a StrictMode double
-// effect invoke) cannot both spend the 3-6 LLM calls. A useState flag would not
-// be concurrent-safe: both callers would read the stale `false` before React
-// committed the update. (Cross-mount concurrency — a hard reload mid-run in a
-// second tab — is out of this latch's reach; see the note on runDiscovery.)
+// The test/scale/bench split + per-show cost are computed upstream
+// (lib/discovery/tiered-universe, Layers 1-3) and arrive as the `tiered` prop —
+// this view READS them, never recomputes (2C is deterministic, no LLM here).
+//
+// TRIGGER: the discover POST runs 3-6 concurrent LLM calls (Layer 4 of 2B) and
+// is slow, so it gets a real loading state. On first landing (rings confirmed,
+// no scores, discovery never ran) the view auto-fires it once; afterwards a
+// manual "Re-run discovery" affordance reruns it. The fire is guarded by a
+// SYNCHRONOUS in-flight latch (inFlightRef) — set before the await so two
+// concurrent triggers (the auto-fire effect + a manual click, or a StrictMode
+// double effect invoke) cannot both spend the 3-6 LLM calls. A useState flag
+// would not be concurrent-safe: both callers would read the stale `false`
+// before React committed the update. (Cross-mount concurrency — a hard reload
+// mid-run in a second tab — is out of this latch's reach; see runDiscovery.)
 //
 // HONEST-LAUNCH RENDER (matches the Layer 2/4 reality, not the score numbers):
 //   - Audience fit is rendered "Unmeasured" GLOBALLY for 2B. Every discovered
@@ -31,6 +38,10 @@
 //   - Bands cap at `medium` by construction (audience pinned at 50 makes the
 //     high band's convergence guard effectively unreachable). Medium is the
 //     natural ceiling; the UI never frames the absence of `high` as a problem.
+//   - Costs are ESTIMATES (banded CPM × downloads, or a default flat fee) and
+//     the UI says so. Flat-fee (non-onboarded YouTube) shows a "quote to
+//     confirm" range, never a precise price, and is excluded from the budget
+//     meter's hard sum — the number is a placeholder, not a defensible quote.
 
 import {
   useState,
@@ -41,13 +52,12 @@ import {
   useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
-import type { ConvictionBand, Show } from "@/lib/data/types";
+import type { ConvictionBand, RingHypothesisRow, Show } from "@/lib/data/types";
+import type { ConvictionUniverse } from "@/lib/data/reasoning-log";
 import type {
-  ConvictionUniverse,
-  ConvictionUniverseGroup,
-  ConvictionUniverseShow,
-} from "@/lib/data/reasoning-log";
-import type { TieredUniverse } from "@/lib/discovery/tiered-universe";
+  TieredShow,
+  TieredUniverse,
+} from "@/lib/discovery/tiered-universe";
 
 // ---- Honest-launch flags ----
 
@@ -56,8 +66,18 @@ import type { TieredUniverse } from "@/lib/discovery/tiered-universe";
  *  measured flag lands, and read it per-row instead of rendering globally. */
 const AUDIENCE_MEASURED = false;
 
-/** Per-ring rows shown before the "Show more" affordance. Filter, don't prune. */
+/** Per-section rows shown before the "Show more" affordance. Filter, don't prune. */
 const PAGE_SIZE = 25;
+
+/** Fallback when a caller omits `tiered` — degrade to "nothing scored", never crash. */
+const EMPTY_TIERED: TieredUniverse = {
+  test: [],
+  scale: [],
+  bench: [],
+  testBudgetCents: 0,
+  testUnderfilled: true,
+  hasScores: false,
+};
 
 // ---- Band display ----
 
@@ -126,10 +146,14 @@ interface ConvictionDiscoveryViewProps {
    *  (hasScores alone can't tell "never ran" from "ran, found nothing"). */
   discoveryRan: boolean;
   /** Phase 2C Layer 3: the test/scale/bench partitions + per-show cost the
-   *  loader computed. Plumbed here as the seam for the Layer 4 dual-output view;
-   *  intentionally unrendered today (2B grouped-by-ring rendering still owns the
-   *  UI until Layer 4 replaces it). */
+   *  loader computed. Layer 4 renders this as the dual-output view (test
+   *  portfolio / scale tier / bench). Optional + defaulted to an empty universe
+   *  so a caller that omits it degrades to "nothing scored" rather than crashing. */
   tiered?: TieredUniverse;
+  /** Phase 2C Layer 4: the brand's persisted test-cart selection
+   *  (campaigns.selected_show_ids), so the cart reconstructs on reload instead
+   *  of resetting to empty. */
+  selectedShowIds?: string[];
 }
 
 type RingFilter = "all" | string;
@@ -143,6 +167,8 @@ export default function ConvictionDiscoveryView({
   budgetTotal,
   universe,
   discoveryRan,
+  tiered,
+  selectedShowIds,
 }: ConvictionDiscoveryViewProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -278,12 +304,15 @@ export default function ConvictionDiscoveryView({
     );
   }
 
-  // ---- Scored universe ----
+  // ---- Scored universe (Phase 2C Layer 4 — tiered dual output) ----
   return (
-    <ScoredUniverse
+    <TieredScoredUniverse
+      campaignId={campaignId}
       campaignName={campaignName}
       budgetTotal={budgetTotal}
-      universe={universe}
+      tiered={tiered ?? EMPTY_TIERED}
+      rings={universe.rings}
+      initialSelectedShowIds={selectedShowIds ?? []}
       onRerun={runDiscovery}
       rerunning={discovering || isPending}
       router={router}
@@ -292,65 +321,297 @@ export default function ConvictionDiscoveryView({
 }
 
 // ============================================================
-// Scored universe (filters + grouped list)
+// Tiered scored universe (test / scale / bench + budget meter + CTA)
 // ============================================================
 
-function ScoredUniverse({
+function TieredScoredUniverse({
+  campaignId,
   campaignName,
   budgetTotal,
-  universe,
+  tiered,
+  rings,
+  initialSelectedShowIds,
   onRerun,
   rerunning,
   router,
 }: {
+  campaignId: string;
   campaignName: string;
   budgetTotal: number | null;
-  universe: ConvictionUniverse;
+  tiered: TieredUniverse;
+  rings: RingHypothesisRow[];
+  initialSelectedShowIds: string[];
   onRerun: () => void;
   rerunning: boolean;
   router: ReturnType<typeof useRouter>;
 }) {
-  const [ringFilter, setRingFilter] = useState<RingFilter>("all");
-  const [bandFilter, setBandFilter] = useState<BandFilter>("all");
-  const [pageByRing, setPageByRing] = useState<Record<string, number>>({});
+  // Ring label by id — ring becomes a filter/sub-label now that tier is the
+  // primary grouping. A TieredShow only carries ringHypothesisId.
+  const ringLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rings) m.set(r.id, r.label);
+    return m;
+  }, [rings]);
 
-  const totalShows = useMemo(
-    () => universe.groups.reduce((n, g) => n + g.shows.length, 0),
-    [universe.groups]
+  const allShows = useMemo(
+    () => [...tiered.test, ...tiered.scale, ...tiered.bench],
+    [tiered.test, tiered.scale, tiered.bench]
   );
 
-  // Bands actually present — drives which band chips render. Medium-as-ceiling:
-  // we never render a `high` chip nobody can select, which would read as
-  // "something's missing".
-  const presentBands = useMemo(() => {
-    const seen = new Set<ConvictionBand>();
-    for (const g of universe.groups) {
-      for (const s of g.shows) {
-        if (s.score.conviction_band) seen.add(s.score.conviction_band);
+  // ---- Filters (across all sections; filter, don't prune) ----
+  const presentRings = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const s of allShows) {
+      if (s.ringHypothesisId && ringLabelById.has(s.ringHypothesisId)) {
+        seen.set(s.ringHypothesisId, ringLabelById.get(s.ringHypothesisId)!);
       }
     }
+    return [...seen.entries()].map(([id, label]) => ({ id, label }));
+  }, [allShows, ringLabelById]);
+
+  const presentBands = useMemo(() => {
+    const seen = new Set<ConvictionBand>();
+    for (const s of allShows) if (s.band) seen.add(s.band);
     return BAND_ORDER.filter((b) => seen.has(b));
-  }, [universe.groups]);
+  }, [allShows]);
 
-  const allSpeculative =
-    totalShows > 0 &&
-    presentBands.length === 1 &&
-    presentBands[0] === "speculative";
+  const [ringFilter, setRingFilter] = useState<RingFilter>("all");
+  const [bandFilter, setBandFilter] = useState<BandFilter>("all");
 
-  // Apply ring + band filters (filter, don't prune the underlying universe).
-  const visibleGroups = useMemo(() => {
-    return universe.groups
-      .filter((g) => ringFilter === "all" || g.ring.id === ringFilter)
-      .map((g) => ({
-        group: g,
-        shows:
-          bandFilter === "all"
-            ? g.shows
-            : g.shows.filter((s) => s.score.conviction_band === bandFilter),
-      }));
-  }, [universe.groups, ringFilter, bandFilter]);
+  const matchesFilter = useCallback(
+    (s: TieredShow) => {
+      if (ringFilter !== "all" && s.ringHypothesisId !== ringFilter)
+        return false;
+      if (bandFilter !== "all" && s.band !== bandFilter) return false;
+      return true;
+    },
+    [ringFilter, bandFilter]
+  );
 
-  const visibleCount = visibleGroups.reduce((n, g) => n + g.shows.length, 0);
+  // ---- Test-cart selection (durable: seeded + persisted) ----
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(initialSelectedShowIds)
+  );
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const persistSelection = useCallback(
+    (next: Set<string>) => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => {
+        fetch("/api/campaigns/selections", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaign_id: campaignId,
+            selected_show_ids: [...next],
+          }),
+        }).catch(() => {
+          /* durability best-effort; the CTA writes authoritatively on handoff */
+        });
+      }, 800);
+    },
+    [campaignId]
+  );
+
+  const toggleSelect = useCallback(
+    (showId: string) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(showId)) next.delete(showId);
+        else next.add(showId);
+        persistSelection(next);
+        return next;
+      });
+    },
+    [persistSelection]
+  );
+
+  // ---- Scale watchlist curation (saved / dismissed) ----
+  const [savedIds, setSavedIds] = useState<Set<string>>(
+    () => new Set(tiered.scale.filter((s) => s.brandSaved).map((s) => s.showId))
+  );
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(
+    () =>
+      new Set(tiered.scale.filter((s) => s.brandDismissed).map((s) => s.showId))
+  );
+  const [showDismissed, setShowDismissed] = useState(false);
+
+  // Resync local cart / watchlist state to the server truth when (and only
+  // when) the persisted values actually change — i.e. after a router.refresh()
+  // following a re-run discovery. These states seed from props once; without
+  // this they'd go stale across a refresh (the component stays mounted). The
+  // dependency is a CONTENT signature, not the array/object identity, so a local
+  // toggle (which never changes the props) does not clobber the user's in-flight
+  // selection — only a genuine server change resyncs.
+  const selectionSig = useMemo(
+    () => [...initialSelectedShowIds].sort().join("|"),
+    [initialSelectedShowIds]
+  );
+  useEffect(() => {
+    setSelectedIds(new Set(initialSelectedShowIds));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionSig]);
+
+  const curationSig = useMemo(
+    () =>
+      tiered.scale
+        .map((s) => `${s.showId}:${s.brandSaved ? 1 : 0}${s.brandDismissed ? 1 : 0}`)
+        .join("|"),
+    [tiered.scale]
+  );
+  useEffect(() => {
+    setSavedIds(new Set(tiered.scale.filter((s) => s.brandSaved).map((s) => s.showId)));
+    setDismissedIds(
+      new Set(tiered.scale.filter((s) => s.brandDismissed).map((s) => s.showId))
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curationSig]);
+
+  const callWatchlist = useCallback(
+    (showId: string, action: string) => {
+      fetch(`/api/campaigns/${campaignId}/scale-watchlist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ showId, action }),
+      }).catch(() => {
+        /* watchlist is best-effort; local state already reflects the intent */
+      });
+    },
+    [campaignId]
+  );
+
+  const toggleSave = useCallback(
+    (showId: string) => {
+      setSavedIds((prev) => {
+        const next = new Set(prev);
+        const willSave = !next.has(showId);
+        if (willSave) next.add(showId);
+        else next.delete(showId);
+        callWatchlist(showId, willSave ? "save" : "unsave");
+        if (willSave) {
+          // Saving un-dismisses (mutually exclusive states).
+          setDismissedIds((d) => {
+            const nd = new Set(d);
+            nd.delete(showId);
+            return nd;
+          });
+        }
+        return next;
+      });
+    },
+    [callWatchlist]
+  );
+
+  const setDismiss = useCallback(
+    (showId: string, dismiss: boolean) => {
+      setDismissedIds((prev) => {
+        const next = new Set(prev);
+        if (dismiss) next.add(showId);
+        else next.delete(showId);
+        return next;
+      });
+      // Dismissing a (previously promoted) scale show must also pull it from
+      // the test cart — otherwise it stays in the budget meter + CTA payload.
+      if (dismiss) {
+        setSelectedIds((prev) => {
+          if (!prev.has(showId)) return prev;
+          const next = new Set(prev);
+          next.delete(showId);
+          persistSelection(next);
+          return next;
+        });
+      }
+      callWatchlist(showId, dismiss ? "dismiss" : "restore");
+    },
+    [callWatchlist, persistSelection]
+  );
+
+  const promoteToTest = useCallback(
+    (s: TieredShow) => {
+      const cost = formatMoneyCents(s.threeSpotCents);
+      const ok = window.confirm(
+        `Move "${s.show?.name ?? "this show"}" into your test cart?\n\n` +
+          `Its 3-spot cost (${cost}) is above the per-show test ceiling, so it ` +
+          `will push your test spend up. You can fine-tune spots and placement ` +
+          `in the media plan (single-spot tests land in a later step).`
+      );
+      if (!ok) return;
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.add(s.showId);
+        persistSelection(next);
+        return next;
+      });
+      callWatchlist(s.showId, "promote");
+    },
+    [persistSelection, callWatchlist]
+  );
+
+  // ---- Budget meter (selected derived/rate_card 3-spot vs test budget) ----
+  const selectedCostCents = useMemo(() => {
+    let sum = 0;
+    for (const s of allShows) {
+      if (!selectedIds.has(s.showId)) continue;
+      // flat_fee (untrusted) is shown but never summed; null basis can't price.
+      if (s.costBasis !== "derived" && s.costBasis !== "rate_card") continue;
+      if (s.threeSpotCents != null && Number.isFinite(s.threeSpotCents)) {
+        sum += s.threeSpotCents;
+      }
+    }
+    return sum;
+  }, [allShows, selectedIds]);
+  const overBudget =
+    tiered.testBudgetCents > 0 && selectedCostCents > tiered.testBudgetCents;
+
+  // ---- Media-plan handoff CTA ----
+  const [handingOff, setHandingOff] = useState(false);
+  const [ctaError, setCtaError] = useState<string | null>(null);
+  const canBuild = selectedIds.size >= 1;
+
+  const goToPlan = useCallback(async () => {
+    if (!canBuild || handingOff) return;
+    setHandingOff(true);
+    setCtaError(null);
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/plan-handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ showIds: [...selectedIds] }),
+      });
+      if (!res.ok) {
+        setCtaError("Couldn't open the media plan. Try again.");
+        return;
+      }
+      router.push(`/campaigns/${campaignId}/plan`);
+    } catch {
+      setCtaError("Network error reaching the media plan. Try again.");
+    } finally {
+      setHandingOff(false);
+    }
+  }, [campaignId, canBuild, handingOff, selectedIds, router]);
+
+  // ---- Section lists (filtered) ----
+  const visibleTest = useMemo(
+    () => tiered.test.filter(matchesFilter),
+    [tiered.test, matchesFilter]
+  );
+  const visibleScaleAll = useMemo(
+    () => tiered.scale.filter(matchesFilter),
+    [tiered.scale, matchesFilter]
+  );
+  const visibleScale = useMemo(
+    () => visibleScaleAll.filter((s) => !dismissedIds.has(s.showId)),
+    [visibleScaleAll, dismissedIds]
+  );
+  const dismissedScale = useMemo(
+    () => visibleScaleAll.filter((s) => dismissedIds.has(s.showId)),
+    [visibleScaleAll, dismissedIds]
+  );
+  const visibleBench = useMemo(
+    () => tiered.bench.filter(matchesFilter),
+    [tiered.bench, matchesFilter]
+  );
+
+  const totalShows = allShows.length;
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)]">
@@ -371,214 +632,411 @@ function ScoredUniverse({
         </div>
         <div className="flex items-center gap-4 text-sm text-[var(--brand-text-secondary)]">
           {budgetTotal != null && (
-            <span>{formatCurrency(budgetTotal)} budget</span>
+            <span>{formatCurrency(budgetTotal)} test budget</span>
           )}
           <span className="text-[var(--brand-text-muted)]">
-            {totalShows} {totalShows === 1 ? "show" : "shows"} across{" "}
-            {universe.rings.length}{" "}
-            {universe.rings.length === 1 ? "ring" : "rings"}
+            {tiered.test.length} to test · {tiered.scale.length} to scale ·{" "}
+            {tiered.bench.length} benched
           </span>
           <span className="text-[var(--brand-text-muted)]">
-            This is everything we found — filter and pick.
+            Pick what to test now — save the rest for later.
           </span>
         </div>
       </div>
 
       {/* ---- Filters ---- */}
-      <div className="px-8 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--brand-border)] bg-[var(--brand-surface)]">
-        {/* Ring filter */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-          <span className="text-xs text-[var(--brand-text-muted)] shrink-0">
-            Ring
-          </span>
-          <FilterChip
-            active={ringFilter === "all"}
-            onClick={() => setRingFilter("all")}
-            label={`All (${universe.rings.length})`}
+      {(presentRings.length > 0 || presentBands.length > 0) && (
+        <div className="px-8 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--brand-border)] bg-[var(--brand-surface)]">
+          {presentRings.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <span className="text-xs text-[var(--brand-text-muted)] shrink-0">
+                Ring
+              </span>
+              <FilterChip
+                active={ringFilter === "all"}
+                onClick={() => setRingFilter("all")}
+                label="All"
+              />
+              {presentRings.map((r) => (
+                <FilterChip
+                  key={r.id}
+                  active={ringFilter === r.id}
+                  onClick={() =>
+                    setRingFilter(ringFilter === r.id ? "all" : r.id)
+                  }
+                  label={r.label}
+                />
+              ))}
+            </div>
+          )}
+          {presentBands.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[var(--brand-text-muted)] shrink-0">
+                Conviction
+              </span>
+              <FilterChip
+                active={bandFilter === "all"}
+                onClick={() => setBandFilter("all")}
+                label="All"
+              />
+              {presentBands.map((b) => (
+                <FilterChip
+                  key={b}
+                  active={bandFilter === b}
+                  onClick={() => setBandFilter(bandFilter === b ? "all" : b)}
+                  label={BAND_META[b].label}
+                  dot={BAND_META[b].dot}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ---- Sections ---- */}
+      <div className="flex-1 overflow-y-auto px-8 py-5 space-y-8">
+        {totalShows === 0 ? (
+          <CenteredState
+            title="No shows scored yet"
+            body="Re-run discovery to score the universe against your confirmed rings."
           />
-          {universe.groups.map((g) => (
-            <FilterChip
-              key={g.ring.id}
-              active={ringFilter === g.ring.id}
-              onClick={() =>
-                setRingFilter(ringFilter === g.ring.id ? "all" : g.ring.id)
+        ) : (
+          <>
+            {/* TEST PORTFOLIO (primary) */}
+            <TestSection
+              shows={visibleTest}
+              underfilled={tiered.testUnderfilled}
+              selectedIds={selectedIds}
+              onToggle={toggleSelect}
+              ringLabelById={ringLabelById}
+            />
+
+            {/* SCALE TIER (secondary) */}
+            <ScaleSection
+              shows={visibleScale}
+              dismissed={dismissedScale}
+              showDismissed={showDismissed}
+              onToggleShowDismissed={() => setShowDismissed((v) => !v)}
+              selectedIds={selectedIds}
+              savedIds={savedIds}
+              onPromote={promoteToTest}
+              onRemoveFromCart={toggleSelect}
+              onToggleSave={toggleSave}
+              onDismiss={(id) => setDismiss(id, true)}
+              onRestore={(id) => setDismiss(id, false)}
+              ringLabelById={ringLabelById}
+            />
+
+            {/* BENCH (collapsed) */}
+            <BenchSection shows={visibleBench} ringLabelById={ringLabelById} />
+          </>
+        )}
+      </div>
+
+      {/* ---- Footer: budget meter + CTA ---- */}
+      <div className="px-8 py-4 border-t border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] flex items-center gap-6">
+        <BudgetMeter
+          spentCents={selectedCostCents}
+          budgetCents={tiered.testBudgetCents}
+          selectedCount={selectedIds.size}
+          overBudget={overBudget}
+        />
+        <div className="ml-auto flex items-center gap-3">
+          {ctaError && (
+            <span className="text-xs text-[var(--brand-error)]">{ctaError}</span>
+          )}
+          <button
+            type="button"
+            onClick={goToPlan}
+            disabled={!canBuild || handingOff}
+            aria-label="Media plan — next"
+            className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 disabled:cursor-not-allowed disabled:bg-[var(--brand-border)]/40 disabled:text-[var(--brand-text-muted)] bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white"
+          >
+            {handingOff ? "Opening…" : "Media plan — next"}
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Sections
+// ============================================================
+
+function TestSection({
+  shows,
+  underfilled,
+  selectedIds,
+  onToggle,
+  ringLabelById,
+}: {
+  shows: TieredShow[];
+  underfilled: boolean;
+  selectedIds: Set<string>;
+  onToggle: (showId: string) => void;
+  ringLabelById: Map<string, string>;
+}) {
+  const [page, setPage] = useState(1);
+  const shown = shows.slice(0, PAGE_SIZE * page);
+  const remaining = shows.length - shown.length;
+
+  return (
+    <section data-testid="tier-test">
+      <SectionHeading
+        title="Test portfolio"
+        sub="Buy now — affordable at the 3-spot test cadence."
+        count={shows.length}
+      />
+      {underfilled ? (
+        <div
+          data-testid="test-underfilled"
+          className="mt-3 px-4 py-3.5 rounded-xl border border-[var(--brand-warning)]/30 bg-[var(--brand-warning)]/[0.06] text-sm text-[var(--brand-text-secondary)]"
+        >
+          <span className="font-medium text-[var(--brand-text)]">
+            Your budget is tight for a full 3-spot test.
+          </span>{" "}
+          Fewer than three shows fit three spots each within this budget. You can
+          run a single-spot test across more shows, or raise the budget to open
+          up the 3-spot cadence. Any test shows below are still selectable.
+        </div>
+      ) : null}
+      {shows.length === 0 && !underfilled ? (
+        <EmptySection note="No shows cleared the test bar for the current filters." />
+      ) : (
+        <div className="space-y-2 mt-3">
+          {shown.map((s) => (
+            <TestShowCard
+              key={s.showId}
+              entry={s}
+              selected={selectedIds.has(s.showId)}
+              onToggle={() => onToggle(s.showId)}
+              ringLabel={
+                s.ringHypothesisId
+                  ? ringLabelById.get(s.ringHypothesisId) ?? null
+                  : null
               }
-              label={`${g.ring.label} (${g.shows.length})`}
             />
           ))}
         </div>
+      )}
+      {remaining > 0 && (
+        <ShowMore remaining={remaining} onClick={() => setPage((p) => p + 1)} />
+      )}
+    </section>
+  );
+}
 
-        {/* Band filter — only bands that are present */}
-        {presentBands.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-[var(--brand-text-muted)] shrink-0">
-              Conviction
-            </span>
-            <FilterChip
-              active={bandFilter === "all"}
-              onClick={() => setBandFilter("all")}
-              label="All"
-            />
-            {presentBands.map((b) => (
-              <FilterChip
-                key={b}
-                active={bandFilter === b}
-                onClick={() => setBandFilter(bandFilter === b ? "all" : b)}
-                label={BAND_META[b].label}
-                dot={BAND_META[b].dot}
+function ScaleSection({
+  shows,
+  dismissed,
+  showDismissed,
+  onToggleShowDismissed,
+  selectedIds,
+  savedIds,
+  onPromote,
+  onRemoveFromCart,
+  onToggleSave,
+  onDismiss,
+  onRestore,
+  ringLabelById,
+}: {
+  shows: TieredShow[];
+  dismissed: TieredShow[];
+  showDismissed: boolean;
+  onToggleShowDismissed: () => void;
+  selectedIds: Set<string>;
+  savedIds: Set<string>;
+  onPromote: (s: TieredShow) => void;
+  onRemoveFromCart: (showId: string) => void;
+  onToggleSave: (showId: string) => void;
+  onDismiss: (showId: string) => void;
+  onRestore: (showId: string) => void;
+  ringLabelById: Map<string, string>;
+}) {
+  const [page, setPage] = useState(1);
+  if (shows.length === 0 && dismissed.length === 0) return null;
+  const shown = shows.slice(0, PAGE_SIZE * page);
+  const remaining = shows.length - shown.length;
+
+  return (
+    <section data-testid="tier-scale">
+      <SectionHeading
+        title="Scale tier"
+        sub="Deferred — fits a future budget. High intent, above the test ceiling."
+        count={shows.length}
+        muted
+      />
+      <div className="space-y-2 mt-3">
+        {shown.map((s) => (
+          <ScaleShowCard
+            key={s.showId}
+            entry={s}
+            inCart={selectedIds.has(s.showId)}
+            saved={savedIds.has(s.showId)}
+            onPromote={() => onPromote(s)}
+            onRemoveFromCart={() => onRemoveFromCart(s.showId)}
+            onToggleSave={() => onToggleSave(s.showId)}
+            onDismiss={() => onDismiss(s.showId)}
+            ringLabel={
+              s.ringHypothesisId
+                ? ringLabelById.get(s.ringHypothesisId) ?? null
+                : null
+            }
+          />
+        ))}
+      </div>
+      {remaining > 0 && (
+        <ShowMore remaining={remaining} onClick={() => setPage((p) => p + 1)} />
+      )}
+      {dismissed.length > 0 && (
+        <div className="mt-3">
+          <button
+            onClick={onToggleShowDismissed}
+            className="text-xs text-[var(--brand-text-muted)] hover:text-[var(--brand-text)]"
+          >
+            {showDismissed ? "Hide" : "Show"} {dismissed.length} dismissed
+          </button>
+          {showDismissed && (
+            <div className="space-y-2 mt-2 opacity-70">
+              {dismissed.map((s) => (
+                <div
+                  key={s.showId}
+                  className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-dashed border-[var(--brand-border)] bg-[var(--brand-surface)]"
+                >
+                  <span className="text-sm text-[var(--brand-text-secondary)] truncate flex-1">
+                    {s.show?.name ?? "Show unavailable"}
+                  </span>
+                  <button
+                    onClick={() => onRestore(s.showId)}
+                    className="text-xs text-[var(--brand-blue)] hover:underline"
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BenchSection({
+  shows,
+  ringLabelById,
+}: {
+  shows: TieredShow[];
+  ringLabelById: Map<string, string>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  if (shows.length === 0) return null;
+  const shown = shows.slice(0, PAGE_SIZE * page);
+  const remaining = shows.length - shown.length;
+
+  return (
+    <section data-testid="tier-bench">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 text-sm font-semibold text-[var(--brand-text-secondary)]"
+        aria-expanded={open}
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`transition-transform ${open ? "rotate-90" : ""}`}
+        >
+          <path d="m9 18 6-6-6-6" />
+        </svg>
+        Other matches ({shows.length})
+      </button>
+      {open && (
+        <>
+          <div className="space-y-2 mt-3">
+            {shown.map((s) => (
+              <BenchShowCard
+                key={s.showId}
+                entry={s}
+                ringLabel={
+                  s.ringHypothesisId
+                    ? ringLabelById.get(s.ringHypothesisId) ?? null
+                    : null
+                }
               />
             ))}
           </div>
-        )}
-      </div>
-
-      {/* ---- Grouped list ---- */}
-      <div className="flex-1 overflow-y-auto px-8 py-4">
-        {allSpeculative && (
-          <div className="mb-4 px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-sm text-[var(--brand-text-secondary)]">
-            These rings are still speculative — defensible hypotheses, not proven
-            fits. Treat this list as exploration to pressure-test, not a
-            ready-to-buy plan.
-          </div>
-        )}
-
-        {visibleCount === 0 ? (
-          <CenteredState
-            title="Nothing matches this filter"
-            body="Clear a filter to see the rest of the universe."
-          />
-        ) : (
-          <div className="space-y-8">
-            {visibleGroups.map(({ group, shows }) => {
-              if (shows.length === 0) return null;
-              const page = pageByRing[group.ring.id] ?? 1;
-              const limit = PAGE_SIZE * page;
-              const shown = shows.slice(0, limit);
-              const remaining = shows.length - shown.length;
-              return (
-                <section key={group.ring.id} data-testid="ring-group">
-                  <RingHeading group={group} shownCount={shows.length} />
-                  <div className="space-y-2 mt-3">
-                    {shown.map((entry) => (
-                      <ShowCard key={entry.score.id} entry={entry} />
-                    ))}
-                  </div>
-                  {remaining > 0 && (
-                    <button
-                      onClick={() =>
-                        setPageByRing((prev) => ({
-                          ...prev,
-                          [group.ring.id]: page + 1,
-                        }))
-                      }
-                      className="mt-3 text-xs text-[var(--brand-blue)] hover:underline"
-                    >
-                      Show {Math.min(remaining, PAGE_SIZE)} more in this ring
-                    </button>
-                  )}
-                </section>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ---- Footer ---- */}
-      <div className="px-8 py-4 border-t border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] flex items-center">
-        <span className="text-xs text-[var(--brand-text-muted)]">
-          Conviction scoring · audience fit is unmeasured at launch and shown as
-          such.
-        </span>
-        {/* Media plan handoff is 2C. The legacy plan page reads scored_shows /
-            selected_show_ids, which the v2 conviction path doesn't write, so it
-            would bounce the brand straight back here — render a disabled
-            affordance, not a working-looking CTA, until 2C wires the adapter. */}
-        <button
-          type="button"
-          disabled
-          title="Media plan handoff ships next (2C)"
-          aria-label="Media plan — coming next"
-          className="ml-auto px-6 py-2.5 rounded-xl bg-[var(--brand-border)]/40 text-[var(--brand-text-muted)] text-sm font-semibold cursor-not-allowed select-none"
-        >
-          Media plan — next
-        </button>
-      </div>
-    </div>
+          {remaining > 0 && (
+            <ShowMore
+              remaining={remaining}
+              onClick={() => setPage((p) => p + 1)}
+            />
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
 // ============================================================
-// Ring heading
+// Cards
 // ============================================================
 
-const RING_KIND_LABEL: Record<string, string> = {
-  primary: "Primary read",
-  lateral: "Lateral ring",
-  confirmed: "Confirmed ring",
-  added_by_brand: "Added by you",
-};
-
-function RingHeading({
-  group,
-  shownCount,
+function TestShowCard({
+  entry,
+  selected,
+  onToggle,
+  ringLabel,
 }: {
-  group: ConvictionUniverseGroup;
-  shownCount: number;
+  entry: TieredShow;
+  selected: boolean;
+  onToggle: () => void;
+  ringLabel: string | null;
 }) {
-  const kindLabel =
-    group.ring.brand_decision === "added_by_brand"
-      ? RING_KIND_LABEL.added_by_brand
-      : RING_KIND_LABEL[group.ring.kind] ?? "Ring";
-  return (
-    <div className="flex items-baseline gap-3">
-      <h2 className="text-base font-semibold text-[var(--brand-text)]">
-        {group.ring.label}
-      </h2>
-      <span className="text-[11px] uppercase tracking-wide text-[var(--brand-text-muted)]">
-        {kindLabel}
-      </span>
-      <span className="text-xs text-[var(--brand-text-muted)]">
-        {shownCount} {shownCount === 1 ? "show" : "shows"}
-      </span>
-    </div>
-  );
-}
-
-// ============================================================
-// Show card
-// ============================================================
-
-function ShowCard({ entry }: { entry: ConvictionUniverseShow }) {
-  const { score, show } = entry;
-  const band = score.conviction_band ?? "low";
+  const { show } = entry;
+  const band = entry.band ?? "low";
   const meta = BAND_META[band];
   const safety = readBrandSafety(show);
   const name = show?.name ?? "Show unavailable";
-  const categories = (show?.categories ?? []).slice(0, 4);
+  const categories = (show?.categories ?? []).slice(0, 3);
 
   return (
-    <div
-      data-testid="show-card"
-      className="px-4 py-3.5 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)]"
+    <label
+      data-testid="test-show-card"
+      className={`block px-4 py-3.5 rounded-xl border cursor-pointer transition-all ${
+        selected
+          ? "border-[var(--brand-blue)]/60 bg-[var(--brand-blue)]/[0.04]"
+          : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] hover:border-[var(--brand-blue)]/30"
+      }`}
     >
-      <div className="flex items-start gap-4">
-        {/* Image / initials */}
-        <div className="w-10 h-10 rounded-lg flex-shrink-0 overflow-hidden bg-gradient-to-br from-[var(--brand-blue)]/20 to-[var(--brand-teal)]/20 flex items-center justify-center">
-          {show?.image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={show.image_url}
-              alt=""
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <span className="text-xs font-bold text-[var(--brand-blue)]">
-              {name.slice(0, 2).toUpperCase()}
-            </span>
-          )}
-        </div>
-
-        {/* Name + categories */}
+      <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggle}
+          className="mt-1 h-4 w-4 rounded accent-[var(--brand-blue)] cursor-pointer"
+          aria-label={`Add ${name} to the test`}
+        />
+        <ShowAvatar show={show} name={name} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-[var(--brand-text)] truncate">
@@ -590,6 +1048,7 @@ function ShowCard({ entry }: { entry: ConvictionUniverseShow }) {
             >
               {meta.label}
             </span>
+            {ringLabel && <RingTag label={ringLabel} />}
           </div>
           {categories.length > 0 && (
             <div className="text-xs text-[var(--brand-text-muted)] truncate mt-0.5">
@@ -597,14 +1056,12 @@ function ShowCard({ entry }: { entry: ConvictionUniverseShow }) {
             </div>
           )}
         </div>
-
-        {/* Composite */}
         <div className="text-right flex-shrink-0">
           <div
             data-testid="composite-score"
             className="text-2xl font-bold text-[var(--brand-text)] leading-none"
           >
-            {score.composite_score ?? "—"}
+            {entry.composite ?? "—"}
           </div>
           <div className="text-[10px] text-[var(--brand-text-muted)] mt-1">
             composite
@@ -612,35 +1069,394 @@ function ShowCard({ entry }: { entry: ConvictionUniverseShow }) {
         </div>
       </div>
 
-      {/* Three sub-scores — the brand must see the dimensions diverge */}
       <div className="grid grid-cols-3 gap-4 mt-3">
         <SubScore
           label="Audience fit"
-          value={AUDIENCE_MEASURED ? score.audience_fit_score : null}
+          value={AUDIENCE_MEASURED ? entry.audienceFit : null}
           unmeasured={!AUDIENCE_MEASURED}
           accent="bg-[var(--brand-text-muted)]"
         />
         <SubScore
           label="Topical relevance"
-          value={score.topical_relevance_score}
+          value={entry.topicalRelevance}
           accent="bg-[var(--brand-blue)]"
         />
         <SubScore
           label="Purchase power"
-          value={score.purchase_power_score}
+          value={entry.purchasePower}
           accent="bg-[var(--brand-teal)]"
         />
       </div>
 
-      {/* Reasoning prose (LLM or templated fallback — same render path) */}
-      {score.reasoning && (
+      {entry.reasoning && (
         <p className="text-sm text-[var(--brand-text-secondary)] mt-3 leading-snug">
-          {score.reasoning}
+          {entry.reasoning}
         </p>
       )}
 
-      {/* Brand-safety notice (§11 — informational only, never a score penalty) */}
+      <CostLine entry={entry} />
+
       {safety && <BrandSafetyNotice flag={safety} />}
+    </label>
+  );
+}
+
+function ScaleShowCard({
+  entry,
+  inCart,
+  saved,
+  onPromote,
+  onRemoveFromCart,
+  onToggleSave,
+  onDismiss,
+  ringLabel,
+}: {
+  entry: TieredShow;
+  inCart: boolean;
+  saved: boolean;
+  onPromote: () => void;
+  onRemoveFromCart: () => void;
+  onToggleSave: () => void;
+  onDismiss: () => void;
+  ringLabel: string | null;
+}) {
+  const { show } = entry;
+  const band = entry.band ?? "low";
+  const meta = BAND_META[band];
+  const name = show?.name ?? "Show unavailable";
+
+  return (
+    <div
+      data-testid="scale-show-card"
+      className="px-4 py-3.5 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)]"
+    >
+      <div className="flex items-start gap-3">
+        <ShowAvatar show={show} name={name} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-[var(--brand-text)] truncate">
+              {name}
+            </span>
+            <span
+              data-testid="band-badge"
+              className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${meta.badge}`}
+            >
+              {meta.label}
+            </span>
+            {ringLabel && <RingTag label={ringLabel} />}
+          </div>
+          {entry.reasoning && (
+            <p className="text-sm text-[var(--brand-text-secondary)] mt-1.5 leading-snug">
+              {entry.reasoning}
+            </p>
+          )}
+        </div>
+        <div className="text-right flex-shrink-0">
+          <div className="text-sm font-semibold text-[var(--brand-text)]">
+            {formatMoneyCents(entry.threeSpotCents)}
+          </div>
+          <div className="text-[10px] text-[var(--brand-text-muted)]">
+            3 spots
+          </div>
+        </div>
+      </div>
+
+      {entry.budgetDeltaCents != null && entry.budgetDeltaCents > 0 && (
+        <div
+          data-testid="budget-delta"
+          className="mt-2 text-xs text-[var(--brand-warning)]"
+        >
+          ~{formatMoneyCents(entry.budgetDeltaCents)} over the per-show test
+          ceiling
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 mt-3">
+        {inCart ? (
+          <button
+            onClick={onRemoveFromCart}
+            className="text-xs font-medium text-[var(--brand-blue)] hover:underline"
+          >
+            ✓ Added to test — remove
+          </button>
+        ) : (
+          <button
+            onClick={onPromote}
+            className="text-xs font-medium px-3 py-1.5 rounded-lg border border-[var(--brand-blue)]/40 text-[var(--brand-blue)] hover:bg-[var(--brand-blue)]/[0.06] transition-all"
+          >
+            Move to test
+          </button>
+        )}
+        <button
+          onClick={onToggleSave}
+          className="text-xs text-[var(--brand-text-secondary)] hover:text-[var(--brand-text)]"
+        >
+          {saved ? "★ Saved" : "☆ Save"}
+        </button>
+        <button
+          onClick={onDismiss}
+          className="text-xs text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] ml-auto"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BenchShowCard({
+  entry,
+  ringLabel,
+}: {
+  entry: TieredShow;
+  ringLabel: string | null;
+}) {
+  const { show } = entry;
+  const band = entry.band ?? "speculative";
+  const meta = BAND_META[band];
+  const name = show?.name ?? "Show unavailable";
+
+  return (
+    <div
+      data-testid="bench-show-card"
+      className="px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)]"
+    >
+      <div className="flex items-center gap-3">
+        <ShowAvatar show={show} name={name} small />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-[var(--brand-text)] truncate">
+              {name}
+            </span>
+            <span
+              data-testid="band-badge"
+              className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${meta.badge}`}
+            >
+              {meta.label}
+            </span>
+            {ringLabel && <RingTag label={ringLabel} />}
+          </div>
+          {entry.reasoning && (
+            <p className="text-xs text-[var(--brand-text-muted)] truncate mt-0.5">
+              {entry.reasoning}
+            </p>
+          )}
+        </div>
+        <div className="text-right flex-shrink-0">
+          {entry.needsQuote ? (
+            <span
+              data-testid="needs-quote"
+              className="text-[11px] text-[var(--brand-text-muted)] italic"
+            >
+              cost unknown — quote at outreach
+            </span>
+          ) : (
+            <span className="text-xs text-[var(--brand-text-muted)]">
+              {formatMoneyCents(entry.threeSpotCents)}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Cost line (per-spot + 3-spot, estimate / flat-fee range)
+// ============================================================
+
+function CostLine({ entry }: { entry: TieredShow }) {
+  if (entry.needsQuote) {
+    return (
+      <div
+        data-testid="needs-quote"
+        className="mt-3 text-xs text-[var(--brand-text-muted)] italic"
+      >
+        cost unknown — quote at outreach
+      </div>
+    );
+  }
+
+  // flat_fee (non-onboarded YouTube): a guess, never a precise price.
+  if (entry.costBasis === "flat_fee") {
+    return (
+      <div className="mt-3 flex items-center gap-2 text-xs">
+        <span className="text-[var(--brand-text-secondary)]">
+          {flatFeeRange(entry.perSpotCents)} per integration
+        </span>
+        <span
+          data-testid="cost-estimate"
+          className="px-1.5 py-0.5 rounded bg-[var(--brand-warning)]/10 text-[var(--brand-warning)] font-medium"
+        >
+          quote to confirm
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex items-center gap-2 text-xs text-[var(--brand-text-secondary)]">
+      <span className="font-medium text-[var(--brand-text)]">
+        {formatMoneyCents(entry.perSpotCents)}
+      </span>
+      <span className="text-[var(--brand-text-muted)]">/ spot ·</span>
+      <span className="font-medium text-[var(--brand-text)]">
+        {formatMoneyCents(entry.threeSpotCents)}
+      </span>
+      <span className="text-[var(--brand-text-muted)]">for 3 spots</span>
+      {entry.isEstimate && (
+        <span
+          data-testid="cost-estimate"
+          className="px-1.5 py-0.5 rounded bg-[var(--brand-border)]/50 text-[var(--brand-text-muted)] font-medium"
+        >
+          estimated
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Budget meter
+// ============================================================
+
+function BudgetMeter({
+  spentCents,
+  budgetCents,
+  selectedCount,
+  overBudget,
+}: {
+  spentCents: number;
+  budgetCents: number;
+  selectedCount: number;
+  overBudget: boolean;
+}) {
+  const pct =
+    budgetCents > 0 ? Math.min(100, (spentCents / budgetCents) * 100) : 0;
+  return (
+    <div data-testid="budget-meter" className="flex-1 max-w-md">
+      <div className="flex items-center justify-between text-xs mb-1">
+        <span className="text-[var(--brand-text-muted)]">
+          {selectedCount} selected ·{" "}
+          <span className="font-medium text-[var(--brand-text)]">
+            {formatMoneyCents(spentCents)}
+          </span>{" "}
+          of {formatMoneyCents(budgetCents)}
+        </span>
+        {overBudget && (
+          <span
+            data-testid="budget-warning"
+            className="font-medium text-[var(--brand-warning)]"
+          >
+            Over test budget
+          </span>
+        )}
+      </div>
+      <div className="h-1.5 rounded-full bg-[var(--brand-border)] overflow-hidden">
+        <div
+          className={`h-full rounded-full ${
+            overBudget ? "bg-[var(--brand-warning)]" : "bg-[var(--brand-blue)]"
+          }`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Small section bits
+// ============================================================
+
+function SectionHeading({
+  title,
+  sub,
+  count,
+  muted,
+}: {
+  title: string;
+  sub: string;
+  count: number;
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline gap-3">
+      <h2
+        className={`text-base font-bold ${
+          muted ? "text-[var(--brand-text-secondary)]" : "text-[var(--brand-text)]"
+        }`}
+      >
+        {title}
+      </h2>
+      <span className="text-xs text-[var(--brand-text-muted)]">
+        {count} {count === 1 ? "show" : "shows"}
+      </span>
+      <span className="text-xs text-[var(--brand-text-muted)] hidden sm:inline">
+        {sub}
+      </span>
+    </div>
+  );
+}
+
+function EmptySection({ note }: { note: string }) {
+  return (
+    <div className="mt-3 px-4 py-6 rounded-xl border border-dashed border-[var(--brand-border)] text-center text-sm text-[var(--brand-text-muted)]">
+      {note}
+    </div>
+  );
+}
+
+function ShowMore({
+  remaining,
+  onClick,
+}: {
+  remaining: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="mt-3 text-xs text-[var(--brand-blue)] hover:underline"
+    >
+      Show {Math.min(remaining, PAGE_SIZE)} more
+    </button>
+  );
+}
+
+function RingTag({ label }: { label: string }) {
+  return (
+    <span className="text-[10px] uppercase tracking-wide text-[var(--brand-text-muted)] border border-[var(--brand-border)] rounded px-1.5 py-0.5">
+      {label}
+    </span>
+  );
+}
+
+function ShowAvatar({
+  show,
+  name,
+  small,
+}: {
+  show: Show | null;
+  name: string;
+  small?: boolean;
+}) {
+  const size = small ? "w-8 h-8" : "w-10 h-10";
+  return (
+    <div
+      className={`${size} rounded-lg flex-shrink-0 overflow-hidden bg-gradient-to-br from-[var(--brand-blue)]/20 to-[var(--brand-teal)]/20 flex items-center justify-center`}
+    >
+      {show?.image_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={show.image_url}
+          alt=""
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <span className="text-xs font-bold text-[var(--brand-blue)]">
+          {name.slice(0, 2).toUpperCase()}
+        </span>
+      )}
     </div>
   );
 }
@@ -865,4 +1681,23 @@ function formatCurrency(n: number): string {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `$${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
   return `$${n.toLocaleString()}`;
+}
+
+/** Concrete cost figures show full dollars with commas (no K/M abbreviation),
+ *  because the brand is comparing exact prices against a budget. Integer cents
+ *  in → rounded dollars out. */
+function formatMoneyCents(cents: number | null): string {
+  if (cents == null || !Number.isFinite(cents)) return "—";
+  return `$${Math.round(cents / 100).toLocaleString()}`;
+}
+
+/** Flat-fee (non-onboarded YouTube) is a wild guess — present it as a wide
+ *  low-confidence range around the point estimate, never a precise figure. The
+ *  ±band width is a presentation choice (calibration), not core cost logic. */
+function flatFeeRange(perSpotCents: number | null): string {
+  if (perSpotCents == null || !Number.isFinite(perSpotCents))
+    return "quote to confirm";
+  const lo = Math.round((perSpotCents * 0.5) / 100);
+  const hi = Math.round((perSpotCents * 2) / 100);
+  return `~$${lo.toLocaleString()}–$${hi.toLocaleString()}`;
 }
