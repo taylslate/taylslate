@@ -8,6 +8,7 @@ import {
 import type {
   ShowAdFormat,
   ShowAdReadType,
+  ShowBrandHistoryEntry,
   ShowCategoryExclusion,
   ShowEpisodeCadence,
   ShowPlacement,
@@ -40,6 +41,46 @@ const ALLOWED_EXCLUSIONS: ShowCategoryExclusion[] = [
   "adult",
   "none",
 ];
+
+// brand_history (Wave 14 Phase 2D Layer 2). Self-reported advertiser history,
+// stored as JSONB. Bounds keep a user-controlled write from bloating the column.
+const ALLOWED_DEAL_TYPES = ["one-off", "annual"] as const;
+const BRAND_HISTORY_MAX_ENTRIES = 10; // backstop; onboarding UI soft-limits to 5
+const BRAND_NAME_MAX = 100;
+const BRAND_CATEGORY_MAX = 80;
+const BRAND_NOTES_MAX = 500;
+
+/**
+ * Validate a single brand_history element into a fresh, key-whitelisted object.
+ * Returns null when the entry has no usable brand_name (caller skips it). Only
+ * the four known keys are ever copied — arbitrary caller keys never reach JSONB.
+ */
+function sanitizeBrandHistoryEntry(raw: unknown): ShowBrandHistoryEntry | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const entry = raw as Record<string, unknown>;
+
+  const brandName = typeof entry.brand_name === "string" ? entry.brand_name.trim() : "";
+  if (!brandName) return null;
+
+  const clean: ShowBrandHistoryEntry = { brand_name: brandName.slice(0, BRAND_NAME_MAX) };
+
+  if (typeof entry.category === "string") {
+    const category = entry.category.trim();
+    if (category) clean.category = category.slice(0, BRAND_CATEGORY_MAX);
+  }
+  if (typeof entry.notes === "string") {
+    const notes = entry.notes.trim();
+    if (notes) clean.notes = notes.slice(0, BRAND_NOTES_MAX);
+  }
+  if (
+    typeof entry.deal_type === "string" &&
+    (ALLOWED_DEAL_TYPES as readonly string[]).includes(entry.deal_type)
+  ) {
+    clean.deal_type = entry.deal_type as ShowBrandHistoryEntry["deal_type"];
+  }
+
+  return clean;
+}
 
 function dedupeEnum<T extends string>(input: unknown, allowed: readonly T[], cap = 8): T[] {
   if (!Array.isArray(input)) return [];
@@ -109,6 +150,19 @@ export function sanitizeShowProfilePatch(
   if (body.placements !== undefined) patch.placements = dedupeEnum(body.placements, ALLOWED_PLACEMENTS);
   if (body.category_exclusions !== undefined) {
     patch.category_exclusions = dedupeEnum(body.category_exclusions, ALLOWED_EXCLUSIONS);
+  }
+
+  // brand_history: only touch the patch when an array is sent (mirrors show_categories).
+  // Each entry is rebuilt key-by-key by sanitizeBrandHistoryEntry, blank-brand entries
+  // are dropped, and the list is capped — so malformed/oversized input can't write junk.
+  if (Array.isArray(body.brand_history)) {
+    const cleaned: ShowBrandHistoryEntry[] = [];
+    for (const raw of body.brand_history) {
+      const entry = sanitizeBrandHistoryEntry(raw);
+      if (entry) cleaned.push(entry);
+      if (cleaned.length >= BRAND_HISTORY_MAX_ENTRIES) break;
+    }
+    patch.brand_history = cleaned;
   }
 
   return patch;
