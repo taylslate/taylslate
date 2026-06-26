@@ -58,6 +58,31 @@ import type {
   TieredShow,
   TieredUniverse,
 } from "@/lib/discovery/tiered-universe";
+import type { Placement } from "@/lib/discovery/spot-cost";
+
+// ---- Layer 5 override controls ----
+
+/** Discovery placement vocabulary, with the labels the brand sees. */
+const PLACEMENTS: { value: Placement; label: string }[] = [
+  { value: "preroll", label: "Pre-roll" },
+  { value: "midroll", label: "Mid-roll" },
+  { value: "postroll", label: "Post-roll" },
+];
+
+/** Spot-count presets surfaced as a segmented control (the 3-spot floor is the
+ *  default; 1 is the single-spot test; 2 fills the gap). */
+const SPOT_COUNT_OPTIONS = [1, 2, 3];
+
+const DEFAULT_SPOT_COUNT = 3;
+const DEFAULT_PLACEMENT: Placement = "midroll";
+
+/** One override request body — mirrors the portfolio-overrides endpoint. */
+type OverrideBody =
+  | { kind: "campaign_spot_count"; spotCount: number }
+  | { kind: "campaign_placement"; placement: Placement }
+  | { kind: "show_cpm"; showId: string; cpmDollars: number | null }
+  | { kind: "show_placement"; showId: string; placement: Placement | null }
+  | { kind: "reset" };
 
 // ---- Honest-launch flags ----
 
@@ -154,6 +179,10 @@ interface ConvictionDiscoveryViewProps {
    *  (campaigns.selected_show_ids), so the cart reconstructs on reload instead
    *  of resetting to empty. */
   selectedShowIds?: string[];
+  /** Phase 2C Layer 5: persisted campaign-level overrides, seeding the
+   *  test-settings selectors. null ⇒ default (3 spots / mid-roll). */
+  testSpotCount?: number | null;
+  testPlacement?: Placement | null;
 }
 
 type RingFilter = "all" | string;
@@ -169,6 +198,8 @@ export default function ConvictionDiscoveryView({
   discoveryRan,
   tiered,
   selectedShowIds,
+  testSpotCount,
+  testPlacement,
 }: ConvictionDiscoveryViewProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -313,6 +344,8 @@ export default function ConvictionDiscoveryView({
       tiered={tiered ?? EMPTY_TIERED}
       rings={universe.rings}
       initialSelectedShowIds={selectedShowIds ?? []}
+      initialSpotCount={testSpotCount ?? DEFAULT_SPOT_COUNT}
+      initialPlacement={testPlacement ?? DEFAULT_PLACEMENT}
       onRerun={runDiscovery}
       rerunning={discovering || isPending}
       router={router}
@@ -331,6 +364,8 @@ function TieredScoredUniverse({
   tiered,
   rings,
   initialSelectedShowIds,
+  initialSpotCount,
+  initialPlacement,
   onRerun,
   rerunning,
   router,
@@ -341,10 +376,100 @@ function TieredScoredUniverse({
   tiered: TieredUniverse;
   rings: RingHypothesisRow[];
   initialSelectedShowIds: string[];
+  initialSpotCount: number;
+  initialPlacement: Placement;
   onRerun: () => void;
   rerunning: boolean;
   router: ReturnType<typeof useRouter>;
 }) {
+  const [, startRecompute] = useTransition();
+
+  // ---- Layer 5 overrides: campaign spot-count + placement + reset ----
+  // Local state seeds from props and re-syncs after a router.refresh re-reads
+  // the persisted values (content signature dep, like the cart/watchlist state).
+  const [spotCount, setSpotCount] = useState(initialSpotCount);
+  const [placement, setPlacement] = useState<Placement>(initialPlacement);
+  const [recomputing, setRecomputing] = useState(false);
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSpotCount(initialSpotCount);
+  }, [initialSpotCount]);
+  useEffect(() => {
+    setPlacement(initialPlacement);
+  }, [initialPlacement]);
+
+  const applyOverride = useCallback(
+    async (body: OverrideBody) => {
+      setRecomputing(true);
+      setOverrideError(null);
+      try {
+        const res = await fetch(
+          `/api/campaigns/${campaignId}/portfolio-overrides`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          }
+        );
+        if (!res.ok) {
+          let m = "Couldn't apply that change. Try again.";
+          try {
+            const j = await res.json();
+            if (j?.error && typeof j.error === "string") m = j.error;
+          } catch {
+            /* keep default */
+          }
+          setOverrideError(m);
+          return false;
+        }
+        // Re-read the server component so the reshuffled tiers + persisted
+        // override values render. Tiers can move a show between sections.
+        startRecompute(() => router.refresh());
+        return true;
+      } catch {
+        setOverrideError("Network error applying the change. Try again.");
+        return false;
+      } finally {
+        setRecomputing(false);
+      }
+    },
+    [campaignId, router]
+  );
+
+  const changeSpotCount = useCallback(
+    (n: number) => {
+      setSpotCount(n); // optimistic
+      applyOverride({ kind: "campaign_spot_count", spotCount: n });
+    },
+    [applyOverride]
+  );
+  const changePlacement = useCallback(
+    (p: Placement) => {
+      setPlacement(p); // optimistic
+      applyOverride({ kind: "campaign_placement", placement: p });
+    },
+    [applyOverride]
+  );
+  const resetOverrides = useCallback(() => {
+    setSpotCount(DEFAULT_SPOT_COUNT);
+    setPlacement(DEFAULT_PLACEMENT);
+    applyOverride({ kind: "reset" });
+  }, [applyOverride]);
+
+  const overrideShowCpm = useCallback(
+    (showId: string, cpmDollars: number | null) =>
+      applyOverride({ kind: "show_cpm", showId, cpmDollars }),
+    [applyOverride]
+  );
+  const overrideShowPlacement = useCallback(
+    (showId: string, p: Placement) =>
+      applyOverride({ kind: "show_placement", showId, placement: p }),
+    [applyOverride]
+  );
+
+  const overridesActive =
+    spotCount !== DEFAULT_SPOT_COUNT || placement !== DEFAULT_PLACEMENT;
   // Ring label by id — ring becomes a filter/sub-label now that tier is the
   // primary grouping. A TieredShow only carries ringHypothesisId.
   const ringLabelById = useMemo(() => {
@@ -644,6 +769,18 @@ function TieredScoredUniverse({
         </div>
       </div>
 
+      {/* ---- Test settings (Layer 5 campaign-level overrides) ---- */}
+      <TestSettingsBar
+        spotCount={spotCount}
+        placement={placement}
+        onSpotCount={changeSpotCount}
+        onPlacement={changePlacement}
+        onReset={resetOverrides}
+        overridesActive={overridesActive}
+        recomputing={recomputing}
+        error={overrideError}
+      />
+
       {/* ---- Filters ---- */}
       {(presentRings.length > 0 || presentBands.length > 0) && (
         <div className="px-8 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--brand-border)] bg-[var(--brand-surface)]">
@@ -709,6 +846,9 @@ function TieredScoredUniverse({
               selectedIds={selectedIds}
               onToggle={toggleSelect}
               ringLabelById={ringLabelById}
+              onCpmOverride={overrideShowCpm}
+              onPlacementOverride={overrideShowPlacement}
+              recomputing={recomputing}
             />
 
             {/* SCALE TIER (secondary) */}
@@ -725,6 +865,9 @@ function TieredScoredUniverse({
               onDismiss={(id) => setDismiss(id, true)}
               onRestore={(id) => setDismiss(id, false)}
               ringLabelById={ringLabelById}
+              onCpmOverride={overrideShowCpm}
+              onPlacementOverride={overrideShowPlacement}
+              recomputing={recomputing}
             />
 
             {/* BENCH (collapsed) */}
@@ -782,12 +925,18 @@ function TestSection({
   selectedIds,
   onToggle,
   ringLabelById,
+  onCpmOverride,
+  onPlacementOverride,
+  recomputing,
 }: {
   shows: TieredShow[];
   underfilled: boolean;
   selectedIds: Set<string>;
   onToggle: (showId: string) => void;
   ringLabelById: Map<string, string>;
+  onCpmOverride: (showId: string, cpmDollars: number | null) => void;
+  onPlacementOverride: (showId: string, placement: Placement) => void;
+  recomputing: boolean;
 }) {
   const [page, setPage] = useState(1);
   const shown = shows.slice(0, PAGE_SIZE * page);
@@ -828,6 +977,9 @@ function TestSection({
                   ? ringLabelById.get(s.ringHypothesisId) ?? null
                   : null
               }
+              onCpmOverride={onCpmOverride}
+              onPlacementOverride={onPlacementOverride}
+              recomputing={recomputing}
             />
           ))}
         </div>
@@ -852,6 +1004,9 @@ function ScaleSection({
   onDismiss,
   onRestore,
   ringLabelById,
+  onCpmOverride,
+  onPlacementOverride,
+  recomputing,
 }: {
   shows: TieredShow[];
   dismissed: TieredShow[];
@@ -865,6 +1020,9 @@ function ScaleSection({
   onDismiss: (showId: string) => void;
   onRestore: (showId: string) => void;
   ringLabelById: Map<string, string>;
+  onCpmOverride: (showId: string, cpmDollars: number | null) => void;
+  onPlacementOverride: (showId: string, placement: Placement) => void;
+  recomputing: boolean;
 }) {
   const [page, setPage] = useState(1);
   if (shows.length === 0 && dismissed.length === 0) return null;
@@ -895,6 +1053,9 @@ function ScaleSection({
                 ? ringLabelById.get(s.ringHypothesisId) ?? null
                 : null
             }
+            onCpmOverride={onCpmOverride}
+            onPlacementOverride={onPlacementOverride}
+            recomputing={recomputing}
           />
         ))}
       </div>
@@ -1006,11 +1167,17 @@ function TestShowCard({
   selected,
   onToggle,
   ringLabel,
+  onCpmOverride,
+  onPlacementOverride,
+  recomputing,
 }: {
   entry: TieredShow;
   selected: boolean;
   onToggle: () => void;
   ringLabel: string | null;
+  onCpmOverride: (showId: string, cpmDollars: number | null) => void;
+  onPlacementOverride: (showId: string, placement: Placement) => void;
+  recomputing: boolean;
 }) {
   const { show } = entry;
   const band = entry.band ?? "low";
@@ -1096,6 +1263,13 @@ function TestShowCard({
 
       <CostLine entry={entry} />
 
+      <ShowOverrideControls
+        entry={entry}
+        onCpmOverride={onCpmOverride}
+        onPlacementOverride={onPlacementOverride}
+        recomputing={recomputing}
+      />
+
       {safety && <BrandSafetyNotice flag={safety} />}
     </label>
   );
@@ -1110,6 +1284,9 @@ function ScaleShowCard({
   onToggleSave,
   onDismiss,
   ringLabel,
+  onCpmOverride,
+  onPlacementOverride,
+  recomputing,
 }: {
   entry: TieredShow;
   inCart: boolean;
@@ -1119,6 +1296,9 @@ function ScaleShowCard({
   onToggleSave: () => void;
   onDismiss: () => void;
   ringLabel: string | null;
+  onCpmOverride: (showId: string, cpmDollars: number | null) => void;
+  onPlacementOverride: (showId: string, placement: Placement) => void;
+  recomputing: boolean;
 }) {
   const { show } = entry;
   const band = entry.band ?? "low";
@@ -1200,6 +1380,13 @@ function ScaleShowCard({
           Dismiss
         </button>
       </div>
+
+      <ShowOverrideControls
+        entry={entry}
+        onCpmOverride={onCpmOverride}
+        onPlacementOverride={onPlacementOverride}
+        recomputing={recomputing}
+      />
     </div>
   );
 }
@@ -1312,6 +1499,216 @@ function CostLine({ entry }: { entry: TieredShow }) {
           estimated
         </span>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// Layer 5 override controls
+// ============================================================
+
+/** Campaign-level test settings: spot-count + placement segmented controls and
+ *  a reset. Each change fires a recompute (the tiers reshuffle). */
+function TestSettingsBar({
+  spotCount,
+  placement,
+  onSpotCount,
+  onPlacement,
+  onReset,
+  overridesActive,
+  recomputing,
+  error,
+}: {
+  spotCount: number;
+  placement: Placement;
+  onSpotCount: (n: number) => void;
+  onPlacement: (p: Placement) => void;
+  onReset: () => void;
+  overridesActive: boolean;
+  recomputing: boolean;
+  error: string | null;
+}) {
+  return (
+    <div className="px-8 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--brand-border)] bg-[var(--brand-surface)]">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-[var(--brand-text-muted)] shrink-0">
+          Test cadence
+        </span>
+        <Segmented
+          options={SPOT_COUNT_OPTIONS.map((n) => ({
+            value: String(n),
+            label: n === 1 ? "1 spot" : `${n} spots`,
+          }))}
+          value={String(spotCount)}
+          onChange={(v) => onSpotCount(Number(v))}
+          disabled={recomputing}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-[var(--brand-text-muted)] shrink-0">
+          Placement
+        </span>
+        <Segmented
+          options={PLACEMENTS.map((p) => ({ value: p.value, label: p.label }))}
+          value={placement}
+          onChange={(v) => onPlacement(v as Placement)}
+          disabled={recomputing}
+        />
+      </div>
+      {overridesActive && (
+        <button
+          onClick={onReset}
+          disabled={recomputing}
+          className="text-xs text-[var(--brand-blue)] hover:underline disabled:opacity-50 disabled:no-underline"
+        >
+          Reset to defaults
+        </button>
+      )}
+      {recomputing && (
+        <span
+          data-testid="recomputing"
+          className="text-xs text-[var(--brand-text-muted)] flex items-center gap-1.5"
+        >
+          <span className="w-3 h-3 rounded-full border border-[var(--brand-blue)]/30 border-t-[var(--brand-blue)] animate-spin" />
+          Recomputing…
+        </span>
+      )}
+      {error && (
+        <span className="text-xs text-[var(--brand-error)]">{error}</span>
+      )}
+    </div>
+  );
+}
+
+/** Per-show placement + CPM override row on a priced (CPM-based) card. Hidden for
+ *  flat-fee / needs-quote shows, which carry no CPM to edit. On a `<label>` card
+ *  (test cards) the click is stopped so it doesn't toggle the selection. */
+function ShowOverrideControls({
+  entry,
+  onCpmOverride,
+  onPlacementOverride,
+  recomputing,
+}: {
+  entry: TieredShow;
+  onCpmOverride: (showId: string, cpmDollars: number | null) => void;
+  onPlacementOverride: (showId: string, placement: Placement) => void;
+  recomputing: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const currentCpm =
+    entry.cpmUsedCents != null ? Math.round(entry.cpmUsedCents / 100) : null;
+
+  // Only CPM-priced shows (podcast derived / onboarded rate_card) can be edited;
+  // a flat-fee or needs-quote show has no CPM/placement to override.
+  const editable =
+    entry.costBasis === "derived" || entry.costBasis === "rate_card";
+  if (!editable) return null;
+
+  const commitCpm = () => {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed === "") {
+      // empty → clear the override (revert to the band-derived CPM)
+      onCpmOverride(entry.showId, null);
+      return;
+    }
+    const dollars = Number(trimmed);
+    if (Number.isFinite(dollars) && dollars > 0 && dollars !== currentCpm) {
+      onCpmOverride(entry.showId, dollars);
+    }
+  };
+
+  return (
+    <div
+      data-testid="show-override-controls"
+      className="mt-2 flex items-center gap-3 text-xs"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <label className="flex items-center gap-1.5 text-[var(--brand-text-muted)]">
+        Placement
+        <select
+          data-testid="show-placement-select"
+          value={entry.placement}
+          disabled={recomputing}
+          onChange={(e) =>
+            onPlacementOverride(entry.showId, e.target.value as Placement)
+          }
+          className="bg-[var(--brand-surface)] border border-[var(--brand-border)] rounded px-1.5 py-0.5 text-[var(--brand-text)] disabled:opacity-50"
+        >
+          {PLACEMENTS.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className="flex items-center gap-1.5 text-[var(--brand-text-muted)]">
+        CPM
+        {editing ? (
+          <input
+            data-testid="show-cpm-input"
+            type="number"
+            min="0"
+            step="0.5"
+            autoFocus
+            defaultValue={currentCpm ?? ""}
+            disabled={recomputing}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitCpm}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitCpm();
+              if (e.key === "Escape") setEditing(false);
+            }}
+            className="w-16 bg-[var(--brand-surface)] border border-[var(--brand-blue)]/40 rounded px-1.5 py-0.5 text-[var(--brand-text)]"
+          />
+        ) : (
+          <button
+            data-testid="show-cpm-edit"
+            onClick={() => {
+              setDraft(currentCpm != null ? String(currentCpm) : "");
+              setEditing(true);
+            }}
+            disabled={recomputing}
+            className="font-medium text-[var(--brand-blue)] hover:underline disabled:opacity-50"
+          >
+            {currentCpm != null ? `$${currentCpm}` : "set"} ✎
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** Compact segmented control used by the test-settings bar. */
+function Segmented({
+  options,
+  value,
+  onChange,
+  disabled,
+}: {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-[var(--brand-border)] overflow-hidden">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          onClick={() => onChange(o.value)}
+          disabled={disabled}
+          aria-pressed={value === o.value}
+          className={`px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+            value === o.value
+              ? "bg-[var(--brand-blue)] text-white"
+              : "bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)]"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }

@@ -58,6 +58,8 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         tiered={tiered}
         discoveryRan={discoveryRan}
         selectedShowIds={campaign.selected_show_ids ?? []}
+        testSpotCount={campaign.test_spot_count ?? null}
+        testPlacement={campaign.test_placement ?? null}
       />
     );
   }

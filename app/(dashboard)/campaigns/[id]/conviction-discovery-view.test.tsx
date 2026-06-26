@@ -103,7 +103,12 @@ function scoredConvictionUniverse(
 
 function renderTiered(
   t: Partial<TieredUniverse> = {},
-  opts: { selectedShowIds?: string[]; rings?: RingHypothesisRow[] } = {}
+  opts: {
+    selectedShowIds?: string[];
+    rings?: RingHypothesisRow[];
+    testSpotCount?: number | null;
+    testPlacement?: "preroll" | "midroll" | "postroll" | null;
+  } = {}
 ) {
   return render(
     <ConvictionDiscoveryView
@@ -114,6 +119,8 @@ function renderTiered(
       tiered={tieredUniverse(t)}
       discoveryRan={true}
       selectedShowIds={opts.selectedShowIds ?? []}
+      testSpotCount={opts.testSpotCount ?? null}
+      testPlacement={opts.testPlacement ?? null}
     />
   );
 }
@@ -542,5 +549,110 @@ describe("ConvictionDiscoveryView — concurrent fire guard", () => {
     fireEvent.click(button);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---- Layer 5: override controls ----
+
+describe("ConvictionDiscoveryView — Layer 5 override controls", () => {
+  function fetchSpy() {
+    const m = vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) }));
+    global.fetch = m as unknown as typeof fetch;
+    return m;
+  }
+  function lastBody(m: ReturnType<typeof vi.fn>, urlPart: string) {
+    const call = m.mock.calls.find((c) => String(c[0]).includes(urlPart));
+    return call ? JSON.parse((call[1] as RequestInit).body as string) : null;
+  }
+
+  it("spot-count selector POSTs campaign_spot_count and refreshes", async () => {
+    const m = fetchSpy();
+    renderTiered({ test: [tieredShow()] });
+    fireEvent.click(screen.getByRole("button", { name: "1 spot" }));
+    await waitFor(() =>
+      expect(lastBody(m, "/portfolio-overrides")).toEqual({
+        kind: "campaign_spot_count",
+        spotCount: 1,
+      })
+    );
+    await waitFor(() => expect(mockRefresh).toHaveBeenCalled());
+  });
+
+  it("placement selector POSTs campaign_placement", async () => {
+    const m = fetchSpy();
+    renderTiered({ test: [tieredShow()] });
+    fireEvent.click(screen.getByRole("button", { name: "Post-roll" }));
+    await waitFor(() =>
+      expect(lastBody(m, "/portfolio-overrides")).toEqual({
+        kind: "campaign_placement",
+        placement: "postroll",
+      })
+    );
+  });
+
+  it("reset appears only when an override is active and POSTs reset", async () => {
+    const m = fetchSpy();
+    // Seed a non-default spot count → reset visible immediately.
+    renderTiered({ test: [tieredShow()] }, { testSpotCount: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
+    await waitFor(() =>
+      expect(lastBody(m, "/portfolio-overrides")).toEqual({ kind: "reset" })
+    );
+  });
+
+  it("does not show the reset control at defaults", () => {
+    fetchSpy();
+    renderTiered({ test: [tieredShow()] });
+    expect(
+      screen.queryByRole("button", { name: "Reset to defaults" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("per-show CPM edit POSTs show_cpm in dollars", async () => {
+    const m = fetchSpy();
+    renderTiered({ test: [tieredShow({ showId: "show-1", cpmUsedCents: 2200 })] });
+    fireEvent.click(screen.getByTestId("show-cpm-edit"));
+    const input = screen.getByTestId("show-cpm-input");
+    fireEvent.change(input, { target: { value: "30" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(lastBody(m, "/portfolio-overrides")).toEqual({
+        kind: "show_cpm",
+        showId: "show-1",
+        cpmDollars: 30,
+      })
+    );
+  });
+
+  it("per-show placement select POSTs show_placement", async () => {
+    const m = fetchSpy();
+    renderTiered({ test: [tieredShow({ showId: "show-1" })] });
+    fireEvent.change(screen.getByTestId("show-placement-select"), {
+      target: { value: "preroll" },
+    });
+    await waitFor(() =>
+      expect(lastBody(m, "/portfolio-overrides")).toEqual({
+        kind: "show_placement",
+        showId: "show-1",
+        placement: "preroll",
+      })
+    );
+  });
+
+  it("hides per-show override controls for a flat-fee (untrusted-cost) show", () => {
+    fetchSpy();
+    renderTiered({ test: [tieredShow({ costBasis: "flat_fee" })] });
+    expect(screen.queryByTestId("show-override-controls")).not.toBeInTheDocument();
+  });
+
+  it("editing a CPM does not toggle the card's test selection", async () => {
+    const m = fetchSpy();
+    renderTiered({ test: [tieredShow({ showId: "show-1", cpmUsedCents: 2200 })] });
+    // Click the edit affordance — must NOT bubble to the label checkbox.
+    fireEvent.click(screen.getByTestId("show-cpm-edit"));
+    // No selection persist fired (only the override path will, after commit).
+    expect(
+      m.mock.calls.some((c) => String(c[0]).includes("/selections"))
+    ).toBe(false);
   });
 });
