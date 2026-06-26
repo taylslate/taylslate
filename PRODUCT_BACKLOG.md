@@ -174,6 +174,9 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - Show notes blurb generation helper (copy-paste output for the show)
 - Acceptance criterion: capture the learning loop explicitly. Every creator selection, founder override, promo code, and UTM link should become future recommendation signal.
 
+**2D follow-ups (deferred during the Layer 2 build, June 2026):**
+- **Render `promo_code` on the signed IO PDF.** A real transaction-terms gap, not cosmetic — the promo code is part of what the brand and show agree to, so it belongs on the signed document, not just on the deal record. Deferred from 2D Layer 3 v1 (which captures the code at IO generation time). IO PDF generator: `lib/pdf/io-generator.ts`.
+
 **Effort:** ~2 weeks total split across 4 Claude Code sessions
 **Pre-req:** Pattern library seeded with ~20-50 analog campaigns from Chris's media-buying memory (can happen async during Phase 2 build)
 
