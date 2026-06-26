@@ -42,7 +42,12 @@ import {
   THREE_SPOT_THRESHOLD,
   MIN_TEST_SHOWS,
 } from "./tier-portfolio";
-import { deriveSpotCost, dollarsToCents, type Placement } from "./spot-cost";
+import {
+  deriveSpotCost,
+  dollarsToCents,
+  normalizeSpotCount,
+  type Placement,
+} from "./spot-cost";
 
 /** One show in a tier partition: the 2B conviction read + the per-show cost
  *  (persisted, or computed on read) the Layer 4 card renders. */
@@ -65,6 +70,10 @@ export interface TieredShow {
   costBasis: CostBasis | null;
   isEstimate: boolean;
   needsQuote: boolean;
+  /** The effective placement this show is priced/handed off at (Layer 5):
+   *  per-show override ?? campaign default ?? 'midroll'. Discovery vocabulary —
+   *  the media-plan handoff maps it to the Wave 7 'pre-roll'/… form. */
+  placement: Placement;
   /** Scale rows only: 3-spot cost minus the per-show affordability ceiling
    *  (THREE_SPOT_THRESHOLD × test budget), integer cents. null for test/bench. */
   budgetDeltaCents: number | null;
@@ -125,10 +134,8 @@ function emptyUniverse(): TieredUniverse {
 export async function getTieredUniverse(
   campaignPatternId: string,
   deps: TieredUniverseDeps = defaultDeps,
-  options: { placement?: Placement } = {}
+  options: { placement?: Placement; spotCount?: number } = {}
 ): Promise<TieredUniverse> {
-  const placement: Placement = options.placement ?? "midroll";
-
   let rows: ConvictionScoreWithShow[] = [];
   try {
     rows = await deps.loadScoresWithShows(campaignPatternId);
@@ -144,6 +151,15 @@ export async function getTieredUniverse(
     ctx = null;
   }
   const testBudgetCents = dollarsToCents(ctx?.budgetTotalDollars ?? 0);
+  // Effective campaign-level overrides (Layer 5). Source of truth is the
+  // persisted campaign config (ctx); an explicit option wins for callers that
+  // force one. These drive compute-on-read AND the effective per-show placement
+  // surfaced for the media-plan handoff.
+  const campaignPlacement: Placement =
+    options.placement ?? ctx?.testPlacement ?? "midroll";
+  const spotCount = normalizeSpotCount(
+    options.spotCount ?? ctx?.testSpotCount ?? undefined
+  );
   // FLOOR, not round: classifyTier compares threeSpotCents against the RAW
   // (unrounded) threshold × budget, so a scale row has threeSpotCents > that
   // raw ceiling. Flooring keeps budgetDeltaCents an integer AND guarantees a
@@ -185,6 +201,11 @@ export async function getTieredUniverse(
     const top = roll.topRow as ConvictionScoreWithShow;
     const show = showById.get(showId) ?? null;
 
+    // Effective placement for this show (Layer 5): per-show override beats the
+    // campaign default. Surfaced on the entry so the media-plan handoff carries
+    // it, AND used by compute-on-read below.
+    const effPlacement: Placement = top.placement_override ?? campaignPlacement;
+
     let tier: ConvictionTier;
     let perSpotCents: number | null;
     let threeSpotCents: number | null;
@@ -206,9 +227,15 @@ export async function getTieredUniverse(
       computedOnRead = false;
     } else {
       // Compute-on-read: persistence failed soft (or pre-028 row). Derive cost
-      // + classify from the embedded Show with the same pure Layer 1/2 logic.
+      // + classify from the embedded Show with the same pure Layer 1/2 logic,
+      // honoring the Layer 5 overrides (effective placement, campaign spot count,
+      // per-show CPM) so the fallback agrees with what the recompute persists.
       const cost = show
-        ? deriveSpotCost(show, { placement })
+        ? deriveSpotCost(show, {
+            placement: effPlacement,
+            spotCount,
+            cpmOverrideCents: top.cpm_override_cents,
+          })
         : {
             perSpotCents: null,
             threeSpotCents: null,
@@ -255,6 +282,7 @@ export async function getTieredUniverse(
       costBasis,
       isEstimate,
       needsQuote,
+      placement: effPlacement,
       budgetDeltaCents,
       brandSaved: top.brand_saved ?? false,
       brandDismissed: top.brand_dismissed ?? false,

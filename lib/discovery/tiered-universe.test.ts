@@ -374,3 +374,58 @@ describe("getTieredUniverse — confirmed-ring filter (Layer 3.5)", () => {
     expect(readIds.has("show-B")).toBe(false);
   });
 });
+
+describe("getTieredUniverse — Layer 5 effective placement + override-aware read", () => {
+  it("surfaces the per-show placement override as the entry's effective placement", async () => {
+    // Persisted row (tier from the cache), but a per-show placement override on
+    // the row → the entry reports that placement for the media-plan handoff.
+    const rows = [
+      makeRow({ show_id: "show-x", tier: "test", placement_override: "postroll" }),
+    ];
+    const u = await getTieredUniverse(PATTERN, makeDeps(rows));
+    expect(u.test[0].placement).toBe("postroll");
+  });
+
+  it("falls back to the campaign default placement when no per-show override", async () => {
+    const rows = [makeRow({ show_id: "show-x", tier: "test" })];
+    const deps = makeDeps(rows);
+    // Campaign default = postroll (ctx).
+    deps.loadCampaignCtx = async () => ({
+      campaignId: "camp-1",
+      budgetTotalDollars: BUDGET_DOLLARS,
+      testSpotCount: null,
+      testPlacement: "postroll",
+    });
+    const u = await getTieredUniverse(PATTERN, deps);
+    expect(u.test[0].placement).toBe("postroll");
+  });
+
+  it("compute-on-read (null tier) honors the campaign spot-count override", async () => {
+    // 200K downloads × $35 mid-roll = $7,000/spot. 3-spot $21,000 > 25% of $10K
+    // ($2,500) → scale. At ONE spot ($7,000) it's still over → scale BUT the
+    // persisted N-spot cost reflects the single spot. Use a budget where 1 spot
+    // fits: budget $40K → ceiling $10K; 1 spot $7,000 ≤ $10K → test, 3 spots
+    // $21,000 > $10K → scale.
+    const show = makeShow({
+      id: "show-x",
+      audience_size: 200_000,
+      rate_card: { midroll_cpm: 35 },
+    });
+    const rows = [makeRow({ show_id: "show-x", tier: null, show })];
+
+    const threeDeps = makeDeps(rows, 40_000);
+    const atThree = await getTieredUniverse(PATTERN, threeDeps);
+    expect(atThree.scale.map((s) => s.showId)).toContain("show-x");
+
+    const oneDeps = makeDeps(rows, 40_000);
+    oneDeps.loadCampaignCtx = async () => ({
+      campaignId: "camp-1",
+      budgetTotalDollars: 40_000,
+      testSpotCount: 1,
+      testPlacement: null,
+    });
+    const atOne = await getTieredUniverse(PATTERN, oneDeps);
+    expect(atOne.test.map((s) => s.showId)).toContain("show-x");
+    expect(atOne.test[0].threeSpotCents).toBe(700_000); // one spot, $7,000
+  });
+});

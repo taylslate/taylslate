@@ -74,6 +74,7 @@ function tieredShow(over: Partial<TieredShow> = {}): TieredShow {
     costBasis: "derived",
     isEstimate: true,
     needsQuote: false,
+    placement: "midroll",
     budgetDeltaCents: null,
     brandSaved: false,
     brandDismissed: false,
