@@ -73,7 +73,10 @@ export default function MediaPlanBuilder({
       return (
         existing ?? {
           podcast_id: show.podcastId,
-          placement: defaultPlacement,
+          // Wave 14 Phase 2C Layer 5: seed at the placement the brand chose in
+          // discovery (it travels on the scored-show record); fall back to the
+          // plan default for legacy shows that carry none.
+          placement: show.placement ?? defaultPlacement,
           num_episodes: defaultEpisodes,
         }
       );

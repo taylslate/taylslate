@@ -514,6 +514,11 @@ export interface ScoredShowRecord {
     recommendation: string;
   } | null;
   source: "category_leaders" | "search" | "discover";
+  /** Wave 14 Phase 2C Layer 5: the placement the brand selected in discovery,
+   *  carried into the media plan so the line item seeds at it (Wave 7 vocabulary
+   *  'pre-roll'/'mid-roll'/'post-roll'). Optional — legacy scored shows omit it
+   *  and the builder falls back to its default placement. */
+  placement?: Placement;
 }
 
 // ---- Outreach Drafts ----

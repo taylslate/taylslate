@@ -13,8 +13,20 @@
 // is DOLLARS (estimatedCpm like 22). cents→dollars is the single boundary here.
 // ============================================================
 
-import type { ScoredShowRecord } from "@/lib/data/types";
+import type { Placement as MediaPlanPlacement, ScoredShowRecord } from "@/lib/data/types";
 import type { TieredShow } from "./tiered-universe";
+import type { Placement as DiscoveryPlacement } from "./spot-cost";
+
+/**
+ * The discovery placement vocabulary (preroll/midroll/postroll) and the Wave 7
+ * media-plan vocabulary (pre-roll/mid-roll/post-roll) are distinct strings — map
+ * at this boundary so the selected placement (Layer 5) travels into the plan.
+ */
+const PLACEMENT_TO_MEDIA_PLAN: Record<DiscoveryPlacement, MediaPlanPlacement> = {
+  preroll: "pre-roll",
+  midroll: "mid-roll",
+  postroll: "post-roll",
+};
 
 /**
  * Recover an effective CPM (dollars) the Wave 7 builder can price against.
@@ -88,5 +100,8 @@ export function tieredShowToScoredShowRecord(
     adEngagementRate: null,
     brandSafety: null,
     source: "discover",
+    // Layer 5: carry the selected placement into the plan (mapped to Wave 7
+    // vocabulary). The builder seeds the line item's placement from this.
+    placement: PLACEMENT_TO_MEDIA_PLAN[entry.placement],
   };
 }

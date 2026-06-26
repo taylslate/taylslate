@@ -88,4 +88,10 @@ describe("tieredShowToScoredShowRecord", () => {
   it("returns null when the embedded Show is missing", () => {
     expect(tieredShowToScoredShowRecord(tiered({ show: null }))).toBeNull();
   });
+
+  it("maps the discovery placement to the Wave 7 vocabulary (Layer 5 handoff)", () => {
+    expect(tieredShowToScoredShowRecord(tiered({ placement: "postroll" }))!.placement).toBe("post-roll");
+    expect(tieredShowToScoredShowRecord(tiered({ placement: "preroll" }))!.placement).toBe("pre-roll");
+    expect(tieredShowToScoredShowRecord(tiered({ placement: "midroll" }))!.placement).toBe("mid-roll");
+  });
 });
