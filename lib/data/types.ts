@@ -450,6 +450,11 @@ export interface ShowProfile {
   placements?: ShowPlacement[];
   category_exclusions?: ShowCategoryExclusion[];
 
+  // Brand history (Wave 14 Phase 2D Layer 2) — self-reported top advertisers,
+  // captured in onboarding after exclusions. Optional enrichment; discovery
+  // conviction signal. Stored as JSONB on show_profiles.brand_history (migration 019).
+  brand_history?: ShowBrandHistoryEntry[];
+
   // Step 11 (Wave 11) — contact routing. Both optional, fall back to profiles.email.
   ad_copy_email?: string | null;
   billing_email?: string | null;
