@@ -1468,6 +1468,39 @@ export async function updateCampaignSelections(
 }
 
 /**
+ * Atomic media-plan handoff write (Wave 14 Phase 2C — deferred Codex follow-up).
+ * scored_shows + selected_show_ids both live on the `campaigns` row, so a single
+ * `.update()` is one Postgres statement — either all columns land or none do.
+ * This replaces the prior two-call sequence (updateCampaignScoredShows then
+ * updateCampaignSelections), which could leave a half-built handoff (scored
+ * shows written, selection missing) on a partial failure. Fail-soft: returns
+ * false on error, never throws.
+ */
+export async function updateCampaignPlanHandoff(
+  campaignId: string,
+  scoredShows: unknown[],
+  scoringMeta: Record<string, unknown>,
+  selectedShowIds: string[]
+): Promise<boolean> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("campaigns")
+    .update({
+      scored_shows: scoredShows,
+      scoring_meta: scoringMeta,
+      selected_show_ids: selectedShowIds,
+      status: "planned",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", campaignId);
+  if (error) {
+    console.error("[updateCampaignPlanHandoff] Error:", error.message);
+    return false;
+  }
+  return true;
+}
+
+/**
  * Persist the campaign-level portfolio override INPUTS (Wave 14 Phase 2C Layer 5,
  * migration 029): test_spot_count + test_placement on `campaigns`. These are the
  * durable system-of-record for the brand's test config; the recompute reads them

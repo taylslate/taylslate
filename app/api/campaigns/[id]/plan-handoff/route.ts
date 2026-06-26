@@ -13,8 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getAuthenticatedUser,
   getCampaignById,
-  updateCampaignScoredShows,
-  updateCampaignSelections,
+  updateCampaignPlanHandoff,
 } from "@/lib/data/queries";
 import { getLatestCampaignPatternForCampaign } from "@/lib/data/reasoning-log";
 import { getTieredUniverse } from "@/lib/discovery/tiered-universe";
@@ -85,13 +84,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   const selectedIds = scoredShows.map((s) => s.podcastId);
 
-  const wroteShows = await updateCampaignScoredShows(id, scoredShows, {
-    source: "tiered_handoff",
-    pattern_id: pattern.id,
-    count: scoredShows.length,
-  });
-  const wroteSelections = await updateCampaignSelections(id, selectedIds);
-  if (!wroteShows || !wroteSelections) {
+  // Atomic write: scored_shows + selected_show_ids both live on the campaigns
+  // row, so a single UPDATE either lands both or neither — a partial failure
+  // can't leave a selection pointing at shows that were never written.
+  const wrote = await updateCampaignPlanHandoff(
+    id,
+    scoredShows,
+    { source: "tiered_handoff", pattern_id: pattern.id, count: scoredShows.length },
+    selectedIds
+  );
+  if (!wrote) {
     return NextResponse.json(
       { error: "Couldn't hand off to the media plan. Try again." },
       { status: 500 }
