@@ -7,6 +7,7 @@ import { useState } from "react";
 import type {
   ShowAdFormat,
   ShowAdReadType,
+  ShowBrandHistoryEntry,
   ShowCategoryExclusion,
   ShowEpisodeCadence,
   ShowPlacement,
@@ -56,6 +57,21 @@ const EXCLUSION_LABELS: Record<ShowCategoryExclusion, string> = {
 function joinLabels<T extends string>(values: T[] | undefined, labels: Record<T, string>): string {
   if (!values || values.length === 0) return "";
   return values.map((v) => labels[v]).join(" · ");
+}
+
+const DEAL_TYPE_LABELS: Record<NonNullable<ShowBrandHistoryEntry["deal_type"]>, string> = {
+  "one-off": "one-off",
+  annual: "annual deal",
+};
+
+function formatBrandHistory(entries: ShowBrandHistoryEntry[] | undefined): string {
+  if (!entries || entries.length === 0) return "";
+  return entries
+    .map((e) => {
+      const meta = [e.category, e.deal_type ? DEAL_TYPE_LABELS[e.deal_type] : undefined].filter(Boolean);
+      return meta.length > 0 ? `${e.brand_name} (${meta.join(" · ")})` : e.brand_name;
+    })
+    .join(", ");
 }
 
 export default function SummaryClient({ profile }: { profile: ShowProfile }) {
@@ -160,6 +176,13 @@ export default function SummaryClient({ profile }: { profile: ShowProfile }) {
             <Row label="Ad reads" value={joinLabels(profile.ad_read_types, READ_LABELS)} editSlug="read-types" emptyLabel="Pick at least one" />
             <Row label="Placements" value={joinLabels(profile.placements, PLACEMENT_LABELS)} editSlug="placements" emptyLabel="Pick at least one" />
             <Row label="Exclusions" value={joinLabels(profile.category_exclusions, EXCLUSION_LABELS)} editSlug="exclusions" emptyLabel="Open to everything" placeholderAsEmpty />
+            <Row
+              label="Brand history"
+              value={formatBrandHistory(profile.brand_history)}
+              editSlug="brand-history"
+              emptyLabel="None added"
+              placeholderAsEmpty
+            />
             <Row
               label="Ad copy email"
               value={profile.ad_copy_email ?? ""}
