@@ -56,6 +56,8 @@ import {
   recordConvictionScore,
   recordAnalogMatch,
   recordFounderAnnotation,
+  getFounderAnnotationsForShows,
+  deleteFounderAnnotation,
   getCampaignReasoning,
   persistInterpretationAtomic,
   persistRefinementAtomic,
@@ -332,8 +334,8 @@ describe("recordAnalogMatch", () => {
 // ============================================================
 
 describe("recordFounderAnnotation", () => {
-  it("inserts the row with the right shape and defaults tags to []", async () => {
-    await recordFounderAnnotation({
+  it("inserts the row with the right shape, defaults tags to [], returns the id", async () => {
+    const id = await recordFounderAnnotation({
       showId: "s1",
       authorId: "u1",
       note: "host personally uses cold plunge",
@@ -347,9 +349,10 @@ describe("recordFounderAnnotation", () => {
         tags: [],
       })
     );
+    expect(id).toBe("row-1");
   });
 
-  it("never throws when supabase itself throws", async () => {
+  it("returns null (never throws) when supabase itself throws", async () => {
     supabaseAdmin.from.mockImplementationOnce(() => {
       throw new Error("network down");
     });
@@ -358,7 +361,86 @@ describe("recordFounderAnnotation", () => {
         showId: "s1",
         note: "n",
       })
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
+  });
+});
+
+// ============================================================
+// getFounderAnnotationsForShows
+// ============================================================
+
+describe("getFounderAnnotationsForShows", () => {
+  it("returns {} for an empty id list without hitting the DB", async () => {
+    const result = await getFounderAnnotationsForShows([]);
+    expect(result).toEqual({});
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+  });
+
+  it("groups rows by show_id", async () => {
+    const order = vi.fn().mockResolvedValue({
+      data: [
+        { id: "a1", show_id: "s1", note: "n1", tags: [], created_at: "t2" },
+        { id: "a2", show_id: "s2", note: "n2", tags: [], created_at: "t1" },
+        { id: "a3", show_id: "s1", note: "n3", tags: [], created_at: "t0" },
+      ],
+      error: null,
+    });
+    const inFn = vi.fn(() => ({ order }));
+    const select = vi.fn(() => ({ in: inFn }));
+    supabaseAdmin.from.mockImplementationOnce(() => ({ select }) as never);
+
+    const result = await getFounderAnnotationsForShows(["s1", "s2"]);
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("founder_annotations");
+    expect(inFn).toHaveBeenCalledWith("show_id", ["s1", "s2"]);
+    expect(result.s1.map((r) => r.id)).toEqual(["a1", "a3"]);
+    expect(result.s2.map((r) => r.id)).toEqual(["a2"]);
+  });
+
+  it("returns {} on a read error", async () => {
+    const order = vi
+      .fn()
+      .mockResolvedValue({ data: null, error: { message: "boom" } });
+    const select = vi.fn(() => ({ in: vi.fn(() => ({ order })) }));
+    supabaseAdmin.from.mockImplementationOnce(() => ({ select }) as never);
+    await expect(getFounderAnnotationsForShows(["s1"])).resolves.toEqual({});
+  });
+
+  it("returns {} (never throws) when supabase throws", async () => {
+    supabaseAdmin.from.mockImplementationOnce(() => {
+      throw new Error("network down");
+    });
+    await expect(getFounderAnnotationsForShows(["s1"])).resolves.toEqual({});
+  });
+});
+
+// ============================================================
+// deleteFounderAnnotation
+// ============================================================
+
+describe("deleteFounderAnnotation", () => {
+  it("returns true on a clean delete", async () => {
+    const eq = vi.fn().mockResolvedValue({ error: null });
+    const del = vi.fn(() => ({ eq }));
+    supabaseAdmin.from.mockImplementationOnce(() => ({ delete: del }) as never);
+
+    await expect(deleteFounderAnnotation("a1")).resolves.toBe(true);
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("founder_annotations");
+    expect(eq).toHaveBeenCalledWith("id", "a1");
+  });
+
+  it("returns false on a delete error", async () => {
+    const eq = vi.fn().mockResolvedValue({ error: { message: "boom" } });
+    supabaseAdmin.from.mockImplementationOnce(
+      () => ({ delete: vi.fn(() => ({ eq })) }) as never
+    );
+    await expect(deleteFounderAnnotation("a1")).resolves.toBe(false);
+  });
+
+  it("returns false (never throws) when supabase throws", async () => {
+    supabaseAdmin.from.mockImplementationOnce(() => {
+      throw new Error("network down");
+    });
+    await expect(deleteFounderAnnotation("a1")).resolves.toBe(false);
   });
 });
 

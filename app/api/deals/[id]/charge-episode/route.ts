@@ -14,21 +14,13 @@ import {
   getBrandProfileByUserId,
   getWave12DealById,
 } from "@/lib/data/queries";
+import { isInternalAdmin } from "@/lib/auth/admin";
 import { chargeForEpisode } from "@/lib/stripe/payment-intent";
 
 export const runtime = "nodejs";
 
 interface ChargeEpisodeBody {
   ioLineItemId?: string;
-}
-
-function isInternalAdmin(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const list = (process.env.INTERNAL_ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  return list.includes(email.toLowerCase());
 }
 
 export async function POST(

@@ -1,15 +1,17 @@
-import { getCampaignById } from "@/lib/data/queries";
+import { getAuthenticatedUser, getCampaignById } from "@/lib/data/queries";
 import {
   getLatestCampaignPatternForCampaign,
   getConvictionUniverse,
+  getFounderAnnotationsForShows,
   type ConvictionUniverse,
 } from "@/lib/data/reasoning-log";
+import { isInternalAdmin } from "@/lib/auth/admin";
 import { listEventsForEntity } from "@/lib/data/events";
 import {
   getTieredUniverse,
   type TieredUniverse,
 } from "@/lib/discovery/tiered-universe";
-import { isBriefV2 } from "@/lib/data/types";
+import { isBriefV2, type FounderAnnotationRow } from "@/lib/data/types";
 import { notFound } from "next/navigation";
 import CampaignDetail from "./campaign-detail";
 import DiscoveryList from "./discovery-list";
@@ -49,6 +51,24 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       tiered = tieredScored;
       discoveryRan = events.some((e) => e.event_type === "conviction.scored");
     }
+
+    // Phase 2D Layer 1: founder annotations are admin-only — gate the fetch on
+    // the INTERNAL_ADMIN_EMAILS allowlist so a brand never loads them. Batched
+    // across every rendered (test/scale/bench) show id in one round trip.
+    const user = await getAuthenticatedUser();
+    const isAdmin = isInternalAdmin(user?.email);
+    let annotationsByShow: Record<string, FounderAnnotationRow[]> = {};
+    if (isAdmin && tiered) {
+      const showIds = Array.from(
+        new Set(
+          [...tiered.test, ...tiered.scale, ...tiered.bench].map((s) => s.showId)
+        )
+      );
+      if (showIds.length > 0) {
+        annotationsByShow = await getFounderAnnotationsForShows(showIds);
+      }
+    }
+
     return (
       <ConvictionDiscoveryView
         campaignId={id}
@@ -60,6 +80,8 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         selectedShowIds={campaign.selected_show_ids ?? []}
         testSpotCount={campaign.test_spot_count ?? null}
         testPlacement={campaign.test_placement ?? null}
+        isAdmin={isAdmin}
+        annotationsByShow={annotationsByShow}
       />
     );
   }

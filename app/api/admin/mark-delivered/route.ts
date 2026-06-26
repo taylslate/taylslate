@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/data/queries";
+import { isInternalAdmin } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { chargeForEpisode } from "@/lib/stripe/payment-intent";
 
@@ -38,15 +39,6 @@ interface IoLineItemRow {
 interface IoRow {
   id: string;
   deal_id: string;
-}
-
-function isInternalAdmin(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const list = (process.env.INTERNAL_ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  return list.includes(email.toLowerCase());
 }
 
 export async function POST(request: NextRequest) {

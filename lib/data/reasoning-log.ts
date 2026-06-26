@@ -18,6 +18,7 @@ import type {
   ConvictionScoreRow,
   ConvictionTier,
   CostBasis,
+  FounderAnnotationRow,
   RingHypothesisRow,
   Show,
 } from "@/lib/data/types";
@@ -556,27 +557,110 @@ export interface RecordFounderAnnotationInput {
   tags?: string[];
 }
 
+/**
+ * Returns the new annotation id, or null on any failure. Unlike the background
+ * reasoning captures (recordConvictionScore / recordAnalogMatch return void),
+ * this backs an explicit founder "Save note" action — the route needs to know
+ * whether the write landed so it can report success vs a 500. Fail-soft like the
+ * rest of this module: never throws.
+ */
 export async function recordFounderAnnotation(
   input: RecordFounderAnnotationInput
-): Promise<void> {
+): Promise<string | null> {
   try {
-    const { error } = await supabaseAdmin.from("founder_annotations").insert({
-      show_id: input.showId,
-      author_id: input.authorId ?? null,
-      note: input.note,
-      tags: input.tags ?? [],
-    });
-    if (error) {
+    const { data, error } = await supabaseAdmin
+      .from("founder_annotations")
+      .insert({
+        show_id: input.showId,
+        author_id: input.authorId ?? null,
+        note: input.note,
+        tags: input.tags ?? [],
+      })
+      .select("id")
+      .single<{ id: string }>();
+    if (error || !data) {
       console.warn(
         "[reasoning-log.recordFounderAnnotation] insert failed:",
-        error.message
+        error?.message
       );
+      return null;
     }
+    return data.id;
   } catch (err) {
     console.warn(
       "[reasoning-log.recordFounderAnnotation] threw:",
       err instanceof Error ? err.message : err
     );
+    return null;
+  }
+}
+
+/**
+ * Founder annotations for a set of shows, grouped by show_id (Wave 14 Phase 2D
+ * Layer 1). Batched single round trip — the discovery view scores 50-100 shows,
+ * so a per-card fetch would be N requests. Newest-first within each show.
+ * Fail-soft like the rest of this module: returns {} on any failure (incl. an
+ * empty input), never throws. Admin-only data — the caller gates the fetch on
+ * isInternalAdmin so a non-admin never reaches here.
+ */
+export async function getFounderAnnotationsForShows(
+  showIds: string[]
+): Promise<Record<string, FounderAnnotationRow[]>> {
+  if (!showIds || showIds.length === 0) return {};
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("founder_annotations")
+      .select("*")
+      .in("show_id", showIds)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.warn(
+        "[reasoning-log.getFounderAnnotationsForShows] read failed:",
+        error.message
+      );
+      return {};
+    }
+    const byShow: Record<string, FounderAnnotationRow[]> = {};
+    for (const row of (data ?? []) as FounderAnnotationRow[]) {
+      if (!row.show_id) continue;
+      (byShow[row.show_id] ??= []).push(row);
+    }
+    return byShow;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.getFounderAnnotationsForShows] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return {};
+  }
+}
+
+/**
+ * Delete a single founder annotation by id (Wave 14 Phase 2D Layer 1). Fail-soft:
+ * returns false on any failure so the route maps it to a 500; never throws. The
+ * admin route gates the caller — there is no per-row ownership check beyond the
+ * INTERNAL_ADMIN_EMAILS allowlist (annotations are a shared founder asset).
+ */
+export async function deleteFounderAnnotation(id: string): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("founder_annotations")
+      .delete()
+      .eq("id", id);
+    if (error) {
+      console.warn(
+        "[reasoning-log.deleteFounderAnnotation] delete failed:",
+        error.message
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.deleteFounderAnnotation] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return false;
   }
 }
 

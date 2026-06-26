@@ -52,13 +52,22 @@ import {
   useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
-import type { ConvictionBand, RingHypothesisRow, Show } from "@/lib/data/types";
+import type {
+  ConvictionBand,
+  FounderAnnotationRow,
+  RingHypothesisRow,
+  Show,
+} from "@/lib/data/types";
 import type { ConvictionUniverse } from "@/lib/data/reasoning-log";
 import type {
   TieredShow,
   TieredUniverse,
 } from "@/lib/discovery/tiered-universe";
 import type { Placement } from "@/lib/discovery/spot-cost";
+import {
+  FounderAnnotationsProvider,
+  ShowAnnotations,
+} from "@/components/discovery/FounderAnnotations";
 
 // ---- Layer 5 override controls ----
 
@@ -183,6 +192,12 @@ interface ConvictionDiscoveryViewProps {
    *  test-settings selectors. null ⇒ default (3 spots / mid-roll). */
   testSpotCount?: number | null;
   testPlacement?: Placement | null;
+  /** Phase 2D Layer 1: true when the viewer is on the INTERNAL_ADMIN_EMAILS
+   *  allowlist. Gates the founder-annotation affordance on every show card. */
+  isAdmin?: boolean;
+  /** Phase 2D Layer 1: founder annotations keyed by show id (admin-only; empty
+   *  for brands). Threaded to the cards via FounderAnnotationsProvider. */
+  annotationsByShow?: Record<string, FounderAnnotationRow[]>;
 }
 
 type RingFilter = "all" | string;
@@ -200,6 +215,8 @@ export default function ConvictionDiscoveryView({
   selectedShowIds,
   testSpotCount,
   testPlacement,
+  isAdmin = false,
+  annotationsByShow = {},
 }: ConvictionDiscoveryViewProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -336,20 +353,27 @@ export default function ConvictionDiscoveryView({
   }
 
   // ---- Scored universe (Phase 2C Layer 4 — tiered dual output) ----
+  // The Provider threads isAdmin + annotations to the deeply-nested cards (Phase
+  // 2D Layer 1) without prop-drilling through tiered/section/card layers.
   return (
-    <TieredScoredUniverse
-      campaignId={campaignId}
-      campaignName={campaignName}
-      budgetTotal={budgetTotal}
-      tiered={tiered ?? EMPTY_TIERED}
-      rings={universe.rings}
-      initialSelectedShowIds={selectedShowIds ?? []}
-      initialSpotCount={testSpotCount ?? DEFAULT_SPOT_COUNT}
-      initialPlacement={testPlacement ?? DEFAULT_PLACEMENT}
-      onRerun={runDiscovery}
-      rerunning={discovering || isPending}
-      router={router}
-    />
+    <FounderAnnotationsProvider
+      isAdmin={isAdmin}
+      annotationsByShow={annotationsByShow}
+    >
+      <TieredScoredUniverse
+        campaignId={campaignId}
+        campaignName={campaignName}
+        budgetTotal={budgetTotal}
+        tiered={tiered ?? EMPTY_TIERED}
+        rings={universe.rings}
+        initialSelectedShowIds={selectedShowIds ?? []}
+        initialSpotCount={testSpotCount ?? DEFAULT_SPOT_COUNT}
+        initialPlacement={testPlacement ?? DEFAULT_PLACEMENT}
+        onRerun={runDiscovery}
+        rerunning={discovering || isPending}
+        router={router}
+      />
+    </FounderAnnotationsProvider>
   );
 }
 
@@ -1283,6 +1307,8 @@ function TestShowCard({
       />
 
       {safety && <BrandSafetyNotice flag={safety} />}
+
+      <ShowAnnotations showId={entry.showId} />
     </label>
   );
 }
@@ -1399,6 +1425,8 @@ function ScaleShowCard({
         onPlacementOverride={onPlacementOverride}
         recomputing={recomputing}
       />
+
+      <ShowAnnotations showId={entry.showId} />
     </div>
   );
 }
@@ -1456,6 +1484,8 @@ function BenchShowCard({
           )}
         </div>
       </div>
+
+      <ShowAnnotations showId={entry.showId} />
     </div>
   );
 }
