@@ -160,10 +160,9 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - ~~Rejected-ring filter (3.5): confirmed-ring filter before rollup, both persist + read paths~~ — done
 - Layers 1/1b/2/3/3.5/4 shipped; migration 028 applied. Layer 5 (overrides) remaining — optional.
 
-#### 2C deferred follow-ups (post-Layer-4, non-blocking)
-- **flat_fee meter-vs-plan** — budget meter excludes flat_fee (untrusted YouTube estimate, per 2C spec) but the media plan prices it. Moot at launch (podcast-only discovery → ~no flat_fee shows). Resolve when YouTube discovery/onboarding ships. **Scope:** Wave 7 / 2D.
-- **scale-watchlist tier validation** — save/dismiss endpoint doesn't validate the show is actually in the scale tier; zero-row writes undetected. Low harm (brand's own campaign, fail-soft). **Effort:** ~1 hour.
-- **plan-handoff non-atomic double-write** — writes `scored_shows` + `selected_show_ids` separately; degrades safely (plan page redirects back if selections missing). **Effort:** ~1 hour.
+#### 2C — closed (4 fixes shipped; flat_fee re-homed to YouTube onboarding; 2 standing invariants)
+- ~~**scale-watchlist tier validation** — save/dismiss endpoint doesn't validate the show is actually in the scale tier; zero-row writes undetected.~~ — **shipped June 26 2026 (commit `78185f6`).** Gates all five actions on `getTieredUniverse().scale` membership (fails closed); `updateScaleShowCuration` detects 0-row writes via `.select()` → 500.
+- ~~**plan-handoff non-atomic double-write** — writes `scored_shows` + `selected_show_ids` separately.~~ — **shipped June 26 2026 (commit `bd2847a`).** Collapsed into one atomic `campaigns` UPDATE (`updateCampaignPlanHandoff`).
 - **Q5 stale-tier invariant note** — confirmed-ring stale-tier safety holds only because every persisted row has composite ≥ MEDIUM_FLOOR (the sole ring-dependent input to `classifyTier`). If a future change ever persists below-floor rows, reopen Codex Q5 (add the defensive confirmed-only recompute). **Trigger to watch, not a task.**
 - **Layer 5 request-scope footgun** — `tierCampaignPortfolio`'s default `loadShowsByIds` uses the cookie server client (request-scope only). Layer 5 override re-runs must run in a request scope or inject admin deps, or the show load returns empty. **Build note for Layer 5.**
 
@@ -199,6 +198,7 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - Add `medium_priors` JSONB for medium-specific scoring (CPM range, engagement weight, frequency norms)
 - Update discovery orchestrator (`lib/discovery/discover-shows.ts`) to merge simulcast records
 - Update conviction reasoning to be medium-aware
+  - flat_fee meter-vs-plan mismatch — budget meter excludes flat_fee but media plan prices it; blocker on shipping YouTube discovery, moot until then.
 - **Effort:** 2-3 days
 - **Why:** Long-form YouTube is launch-day medium, not future expansion. Simulcasts are common (most podcasts upload to YouTube). Modeling now avoids re-migration later.
 
