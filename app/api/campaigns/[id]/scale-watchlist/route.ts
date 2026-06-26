@@ -14,6 +14,7 @@ import {
   getLatestCampaignPatternForCampaign,
   updateScaleShowCuration,
 } from "@/lib/data/reasoning-log";
+import { getTieredUniverse } from "@/lib/discovery/tiered-universe";
 import { logEvent } from "@/lib/data/events";
 
 type WatchlistAction = "save" | "unsave" | "dismiss" | "restore" | "promote";
@@ -62,6 +63,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json(
       { error: "No discovery pattern for this campaign." },
       { status: 409 }
+    );
+  }
+
+  // Tier-membership gate: every action here (save/unsave/dismiss/restore/promote)
+  // operates on a SCALE-tier show, so validate the show is actually in this
+  // campaign's scale tier before writing a flag or logging intent. Use the same
+  // confirmed-ring-filtered, rolled-up universe the UI renders (getTieredUniverse)
+  // so a bench/test/unknown show — or a rejected-ring leak — can't be curated.
+  // getTieredUniverse is fail-soft (empty universe on read error), so this fails
+  // CLOSED: a transient read rejects the action rather than writing blind. Low
+  // harm — the brand can only act on their own campaign.
+  const tiered = await getTieredUniverse(pattern.id);
+  if (!tiered.scale.some((s) => s.showId === showId)) {
+    return NextResponse.json(
+      { error: "That show isn't in this campaign's scale tier." },
+      { status: 400 }
     );
   }
 

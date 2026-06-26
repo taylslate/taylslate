@@ -60,6 +60,7 @@ import {
   persistInterpretationAtomic,
   persistRefinementAtomic,
   persistConfirmationAtomic,
+  updateScaleShowCuration,
 } from "./reasoning-log";
 
 beforeEach(() => {
@@ -592,5 +593,67 @@ describe("persistConfirmationAtomic", () => {
     await expect(
       persistConfirmationAtomic("pat_1", decisions)
     ).resolves.toEqual({ ok: false, reason: "error" });
+  });
+});
+
+// ============================================================
+// updateScaleShowCuration (Wave 14 Phase 2C — 0-row detection)
+// ============================================================
+
+describe("updateScaleShowCuration", () => {
+  // Build an .update().eq().eq().select() chain whose terminal .select()
+  // resolves to the given {data,error}. The default `from()` mock has no
+  // update builder, so each test installs this via from.mockImplementationOnce.
+  function installUpdate(result: { data: unknown; error: unknown }) {
+    const select = vi.fn().mockResolvedValue(result);
+    const chain: Record<string, unknown> = {};
+    chain.eq = vi.fn(() => chain);
+    chain.select = select;
+    const update = vi.fn(() => chain);
+    supabaseAdmin.from.mockImplementationOnce(() => ({ update }) as never);
+    return { update, select };
+  }
+
+  const INPUT = {
+    campaignPatternId: "pat_1",
+    showId: "s1",
+    brandSaved: true,
+    brandDismissed: false,
+  };
+
+  it("returns true when at least one row is updated", async () => {
+    const { update } = installUpdate({
+      data: [{ show_id: "s1" }],
+      error: null,
+    });
+    await expect(updateScaleShowCuration(INPUT)).resolves.toBe(true);
+    expect(update).toHaveBeenCalledWith({
+      brand_saved: true,
+      brand_dismissed: false,
+    });
+  });
+
+  it("returns false on a 0-row write (no matching pattern/show)", async () => {
+    installUpdate({ data: [], error: null });
+    await expect(updateScaleShowCuration(INPUT)).resolves.toBe(false);
+  });
+
+  it("returns false when supabase returns an error", async () => {
+    installUpdate({ data: null, error: { message: "boom" } });
+    await expect(updateScaleShowCuration(INPUT)).resolves.toBe(false);
+  });
+
+  it("returns false (and never writes) on an empty patch", async () => {
+    await expect(
+      updateScaleShowCuration({ campaignPatternId: "pat_1", showId: "s1" })
+    ).resolves.toBe(false);
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+  });
+
+  it("never throws when the client itself throws", async () => {
+    supabaseAdmin.from.mockImplementationOnce(() => {
+      throw new Error("network down");
+    });
+    await expect(updateScaleShowCuration(INPUT)).resolves.toBe(false);
   });
 });

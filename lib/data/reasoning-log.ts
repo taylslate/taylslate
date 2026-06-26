@@ -1008,8 +1008,11 @@ export interface UpdateScaleShowCurationInput {
  * (a partial UPDATE), so saving doesn't clobber a prior dismiss and vice-versa.
  *
  * Fail-soft like the rest of this module: returns false on failure (incl. an
- * empty patch or pre-028 columns), never throws. Columns are added by migration
- * 028; before it runs the UPDATE errors and returns false (swallowed).
+ * empty patch, pre-028 columns, OR a 0-row write), never throws. Columns are
+ * added by migration 028; before it runs the UPDATE errors and returns false
+ * (swallowed). The `.select()` lets us surface a 0-row match (no such (pattern,
+ * show) row) as a real failure instead of a silent success — the route maps the
+ * false return to a 500.
  */
 export async function updateScaleShowCuration(
   input: UpdateScaleShowCurationInput
@@ -1021,15 +1024,23 @@ export async function updateScaleShowCuration(
   if (Object.keys(patch).length === 0) return false;
 
   try {
-    const { error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from("conviction_scores")
       .update(patch)
       .eq("campaign_pattern_id", input.campaignPatternId)
-      .eq("show_id", input.showId);
+      .eq("show_id", input.showId)
+      .select("show_id");
     if (error) {
       console.warn(
         "[reasoning-log.updateScaleShowCuration] update failed:",
         error.message
+      );
+      return false;
+    }
+    if (!data || data.length === 0) {
+      console.warn(
+        "[reasoning-log.updateScaleShowCuration] 0 rows updated for",
+        `(pattern=${input.campaignPatternId}, show=${input.showId})`
       );
       return false;
     }
