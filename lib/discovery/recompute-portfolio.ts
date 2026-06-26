@@ -102,6 +102,11 @@ export interface RecomputeResult {
   campaignPatternId: string | null;
   /** The re-tiered counts (test/scale/dropped, underfilled) after the override. */
   tier: TierPortfolioResult | null;
+  /** True when the tier-cache persist did NOT cover every classified show
+   *  (persisted < classified) — some shows may serve a STALE persisted tier on
+   *  the read path until the next recompute. Surfaced so a partial persist is
+   *  never silent (the read path trusts the persisted cache by design). */
+  cachePartial: boolean;
   errors: string[];
 }
 
@@ -133,6 +138,7 @@ export async function applyPortfolioOverride(
       ok: false,
       campaignPatternId: null,
       tier: null,
+      cachePartial: false,
       errors: [...errors, "No discovery pattern for this campaign."],
     };
   }
@@ -167,13 +173,24 @@ export async function applyPortfolioOverride(
         break;
       case "reset": {
         // Clear BOTH layers: campaign config back to default, every per-show
-        // override wiped → next recompute derives at mid-roll / 3 spots.
+        // override wiped → next recompute derives at mid-roll / 3 spots. These
+        // are two independent best-effort writes (different tables, no shared
+        // transaction). RECOMPUTE if EITHER cleared — a partial clear still moved
+        // the persisted state, so the cache must be rebuilt to match it
+        // (aborting would leave a stale cache, worse than a partial reset). Only
+        // a TOTAL clear failure means nothing changed → abort.
         const campaignCleared = await deps.persistCampaignOverrides(campaignId, {
           testSpotCount: null,
           testPlacement: null,
         });
         const showsCleared = await deps.clearShowOverrides(pattern.id);
-        persisted = campaignCleared && showsCleared;
+        persisted = campaignCleared || showsCleared;
+        if (!campaignCleared || !showsCleared) {
+          errors.push(
+            "Reset partially failed; recomputed from the persisted state — " +
+              "re-run reset to finish clearing."
+          );
+        }
         break;
       }
     }
@@ -183,7 +200,13 @@ export async function applyPortfolioOverride(
   }
   if (!persisted) {
     errors.push("Override input did not persist; tiers were not recomputed.");
-    return { ok: false, campaignPatternId: pattern.id, tier: null, errors };
+    return {
+      ok: false,
+      campaignPatternId: pattern.id,
+      tier: null,
+      cachePartial: false,
+      errors,
+    };
   }
 
   // 2. Recompute the cost/tier cache from the now-persisted inputs.
@@ -193,6 +216,19 @@ export async function applyPortfolioOverride(
     errors.push(...tier.errors);
   } catch (err) {
     errors.push(`recompute (tier pass) failed: ${msg(err)}`);
+  }
+
+  // A tier-cache persist that didn't cover every classified show leaves some
+  // rows serving a STALE persisted tier on the read path (which trusts the cache
+  // by design). Make that observable — never silent — so the caller can warn and
+  // the event log records it; the next successful recompute self-heals it.
+  const cachePartial =
+    tier != null && tier.persisted < tier.showsClassified;
+  if (cachePartial) {
+    errors.push(
+      `Tier cache persisted ${tier!.persisted}/${tier!.showsClassified} shows; ` +
+        `some may show stale tiers until the next recompute.`
+    );
   }
 
   // 3. Emit portfolio.override_applied (fail-soft — never blocks the response).
@@ -208,11 +244,12 @@ export async function applyPortfolioOverride(
         scaleCount: tier?.scaleCount ?? null,
         droppedCount: tier?.droppedCount ?? null,
         testUnderfilled: tier?.testUnderfilled ?? null,
+        cachePartial,
       },
     });
   } catch (err) {
     errors.push(`emit portfolio.override_applied failed: ${msg(err)}`);
   }
 
-  return { ok: true, campaignPatternId: pattern.id, tier, errors };
+  return { ok: true, campaignPatternId: pattern.id, tier, cachePartial, errors };
 }

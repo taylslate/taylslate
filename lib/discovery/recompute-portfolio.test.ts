@@ -183,6 +183,47 @@ describe("applyPortfolioOverride — reset-to-default", () => {
     expect(spies.cleared).toEqual(["pattern-1"]);
     expect(spies.tierRuns).toEqual(["pattern-1"]);
   });
+
+  it("recomputes (not abort) when only the per-show clear fails — no stale cache", async () => {
+    // campaign clears, show-clear fails → still recompute so the cache rebuilds
+    // to the (partially-reset) persisted state; surface a warning.
+    const { deps, spies } = makeDeps({ clearOk: false });
+    const res = await applyPortfolioOverride("campaign-1", { kind: "reset" }, deps);
+    expect(res.ok).toBe(true);
+    expect(spies.tierRuns).toEqual(["pattern-1"]); // recomputed, not aborted
+    expect(res.errors.some((e) => /partially failed/i.test(e))).toBe(true);
+  });
+
+  it("aborts only when BOTH clears fail (nothing changed)", async () => {
+    const { deps, spies } = makeDeps({ campaignPersist: false, clearOk: false });
+    const res = await applyPortfolioOverride("campaign-1", { kind: "reset" }, deps);
+    expect(res.ok).toBe(false);
+    expect(spies.tierRuns).toHaveLength(0);
+  });
+});
+
+describe("applyPortfolioOverride — partial tier-cache persist is observable", () => {
+  it("flags cachePartial when persisted < classified (not silent)", async () => {
+    const { deps } = makeDeps({
+      tier: tierResult({ showsClassified: 7, persisted: 5 }),
+    });
+    const res = await applyPortfolioOverride(
+      "campaign-1",
+      { kind: "campaign_spot_count", spotCount: 1 },
+      deps
+    );
+    expect(res.ok).toBe(true);
+    expect(res.cachePartial).toBe(true);
+    expect(res.errors.some((e) => /stale tiers/i.test(e))).toBe(true);
+  });
+
+  it("cachePartial is false when every classified show persisted", async () => {
+    const { deps } = makeDeps({
+      tier: tierResult({ showsClassified: 6, persisted: 6 }),
+    });
+    const res = await applyPortfolioOverride("campaign-1", { kind: "reset" }, deps);
+    expect(res.cachePartial).toBe(false);
+  });
 });
 
 describe("applyPortfolioOverride — guards + idempotency", () => {

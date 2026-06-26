@@ -130,5 +130,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     scale_count: result.tier?.scaleCount ?? null,
     dropped_count: result.tier?.droppedCount ?? null,
     test_underfilled: result.tier?.testUnderfilled ?? null,
+    // True when some shows' tier cache didn't persist — the view warns rather
+    // than silently showing a possibly-stale tier (read trusts the cache).
+    cache_partial: result.cachePartial,
   });
 }

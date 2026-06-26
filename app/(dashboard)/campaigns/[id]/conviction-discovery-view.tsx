@@ -423,6 +423,18 @@ function TieredScoredUniverse({
           setOverrideError(m);
           return false;
         }
+        // A partial tier-cache persist means some shows may show a stale tier
+        // until the next recompute — warn rather than silently refreshing into it.
+        try {
+          const j = await res.json();
+          if (j?.cache_partial) {
+            setOverrideError(
+              "Some shows didn't fully update — re-apply to finish, or refresh."
+            );
+          }
+        } catch {
+          /* body optional; the refresh below still runs */
+        }
         // Re-read the server component so the reshuffled tiers + persisted
         // override values render. Tiers can move a show between sections.
         startRecompute(() => router.refresh());

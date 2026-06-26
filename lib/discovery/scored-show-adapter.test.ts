@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Show } from "@/lib/data/types";
 import type { TieredShow } from "./tiered-universe";
 import { tieredShowToScoredShowRecord } from "./scored-show-adapter";
+import { spotPrice } from "@/lib/utils/pricing";
 
 function show(over: Partial<Show> = {}): Show {
   return {
@@ -93,5 +94,29 @@ describe("tieredShowToScoredShowRecord", () => {
     expect(tieredShowToScoredShowRecord(tiered({ placement: "postroll" }))!.placement).toBe("post-roll");
     expect(tieredShowToScoredShowRecord(tiered({ placement: "preroll" }))!.placement).toBe("pre-roll");
     expect(tieredShowToScoredShowRecord(tiered({ placement: "midroll" }))!.placement).toBe("mid-roll");
+  });
+
+  it("hands the builder a BASE CPM so it reproduces the discovery per-spot price (no double placement adjustment)", () => {
+    // Discovery priced post-roll at $14 CPM on 50k downloads → $700/spot.
+    const audience = 50_000;
+    const discoveryPerSpotDollars = 700;
+    for (const [placement, w7, cpmCents] of [
+      ["postroll", "post-roll", 1400], // $14 post-roll
+      ["preroll", "pre-roll", 1400],
+      ["midroll", "mid-roll", 1400],
+    ] as const) {
+      const rec = tieredShowToScoredShowRecord(
+        tiered({
+          placement,
+          cpmUsedCents: cpmCents,
+          perSpotCents: 70_000,
+          show: show({ audience_size: audience }),
+        })
+      )!;
+      // The builder applies the placement multiplier to estimatedCpm — that
+      // round-trip must equal the discovery price, not double-adjust it.
+      const builderPerSpot = spotPrice(audience, rec.estimatedCpm, rec.placement!);
+      expect(builderPerSpot).toBeCloseTo(discoveryPerSpotDollars, 5);
+    }
   });
 });
