@@ -190,6 +190,24 @@ export async function getShowsByIds(ids: string[]): Promise<Show[]> {
   return data.map(transformShow);
 }
 
+/**
+ * Admin-client variant of getShowsByIds. getShowsByIds uses the cookie-based
+ * server client and so only resolves inside a request scope; the Phase 2C Layer
+ * 5 recompute service injects THIS instead, so it loads the real show universe
+ * regardless of caller scope. (The default tier pass keeps the cookie loader —
+ * its callers are all request-scoped.) Without this, an out-of-scope recompute
+ * would silently load nothing and tier an empty universe. Fail-soft: [] on error.
+ */
+export async function getShowsByIdsAdmin(ids: string[]): Promise<Show[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await supabaseAdmin
+    .from("shows")
+    .select("*")
+    .in("id", ids);
+  if (error || !data) return [];
+  return data.map(transformShow);
+}
+
 // ---- Deals ----
 
 export async function getAllDealsForUser(userId: string): Promise<Deal[]> {
@@ -1444,6 +1462,37 @@ export async function updateCampaignSelections(
     .eq("id", campaignId);
   if (error) {
     console.error("[updateCampaignSelections] Error:", error.message);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Persist the campaign-level portfolio override INPUTS (Wave 14 Phase 2C Layer 5,
+ * migration 029): test_spot_count + test_placement on `campaigns`. These are the
+ * durable system-of-record for the brand's test config; the recompute reads them
+ * to rewrite the cost/tier cache on conviction_scores. Pass null for either to
+ * clear it (reset-to-default → derive at 3 spots / mid-roll). Only the provided
+ * keys are written, so setting spot-count alone never clobbers a placement
+ * default. placement is the DISCOVERY vocabulary (preroll/midroll/postroll).
+ */
+export async function updateCampaignTierOverrides(
+  campaignId: string,
+  input: {
+    testSpotCount?: number | null;
+    testPlacement?: "preroll" | "midroll" | "postroll" | null;
+  }
+): Promise<boolean> {
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if ("testSpotCount" in input) patch.test_spot_count = input.testSpotCount ?? null;
+  if ("testPlacement" in input) patch.test_placement = input.testPlacement ?? null;
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("campaigns")
+    .update(patch)
+    .eq("id", campaignId);
+  if (error) {
+    console.error("[updateCampaignTierOverrides] Error:", error.message);
     return false;
   }
   return true;

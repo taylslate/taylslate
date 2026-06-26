@@ -71,6 +71,8 @@ function makeRow(
     needs_quote: false,
     brand_saved: false,
     brand_dismissed: false,
+    cpm_override_cents: null,
+    placement_override: null,
   };
   return { ...base, show: makeShow(), ...overrides };
 }
@@ -96,7 +98,12 @@ function makeDeps(
     loadCampaignCtx: async () =>
       budgetDollars == null
         ? null
-        : { campaignId: "camp-1", budgetTotalDollars: budgetDollars },
+        : {
+            campaignId: "camp-1",
+            budgetTotalDollars: budgetDollars,
+            testSpotCount: null,
+            testPlacement: null,
+          },
   };
 }
 
@@ -346,7 +353,12 @@ describe("getTieredUniverse — confirmed-ring filter (Layer 3.5)", () => {
       loadScores: async () => rows,
       loadConfirmedRings: async () =>
         confirmed.map((id) => ({ id }) as RingHypothesisRow),
-      loadCampaignCtx: async () => ({ campaignId: "camp-1", budgetTotalDollars: BUDGET_DOLLARS }),
+      loadCampaignCtx: async () => ({
+        campaignId: "camp-1",
+        budgetTotalDollars: BUDGET_DOLLARS,
+        testSpotCount: null,
+        testPlacement: null,
+      }),
       loadShowsByIds: async (ids) =>
         new Map(ids.filter((id) => showById.has(id)).map((id) => [id, showById.get(id)!])),
       persist: async (input) => {

@@ -853,13 +853,19 @@ export async function getConvictionScoresWithShowsForPattern(
 export interface CampaignContextForPattern {
   campaignId: string;
   budgetTotalDollars: number;
+  /** Wave 14 Phase 2C Layer 5 (migration 029): campaign-level override inputs,
+   *  read alongside the budget so the tier pass (orchestrator AND recompute)
+   *  always reflects the persisted test config. null ⇒ default (3 / 'midroll'). */
+  testSpotCount: number | null;
+  testPlacement: "preroll" | "midroll" | "postroll" | null;
 }
 
 /**
- * Resolve a campaign pattern to its campaign id + budget. conviction_scores
- * has NO campaign_id — it links via campaign_pattern_id → campaign_patterns
- * .campaign_id → campaigns.budget_total. One round trip via the FK embed.
- * Fail-soft (null on any failure, or when the pattern has no campaign).
+ * Resolve a campaign pattern to its campaign id + budget + Layer 5 override
+ * inputs. conviction_scores has NO campaign_id — it links via
+ * campaign_pattern_id → campaign_patterns.campaign_id → campaigns. One round
+ * trip via the FK embed. Fail-soft (null on any failure, or when the pattern has
+ * no campaign).
  *
  * budget_total is DECIMAL dollars; coerced to a finite number here. The
  * dollars→cents conversion is the caller's single boundary (spot-cost
@@ -871,11 +877,17 @@ export async function getCampaignContextForPattern(
   try {
     const { data, error } = await supabaseAdmin
       .from("campaign_patterns")
-      .select("campaign_id, campaigns(budget_total)")
+      .select(
+        "campaign_id, campaigns(budget_total, test_spot_count, test_placement)"
+      )
       .eq("id", campaignPatternId)
       .maybeSingle<{
         campaign_id: string | null;
-        campaigns: { budget_total: number | string | null } | null;
+        campaigns: {
+          budget_total: number | string | null;
+          test_spot_count: number | null;
+          test_placement: "preroll" | "midroll" | "postroll" | null;
+        } | null;
       }>();
     if (error) {
       console.warn(
@@ -890,6 +902,8 @@ export async function getCampaignContextForPattern(
     return {
       campaignId: data.campaign_id,
       budgetTotalDollars: Number.isFinite(budget) ? Number(budget) : 0,
+      testSpotCount: data.campaigns?.test_spot_count ?? null,
+      testPlacement: data.campaigns?.test_placement ?? null,
     };
   } catch (err) {
     console.warn(
@@ -1002,6 +1016,97 @@ export async function updateScaleShowCuration(
   } catch (err) {
     console.warn(
       "[reasoning-log.updateScaleShowCuration] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return false;
+  }
+}
+
+export interface UpdatePerShowOverrideInput {
+  campaignPatternId: string;
+  showId: string;
+  /** Per-show CPM override, integer cents (Wave 14 Phase 2C Layer 5). Pass a
+   *  positive number to set, null to clear (derive from band). Omit to leave. */
+  cpmOverrideCents?: number | null;
+  /** Per-show placement override (discovery vocabulary). null clears it (use the
+   *  campaign default). Omit to leave as-is. */
+  placementOverride?: "preroll" | "midroll" | "postroll" | null;
+}
+
+/**
+ * Write the brand's per-show override INPUTS (cpm_override_cents /
+ * placement_override, migration 029) onto EVERY conviction_scores row for that
+ * (pattern, show) — the table is per-(show, ring) but overrides are per-show.
+ * Durable system-of-record, kept separate from the recomputed cost/tier cache:
+ * the recompute reads these + the band tables to rewrite the cache, so a per-show
+ * edit survives a later campaign-level recompute (it isn't re-derived away).
+ *
+ * Only the provided keys are written (a partial UPDATE), so setting a CPM never
+ * clobbers a placement override and vice-versa. Pass null to CLEAR a key
+ * (reset-to-default). Fail-soft like the rest of this module: returns false on
+ * failure (incl. an empty patch or pre-029 columns), never throws.
+ */
+export async function updatePerShowOverride(
+  input: UpdatePerShowOverrideInput
+): Promise<boolean> {
+  const patch: {
+    cpm_override_cents?: number | null;
+    placement_override?: "preroll" | "midroll" | "postroll" | null;
+  } = {};
+  if ("cpmOverrideCents" in input) patch.cpm_override_cents = input.cpmOverrideCents ?? null;
+  if ("placementOverride" in input)
+    patch.placement_override = input.placementOverride ?? null;
+  if (Object.keys(patch).length === 0) return false;
+
+  try {
+    const { error } = await supabaseAdmin
+      .from("conviction_scores")
+      .update(patch)
+      .eq("campaign_pattern_id", input.campaignPatternId)
+      .eq("show_id", input.showId);
+    if (error) {
+      console.warn(
+        "[reasoning-log.updatePerShowOverride] update failed:",
+        error.message
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.updatePerShowOverride] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return false;
+  }
+}
+
+/**
+ * Clear EVERY per-show override (cpm_override_cents + placement_override) for a
+ * pattern in one statement — the reset-to-default path (Wave 14 Phase 2C Layer
+ * 5). The campaign-level inputs are cleared separately via
+ * updateCampaignTierOverrides; together they return the whole portfolio to
+ * derived cost at mid-roll / 3 spots on the next recompute. Fail-soft.
+ */
+export async function clearPerShowOverridesForPattern(
+  campaignPatternId: string
+): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("conviction_scores")
+      .update({ cpm_override_cents: null, placement_override: null })
+      .eq("campaign_pattern_id", campaignPatternId);
+    if (error) {
+      console.warn(
+        "[reasoning-log.clearPerShowOverridesForPattern] update failed:",
+        error.message
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.clearPerShowOverridesForPattern] threw:",
       err instanceof Error ? err.message : err
     );
     return false;

@@ -141,6 +141,8 @@ function score(over: Partial<ConvictionScoreRow> = {}): ConvictionScoreRow {
     needs_quote: null,
     brand_saved: null,
     brand_dismissed: null,
+    cpm_override_cents: null,
+    placement_override: null,
     ...over,
   };
 }

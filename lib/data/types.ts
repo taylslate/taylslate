@@ -662,6 +662,9 @@ export type DomainEventType =
   | "conviction.reasoning_failed"
   // Wave 14 Phase 2C Layer 2 — test/scale/dropped portfolio split completed
   | "portfolio.tiered"
+  // Wave 14 Phase 2C Layer 5 — an override (spot-count / placement / per-show
+  // CPM / reset) triggered a recompute of the split
+  | "portfolio.override_applied"
   // Wave 14 Phase 2C Layer 4 — scale-tier watchlist curation + promotion
   | "scale_show.saved"
   | "scale_show.dismissed"

@@ -171,6 +171,8 @@ function makeRow(overrides: Partial<ConvictionScoreRow> = {}): ConvictionScoreRo
     needs_quote: null,
     brand_saved: null,
     brand_dismissed: null,
+    cpm_override_cents: null,
+    placement_override: null,
     ...overrides,
   };
 }
@@ -234,6 +236,9 @@ function makeDeps(args: {
   /** Confirmed ring ids (Layer 3.5). Defaults to every distinct ring present in
    *  the rows, so the filter is a no-op unless a test narrows it deliberately. */
   confirmedRingIds?: string[];
+  /** Layer 5: campaign-level override inputs the ctx carries (migration 029). */
+  testSpotCount?: number | null;
+  testPlacement?: "preroll" | "midroll" | "postroll" | null;
 }): {
   deps: TierPortfolioDeps;
   persistCalls: UpdateConvictionTierCostInput[];
@@ -261,6 +266,8 @@ function makeDeps(args: {
         : {
             campaignId: args.campaignId ?? "campaign-1",
             budgetTotalDollars: args.budgetTotalDollars ?? BUDGET_DOLLARS,
+            testSpotCount: args.testSpotCount ?? null,
+            testPlacement: args.testPlacement ?? null,
           },
     loadShowsByIds: async (ids) =>
       new Map(ids.filter((id) => showMap.has(id)).map((id) => [id, showMap.get(id)!])),
@@ -392,5 +399,71 @@ describe("tierCampaignPortfolio — confirmed-ring filter (Layer 3.5)", () => {
     expect(persistCalls).toHaveLength(1);
     expect(persistCalls[0].showId).toBe("show-A");
     expect(persistCalls[0].tier).toBe("dropped");
+  });
+});
+
+describe("tierCampaignPortfolio — Layer 5 overrides (campaign ctx + per-show rows)", () => {
+  // show-C: 200K downloads × $35 mid-roll = per-spot $7,000. At 3 spots = $21,000,
+  // over 25% of the $30K budget ($7,500) → scale. The overrides below each pull
+  // its 3-spot (or N-spot) cost under that ceiling → test. Same universe, the
+  // override flips the tier — the exact reshuffle the spot-count selector drives.
+  const scaleShow = () =>
+    makeShow({
+      id: "show-C",
+      audience_size: 200_000,
+      rate_card: { preroll_cpm: 40, midroll_cpm: 35, postroll_cpm: 10 },
+    });
+
+  it("campaign spot-count=1 (from ctx) reshuffles an over-budget scale show into test", async () => {
+    const rows = [makeRow({ show_id: "show-C", composite_score: 80 })];
+    const shows = [scaleShow()];
+
+    const atThree = await tierCampaignPortfolio(
+      "pattern-1",
+      makeDeps({ rows, shows }).deps
+    );
+    expect(atThree.scaleCount).toBe(1);
+    expect(atThree.testCount).toBe(0);
+
+    const { deps, persistCalls } = makeDeps({ rows, shows, testSpotCount: 1 });
+    const atOne = await tierCampaignPortfolio("pattern-1", deps);
+    expect(atOne.testCount).toBe(1);
+    expect(atOne.scaleCount).toBe(0);
+    // The persisted cost reflects ONE spot ($7,000), not three.
+    expect(persistCalls[0].threeSpotCents).toBe(700_000);
+    expect(persistCalls[0].tier).toBe("test");
+  });
+
+  it("a per-show CPM override (on the row) reprices that show and moves its tier", async () => {
+    // Brand says the real rate is $10 → 1000 cents. 3-spot = (200000/1000)*$10*3
+    // = $6,000 ≤ $7,500 → test. The band's $35 would have kept it in scale.
+    const rows = [
+      makeRow({ show_id: "show-C", composite_score: 80, cpm_override_cents: 1000 }),
+    ];
+    const shows = [scaleShow()];
+    const { deps, persistCalls } = makeDeps({ rows, shows });
+    const result = await tierCampaignPortfolio("pattern-1", deps);
+    expect(result.testCount).toBe(1);
+    expect(persistCalls[0].cpmUsedCents).toBe(1000); // the override, not $35
+    expect(persistCalls[0].threeSpotCents).toBe(600_000); // $6,000
+    expect(persistCalls[0].costIsEstimate).toBe(false); // brand's own number
+  });
+
+  it("a per-show placement override (on the row) prices against that placement's CPM", async () => {
+    // Per-show override beats the mid-roll default: post-roll $10 → 3-spot $6,000
+    // → test, even though mid-roll $35 would price it into scale.
+    const rows = [
+      makeRow({
+        show_id: "show-C",
+        composite_score: 80,
+        placement_override: "postroll",
+      }),
+    ];
+    const shows = [scaleShow()];
+    const { deps, persistCalls } = makeDeps({ rows, shows });
+    const result = await tierCampaignPortfolio("pattern-1", deps);
+    expect(result.testCount).toBe(1);
+    expect(persistCalls[0].cpmUsedCents).toBe(1000); // post-roll $10
+    expect(persistCalls[0].threeSpotCents).toBe(600_000);
   });
 });

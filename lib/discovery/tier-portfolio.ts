@@ -35,6 +35,7 @@ import type {
 import {
   deriveSpotCost,
   dollarsToCents,
+  normalizeSpotCount,
   type Placement,
   type SpotCost,
 } from "./spot-cost";
@@ -197,7 +198,13 @@ export interface TierPortfolioDeps {
   emit: (input: LogEventInput) => Promise<unknown>;
 }
 
-const defaultDeps: TierPortfolioDeps = {
+/**
+ * Default deps for the standalone/orchestrator pass: cookie-scoped show loader
+ * (its callers — the /discover route, the page server component — are all
+ * request-scoped). The Layer 5 recompute spreads these but swaps loadShowsByIds
+ * for the admin variant, since it can run outside a request scope (the footgun).
+ */
+export const defaultTierPortfolioDeps: TierPortfolioDeps = {
   loadScores: getConvictionScoresForPattern,
   loadConfirmedRings: getConfirmedRings,
   loadCampaignCtx: getCampaignContextForPattern,
@@ -248,10 +255,9 @@ function msg(err: unknown): string {
  */
 export async function tierCampaignPortfolio(
   campaignPatternId: string,
-  deps: TierPortfolioDeps = defaultDeps,
-  options: { placement?: Placement } = {}
+  deps: TierPortfolioDeps = defaultTierPortfolioDeps,
+  options: { placement?: Placement; spotCount?: number } = {}
 ): Promise<TierPortfolioResult> {
-  const placement: Placement = options.placement ?? "midroll";
   const result: TierPortfolioResult = {
     campaignPatternId,
     testCount: 0,
@@ -291,6 +297,16 @@ export async function tierCampaignPortfolio(
     );
   }
 
+  // Effective campaign-level overrides (Layer 5). The persisted campaign config
+  // (ctx) is the source of truth, so BOTH the orchestrator pass and the Layer 5
+  // recompute reflect it; an explicit option wins only for callers that force
+  // one. Per-show placement/CPM overrides are read off each row in the loop.
+  const campaignPlacement: Placement =
+    options.placement ?? ctx?.testPlacement ?? "midroll";
+  const spotCount = normalizeSpotCount(
+    options.spotCount ?? ctx?.testSpotCount ?? undefined
+  );
+
   // Layer 3.5: drop rows for rings the brand did not keep BEFORE rolling up, so
   // a rejected ring's shows can't get classified/persisted into test or scale.
   // Same confirmed-ring source of truth as getConvictionUniverse (getConfirmedRings).
@@ -318,7 +334,15 @@ export async function tierCampaignPortfolio(
     const show = showsById.get(showId);
     let cost: SpotCost;
     if (show) {
-      cost = deriveSpotCost(show, { placement });
+      // Per-show placement override beats the campaign default; the per-show CPM
+      // override (cents) rides on the row and supersedes the band CPM.
+      const showPlacement: Placement =
+        roll.topRow.placement_override ?? campaignPlacement;
+      cost = deriveSpotCost(show, {
+        placement: showPlacement,
+        spotCount,
+        cpmOverrideCents: roll.topRow.cpm_override_cents,
+      });
     } else {
       // Defensive: 2B persists kept shows, so a missing row is an anomaly.
       // Treat as un-pricable → needsQuote → dropped; never throw or drop silently.
@@ -375,6 +399,8 @@ export async function tierCampaignPortfolio(
           droppedCount: result.droppedCount,
           testUnderfilled: result.testUnderfilled,
           testBudgetCents,
+          spotCount,
+          placement: campaignPlacement,
         },
       });
     } catch (err) {
