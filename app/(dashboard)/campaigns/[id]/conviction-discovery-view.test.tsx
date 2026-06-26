@@ -561,7 +561,8 @@ describe("ConvictionDiscoveryView — Layer 5 override controls", () => {
     return m;
   }
   function lastBody(m: ReturnType<typeof vi.fn>, urlPart: string) {
-    const call = m.mock.calls.find((c) => String(c[0]).includes(urlPart));
+    const calls = m.mock.calls as unknown[][];
+    const call = calls.find((c) => String(c[0]).includes(urlPart));
     return call ? JSON.parse((call[1] as RequestInit).body as string) : null;
   }
 
@@ -651,8 +652,7 @@ describe("ConvictionDiscoveryView — Layer 5 override controls", () => {
     // Click the edit affordance — must NOT bubble to the label checkbox.
     fireEvent.click(screen.getByTestId("show-cpm-edit"));
     // No selection persist fired (only the override path will, after commit).
-    expect(
-      m.mock.calls.some((c) => String(c[0]).includes("/selections"))
-    ).toBe(false);
+    const calls = m.mock.calls as unknown[][];
+    expect(calls.some((c) => String(c[0]).includes("/selections"))).toBe(false);
   });
 });

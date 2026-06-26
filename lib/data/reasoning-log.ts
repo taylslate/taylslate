@@ -875,19 +875,18 @@ export async function getCampaignContextForPattern(
   campaignPatternId: string
 ): Promise<CampaignContextForPattern | null> {
   try {
+    // Budget read keeps the pre-Layer-5 shape (budget_total only) so it can NEVER
+    // regress if migration 029 hasn't been applied yet — this reader is on the
+    // already-live tiered-universe path. The 029 override columns are read
+    // SEPARATELY and fail soft to null, so deploy order (code before migration)
+    // degrades to "default cadence/placement", never a broken empty universe.
     const { data, error } = await supabaseAdmin
       .from("campaign_patterns")
-      .select(
-        "campaign_id, campaigns(budget_total, test_spot_count, test_placement)"
-      )
+      .select("campaign_id, campaigns(budget_total)")
       .eq("id", campaignPatternId)
       .maybeSingle<{
         campaign_id: string | null;
-        campaigns: {
-          budget_total: number | string | null;
-          test_spot_count: number | null;
-          test_placement: "preroll" | "midroll" | "postroll" | null;
-        } | null;
+        campaigns: { budget_total: number | string | null } | null;
       }>();
     if (error) {
       console.warn(
@@ -899,11 +898,33 @@ export async function getCampaignContextForPattern(
     if (!data?.campaign_id) return null;
     const raw = data.campaigns?.budget_total;
     const budget = typeof raw === "string" ? Number(raw) : raw ?? 0;
+
+    // Layer 5 override inputs (migration 029) — independently fail-soft so a
+    // pre-029 schema yields nulls (defaults) instead of breaking the budget read.
+    let testSpotCount: number | null = null;
+    let testPlacement: "preroll" | "midroll" | "postroll" | null = null;
+    try {
+      const { data: ov, error: ovErr } = await supabaseAdmin
+        .from("campaigns")
+        .select("test_spot_count, test_placement")
+        .eq("id", data.campaign_id)
+        .maybeSingle<{
+          test_spot_count: number | null;
+          test_placement: "preroll" | "midroll" | "postroll" | null;
+        }>();
+      if (!ovErr && ov) {
+        testSpotCount = ov.test_spot_count ?? null;
+        testPlacement = ov.test_placement ?? null;
+      }
+    } catch {
+      /* pre-029 columns absent → defaults; never blocks the budget read */
+    }
+
     return {
       campaignId: data.campaign_id,
       budgetTotalDollars: Number.isFinite(budget) ? Number(budget) : 0,
-      testSpotCount: data.campaigns?.test_spot_count ?? null,
-      testPlacement: data.campaigns?.test_placement ?? null,
+      testSpotCount,
+      testPlacement,
     };
   } catch (err) {
     console.warn(
