@@ -118,6 +118,97 @@ describe("sanitizeShowProfilePatch", () => {
     } as Record<string, unknown>);
     expect(patch).toEqual({});
   });
+
+  describe("brand_history", () => {
+    it("accepts well-formed entries and trims string fields", () => {
+      const patch = sanitizeShowProfilePatch({
+        brand_history: [
+          { brand_name: "  Athletic Greens  ", category: " Supplements ", deal_type: "annual", notes: " ran twice " },
+          { brand_name: "Eight Sleep", deal_type: "one-off" },
+        ],
+      } as Record<string, unknown>);
+      expect(patch.brand_history).toEqual([
+        { brand_name: "Athletic Greens", category: "Supplements", notes: "ran twice", deal_type: "annual" },
+        { brand_name: "Eight Sleep", deal_type: "one-off" },
+      ]);
+    });
+
+    it("drops entries with missing or blank brand_name", () => {
+      const patch = sanitizeShowProfilePatch({
+        brand_history: [
+          { brand_name: "   " },
+          { category: "Supplements" },
+          { brand_name: "Keeps" },
+        ],
+      } as Record<string, unknown>);
+      expect(patch.brand_history).toEqual([{ brand_name: "Keeps" }]);
+    });
+
+    it("omits deal_type unless it is exactly one-off or annual", () => {
+      const patch = sanitizeShowProfilePatch({
+        brand_history: [
+          { brand_name: "A", deal_type: "ANNUAL" },
+          { brand_name: "B", deal_type: "annual " },
+          { brand_name: "C", deal_type: 1 },
+          { brand_name: "D", deal_type: "one-off" },
+        ],
+      } as Record<string, unknown>);
+      expect(patch.brand_history).toEqual([
+        { brand_name: "A" },
+        { brand_name: "B" },
+        { brand_name: "C" },
+        { brand_name: "D", deal_type: "one-off" },
+      ]);
+    });
+
+    it("strips unknown per-entry keys (never reach JSONB)", () => {
+      const patch = sanitizeShowProfilePatch({
+        brand_history: [
+          { brand_name: "Ramp", is_admin: true, user_id: "x", nested: { a: 1 } },
+        ],
+      } as Record<string, unknown>);
+      expect(patch.brand_history).toEqual([{ brand_name: "Ramp" }]);
+    });
+
+    it("caps the array at 10 entries", () => {
+      const patch = sanitizeShowProfilePatch({
+        brand_history: Array.from({ length: 50 }, (_, i) => ({ brand_name: `Brand ${i}` })),
+      } as Record<string, unknown>);
+      expect(patch.brand_history).toHaveLength(10);
+      expect(patch.brand_history?.[0]).toEqual({ brand_name: "Brand 0" });
+    });
+
+    it("length-guards brand_name, category, and notes", () => {
+      const patch = sanitizeShowProfilePatch({
+        brand_history: [
+          { brand_name: "x".repeat(200), category: "y".repeat(200), notes: "z".repeat(1000) },
+        ],
+      } as Record<string, unknown>);
+      expect(patch.brand_history?.[0].brand_name).toHaveLength(100);
+      expect(patch.brand_history?.[0].category).toHaveLength(80);
+      expect(patch.brand_history?.[0].notes).toHaveLength(500);
+    });
+
+    it("does not throw on malformed elements and skips them", () => {
+      const patch = sanitizeShowProfilePatch({
+        brand_history: [null, "Acme", 42, ["nested"], { brand_name: "Survivor" }],
+      } as Record<string, unknown>);
+      expect(patch.brand_history).toEqual([{ brand_name: "Survivor" }]);
+    });
+
+    it("leaves brand_history unset when the value is not an array", () => {
+      expect(sanitizeShowProfilePatch({ brand_history: "nope" }).brand_history).toBeUndefined();
+      expect(sanitizeShowProfilePatch({ brand_history: { brand_name: "x" } }).brand_history).toBeUndefined();
+      expect(sanitizeShowProfilePatch({}).brand_history).toBeUndefined();
+    });
+
+    it("writes an empty array when all entries are junk (skip semantics)", () => {
+      const patch = sanitizeShowProfilePatch({
+        brand_history: [{ category: "no name" }, null],
+      } as Record<string, unknown>);
+      expect(patch.brand_history).toEqual([]);
+    });
+  });
 });
 
 describe("GET /api/show-profile", () => {
