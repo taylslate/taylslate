@@ -335,6 +335,14 @@ export interface Campaign {
   scoring_meta?: Record<string, unknown>;
   // Wave 7: Media plan builder persistence
   media_plan?: MediaPlan | null;
+  // Wave 14 Phase 2C Layer 5 (migration 029): campaign-level portfolio override
+  // INPUTS. Durable system-of-record for the brand's test config, kept separate
+  // from the recomputed cost/tier cache on conviction_scores. null ⇒ default
+  // (3 spots / 'midroll'); survives a discovery re-run (which mints a new
+  // pattern). test_placement uses the DISCOVERY vocabulary ('preroll' |
+  // 'midroll' | 'postroll'), mapped to Wave 7 at the media-plan handoff.
+  test_spot_count?: number | null;
+  test_placement?: "preroll" | "midroll" | "postroll" | null;
   created_at: string;
   updated_at: string;
 }
@@ -1038,6 +1046,15 @@ export interface ConvictionScoreRow {
   // Brand watchlist curation on the scale tier (write actions are Layer 4).
   brand_saved: boolean | null;
   brand_dismissed: boolean | null;
+  // Wave 14 Phase 2C Layer 5 (migration 029) — per-show override INPUTS, written
+  // to ALL of a show's ring rows (same grain as the cost columns above). Durable
+  // system-of-record, kept separate from the cost/tier cache: the recompute reads
+  // these + the band tables to rewrite the cache, so a per-show edit survives a
+  // later campaign-level recompute. null ⇒ no override (derive from the band /
+  // use the campaign placement default). cpm_override_cents is integer cents;
+  // placement_override uses the discovery vocabulary (preroll/midroll/postroll).
+  cpm_override_cents: number | null;
+  placement_override: "preroll" | "midroll" | "postroll" | null;
 }
 
 export interface AnalogMatchRow {

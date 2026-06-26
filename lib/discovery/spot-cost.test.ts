@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import type { Show } from "@/lib/data/types";
-import { deriveSpotCost, DEFAULT_SPOT_COUNT } from "./spot-cost";
+import {
+  deriveSpotCost,
+  normalizeSpotCount,
+  DEFAULT_SPOT_COUNT,
+} from "./spot-cost";
 import {
   podscanPodcastToShow,
   youtubeChannelToShow,
@@ -73,7 +77,7 @@ describe("deriveSpotCost — podcast CPM path", () => {
       audience_size: 50000,
       rate_card: { preroll_cpm: 20, midroll_cpm: 28, postroll_cpm: 14 },
     });
-    const cost = deriveSpotCost(show, undefined, "preroll");
+    const cost = deriveSpotCost(show, { placement: "preroll" });
     // (50000 / 1000) × $20 = $1,000 → 100000 cents
     expect(cost.perSpotCents).toBe(100000);
     expect(cost.cpmUsedCents).toBe(2000);
@@ -84,7 +88,7 @@ describe("deriveSpotCost — podcast CPM path", () => {
       audience_size: 50000,
       rate_card: { preroll_cpm: 20, midroll_cpm: 28, postroll_cpm: 14 },
     });
-    const cost = deriveSpotCost(show, undefined, "postroll");
+    const cost = deriveSpotCost(show, { placement: "postroll" });
     // (50000 / 1000) × $14 = $700 → 70000 cents
     expect(cost.perSpotCents).toBe(70000);
     expect(cost.cpmUsedCents).toBe(1400);
@@ -95,7 +99,7 @@ describe("deriveSpotCost — podcast CPM path", () => {
       audience_size: 50000,
       rate_card: { midroll_cpm: 28 }, // no postroll_cpm
     });
-    const cost = deriveSpotCost(show, undefined, "postroll");
+    const cost = deriveSpotCost(show, { placement: "postroll" });
     expect(cost.needsQuote).toBe(true);
     expect(cost.perSpotCents).toBeNull();
     expect(cost.cpmUsedCents).toBeNull(); // did NOT borrow midroll's $28
@@ -233,6 +237,114 @@ describe("deriveSpotCost — reuses format-discovered-show bands (no duplicate t
     );
     const cost = deriveSpotCost(show);
     expect(cost.perSpotCents).toBe(1000000); // $10,000
+    expect(cost.costBasis).toBe("flat_fee");
+  });
+});
+
+describe("deriveSpotCost — Layer 5 spot-count override", () => {
+  it("spotCount=1 makes threeSpotCents equal a single spot (1/3 of default)", () => {
+    const show = makeShow({
+      audience_size: 50000,
+      rate_card: { midroll_cpm: 28 },
+    });
+    const one = deriveSpotCost(show, { spotCount: 1 });
+    expect(one.perSpotCents).toBe(140000);
+    expect(one.threeSpotCents).toBe(140000); // 1 × perSpot, not 3
+    const three = deriveSpotCost(show); // default
+    expect(three.threeSpotCents).toBe(one.threeSpotCents! * 3);
+  });
+
+  it("spotCount scales threeSpot but never perSpot (perSpot is one spot)", () => {
+    const show = makeShow({
+      audience_size: 50000,
+      rate_card: { midroll_cpm: 28 },
+    });
+    const five = deriveSpotCost(show, { spotCount: 5 });
+    expect(five.perSpotCents).toBe(140000);
+    expect(five.threeSpotCents).toBe(140000 * 5);
+  });
+
+  it("an invalid spotCount degrades to the default cadence (never crashes)", () => {
+    const show = makeShow({
+      audience_size: 50000,
+      rate_card: { midroll_cpm: 28 },
+    });
+    for (const bad of [0, -2, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const cost = deriveSpotCost(show, { spotCount: bad });
+      expect(cost.threeSpotCents).toBe(140000 * DEFAULT_SPOT_COUNT);
+    }
+    expect(normalizeSpotCount(undefined)).toBe(DEFAULT_SPOT_COUNT);
+    expect(normalizeSpotCount(1)).toBe(1);
+  });
+});
+
+describe("deriveSpotCost — Layer 5 per-show CPM override", () => {
+  it("a CPM override (cents) supersedes the band CPM and stops being an estimate", () => {
+    const show = makeShow({
+      audience_size: 50000,
+      rate_card: { midroll_cpm: 28 }, // band would price $28
+    });
+    // Brand says the real rate is $30 → 3000 cents.
+    const cost = deriveSpotCost(show, { cpmOverrideCents: 3000 });
+    expect(cost.cpmUsedCents).toBe(3000); // the override, surfaced verbatim
+    expect(cost.perSpotCents).toBe(150000); // (50000/1000) × $30 = $1,500
+    expect(cost.threeSpotCents).toBe(450000);
+    expect(cost.isEstimate).toBe(false); // brand's own number, not a band guess
+    expect(cost.costBasis).toBe("derived");
+  });
+
+  it("override composes with placement + spotCount (priced once, scaled by spots)", () => {
+    const show = makeShow({
+      audience_size: 50000,
+      rate_card: { preroll_cpm: 20, midroll_cpm: 28, postroll_cpm: 14 },
+    });
+    // Override replaces whichever placement CPM would have been used.
+    const cost = deriveSpotCost(show, {
+      placement: "postroll",
+      spotCount: 1,
+      cpmOverrideCents: 4000, // $40
+    });
+    expect(cost.cpmUsedCents).toBe(4000); // not postroll's $14
+    expect(cost.perSpotCents).toBe(200000); // (50000/1000) × $40
+    expect(cost.threeSpotCents).toBe(200000); // single spot
+  });
+
+  it("an override prices even when the placement's band CPM is absent", () => {
+    const show = makeShow({
+      audience_size: 50000,
+      rate_card: { midroll_cpm: 28 }, // no postroll_cpm
+    });
+    const cost = deriveSpotCost(show, {
+      placement: "postroll",
+      cpmOverrideCents: 2500,
+    });
+    expect(cost.needsQuote).toBe(false); // override supplies the price
+    expect(cost.cpmUsedCents).toBe(2500);
+    expect(cost.perSpotCents).toBe(125000);
+  });
+
+  it("a 0 / negative / non-finite override is ignored — falls back to the band", () => {
+    const show = makeShow({
+      audience_size: 50000,
+      rate_card: { midroll_cpm: 28 },
+    });
+    for (const bad of [0, -100, Number.NaN]) {
+      const cost = deriveSpotCost(show, { cpmOverrideCents: bad });
+      expect(cost.cpmUsedCents).toBe(2800); // band, not the bad override
+      expect(cost.isEstimate).toBe(true);
+    }
+  });
+
+  it("the override is ignored on the flat-fee path (no CPM to override)", () => {
+    const show = makeShow({
+      platform: "youtube",
+      price_type: "flat_rate",
+      audience_size: 80000,
+      rate_card: { flat_rate: 5000 },
+    });
+    const cost = deriveSpotCost(show, { cpmOverrideCents: 3000 });
+    expect(cost.perSpotCents).toBe(500000); // still the flat $5,000
+    expect(cost.cpmUsedCents).toBeNull();
     expect(cost.costBasis).toBe("flat_fee");
   });
 });

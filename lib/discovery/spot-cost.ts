@@ -19,10 +19,25 @@
 // applied explicitly at each step.
 // ============================================================
 
-import type { Campaign, CostBasis, Show } from "@/lib/data/types";
+import type { CostBasis, Show } from "@/lib/data/types";
 
 /** Default test cadence — 99% of podcast tests are 3-spot (CLAUDE.md). */
 export const DEFAULT_SPOT_COUNT = 3;
+
+/**
+ * Coerce a (possibly overridden) spot count to a positive integer, falling back
+ * to DEFAULT_SPOT_COUNT for anything invalid. deriveSpotCost stays total — a
+ * malformed override (NaN, 0, fractional) can never produce a non-cost; it
+ * silently degrades to the default cadence. The DB CHECK (migration 029) and the
+ * override endpoint bound the real range to 1–12; this is the defensive floor.
+ */
+export function normalizeSpotCount(spotCount: number | null | undefined): number {
+  return typeof spotCount === "number" &&
+    Number.isInteger(spotCount) &&
+    spotCount >= 1
+    ? spotCount
+    : DEFAULT_SPOT_COUNT;
+}
 
 /** Podcast ad placement. Distinct purchasable units at distinct CPMs. */
 export type Placement = "preroll" | "midroll" | "postroll";
@@ -44,7 +59,9 @@ export type { CostBasis };
 export interface SpotCost {
   /** One spot at the selected placement, integer cents. null when needsQuote. */
   perSpotCents: number | null;
-  /** perSpotCents × DEFAULT_SPOT_COUNT, integer cents. null when needsQuote. */
+  /** perSpotCents × the spot count (DEFAULT_SPOT_COUNT unless a Layer 5 override
+   *  passes one), integer cents. Named "three" for column compatibility — it
+   *  holds N spots, not always 3. null when needsQuote. */
   threeSpotCents: number | null;
   /** CPM used, integer cents. null for the flat-fee and needsQuote paths. */
   cpmUsedCents: number | null;
@@ -95,38 +112,55 @@ function hasOnboardedRateCard(show: Show): boolean {
   return typeof show.min_buy === "number" && show.min_buy > 0;
 }
 
+/** Layer 5 override seam — overrides ride into cost derivation here. */
+export interface DeriveSpotCostOptions {
+  /** Which podcast CPM to price against (default 'midroll'). Pre/mid/post are
+   *  distinct purchasable units; the chosen placement's CPM is used directly
+   *  with NO cross-placement fallback. */
+  placement?: Placement;
+  /** Spots in the cadence (default DEFAULT_SPOT_COUNT = 3). The Layer 5
+   *  campaign-level spot-count override flows in here; threeSpotCents = perSpot
+   *  × this. An invalid value degrades to the default (normalizeSpotCount). */
+  spotCount?: number;
+  /** Brand's per-show CPM override, integer cents (Layer 5, persisted as
+   *  conviction_scores.cpm_override_cents). When set (> 0, finite) it REPLACES
+   *  the band-derived CPM on the podcast/CPM path — the brand told us the real
+   *  rate, so the cost stops being an estimate (isEstimate=false). Ignored on
+   *  the flat-fee path (no CPM there) and when audience is unusable. */
+  cpmOverrideCents?: number | null;
+}
+
 /**
- * Derive an estimated per-spot and 3-spot cost for one show, in integer cents.
+ * Derive an estimated per-spot and N-spot cost for one show, in integer cents.
  *
- * @param show       the discovered or onboarded candidate.
- * @param _campaign  reserved for Layer 5 (spot-count / per-show CPM / placement
- *   overrides travel on the campaign). Unused in Layer 1.
- * @param placement  which podcast CPM to price against (default 'midroll').
- *   Pre/mid/post are distinct purchasable units at distinct prices — the
- *   chosen placement's CPM is used directly with NO cross-placement fallback;
- *   a missing CPM for the chosen placement → needsQuote.
+ * @param show  the discovered or onboarded candidate.
+ * @param opts  placement / spot-count / per-show CPM override (Layer 5). All
+ *   optional; the defaults reproduce Layer 1 behaviour (mid-roll, 3 spots, no
+ *   override) exactly, so existing callers are unaffected.
  *
  * Never throws, never returns a zero cost, never drops a show: an underivable
  * cost returns needsQuote=true with null cost fields.
  */
 export function deriveSpotCost(
   show: Show,
-  _campaign?: Campaign,
-  placement: Placement = "midroll"
+  opts: DeriveSpotCostOptions = {}
 ): SpotCost {
+  const placement: Placement = opts.placement ?? "midroll";
+  const spotCount = normalizeSpotCount(opts.spotCount);
   const onboarded = hasOnboardedRateCard(show);
 
   // Flat-fee path (YouTube, or an onboarded flat-rate podcast deal). The flat
   // fee is view-independent, so audience_size === 0 does NOT force a quote here
   // — only a missing/≤0 flat_rate does. (Dead 0-view YouTube is excluded
-  // upstream by the Layer 1b orchestrator filter, so it never reaches here.)
+  // upstream by the Layer 1b orchestrator filter, so it never reaches here.) A
+  // CPM override is meaningless for a flat fee, so it's ignored here.
   if (show.price_type === "flat_rate") {
     const flat = show.rate_card.flat_rate;
     if (flat == null || flat <= 0) return { ...NEEDS_QUOTE };
     const perSpotCents = dollarsToCents(flat);
     return {
       perSpotCents,
-      threeSpotCents: perSpotCents * DEFAULT_SPOT_COUNT,
+      threeSpotCents: perSpotCents * spotCount,
       cpmUsedCents: null,
       costBasis: onboarded ? "rate_card" : "flat_fee",
       isEstimate: !onboarded,
@@ -134,32 +168,48 @@ export function deriveSpotCost(
     };
   }
 
+  // A usable brand CPM override (> 0, finite) supersedes the band CPM. We still
+  // require a usable audience_size below — the override is a price, not reach.
+  const override =
+    opts.cpmOverrideCents != null &&
+    Number.isFinite(opts.cpmOverrideCents) &&
+    opts.cpmOverrideCents > 0
+      ? opts.cpmOverrideCents
+      : null;
+
   // CPM path (podcast). Price against the SELECTED placement's CPM only —
   // pre/post are distinct purchasable units, never collapsed into a
-  // midroll ?? preroll ?? postroll chain.
-  const cpm = show.rate_card[`${placement}_cpm`];
+  // midroll ?? preroll ?? postroll chain. The override, in cents, is converted
+  // back to dollars so the SAME epsilon-protected dollarsToCents boundary
+  // rounds both the band and override paths identically.
+  const cpmDollars =
+    override != null ? override / 100 : show.rate_card[`${placement}_cpm`];
   // A non-finite audience_size (NaN/Infinity) is treated exactly like ≤ 0 →
   // needsQuote, so a malformed reach value can never yield NaN cents and break
-  // the "never returns a non-cost" contract.
+  // the "never returns a non-cost" contract. With an override the placement CPM
+  // may be absent, but the override supplies the price — so cpmDollars is the
+  // single gate.
   if (
     !Number.isFinite(show.audience_size) ||
     show.audience_size <= 0 ||
-    cpm == null ||
-    cpm <= 0
+    cpmDollars == null ||
+    cpmDollars <= 0
   ) {
     return { ...NEEDS_QUOTE };
   }
 
   // Ad Spot Price = (Downloads ÷ 1,000) × CPM (CLAUDE.md domain rule).
   // Explicit at every step: dollars first, then the single cents boundary.
-  const perSpotDollars = (show.audience_size / 1000) * cpm;
+  const perSpotDollars = (show.audience_size / 1000) * cpmDollars;
   const perSpotCents = dollarsToCents(perSpotDollars);
   return {
     perSpotCents,
-    threeSpotCents: perSpotCents * DEFAULT_SPOT_COUNT,
-    cpmUsedCents: dollarsToCents(cpm),
+    threeSpotCents: perSpotCents * spotCount,
+    // Override is already integer cents — surface it verbatim (no round-trip).
+    cpmUsedCents: override != null ? override : dollarsToCents(cpmDollars),
     costBasis: onboarded ? "rate_card" : "derived",
-    isEstimate: !onboarded,
+    // The brand's own CPM is not an estimate; the band CPM is.
+    isEstimate: override != null ? false : !onboarded,
     needsQuote: false,
   };
 }

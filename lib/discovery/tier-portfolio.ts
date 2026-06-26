@@ -318,7 +318,7 @@ export async function tierCampaignPortfolio(
     const show = showsById.get(showId);
     let cost: SpotCost;
     if (show) {
-      cost = deriveSpotCost(show, undefined, placement);
+      cost = deriveSpotCost(show, { placement });
     } else {
       // Defensive: 2B persists kept shows, so a missing row is an anomaly.
       // Treat as un-pricable → needsQuote → dropped; never throw or drop silently.

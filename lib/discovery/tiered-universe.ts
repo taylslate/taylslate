@@ -208,7 +208,7 @@ export async function getTieredUniverse(
       // Compute-on-read: persistence failed soft (or pre-028 row). Derive cost
       // + classify from the embedded Show with the same pure Layer 1/2 logic.
       const cost = show
-        ? deriveSpotCost(show, undefined, placement)
+        ? deriveSpotCost(show, { placement })
         : {
             perSpotCents: null,
             threeSpotCents: null,
