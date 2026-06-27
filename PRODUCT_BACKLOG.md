@@ -219,6 +219,12 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - **Effort:** 1-2 weeks for data model + onboarding + display; deeper pricing later
 - **Why:** Differentiates Taylslate from podcast-only planners and creates the path from "podcast ads" to creator-led marketing OS without prematurely becoming a generic Meta/Google ad buyer
 
+### Show dashboard role-awareness
+- A single-show account currently sees agency/network-shaped UI (a "Shows" list implying a portfolio of many shows). A single show should see a show-specific dashboard (its own profile, deals, brand history), not a roster view.
+- The "Shows" list belongs to agency/network/rep accounts that manage many shows — this is the beginning of the agent/rep portfolio model.
+- **Dependency:** intersects "Agent / rep account UX" (Wave 14/15). Resolve the account-type model (single show vs network/agency/rep) before building the role-aware dashboard, or risk rework.
+- **Dependency:** can't be cleanly tested until the "log in as test user" admin tool exists (need to switch between account types on demand).
+
 ---
 
 # POST-LAUNCH QUEUE
