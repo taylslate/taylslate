@@ -13,12 +13,29 @@ const OTP_TYPES: string[] = [
   "email_change",
 ];
 
+// Resolve `next` to a guaranteed same-origin path. Without this, a value like
+// "@evil.example/path" turns `${origin}${next}` into
+// "https://host@evil.example/path" — an open redirect off the back of a
+// successful auth callback. We keep only the path/query/hash of a same-origin
+// resolution; anything cross-origin or unparseable falls back to /onboarding.
+function safeNextPath(next: string | null, origin: string): string {
+  const fallback = "/onboarding";
+  if (!next) return fallback;
+  try {
+    const resolved = new URL(next, origin);
+    if (resolved.origin !== origin) return fallback;
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type");
-  const next = searchParams.get("next") ?? "/onboarding";
+  const nextPath = safeNextPath(searchParams.get("next"), origin);
 
   const supabase = await createClient();
 
@@ -31,13 +48,13 @@ export async function GET(request: Request) {
       token_hash: tokenHash,
     });
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+      return NextResponse.redirect(`${origin}${nextPath}`);
     }
   } else if (code) {
     // PKCE branch: browser-initiated OTP with a stored code_verifier.
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+      return NextResponse.redirect(`${origin}${nextPath}`);
     }
   }
 
