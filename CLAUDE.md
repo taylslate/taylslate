@@ -1,6 +1,6 @@
 # CLAUDE.md — Taylslate Project Context
 
-*Last updated: April 30, 2026 — Wave 13 shipped, Wave 14 Phase 1 shipped. Wave 14 Phase 2 (Discovery Agent UX) is next, pre-launch.*
+*Last updated: June 28, 2026 — Wave 13 shipped, Wave 14 Phase 1 shipped. Founder impersonation tool ("log in as test user", Layers 1+2) shipped + four show-auth bugs fixed (see "Auth & Admin Access" invariants). Wave 14 Phase 2 (Discovery Agent UX) is next, pre-launch.*
 
 **For deep strategic context, the discovery agent thesis, competitive research, and domain knowledge, see `TAYLSLATE_CONTEXT.md`.**
 
@@ -206,7 +206,7 @@ STRIPE_AGENCY_SEAT_PRICE_ID=price_...   # $500/seat add-on
 2. **Idempotency on Stripe webhooks.** Every webhook handler checks for prior processing via `payments.stripe_payment_intent_id` unique index before mutating state.
 3. **Payouts wait for settlement.** Show payout never fires until inbound payment is `succeeded`, not `processing`. Hard rule.
 4. **Domain events never throw.** `logEvent()` and `logEventLog()` swallow errors and log. Audit-log failures must never block main flow.
-5. **Test mode caveat:** No clean way today to simulate full brand-side discovery → outreach → deal → IO → payment flow with two accounts you control. Discovery returns real Podscan shows whose email you don't control. Workaround in PRODUCT_BACKLOG.md (Operational Unblock).
+5. **Test mode caveat (partially RESOLVED June 28, 2026):** The founder impersonation tool ("log in as test user", see "Auth & Admin Access" below) now lets you switch between two controlled accounts on demand, and the show magic-link path works end-to-end for the first time — so brand↔show flows are testable. Still open: discovery returns real Podscan shows whose email you don't control, so injecting a test show into discovery results (or an admin deal-create bypass) is the remaining gap. Workaround in PRODUCT_BACKLOG.md (Operational Unblock).
 
 ### Outstanding manual follow-ups (pre-production)
 
@@ -348,6 +348,16 @@ Rules:
 - **`anon` grant is a deliberate decision, not boilerplate.** Default to NOT granting `anon`. Add `grant select ... to anon` only for genuinely public tables (`shows` is publicly readable per Wave 1 RLS design). Never grant `anon` on `deals`, `payments`, `campaign_patterns`, `conviction_scores`, `founder_annotations`, or any other sensitive table.
 - Grants come *before* the `enable row level security` / policy block in the migration, for readability. Order doesn't affect correctness.
 - Existing tables (migrations 001–019) are grandfathered and keep their current grants — no retroactive change needed.
+
+## Auth & Admin Access (REQUIRED invariants)
+
+Hard-won from the June 28, 2026 impersonation work, which surfaced four production auth bugs on the show magic-link path (none previously testable — Wave 13 gotcha #5). Treat these as load-bearing; reintroducing any of them silently breaks sign-in.
+
+- **The auth callback lives at `app/(auth)/callback/route.ts` and is served at the public URL `/callback`.** The `(auth)` route group is NOT part of the URL — there is no `/auth/callback` route (a redirect there 404s). Any `redirectTo` / magic link must target `/callback`.
+- **New routes that must be reachable while signed out MUST be added to the `proxy.ts` allowlist.** The auth gate is `proxy.ts` at repo root (Next.js 16 renamed `middleware`→`proxy`); it redirects every unauthenticated request to `/login?next=…` unless the path is in its `isPublicRoute` list (currently `/`, `/login`, `/signup`, `/callback`, `/api/*`, `/outreach/*`, `/auth/magic`). A new auth-completion or public page that is not added here will bounce to `/login` before its handler runs.
+- **Admin-generated magic links are implicit-flow and must be converted, never bounced through GoTrue's `action_link`.** `supabaseAdmin.auth.admin.generateLink()` returns a link whose session arrives in the URL fragment (`#access_token=…`), which a server route handler can never read (and there is no `?code=` for `exchangeCodeForSession`). Correct pattern: read `data.properties.hashed_token`, build a same-origin `/callback?token_hash=…&type=magiclink&next=…` URL, and verify server-side with `supabase.auth.verifyOtp({ type, token_hash })`. The `/callback` route handles both a `token_hash` branch (admin-minted links) and the legacy `code` branch (browser-initiated PKCE). Validate any `next` to a same-origin path before redirecting (`${origin}${next}` with `next=@evil/x` is an open redirect).
+- **The admin gate is `isInternalAdmin(email)` (`lib/auth/admin.ts`), reading the comma-separated `INTERNAL_ADMIN_EMAILS` env var.** It must be set in Vercel production AND `.env.local`. It powers founder annotations, the mark-delivered ops path, and the impersonation tool. The impersonation endpoint (`POST /api/admin/test-login`) layers gates: `getAuthenticatedUser`→401, `isInternalAdmin`→403, key-not-in-`TEST_ACCOUNTS`→400. `TEST_ACCOUNTS` (`lib/admin/test-accounts.ts`) is the only impersonable set — keyed, never a raw email/id from the client.
+- **Supabase project config (manual, outside the repo):** `https://www.taylslate.com/callback` must be in the Supabase auth Redirect URLs allowlist, and `NEXT_PUBLIC_SITE_URL` must be set in production to the `www` host. Production is served from `www.taylslate.com` (the apex 307-redirects to `www`).
 
 ## Project Structure
 

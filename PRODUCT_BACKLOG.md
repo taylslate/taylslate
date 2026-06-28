@@ -29,6 +29,16 @@ All Phase 1 helpers ship dormant. Phase 2 wires them into the discovery UI at ea
 
 ---
 
+## Internal admin tooling — "log in as test user" (Layers 1+2 shipped June 28, 2026)
+
+Founder impersonation tool. **Layer 1 endpoint** (`POST /api/admin/test-login`, commit `ccbc6e5`) + **Layer 2 sidebar UI** ("Log in as …" buttons mapping over `TEST_ACCOUNTS` + "Impersonating &lt;label&gt;" banner, commit `8740670`). Admin-gated by `isInternalAdmin`; impersonable set fixed by `TEST_ACCOUNTS`. Live on prod, verified end-to-end both ways (sidebar click-through, and a real magic-link email to chris+show1 clicked from the inbox). Schema-free — no migration.
+
+**Byproduct:** building it surfaced and fixed **four production auth bugs** on the show magic-link path (none previously testable — Wave 13 gotcha #5): callback path `/auth/callback`→`/callback` + implicit-flow→`verifyOtp(token_hash)` (`8740670`), `/callback` added to the `proxy.ts` allowlist (`8c32570`), magic email pointed at the consuming `/api/auth/magic` route (`0187863`); plus a Codex `next` open-redirect fix (`c355c5e`). This is the first time the show magic-link flow works end-to-end. Durable invariants recorded in CLAUDE.md → "Auth & Admin Access".
+
+**Remaining — Layer 3 (return-to-admin):** tracked under PRE-LAUNCH → Operational Unblock below.
+
+---
+
 ## Categorization
 
 - **Operational unblock** — small fixes blocking GTM credibility or daily founder workflow. Pre-launch.
@@ -63,11 +73,12 @@ Things that must finish before GTM. The launch bar.
 - **Effort:** 2-3 hours
 - **Why:** Brand outreach emails currently show paragraph-length "from" lines. Looks broken. GTM-blocking.
 
-### Internal admin tooling — "log in as test user"
-- Admin panel with "log me in as test show 1" / "test brand 1" buttons
-- Replaces current Gmail +tag aliases + incognito windows workflow
-- **Effort:** 1 day
-- **Why:** Multi-account testing friction compounds as we test more flows. Saves hours/week. Worth doing before bringing brand friends and sales agent friend onto the platform.
+### Internal admin tooling — log in as test user → Layer 3 (return-to-admin)
+- **Layers 1 + 2 SHIPPED June 28, 2026** (endpoint + sidebar UI; see SHIPPED section). Replaces the Gmail +tag aliases + incognito workflow for switching account types on demand.
+- **Layer 3 remaining:** a "Return to admin" control so the founder can swap back from a test session to their own without re-logging-in.
+- **LOCKED SECURITY REQUIREMENT (Layer 3):** the `tslate_impersonation_origin` cookie set by Layer 1 is currently **unsigned plaintext** (`{adminId, adminEmail}`). Layer 3 must **NOT** trust `adminId`/`adminEmail` from the cookie as-is. Use an **opaque server-side token** — store a random token in the cookie and resolve the admin identity server-side from the `admin.impersonate` audit record — **not** an HMAC over the plaintext.
+- **Effort:** ~0.5 day
+- **Why:** Completes the impersonation loop and closes the cookie-trust gap before the tool is used routinely (e.g., onboarding brand/agent friends).
 
 ### Direct show search
 - Brands who come in with a specific target list (knowing the shows they want) have no way to search for them by name
@@ -81,6 +92,7 @@ Things that must finish before GTM. The launch bar.
 - Currently no clean way to test full brand-side discovery → outreach → deal → IO → payment flow with two accounts you control
 - Discovery returns real Podscan shows whose email you don't control — can't simulate show acceptance
 - Add either: (a) ability to fabricate a "test show" entity and inject it into discovery results, OR (b) admin tool to manually create deal between two existing user accounts bypassing discovery
+- **Partial unblock (June 28, 2026):** the "log in as test user" tool (SHIPPED) now lets you switch between two controlled accounts on demand, and the show magic-link path works end-to-end — so brand↔show flows are testable. Still open: discovery returns real Podscan shows whose email you don't control, so injecting a test show into discovery results (option a) or an admin deal-create bypass (option b) remains the gap.
 - **Effort:** 1-2 days
 - **Why:** Real-user testing is preferred but not always available. Internal testing currently requires manual SQL or workarounds.
 
@@ -223,7 +235,7 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - A single-show account currently sees agency/network-shaped UI (a "Shows" list implying a portfolio of many shows). A single show should see a show-specific dashboard (its own profile, deals, brand history), not a roster view.
 - The "Shows" list belongs to agency/network/rep accounts that manage many shows — this is the beginning of the agent/rep portfolio model.
 - **Dependency:** intersects "Agent / rep account UX" (Wave 14/15). Resolve the account-type model (single show vs network/agency/rep) before building the role-aware dashboard, or risk rework.
-- **Dependency:** can't be cleanly tested until the "log in as test user" admin tool exists (need to switch between account types on demand).
+- **Dependency:** ~~can't be cleanly tested until the "log in as test user" admin tool exists~~ — RESOLVED June 28, 2026 (impersonation tool shipped; switch between account types on demand).
 
 ---
 
