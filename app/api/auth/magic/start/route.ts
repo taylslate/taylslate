@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   const returnUrl = `${origin}/outreach/${body.outreach_token}`;
   const magicToken = signMagicLinkToken(body.email, returnUrl);
 
-  const magicUrl = `${origin}/auth/magic?token=${encodeURIComponent(magicToken)}`;
+  const magicUrl = `${origin}/api/auth/magic?token=${encodeURIComponent(magicToken)}`;
 
   // Look up brand name for the email subject.
   const { data: bp } = await supabaseAdmin
