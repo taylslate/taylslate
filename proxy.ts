@@ -31,6 +31,12 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes
+  // /callback                    — Supabase auth completion (verifyOtp /
+  //                                exchangeCodeForSession). Must be reachable
+  //                                while signed out — it's how a magic-link /
+  //                                OTP user establishes a session in the first
+  //                                place. It only sets a session on a valid
+  //                                token; otherwise it redirects to /login.
   // /outreach/[token]            — Wave 11 public pitch page (token-gated)
   // /auth/magic                  — magic link landing/error states
   // /api/webhooks/docusign       — Wave 12 DocuSign Connect webhook (HMAC-verified)
@@ -40,6 +46,7 @@ export async function proxy(request: NextRequest) {
     pathname === "/" ||
     pathname === "/login" ||
     pathname === "/signup" ||
+    pathname === "/callback" ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/outreach/") ||
     pathname.startsWith("/auth/magic");
