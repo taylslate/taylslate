@@ -68,17 +68,23 @@ export async function GET(request: NextRequest) {
   // action_link and redirect there.
   const returnAfterOnboarding = encodeURIComponent(payload.return_url);
   const onboardingPath = `/onboarding/show?return=${returnAfterOnboarding}`;
-  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(onboardingPath)}`;
+  const redirectTo = `${origin}/callback?next=${encodeURIComponent(onboardingPath)}`;
 
   const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
     type: "magiclink",
     email,
     options: { redirectTo },
   });
-  if (linkErr || !linkData.properties?.action_link) {
+  if (linkErr || !linkData.properties?.hashed_token) {
     console.error("[magic] generateLink failed:", linkErr?.message);
     return NextResponse.redirect(`${origin}/auth/magic?error=signin_failed`);
   }
 
-  return NextResponse.redirect(linkData.properties.action_link);
+  // Redirect to our own server-verifiable callback (verifyOtp on token_hash)
+  // rather than generateLink's action_link, which returns the session in an
+  // implicit-flow URL fragment that the /callback route handler can't read.
+  const callbackUrl = `${origin}/callback?token_hash=${encodeURIComponent(
+    linkData.properties.hashed_token
+  )}&type=magiclink&next=${encodeURIComponent(onboardingPath)}`;
+  return NextResponse.redirect(callbackUrl);
 }

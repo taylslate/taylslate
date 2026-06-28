@@ -91,13 +91,40 @@ function Icon({ name }: { name: IconKey }) {
 export default function Sidebar({
   role,
   canSwitchTo,
+  isAdmin,
+  testAccounts,
 }: {
   role: UserRole;
   canSwitchTo?: UserRole | null;
+  isAdmin?: boolean;
+  testAccounts?: { key: string; label: string }[];
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [switching, setSwitching] = useState(false);
+  const [loggingInAs, setLoggingInAs] = useState<string | null>(null);
+
+  const handleTestLogin = async (key: string) => {
+    if (loggingInAs) return;
+    setLoggingInAs(key);
+    try {
+      const res = await fetch("/api/admin/test-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+      if (res.ok) {
+        const { url } = await res.json();
+        // Full navigation (not router.push) so the server callback runs and
+        // swaps the session cookies before the dashboard re-renders.
+        window.location.assign(url);
+      } else {
+        setLoggingInAs(null);
+      }
+    } catch {
+      setLoggingInAs(null);
+    }
+  };
 
   const navItems = getNavItemsForRole(role);
   const primary = getPrimaryCtaForRole(role);
@@ -167,6 +194,29 @@ export default function Sidebar({
       </nav>
 
       <div className="px-3 py-4 border-t border-[var(--brand-border)]">
+        {isAdmin && testAccounts && testAccounts.length > 0 && (
+          <div className="mb-3">
+            <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--brand-text-muted)]">
+              Internal
+            </div>
+            {testAccounts.map((acct) => (
+              <button
+                key={acct.key}
+                type="button"
+                onClick={() => handleTestLogin(acct.key)}
+                disabled={loggingInAs !== null}
+                className="w-full text-left flex items-center gap-3 px-3 py-2 mb-1 rounded-lg text-xs font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] hover:text-[var(--brand-text)] disabled:opacity-50 transition-colors"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <polyline points="16 11 18 13 22 9" />
+                </svg>
+                {loggingInAs === acct.key ? "Logging in…" : `Log in as ${acct.label}`}
+              </button>
+            ))}
+          </div>
+        )}
         {canSwitchTo && (
           <button
             type="button"

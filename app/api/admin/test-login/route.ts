@@ -23,6 +23,12 @@ export const runtime = "nodejs";
 const ORIGIN_COOKIE = "tslate_impersonation_origin";
 const ORIGIN_COOKIE_MAX_AGE = 12 * 60 * 60;
 
+function siteOrigin(req: NextRequest): string {
+  const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
+  if (envOrigin) return envOrigin.replace(/\/$/, "");
+  return new URL(req.url).origin;
+}
+
 interface TestLoginBody {
   key?: unknown;
 }
@@ -50,15 +56,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unknown test account key" }, { status: 400 });
   }
 
+  const origin = siteOrigin(request);
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type: "magiclink",
     email: account.email,
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/dashboard`,
+      redirectTo: `${origin}/callback?next=/dashboard`,
     },
   });
-  const actionLink = data?.properties?.action_link;
-  if (error || !actionLink) {
+  const tokenHash = data?.properties?.hashed_token;
+  if (error || !tokenHash) {
     console.error(
       "[admin.test-login] generateLink failed:",
       error?.message,
@@ -67,6 +74,15 @@ export async function POST(request: NextRequest) {
     );
     return NextResponse.json({ error: "Failed to mint login link" }, { status: 500 });
   }
+
+  // Hand back our own server-verifiable callback URL rather than generateLink's
+  // action_link. action_link bounces through GoTrue's verify endpoint and returns
+  // the session in an implicit-flow URL fragment (#access_token=...) that the
+  // /callback route handler can't read; /callback verifies the token_hash with
+  // verifyOtp() server-side and sets the target session cookies directly.
+  const callbackUrl = `${origin}/callback?token_hash=${encodeURIComponent(
+    tokenHash
+  )}&type=magiclink&next=${encodeURIComponent("/dashboard")}`;
 
   await logEvent({
     eventType: "admin.impersonate",
@@ -80,7 +96,7 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  const response = NextResponse.json({ url: actionLink });
+  const response = NextResponse.json({ url: callbackUrl });
   // Set before returning so the origin is recorded on the same response that
   // hands back the link, ahead of any client-side session swap.
   response.cookies.set(
