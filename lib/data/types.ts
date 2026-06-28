@@ -678,7 +678,9 @@ export type DomainEventType =
   // Wave 14 Phase 2C Layer 4 — scale-tier watchlist curation + promotion
   | "scale_show.saved"
   | "scale_show.dismissed"
-  | "scale_show.promoted_to_test";
+  | "scale_show.promoted_to_test"
+  // Layer 1 — founder test-account impersonation
+  | "admin.impersonate";
 
 export type DomainEntityType =
   | "deal"
