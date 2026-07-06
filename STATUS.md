@@ -56,14 +56,20 @@ pre-existing error in `app/(dashboard)/campaigns/generated/page.tsx`
 (setState-in-effect) is unrelated to this work.
 
 ## Migration state
-001–028 applied and introspected. 028 (per-show cost + tier curation columns on
-`conviction_scores`) applied via SQL Editor, confirmed by introspection (8
-columns + cost_basis check + `(campaign_pattern_id, tier)` index). The 028 file
-in `supabase/migrations/` documents what is live; never re-run.
-**Wave 14 Phase 2D Layers B (UTM tracking link) and C (show-notes blurb, both
-July 6) are schema-free — generated on read, no migration/column added. The
-June 28, 2026 impersonation tool + auth fixes are likewise schema-free;
-migration state is unchanged.**
+001–030 applied. 001–028 confirmed by introspection — 028 (per-show cost + tier
+curation columns on `conviction_scores`) via SQL Editor, verified (8 columns +
+cost_basis check + `(campaign_pattern_id, tier)` index). 029 (Phase 2C Layer 5
+portfolio-override inputs: `campaigns.test_spot_count` / `test_placement`,
+`conviction_scores.cpm_override_cents` / `placement_override` — applied ahead of
+the Layer 5 UI, which is still unshipped; see Next) and 030 (Wave 14 Phase 2D
+Layer A: `deals.promo_code`) were both run in the SQL Editor (confirmed applied
+July 6, 2026). Standing bar per project rule: an introspection spot-check before
+fully trusting a migration — do that for 029/030 next time you're in the DB. The
+files in `supabase/migrations/` document what is live; never re-run.
+**Of the July 6 2D layers, only Layer A (030, `deals.promo_code`) added schema.
+Layers B (UTM tracking link) and C (show-notes blurb) are schema-free — generated
+on read, no migration/column added. The June 28, 2026 impersonation tool + auth
+fixes are likewise schema-free.**
 
 ## What works end to end
 `/campaigns/[id]` renders the dual output: test portfolio (selectable, budget
