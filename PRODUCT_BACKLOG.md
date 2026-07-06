@@ -181,9 +181,9 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 ### 2D — Founder annotations + show brand history + promo code capture (~2 days)
 - Founder annotation UI: capture "why this show is right" reasoning that metadata can't infer (Wires `recordFounderAnnotation()`)
 - Show onboarding addition: "brand history" field (3-5 top advertisers + annual deals flag) → `show_profiles.brand_history`
-- Promo code field at IO generation time
-- Auto-generated UTM-tagged tracking link per deal
-- Show notes blurb generation helper (copy-paste output for the show)
+- ~~Promo code field at IO generation time~~ — **shipped July 6, 2026 (Layer A, `deals.promo_code`).**
+- ~~Auto-generated UTM-tagged tracking link per deal~~ — **shipped July 6, 2026 (Layer B, `buildTrackingLink`, generated on read).**
+- ~~Show notes blurb generation helper (copy-paste output for the show)~~ — **shipped July 6, 2026 (Layer C, `buildShowNotesBlurb`, deterministic template, generated on read).**
 - Acceptance criterion: capture the learning loop explicitly. Every creator selection, founder override, promo code, and UTM link should become future recommendation signal.
 
 **2D follow-ups (deferred during the Layer 2 build, June 2026):**

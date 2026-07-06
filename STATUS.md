@@ -1,8 +1,18 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 6, 2026 — Wave 14 Phase 2D Layer B (per-deal UTM tracking link, latest); Layer A (promo code) before that; founder impersonation tool + four show-auth fixes before that._
+_Volatile snapshot. Updated July 6, 2026 — Wave 14 Phase 2D Layer C (copy-paste show-notes blurb, latest — **2D complete**); Layer B (UTM tracking link) before that; Layer A (promo code) before that._
 
-## Most recent — Wave 14 Phase 2D Layer B: per-deal UTM tracking link (shipped July 6, 2026)
+## Most recent — Wave 14 Phase 2D Layer C: copy-paste show-notes blurb (shipped July 6, 2026)
+
+**Copy-paste show-notes blurb — GENERATED ON READ, no migration, no column, no persistence, no domain event.** Item 5 (final) of 2D — **2D is now complete**. Stitches Layer A (saved `deals.promo_code`) + Layer B (`buildTrackingLink`) into one ready-to-paste sponsor line the show drops into its episode description. **Deterministic template, not an LLM call.**
+- **Pure helper** `lib/io/show-notes.ts` — `buildShowNotesBlurb({ brandName, promoCode, trackingLink })` → blurb string or `null`. Reuses Layer A+B *outputs* (never recomputes `buildTrackingLink`/`normalizePromoCode`). Trims inputs, treats blank as absent. Degradation: link+code → `Check out {brand} at {link} — use code {CODE}.`; link-only / code-only drop the missing clause; **neither → `null`** (card omitted). Never emits `code null` / `undefined` / double spaces / dangling punctuation. Blank brand → neutral `our sponsor` lead.
+- **Uses the SAVED promo code** (`deal.promo_code`), not the brand's unsaved draft input — consistent with the read-only promo display; re-derives on `router.refresh()` after a promo save.
+- **Deal view** `components/deals/Wave12DealClient.tsx` — read-only "Show notes" sidebar card (blurb block + Copy button, "Copied ✓" inline confirm) after the Tracking-link card. Renders for **both roles** (the show pastes it). Omitted cleanly when blurb is null. Blurb computed server-side in `app/(dashboard)/deals/[id]/page.tsx`, passed as `showNotesBlurb` prop (alongside a now-extracted `brandName` const).
+- **No domain event** — rendering a derived string is not a user decision (same rationale as Layer B).
+- **Verification:** 8 colocated unit tests (degradation matrix + blank/whitespace handling + neutral-lead fallback + a "never emits null/undefined/double-space" invariant across the matrix), full suite **884 passing**, tsc clean, eslint clean on changed files, fresh Codex review (no High/Medium; one Low — over-specific caption — fixed). **Browser verify pending friends-test** — no deal/campaign data exists yet; wiring left correct and testable for a later seeded session.
+- **Not built (out of scope, per brief):** LLM generation, click-through tracking, blurb persistence, promo code on the IO PDF, show-onboarding `preferred_promo_code`.
+
+## Wave 14 Phase 2D Layer B: per-deal UTM tracking link (shipped July 6, 2026)
 
 **Auto-generated UTM tracking link per deal — GENERATED ON READ, no migration, no column, no persistence.** Item 4 of 2D. Derived deterministically from `brand_profiles.brand_website` (migration 007) + the show name + `deals.id`, recomputed every render, surfaced read-only on the deal view for both brand and show viewers.
 - **Pure helper** `lib/io/tracking-link.ts` — `buildTrackingLink({ brandWebsite, dealId, showName })` → UTM URL or `null`. Taxonomy: `utm_source="podcast"` + `utm_medium="podcast"` (stable channel so podcast traffic buckets together in the brand's analytics) + `utm_campaign="<show-slug>-<dealId>"` (per-show + per-deal granularity, deal id for uniqueness). Uses `URL`/`URLSearchParams`: blank/missing → null; no scheme → prepend `https://`; existing query params preserved and merged (`.set()`), not clobbered; non-http(s) scheme rejected → null (Codex finding); encoding via the URL API.
@@ -33,7 +43,7 @@ Plus a Codex finding: open redirect on `next` validated to a same-origin path on
 optional polish, not GTM-blocking.
 
 ## Tests
-876 passing (74 files). tsc clean. eslint: all changed files clean; one
+884 passing (75 files). tsc clean. eslint: all changed files clean; one
 pre-existing error in `app/(dashboard)/campaigns/generated/page.tsx`
 (setState-in-effect) is unrelated to this work.
 
@@ -42,9 +52,10 @@ pre-existing error in `app/(dashboard)/campaigns/generated/page.tsx`
 `conviction_scores`) applied via SQL Editor, confirmed by introspection (8
 columns + cost_basis check + `(campaign_pattern_id, tier)` index). The 028 file
 in `supabase/migrations/` documents what is live; never re-run.
-**Wave 14 Phase 2D Layer B (UTM tracking link, July 6) is schema-free —
-generated on read, no migration/column added. The June 28, 2026 impersonation
-tool + auth fixes are likewise schema-free; migration state is unchanged.**
+**Wave 14 Phase 2D Layers B (UTM tracking link) and C (show-notes blurb, both
+July 6) are schema-free — generated on read, no migration/column added. The
+June 28, 2026 impersonation tool + auth fixes are likewise schema-free;
+migration state is unchanged.**
 
 ## What works end to end
 `/campaigns/[id]` renders the dual output: test portfolio (selectable, budget

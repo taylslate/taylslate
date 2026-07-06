@@ -22,6 +22,12 @@ interface Props {
    * nothing in that case. Read-only for both roles.
    */
   trackingLink?: string | null;
+  /**
+   * Ready-to-paste show-notes blurb (brand + saved promo code + tracking link).
+   * Generated on read — never persisted. Null when nothing actionable; render
+   * nothing in that case. Read-only for both roles (the show pastes it).
+   */
+  showNotesBlurb?: string | null;
 }
 
 const STATUS_LABEL: Record<Wave12DealStatus, string> = {
@@ -60,6 +66,7 @@ export default function Wave12DealClient({
   viewerRole,
   signingHint,
   trackingLink,
+  showNotesBlurb,
 }: Props) {
   const router = useRouter();
   const [signing, setSigning] = useState(false);
@@ -68,6 +75,7 @@ export default function Wave12DealClient({
   const [cancelReason, setCancelReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [blurbCopied, setBlurbCopied] = useState(false);
 
   // Promo code — prefill is display-only (never persisted until Save). If the
   // deal has a saved code, show it; otherwise seed the show-name slug.
@@ -132,6 +140,17 @@ export default function Wave12DealClient({
     } catch {
       // Clipboard blocked (permissions/insecure context) — the link is still
       // visible for manual selection, so fail quietly.
+    }
+  };
+
+  const copyBlurb = async () => {
+    if (!showNotesBlurb) return;
+    try {
+      await navigator.clipboard.writeText(showNotesBlurb);
+      setBlurbCopied(true);
+      window.setTimeout(() => setBlurbCopied(false), 2000);
+    } catch {
+      // Clipboard blocked — the blurb is still visible for manual selection.
     }
   };
 
@@ -313,6 +332,36 @@ export default function Wave12DealClient({
                   Copy link
                 </button>
                 {linkCopied && (
+                  <span className="text-xs text-[var(--brand-success)] font-medium">
+                    Copied ✓
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Show notes — copy-paste blurb (brand + saved promo code + tracking
+              link), generated on read, read-only for both roles. The show is
+              who pastes it. Omitted cleanly when there's nothing actionable. */}
+          {showNotesBlurb && (
+            <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
+              <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+                Show notes
+              </h2>
+              <p className="text-sm text-[var(--brand-text)] bg-[var(--brand-surface)] border border-[var(--brand-border)] rounded-lg px-3 py-2">
+                {showNotesBlurb}
+              </p>
+              <p className="mt-2 text-xs text-[var(--brand-text-muted)]">
+                Ready-to-paste sponsor line for the episode description.
+              </p>
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  onClick={copyBlurb}
+                  className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text)] hover:bg-[var(--brand-surface)]"
+                >
+                  Copy blurb
+                </button>
+                {blurbCopied && (
                   <span className="text-xs text-[var(--brand-success)] font-medium">
                     Copied ✓
                   </span>

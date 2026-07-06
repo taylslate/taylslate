@@ -13,6 +13,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import LegacyDealClient from "./legacy-client";
 import Wave12DealClient from "@/components/deals/Wave12DealClient";
 import { buildTrackingLink } from "@/lib/io/tracking-link";
+import { buildShowNotesBlurb } from "@/lib/io/show-notes";
 import type { BrandProfile, ShowProfile } from "@/lib/data/types";
 
 interface PageProps {
@@ -59,6 +60,7 @@ export default async function DealDetailPage({ params, searchParams }: PageProps
     const outreach = await getOutreachById(wave12.outreach_id);
     const showName =
       (sp as ShowProfile | null)?.show_name ?? outreach?.show_name ?? "Show";
+    const brandName = brandDisplayName(bp as Partial<BrandProfile> | null);
     // Tracking link is generated on read — never persisted. Null when the brand
     // has no website on file, in which case the client renders nothing.
     const trackingLink = buildTrackingLink({
@@ -66,14 +68,23 @@ export default async function DealDetailPage({ params, searchParams }: PageProps
       dealId: wave12.id,
       showName,
     });
+    // Show-notes blurb is likewise generated on read — it stitches the SAVED
+    // promo code (Layer A) and the tracking link (Layer B) into one copy-paste
+    // string. router.refresh() after a promo save re-derives it automatically.
+    const showNotesBlurb = buildShowNotesBlurb({
+      brandName,
+      promoCode: wave12.promo_code,
+      trackingLink,
+    });
     return (
       <Wave12DealClient
         deal={wave12}
         showName={showName}
-        brandName={brandDisplayName(bp as Partial<BrandProfile> | null)}
+        brandName={brandName}
         viewerRole={ownsAsBrand ? "brand" : "show"}
         signingHint={search.signing ?? null}
         trackingLink={trackingLink}
+        showNotesBlurb={showNotesBlurb}
       />
     );
   }
