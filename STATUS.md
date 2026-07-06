@@ -46,9 +46,9 @@ Plus a Codex finding: open redirect on `next` validated to a same-origin path on
 **The show magic-link flow now works end-to-end for the first time** (Wave 13 gotcha #5 resolved). Layer 1 endpoint was `ccbc6e5` (prior session); this session added `8740670`, `8c32570`, `c355c5e`, `0187863`.
 
 ## Current wave
-**Wave 14 Phase 2C — Test portfolio + scale tier dual output.** Layers 1, 1b,
-2, 3, 3.5, 4 shipped and live. Layer 5 (overrides + recompute) remaining —
-optional polish, not GTM-blocking.
+**Wave 14 Phase 2D COMPLETE (July 6, 2026).** No active build wave. 2C
+Layer 5 (overrides + recompute) remains optional polish, not GTM-blocking
+— carried in PRODUCT_BACKLOG.md with its request-scope footgun note.
 
 ## Tests
 884 passing (75 files). tsc clean. eslint: all changed files clean; one
@@ -95,6 +95,7 @@ inbox.
   case reopens.
 
 ## Next
-Layer 5 (overrides + recompute: spot-count, placement, per-show CPM) — carries
-the Layer 3 request-scope footgun (`tierCampaignPortfolio`'s default
-`loadShowsByIds` needs a request scope or admin deps on override re-run).
+Test-deal seeding tool (pre-flight scoped — see PRODUCT_BACKLOG.md
+[NEXT BUILD]). Unblocks the three deferred 2D browser verifies and the
+money-loop test. Then auth hardening on the brand email/password path
+[LAUNCH-BLOCKER] before any non-friends traffic.
