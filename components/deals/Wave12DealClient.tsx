@@ -7,6 +7,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Wave12Deal, Wave12DealStatus } from "@/lib/data/types";
+import { derivePromoCode } from "@/lib/io/promo-code";
 
 interface Props {
   deal: Wave12Deal;
@@ -60,6 +61,14 @@ export default function Wave12DealClient({
   const [cancelReason, setCancelReason] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  // Promo code — prefill is display-only (never persisted until Save). If the
+  // deal has a saved code, show it; otherwise seed the show-name slug.
+  const [promoCode, setPromoCode] = useState(
+    deal.promo_code ?? derivePromoCode(showName) ?? ""
+  );
+  const [savingPromo, setSavingPromo] = useState(false);
+  const [promoSaved, setPromoSaved] = useState(false);
+
   const sendToDocuSign = async () => {
     setSigning(true);
     setError(null);
@@ -77,6 +86,32 @@ export default function Wave12DealClient({
     } catch {
       setError("Network error — please try again.");
       setSigning(false);
+    }
+  };
+
+  const savePromoCode = async () => {
+    setSavingPromo(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/deals/${deal.id}/promo-code`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ promo_code: promoCode.trim() || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Couldn't save promo code.");
+        setSavingPromo(false);
+        return;
+      }
+      // Reflect the normalized value the server actually stored.
+      setPromoCode(data.promo_code ?? "");
+      setSavingPromo(false);
+      setPromoSaved(true);
+      router.refresh();
+    } catch {
+      setError("Network error — please try again.");
+      setSavingPromo(false);
     }
   };
 
@@ -111,6 +146,9 @@ export default function Wave12DealClient({
   const isCancellable =
     viewerRole === "brand" && (deal.status === "planning" || deal.status === "brand_signed");
   const canSign = viewerRole === "brand" && deal.status === "planning";
+  // Brand can set the promo code at IO time (before signature). Otherwise the
+  // stored code renders read-only — and only if one was actually saved.
+  const canEditPromo = viewerRole === "brand" && deal.status === "planning";
 
   return (
     <div className="px-8 py-6 max-w-6xl">
@@ -185,6 +223,53 @@ export default function Wave12DealClient({
               />
             </dl>
           </div>
+
+          {/* Promo code — brand-editable at IO time (planning), else read-only. */}
+          {canEditPromo ? (
+            <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
+              <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+                Promo code
+              </h2>
+              <input
+                value={promoCode}
+                onChange={(e) => {
+                  setPromoCode(e.target.value);
+                  setPromoSaved(false);
+                }}
+                placeholder="e.g. HUBERMAN"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm font-mono uppercase tracking-wide text-[var(--brand-text)]"
+              />
+              <p className="mt-2 text-xs text-[var(--brand-text-muted)]">
+                Optional — the show reads this on air for attribution. Prefilled
+                from the show name; edit or clear it.
+              </p>
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  onClick={savePromoCode}
+                  disabled={savingPromo}
+                  className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text)] hover:bg-[var(--brand-surface)] disabled:opacity-50"
+                >
+                  {savingPromo ? "Saving…" : "Save promo code"}
+                </button>
+                {promoSaved && (
+                  <span className="text-xs text-[var(--brand-success)] font-medium">
+                    Saved ✓
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : (
+            deal.promo_code && (
+              <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
+                <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+                  Promo code
+                </h2>
+                <p className="text-sm font-mono tracking-wide text-[var(--brand-text)]">
+                  {deal.promo_code}
+                </p>
+              </div>
+            )
+          )}
 
           <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
             <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">

@@ -616,6 +616,10 @@ export interface Wave12Deal {
   cancelled_at?: string | null;
   cancellation_reason?: string | null;
 
+  // Wave 14 Phase 2D — promo code read on air for conversion attribution.
+  // Null until the brand explicitly saves one; the UI prefills a show-name slug.
+  promo_code?: string | null;
+
   created_at: string;
   updated_at: string;
 }
@@ -679,6 +683,8 @@ export type DomainEventType =
   | "scale_show.saved"
   | "scale_show.dismissed"
   | "scale_show.promoted_to_test"
+  // Wave 14 Phase 2D — per-deal promo code captured/edited at IO time
+  | "deal.promo_code_set"
   // Layer 1 — founder test-account impersonation
   | "admin.impersonate";
 

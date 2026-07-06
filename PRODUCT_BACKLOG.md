@@ -188,6 +188,7 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 
 **2D follow-ups (deferred during the Layer 2 build, June 2026):**
 - **Render `promo_code` on the signed IO PDF.** A real transaction-terms gap, not cosmetic — the promo code is part of what the brand and show agree to, so it belongs on the signed document, not just on the deal record. Deferred from 2D Layer 3 v1 (which captures the code at IO generation time). IO PDF generator: `lib/pdf/io-generator.ts`.
+- **Promo code cleared-state display ambiguity (Layer A, July 6 2026 — accepted tradeoff).** With a single nullable `deals.promo_code` column, "explicitly cleared" and "never touched" are indistinguishable on reload: a brand who clears a code sees the derived show-name default re-seed the input on the next mount (the DB correctly stays `null` — no phantom code is ever persisted, and `Sign IO` never writes the column, so this is display-only, not a persistence bug). Codex-flagged MEDIUM during Layer A review; accepted because the ~99% convention is that the code matches the show name anyway. Fix if it ever bites: add a `promo_code_confirmed_at` marker column and only derive the default when no decision (set or clear) was ever saved. Files: `components/deals/Wave12DealClient.tsx` (prefill init) + `app/api/deals/[id]/promo-code/route.ts`.
 
 **Effort:** ~2 weeks total split across 4 Claude Code sessions
 **Pre-req:** Pattern library seeded with ~20-50 analog campaigns from Chris's media-buying memory (can happen async during Phase 2 build)
