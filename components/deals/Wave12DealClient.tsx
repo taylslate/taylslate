@@ -16,6 +16,12 @@ interface Props {
   /** "brand" | "show" — drives which actions render. */
   viewerRole: "brand" | "show";
   signingHint?: string | null;
+  /**
+   * UTM-tagged tracking link for the show's show notes. Generated on read from
+   * the brand website + deal — never persisted. Null when unavailable; render
+   * nothing in that case. Read-only for both roles.
+   */
+  trackingLink?: string | null;
 }
 
 const STATUS_LABEL: Record<Wave12DealStatus, string> = {
@@ -53,6 +59,7 @@ export default function Wave12DealClient({
   brandName,
   viewerRole,
   signingHint,
+  trackingLink,
 }: Props) {
   const router = useRouter();
   const [signing, setSigning] = useState(false);
@@ -60,6 +67,7 @@ export default function Wave12DealClient({
   const [showCancelForm, setShowCancelForm] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Promo code — prefill is display-only (never persisted until Save). If the
   // deal has a saved code, show it; otherwise seed the show-name slug.
@@ -112,6 +120,18 @@ export default function Wave12DealClient({
     } catch {
       setError("Network error — please try again.");
       setSavingPromo(false);
+    }
+  };
+
+  const copyTrackingLink = async () => {
+    if (!trackingLink) return;
+    try {
+      await navigator.clipboard.writeText(trackingLink);
+      setLinkCopied(true);
+      window.setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      // Clipboard blocked (permissions/insecure context) — the link is still
+      // visible for manual selection, so fail quietly.
     }
   };
 
@@ -269,6 +289,36 @@ export default function Wave12DealClient({
                 </p>
               </div>
             )
+          )}
+
+          {/* Tracking link — generated on read, read-only for both roles.
+              Omitted cleanly when the brand has no website on file. */}
+          {trackingLink && (
+            <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
+              <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+                Tracking link
+              </h2>
+              <p className="text-xs break-all font-mono text-[var(--brand-text)] bg-[var(--brand-surface)] border border-[var(--brand-border)] rounded-lg px-3 py-2">
+                {trackingLink}
+              </p>
+              <p className="mt-2 text-xs text-[var(--brand-text-muted)]">
+                UTM-tagged link for the show’s show notes — traffic attributes
+                back to this deal in the brand’s analytics.
+              </p>
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  onClick={copyTrackingLink}
+                  className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text)] hover:bg-[var(--brand-surface)]"
+                >
+                  Copy link
+                </button>
+                {linkCopied && (
+                  <span className="text-xs text-[var(--brand-success)] font-medium">
+                    Copied ✓
+                  </span>
+                )}
+              </div>
+            </div>
           )}
 
           <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">

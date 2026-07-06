@@ -1,8 +1,18 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated June 28, 2026 — founder impersonation tool + four show-auth fixes (latest); Wave 14 Phase 2C Layer 4 + 3.5 before that._
+_Volatile snapshot. Updated July 6, 2026 — Wave 14 Phase 2D Layer B (per-deal UTM tracking link, latest); Layer A (promo code) before that; founder impersonation tool + four show-auth fixes before that._
 
-## Most recent — Founder impersonation tool + four show-auth fixes (shipped June 28, 2026)
+## Most recent — Wave 14 Phase 2D Layer B: per-deal UTM tracking link (shipped July 6, 2026)
+
+**Auto-generated UTM tracking link per deal — GENERATED ON READ, no migration, no column, no persistence.** Item 4 of 2D. Derived deterministically from `brand_profiles.brand_website` (migration 007) + the show name + `deals.id`, recomputed every render, surfaced read-only on the deal view for both brand and show viewers.
+- **Pure helper** `lib/io/tracking-link.ts` — `buildTrackingLink({ brandWebsite, dealId, showName })` → UTM URL or `null`. Taxonomy: `utm_source="podcast"` + `utm_medium="podcast"` (stable channel so podcast traffic buckets together in the brand's analytics) + `utm_campaign="<show-slug>-<dealId>"` (per-show + per-deal granularity, deal id for uniqueness). Uses `URL`/`URLSearchParams`: blank/missing → null; no scheme → prepend `https://`; existing query params preserved and merged (`.set()`), not clobbered; non-http(s) scheme rejected → null (Codex finding); encoding via the URL API.
+- **Deal view** `components/deals/Wave12DealClient.tsx` — read-only "Tracking link" sidebar card (mono URL block + Copy button via `navigator.clipboard`, "Copied ✓" inline confirm matching the promo "Saved ✓" pattern). Card omitted cleanly when the link is null. Link computed server-side in `app/(dashboard)/deals/[id]/page.tsx` and passed as a `trackingLink` prop.
+- **No domain event** — rendering a derived link is not a user decision (unlike the promo code, which the brand sets/saves). Confirmed with Codex; no event by design.
+- **Deferred (one-line comment in helper):** persisting the exact link or a per-deal landing-URL override is a backlog item, not built now.
+- **Verification:** 12 colocated unit tests (edge cases: missing/blank → null, scheme prepend, existing-params merge, encoding, non-http rejection, unparseable → null), full suite 876 passing, tsc clean, eslint clean on changed files, fresh Codex review (one Medium finding — non-http scheme — applied). **Browser verify pending friends-test** — no deal/campaign data exists yet; wiring left correct and testable for a later seeded session.
+- **Not built (out of scope):** show-notes blurb (Layer C), link persistence, per-deal landing-URL override, promo code on IO PDF.
+
+## Founder impersonation tool + four show-auth fixes (shipped June 28, 2026)
 
 **Founder "log in as test user" tool — Layers 1 + 2 shipped, live on prod, verified end-to-end both ways.** Schema-free — NO migration added. Admin-gated by `isInternalAdmin` (`INTERNAL_ADMIN_EMAILS`); impersonable set fixed by `TEST_ACCOUNTS`.
 - Sidebar click-through as `chris@`: lands as the test user, orange "Impersonating &lt;label&gt;" banner shows.
@@ -23,7 +33,7 @@ Plus a Codex finding: open redirect on `next` validated to a same-origin path on
 optional polish, not GTM-blocking.
 
 ## Tests
-853 passing (72 files). tsc clean. eslint: all changed files clean; one
+876 passing (74 files). tsc clean. eslint: all changed files clean; one
 pre-existing error in `app/(dashboard)/campaigns/generated/page.tsx`
 (setState-in-effect) is unrelated to this work.
 
@@ -32,8 +42,9 @@ pre-existing error in `app/(dashboard)/campaigns/generated/page.tsx`
 `conviction_scores`) applied via SQL Editor, confirmed by introspection (8
 columns + cost_basis check + `(campaign_pattern_id, tier)` index). The 028 file
 in `supabase/migrations/` documents what is live; never re-run.
-**The June 28, 2026 impersonation tool + auth fixes are schema-free — no
-migration added; migration state is unchanged.**
+**Wave 14 Phase 2D Layer B (UTM tracking link, July 6) is schema-free —
+generated on read, no migration/column added. The June 28, 2026 impersonation
+tool + auth fixes are likewise schema-free; migration state is unchanged.**
 
 ## What works end to end
 `/campaigns/[id]` renders the dual output: test portfolio (selectable, budget

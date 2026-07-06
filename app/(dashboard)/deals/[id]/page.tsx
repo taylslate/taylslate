@@ -12,6 +12,7 @@ import {
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import LegacyDealClient from "./legacy-client";
 import Wave12DealClient from "@/components/deals/Wave12DealClient";
+import { buildTrackingLink } from "@/lib/io/tracking-link";
 import type { BrandProfile, ShowProfile } from "@/lib/data/types";
 
 interface PageProps {
@@ -56,15 +57,23 @@ export default async function DealDetailPage({ params, searchParams }: PageProps
       .eq("id", wave12.show_profile_id)
       .single();
     const outreach = await getOutreachById(wave12.outreach_id);
+    const showName =
+      (sp as ShowProfile | null)?.show_name ?? outreach?.show_name ?? "Show";
+    // Tracking link is generated on read — never persisted. Null when the brand
+    // has no website on file, in which case the client renders nothing.
+    const trackingLink = buildTrackingLink({
+      brandWebsite: (bp as Partial<BrandProfile> | null)?.brand_website,
+      dealId: wave12.id,
+      showName,
+    });
     return (
       <Wave12DealClient
         deal={wave12}
-        showName={
-          (sp as ShowProfile | null)?.show_name ?? outreach?.show_name ?? "Show"
-        }
+        showName={showName}
         brandName={brandDisplayName(bp as Partial<BrandProfile> | null)}
         viewerRole={ownsAsBrand ? "brand" : "show"}
         signingHint={search.signing ?? null}
+        trackingLink={trackingLink}
       />
     );
   }
