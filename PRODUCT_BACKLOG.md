@@ -1,6 +1,6 @@
 # Taylslate Product Backlog
 
-*Last updated: April 30, 2026*
+*Last updated: July 6, 2026*
 
 This document captures everything that's been identified as worth building. Three parts:
 
