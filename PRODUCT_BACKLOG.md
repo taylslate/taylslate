@@ -96,6 +96,16 @@ Things that must finish before GTM. The launch bar.
 - **Effort:** 1-2 days
 - **Why:** Real-user testing is preferred but not always available. Internal testing currently requires manual SQL or workarounds.
 
+### Test-deal seeding tool  [NEXT BUILD — highest leverage]
+Create a `planning`-status deal between test accounts (brand1 → show1) on demand, without grinding the full campaign→discovery→outreach→accept chain. Unblocks: (a) all three deferred 2D browser verifies, (b) the money-loop test, (c) any end-to-end confidence before the friends-test. Enabled by the impersonation tool (shipped June 28, 2026). Scope: pre-flight the deals insert shape + what `planning` requires + whether it can skip outreach/DocuSign, then a layered plan.
+- **Note:** This is option (b) of "Test mode for full transaction loop" above (admin deal-create bypass), now the priority build.
+
+### Auth hardening — brand email/password path  [LAUNCH-BLOCKER]
+The brand login path is email/password and fully live; it was NOT part of the June 28 magic-link fixes and real strangers hit it at launch. Before non-friends touch the product: signup-UI honesty fix, `emailRedirectTo` on magic links, bot-signup protection (Turnstile or Supabase Attack Protection). Currently unprotected against automated signup.
+
+### Auth unification (deferred, post-launch acceptable)
+Brands email/password, shows magic-link+OTP. Target: magic-link+OTP for all. Not launch-blocking; the hardening item above is. (Supersedes the "Auth unification" polish item below.)
+
 ---
 
 ## Polish
@@ -129,10 +139,7 @@ Things that must finish before GTM. The launch bar.
 - **Effort:** 2-3 hours
 
 ### Auth unification
-- Currently brands use email/password, shows use magic link + Supabase OTP
-- Move all users to unified magic link + 6-digit OTP
-- Safer, cleaner UX, no password management
-- **Effort:** 2-3 days
+- **Moved to Operational Unblock** (see "Auth hardening — brand email/password path" [LAUNCH-BLOCKER] and "Auth unification (deferred, post-launch acceptable)"). The launch bar is the hardening item; full magic-link+OTP unification is post-launch acceptable.
 
 ---
 
@@ -178,9 +185,9 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 - **Q5 stale-tier invariant note** — confirmed-ring stale-tier safety holds only because every persisted row has composite ≥ MEDIUM_FLOOR (the sole ring-dependent input to `classifyTier`). If a future change ever persists below-floor rows, reopen Codex Q5 (add the defensive confirmed-only recompute). **Trigger to watch, not a task.**
 - **Layer 5 request-scope footgun** — `tierCampaignPortfolio`'s default `loadShowsByIds` uses the cookie server client (request-scope only). Layer 5 override re-runs must run in a request scope or inject admin deps, or the show load returns empty. **Build note for Layer 5.**
 
-### 2D — Founder annotations + show brand history + promo code capture (~2 days)
-- Founder annotation UI: capture "why this show is right" reasoning that metadata can't infer (Wires `recordFounderAnnotation()`)
-- Show onboarding addition: "brand history" field (3-5 top advertisers + annual deals flag) → `show_profiles.brand_history`
+### 2D — Founder annotations + show brand history + promo code capture (~2 days) — SHIPPED (COMPLETE July 6, 2026)
+- ~~Founder annotation UI: capture "why this show is right" reasoning that metadata can't infer (Wires `recordFounderAnnotation()`)~~ — **shipped June 26, 2026 (Layer 1, commit `137d6ae`, `components/discovery/FounderAnnotations.tsx` + admin annotation routes).**
+- ~~Show onboarding addition: "brand history" field (3-5 top advertisers + annual deals flag) → `show_profiles.brand_history`~~ — **shipped June 26, 2026 (Layer 2, onboarding brand-history step, commits `34b5f0a`/`d3c0d5b`).**
 - ~~Promo code field at IO generation time~~ — **shipped July 6, 2026 (Layer A, `deals.promo_code`).**
 - ~~Auto-generated UTM-tagged tracking link per deal~~ — **shipped July 6, 2026 (Layer B, `buildTrackingLink`, generated on read).**
 - ~~Show notes blurb generation helper (copy-paste output for the show)~~ — **shipped July 6, 2026 (Layer C, `buildShowNotesBlurb`, deterministic template, generated on read).**

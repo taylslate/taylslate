@@ -1,8 +1,16 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 6, 2026 — Wave 14 Phase 2D Layer C (copy-paste show-notes blurb, latest — **2D complete**); Layer B (UTM tracking link) before that; Layer A (promo code) before that._
+_Volatile snapshot. Updated July 6, 2026 — Wave 14 Phase 2D COMPLETE (all five items shipped). 884 tests passing._
 
-## Most recent — Wave 14 Phase 2D Layer C: copy-paste show-notes blurb (shipped July 6, 2026)
+## Most recent — Wave 14 Phase 2D COMPLETE (shipped July 6, 2026)
+
+All five 2D items live: founder annotations + brand_history (L1-2), promo code (deals.promo_code, migration 030, Layer A), UTM tracking link (generate-on-read, Layer B), show-notes blurb (template, Layer C). 884 tests, tsc/eslint clean, Codex clean. Deploys: 3eacc8e (A) / c020e547 (B) / 75491f7 (C).
+
+VERIFICATION DEBT — browser verify pending for all of 2D's deal-view surfaces (promo field, tracking link, show-notes blurb). Blocked on: NO deal/campaign data exists in the system. Unblocked by the test-deal seeding tool (see backlog).
+
+Also shipped June 28, 2026: founder impersonation tool (Layers 1-2) + four production auth bugs fixed on the show magic-link path. Show magic-link onboarding now works end-to-end for the first time.
+
+## Wave 14 Phase 2D Layer C: copy-paste show-notes blurb (shipped July 6, 2026)
 
 **Copy-paste show-notes blurb — GENERATED ON READ, no migration, no column, no persistence, no domain event.** Item 5 (final) of 2D — **2D is now complete**. Stitches Layer A (saved `deals.promo_code`) + Layer B (`buildTrackingLink`) into one ready-to-paste sponsor line the show drops into its episode description. **Deterministic template, not an LLM call.**
 - **Pure helper** `lib/io/show-notes.ts` — `buildShowNotesBlurb({ brandName, promoCode, trackingLink })` → blurb string or `null`. Reuses Layer A+B *outputs* (never recomputes `buildTrackingLink`/`normalizePromoCode`). Trims inputs, treats blank as absent. Degradation: link+code → `Check out {brand} at {link} — use code {CODE}.`; link-only / code-only drop the missing clause; **neither → `null`** (card omitted). Never emits `code null` / `undefined` / double spaces / dangling punctuation. Blank brand → neutral `our sponsor` lead.
