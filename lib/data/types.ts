@@ -691,6 +691,11 @@ export type DomainEventType =
   | "deal.seeded"
   // Layer 1 — founder test-account impersonation
   | "admin.impersonate"
+  // Layer 3 — founder returned from an impersonated session to their admin
+  // session. Doubles as the single-use sentinel for the return token: its
+  // presence (payload.impersonate_event_id linking the originating
+  // admin.impersonate row) marks that token spent.
+  | "admin.impersonation_ended"
   // Layer 2 — founder test-data teardown (DELETE /api/admin/seed-deal). Marker
   // event; payload carries the union of every entity id removed by the teardown.
   | "admin.seed_teardown";

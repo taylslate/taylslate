@@ -15,6 +15,12 @@ import { isInternalAdmin } from "@/lib/auth/admin";
 import { logEvent } from "@/lib/data/events";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { TEST_ACCOUNTS } from "@/lib/admin/test-accounts";
+import {
+  RETURN_TOKEN_COOKIE,
+  RETURN_TOKEN_TTL_SECONDS,
+  mintReturnToken,
+  hashReturnToken,
+} from "@/lib/admin/return-token";
 
 export const runtime = "nodejs";
 
@@ -84,6 +90,14 @@ export async function POST(request: NextRequest) {
     tokenHash
   )}&type=magiclink&next=${encodeURIComponent("/dashboard")}`;
 
+  // Layer 3 return-to-admin capability: mint an opaque token, persist only its
+  // sha256 hash on the audit record (so the log at rest never holds a usable
+  // bearer token), and hand the raw token back in an httpOnly cookie. The return
+  // path resolves the admin identity from this event's actor_id via the hash —
+  // never from cookie contents. logEvent is fail-soft; if it doesn't persist,
+  // the token simply won't resolve later (return degrades to sign-out), which is
+  // the correct fail-safe and consistent with "audit writes never block".
+  const returnToken = mintReturnToken();
   await logEvent({
     eventType: "admin.impersonate",
     entityType: "profile",
@@ -93,6 +107,7 @@ export async function POST(request: NextRequest) {
       targetKey: account.key,
       targetEmail: account.email,
       targetRole: account.role,
+      return_token_hash: hashReturnToken(returnToken),
     },
   });
 
@@ -110,5 +125,15 @@ export async function POST(request: NextRequest) {
       maxAge: ORIGIN_COOKIE_MAX_AGE,
     }
   );
+  // Opaque return token — httpOnly/Secure/SameSite=Lax, no payload, zero-trust
+  // on the client. The redeem path (POST /api/admin/return-to-admin) hashes this
+  // and looks up the originating admin.impersonate event.
+  response.cookies.set(RETURN_TOKEN_COOKIE, returnToken, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: RETURN_TOKEN_TTL_SECONDS,
+  });
   return response;
 }
