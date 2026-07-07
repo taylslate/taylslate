@@ -1,12 +1,20 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 6, 2026 — Wave 14 Phase 2D COMPLETE (all five items shipped). 884 tests passing._
+_Volatile snapshot. Updated July 7, 2026 — test-deal seeding tool Layer 1 shipped + Wave 14 Phase 2D browser verification COMPLETE (all three deal-view surfaces verified live). 894 tests passing._
+
+## Most recent — seeding tool Layer 1 + 2D browser verification COMPLETE (July 7, 2026)
+
+Test-deal seeding tool **Layer 1 shipped** (admin endpoint creating a `planning`-status deal between test accounts brand1 → show1, commit `d488430`) — no code beyond the seeding path. With it, the three deferred 2D browser verifies are **DONE**: all three deal-view surfaces (promo-code save, UTM tracking link, show-notes blurb) verified **live under impersonation, both roles**, against seeded deal `e0bf050b`. 894 tests (76 files).
+
+**One seeded deal currently persists in prod** — teardown is seeding-tool **Layer 2 (not built yet)**, so the `e0bf050b` row stays until Layer 2 ships.
+
+The July 7 verification also surfaced a launch-blocker cluster (accept-flow NOT-NULL, show-side deal visibility, flight-date off-by-one) now logged in PRODUCT_BACKLOG.md → PRE-LAUNCH.
 
 ## Most recent — Wave 14 Phase 2D COMPLETE (shipped July 6, 2026)
 
 All five 2D items live: founder annotations + brand_history (L1-2), promo code (deals.promo_code, migration 030, Layer A), UTM tracking link (generate-on-read, Layer B), show-notes blurb (template, Layer C). 884 tests, tsc/eslint clean, Codex clean. Deploys: 3eacc8e (A) / c020e547 (B) / 75491f7 (C).
 
-VERIFICATION DEBT — browser verify pending for all of 2D's deal-view surfaces (promo field, tracking link, show-notes blurb). Blocked on: NO deal/campaign data exists in the system. Unblocked by the test-deal seeding tool (see backlog).
+VERIFICATION DEBT — **RESOLVED July 7, 2026.** All three 2D deal-view surfaces (promo field, tracking link, show-notes blurb) verified live in-browser under impersonation, both roles, against seeded deal `e0bf050b` — unblocked by the test-deal seeding tool Layer 1 (`d488430`).
 
 Also shipped June 28, 2026: founder impersonation tool (Layers 1-2) + four production auth bugs fixed on the show magic-link path. Show magic-link onboarding now works end-to-end for the first time.
 
@@ -46,12 +54,13 @@ Plus a Codex finding: open redirect on `next` validated to a same-origin path on
 **The show magic-link flow now works end-to-end for the first time** (Wave 13 gotcha #5 resolved). Layer 1 endpoint was `ccbc6e5` (prior session); this session added `8740670`, `8c32570`, `c355c5e`, `0187863`.
 
 ## Current wave
-**Wave 14 Phase 2D COMPLETE (July 6, 2026).** No active build wave. 2C
-Layer 5 (overrides + recompute) remains optional polish, not GTM-blocking
-— carried in PRODUCT_BACKLOG.md with its request-scope footgun note.
+**Wave 14 Phase 2D COMPLETE (July 6, 2026).** No active build wave. Test-deal
+seeding tool Layer 1 shipped July 7 (`d488430`); Layer 2 (teardown) is next —
+see Next. 2C Layer 5 (overrides + recompute) remains optional polish, not
+GTM-blocking — carried in PRODUCT_BACKLOG.md with its request-scope footgun note.
 
 ## Tests
-884 passing (75 files). tsc clean. eslint: all changed files clean; one
+894 passing (76 files). tsc clean. eslint: all changed files clean; one
 pre-existing error in `app/(dashboard)/campaigns/generated/page.tsx`
 (setState-in-effect) is unrelated to this work.
 
@@ -94,7 +103,11 @@ inbox.
   case reopens.
 
 ## Next
-Test-deal seeding tool (pre-flight scoped — see PRODUCT_BACKLOG.md
-[NEXT BUILD]). Unblocks the three deferred 2D browser verifies and the
-money-loop test. Then auth hardening on the brand email/password path
-[LAUNCH-BLOCKER] before any non-friends traffic.
+Seeding tool **Layer 2 (teardown)** — remove the seeded deal + supporting
+rows so prod doesn't accumulate test data (one seeded deal, `e0bf050b`,
+persists now). Then impersonation **Layer 3 (return-to-admin)** — swap back
+from a test session without re-logging-in (opaque server-side token, per the
+locked security requirement). Then the **launch-blocker cluster** now logged
+in PRODUCT_BACKLOG.md → PRE-LAUNCH: accept-flow NOT-NULL bug (#1), show-side
+deal visibility (#2), flight-date off-by-one (#3). Auth hardening on the brand
+email/password path [LAUNCH-BLOCKER] still precedes any non-friends traffic.

@@ -1,6 +1,6 @@
 # Taylslate Product Backlog
 
-*Last updated: July 6, 2026*
+*Last updated: July 7, 2026*
 
 This document captures everything that's been identified as worth building. Three parts:
 
@@ -96,15 +96,24 @@ Things that must finish before GTM. The launch bar.
 - **Effort:** 1-2 days
 - **Why:** Real-user testing is preferred but not always available. Internal testing currently requires manual SQL or workarounds.
 
-### Test-deal seeding tool  [NEXT BUILD — highest leverage]
-Create a `planning`-status deal between test accounts (brand1 → show1) on demand, without grinding the full campaign→discovery→outreach→accept chain. Unblocks: (a) all three deferred 2D browser verifies, (b) the money-loop test, (c) any end-to-end confidence before the friends-test. Enabled by the impersonation tool (shipped June 28, 2026). Scope: pre-flight the deals insert shape + what `planning` requires + whether it can skip outreach/DocuSign, then a layered plan.
-- **Note:** This is option (b) of "Test mode for full transaction loop" above (admin deal-create bypass), now the priority build.
+### Test-deal seeding tool  [Layer 1 SHIPPED July 7, 2026 — Layer 2 next]
+Create a `planning`-status deal between test accounts (brand1 → show1) on demand, without grinding the full campaign→discovery→outreach→accept chain. Unblocks: (a) all three deferred 2D browser verifies, (b) the money-loop test, (c) any end-to-end confidence before the friends-test. Enabled by the impersonation tool (shipped June 28, 2026).
+- **Layer 1 SHIPPED July 7, 2026 (commit `d488430`)** — admin endpoint that inserts the `planning`-status deal. Used to complete all three 2D browser verifies (seeded deal `e0bf050b`).
+- **Layer 2 remaining — teardown.** Remove the seeded deal + supporting rows so prod doesn't accumulate test data. **One seeded deal (`e0bf050b`) currently persists in prod** until this ships.
+- **Note:** This is option (b) of "Test mode for full transaction loop" above (admin deal-create bypass).
 
 ### Auth hardening — brand email/password path  [LAUNCH-BLOCKER]
 The brand login path is email/password and fully live; it was NOT part of the June 28 magic-link fixes and real strangers hit it at launch. Before non-friends touch the product: signup-UI honesty fix, `emailRedirectTo` on magic links, bot-signup protection (Turnstile or Supabase Attack Protection). Currently unprotected against automated signup.
 
 ### Auth unification (deferred, post-launch acceptable)
 Brands email/password, shows magic-link+OTP. Target: magic-link+OTP for all. Not launch-blocking; the hardening item above is. (Supersedes the "Auth unification" polish item below.)
+
+### Accept-flow deal creation — launch-blocker cluster  [LAUNCH-BLOCKER]
+Both surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). The seed tool sidesteps them by writing ownership columns directly; the real accept path does not. Must fix before the friends test.
+
+**#1 — Accept-flow NOT-NULL bug.** The first real outreach-accept will fail. `createWave12Deal` never sets `deals.brand_id` / `deals.show_id` (both NOT NULL, no default — confirmed in prod via OpenAPI introspection); the `deals` table was empty so the path has never run. Call sites: `outreach/[token]/_shared.ts:167` and `accept-counter/route.ts:105`. Derivations: `brand_id` = `brand_profiles.user_id` via `outreach.brand_profile_id` (trivial). `show_id` is the hard one — `show_profiles` deliberately doesn't link to catalog `shows` (migration 009), and show onboarding never creates a `shows` row. Fix priority: (a) use `outreaches.show_id` if non-null; (b) else materialize a `shows` row from the outreach and backfill. **BLOCKED ON PRODUCT DECISION:** does accepting a non-catalog outreach put the creator's show into shared discovery inventory? `CreateWave12DealInput` already accepts `brand_id`/`show_id` (the seed tool is the working reference).
+
+**#2 — Show-side deal visibility (clusters with #1).** `getDealsFiltered` filters legacy columns (`agent_id`/`brand_id`/`agency_id`) only — a show account NEVER sees Wave-12 deals in its pipeline list ("No deals yet" despite an active deal; confirmed live July 7). A real creator reads this as the deal not existing; the detail page works via direct URL only. Fix = list query honors Wave-12 ownership (`show_profile_id`/`brand_profile_id`). **Caution (pre-flight):** the list status map only handles `planning`|`io_sent`|`live`|`completed` — Wave-12-only statuses would throw; handle when fixing.
 
 ---
 
@@ -137,6 +146,11 @@ Brands email/password, shows magic-link+OTP. Target: magic-link+OTP for all. Not
 ### Pitch page deal value display
 - Proposed Terms section should show total deal value calculation: CPM × episodes × audience/1000
 - **Effort:** 2-3 hours
+
+### Flight-date off-by-one across surfaces  [pre-launch]
+- The Agreed Terms panel shows Jul 20–Aug 17 where the IO document shows Jul 21–Aug 18 (same deal, both roles). Classic date-only string parsed as UTC then rendered in local TZ on one surface but not the other. The contract surface and the summary panel must agree.
+- **Confirmed live July 7, 2026** (seeded deal `e0bf050b`).
+- **Effort:** Small — align date-only rendering across both surfaces.
 
 ### Auth unification
 - **Moved to Operational Unblock** (see "Auth hardening — brand email/password path" [LAUNCH-BLOCKER] and "Auth unification (deferred, post-launch acceptable)"). The launch bar is the hardening item; full magic-link+OTP unification is post-launch acceptable.
@@ -334,6 +348,7 @@ These are real product capabilities, but building them before customers ask is s
 - Copy-paste blurb for shows ("As mentioned in this episode, get $X off at saunabox.com/code")
 - Click-through tracking where brands enable analytics sharing
 - "Shows that consistently include the link in notes" as conviction signal (read engagement proxy)
+- **Tracking redirect + short link (concrete spec, added July 7, 2026):** replace the raw UTM URL in the tracking-link card and blurb with a Taylslate-owned short link (`taylslate.com/r/<code>`) that 301s to the full UTM URL and logs a click event. This IS the click-through-tracking piece above: first-party click data per deal, a conversion signal nothing else captures. **Never use a third-party shortener** — the click data is the point. Small: code storage + one route + `buildTrackingLink`/blurb update.
 - **Effort:** 1-2 weeks
 - **Trigger:** First 10-20 customers; product feature pinned for month 3-6 revisit
 
