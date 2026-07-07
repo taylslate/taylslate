@@ -685,6 +685,10 @@ export type DomainEventType =
   | "scale_show.promoted_to_test"
   // Wave 14 Phase 2D — per-deal promo code captured/edited at IO time
   | "deal.promo_code_set"
+  // Layer 1 — founder test-deal seeding tool (fabricated planning-status deal
+  // between the test brand + show accounts, for browser-verifying deal-view
+  // surfaces). Marker event; payload carries { seeded: true, seed_batch, ids }.
+  | "deal.seeded"
   // Layer 1 — founder test-account impersonation
   | "admin.impersonate";
 

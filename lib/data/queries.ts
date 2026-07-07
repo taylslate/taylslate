@@ -1775,6 +1775,14 @@ export interface CreateWave12DealInput {
   agreed_placement: string;
   agreed_flight_start: string;
   agreed_flight_end: string;
+  // Legacy owner columns. deals.brand_id and deals.show_id are NOT NULL in prod
+  // (no default). The real accept-outreach caller omits them — a latent gap
+  // (see the seed-tool report) — so they are optional here to keep that caller
+  // unchanged. The founder seed tool passes both so its insert satisfies the
+  // constraints and every list surface (which filters on legacy columns) sees
+  // the deal. Spread into the insert below via `...input`.
+  brand_id?: string;
+  show_id?: string;
 }
 
 export async function createWave12Deal(
