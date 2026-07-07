@@ -1,12 +1,20 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 7, 2026 — test-deal seeding tool Layer 1 shipped + Wave 14 Phase 2D browser verification COMPLETE (all three deal-view surfaces verified live). 894 tests passing._
+_Volatile snapshot. Updated July 7, 2026 — test-deal seeding tool Layer 2 (teardown) shipped; Layer 1 + Wave 14 Phase 2D browser verification COMPLETE. 904 tests passing._
 
-## Most recent — seeding tool Layer 1 + 2D browser verification COMPLETE (July 7, 2026)
+## Most recent — seeding tool Layer 2 (teardown) shipped (July 7, 2026)
 
-Test-deal seeding tool **Layer 1 shipped** (admin endpoint creating a `planning`-status deal between test accounts brand1 → show1, commit `d488430`) — no code beyond the seeding path. With it, the three deferred 2D browser verifies are **DONE**: all three deal-view surfaces (promo-code save, UTM tracking link, show-notes blurb) verified **live under impersonation, both roles**, against seeded deal `e0bf050b`. 894 tests (76 files).
+Test-deal seeding tool **Layer 2 shipped** — `DELETE /api/admin/seed-deal` (same `isInternalAdmin` gate + service-role ops as POST) removes ALL seeded test data so seeds never linger (avoids the day-3/day-14 planning-timeout cron acting on stale seeds; keeps prod clean).
+- **Belt-and-suspenders discovery:** union of `deal.seeded` event-payload ids AND an independent `[SEED] ` name-prefix scan of shows + campaigns; outreach discovery **widened** to any outreach linked to a seeded campaign/show (marker-scoped), so an eventless partial seed's deal still cascades away.
+- **Deletion order (per Layer 1 cascade findings):** outreaches (cascades deals + IOs via `outreaches`→`deals` ON DELETE CASCADE 013 + `insertion_orders`→`deals` CASCADE 001) → **verify deals gone** (`deals.show_id` is NOT NULL / RESTRICT; a survivor → 500 + `survivingDeals`, report not swallow) → shows → campaigns.
+- **RESTRICT-descendant guard (Codex, 3 rounds):** the cascade removes the whole `deal → insertion_orders → io_line_items` subtree; four non-cascade FKs point into it and would FK-fail the delete — `payments.deal_id`, `invoices.io_id`, `payments.io_line_item_id`, `invoice_line_items.io_line_item_id`. A declarative check enumerates all four, and any hit aborts 500 with a `blockers` report (table + actual blocking rows + their parent ids) before any destructive delete (never deletes financial/invoice records). payouts/setup-intents hang below payments, so the payment blocker covers them.
+- **Fail-loud discovery (Codex):** any discovery/pre-count query error → 500 before any delete (never mistaken for empty state). Reported deal count sourced from DB, not stale event ids.
+- **Safety:** every delete scoped by `.in("id", <discovered ids>)`; a row lacking the `[SEED]` prefix or a `deal.seeded` reference is never touched. Zero seeded entities → `200 { deleted: {} }`. Fires `admin.seed_teardown` domain event (new `DomainEventType`) with the union of everything deleted (incl. `io_line_items`).
+- **Verification:** 12 colocated DELETE tests (gating, full cascade + order, markers-only safety, empty-state, partial-seed with/without deal, surviving-deal backstop, payment/invoice/line-item RESTRICT guards, discovery-error). Suite **906 passing** (76 files), tsc + eslint clean, Codex reviewed across 3 rounds (2+1+1 Medium + Lows — all resolved).
 
-**One seeded deal currently persists in prod** — teardown is seeding-tool **Layer 2 (not built yet)**, so the `e0bf050b` row stays until Layer 2 ships.
+**Test-deal seeding tool Layer 1 shipped** (admin endpoint creating a `planning`-status deal between test accounts brand1 → show1, commit `d488430`) — no code beyond the seeding path. With it, the three deferred 2D browser verifies are **DONE**: all three deal-view surfaces (promo-code save, UTM tracking link, show-notes blurb) verified **live under impersonation, both roles**, against seeded deal `e0bf050b`.
+
+**Persisting seed `e0bf050b`** (planning-status) is the live teardown target for Layer 2's browser verify.
 
 The July 7 verification also surfaced a launch-blocker cluster (accept-flow NOT-NULL, show-side deal visibility, flight-date off-by-one) now logged in PRODUCT_BACKLOG.md → PRE-LAUNCH.
 

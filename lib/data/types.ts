@@ -690,7 +690,10 @@ export type DomainEventType =
   // surfaces). Marker event; payload carries { seeded: true, seed_batch, ids }.
   | "deal.seeded"
   // Layer 1 — founder test-account impersonation
-  | "admin.impersonate";
+  | "admin.impersonate"
+  // Layer 2 — founder test-data teardown (DELETE /api/admin/seed-deal). Marker
+  // event; payload carries the union of every entity id removed by the teardown.
+  | "admin.seed_teardown";
 
 export type DomainEntityType =
   | "deal"

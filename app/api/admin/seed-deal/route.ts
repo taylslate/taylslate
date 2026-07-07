@@ -1,4 +1,5 @@
-// POST /api/admin/seed-deal
+// POST /api/admin/seed-deal   — seed a test deal (Layer 1)
+// DELETE /api/admin/seed-deal — tear down ALL seeded test data (Layer 2)
 //
 // Founder-only test-data tool (Layer 1). Fabricates a complete planning-status
 // deal between the two TEST_ACCOUNTS (brand1 + show1) so the Wave-14 "2D"
@@ -249,4 +250,444 @@ export async function POST(request: NextRequest) {
     },
     warnings,
   });
+}
+
+// The seed marker convention (no is_seed column in v1): every seeded show and
+// campaign carries this exact name prefix, and every completed seed fires a
+// deal.seeded event. Teardown discovers from BOTH so a partial seed (event
+// never fired) is still fully removed. `[` / `]` are literal in SQL LIKE
+// (only `%` and `_` are wildcards), so this matches the prefix exactly.
+const SEED_NAME_PREFIX = "[SEED] ";
+
+// Small helper: pull a string field off an untyped event payload.
+function payloadString(
+  payload: unknown,
+  key: string
+): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const v = (payload as Record<string, unknown>)[key];
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+// Collect distinct `id` values from a Supabase select result.
+function collectIds(rows: { id: string }[] | null | undefined): string[] {
+  return (rows ?? []).map((r) => r.id);
+}
+
+// A discovery / pre-count query failed. Thrown so the handler aborts BEFORE any
+// destructive delete — a query error must never be mistaken for "nothing seeded"
+// (which would return { deleted: {} } while seeds silently linger).
+class SeedTeardownQueryError extends Error {}
+
+// Await a select, fail loud on a query error, return its `id` column.
+function idsOrThrow(
+  label: string,
+  res: { data: unknown; error: { message: string } | null }
+): string[] {
+  if (res.error) {
+    throw new SeedTeardownQueryError(`${label}: ${res.error.message}`);
+  }
+  return collectIds(res.data as { id: string }[] | null);
+}
+
+// DELETE /api/admin/seed-deal
+//
+// Removes ALL seeded test data so seeds never linger (the day-3/day-14 planning
+// timeout cron would otherwise email/cancel stale seeds, and they pollute prod).
+//
+// Discovery is belt-and-suspenders: seeded entity ids come from BOTH the
+// deal.seeded event payloads AND an independent [SEED]-prefix scan of shows +
+// campaigns, unioned — so a partial seed whose event never fired is still found.
+// Outreach discovery is widened to any outreach linked to a seeded campaign or
+// show (both marker-scoped via the prefix), so a partial seed that got as far as
+// an outreach+deal but never fired its event is torn down through the normal
+// cascade rather than tripping the surviving-deal backstop.
+//
+// Deletion order follows the FK cascade:
+//   1. outreaches — deals.outreach_id is ON DELETE CASCADE (013) and
+//      insertion_orders.deal_id is ON DELETE CASCADE (001), so deleting the
+//      seeded outreaches removes their deals + IOs in one shot.
+//   2. shows — deals.show_id is NOT NULL with NO ACTION (RESTRICT). If a deal
+//      somehow survived step 1 the show delete would FK-fail, so we VERIFY the
+//      deals are gone first and REPORT (500 + survivingDeals) rather than swallow.
+//   3. campaigns — seeded deals leave deals.campaign_id NULL, so nothing
+//      RESTRICTs this; outreaches.campaign_id is ON DELETE CASCADE (011), a final
+//      safety net for any eventless orphan outreach with no deal.
+//
+// Safety: every delete is scoped by `.in("id", <discovered seeded ids>)`, so a
+// row lacking the [SEED] prefix or a deal.seeded reference is never targeted.
+// Zero seeded entities → 200 { deleted: {} }, never an error.
+export async function DELETE() {
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!isInternalAdmin(user.email)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  try {
+    return await runTeardown(user.id);
+  } catch (err) {
+    // A discovery / pre-count query failed. Nothing has been deleted yet (these
+    // throws only fire before the deletion phase), so abort loudly rather than
+    // let a query error masquerade as an empty result.
+    if (err instanceof SeedTeardownQueryError) {
+      return NextResponse.json(
+        { error: `Teardown aborted before any deletion — ${err.message}` },
+        { status: 500 }
+      );
+    }
+    throw err;
+  }
+}
+
+async function runTeardown(adminId: string) {
+  // --- Discovery -----------------------------------------------------------
+
+  // 1. deal.seeded event payloads → the ids each completed seed recorded.
+  const eventsRes = await supabaseAdmin
+    .from("domain_events")
+    .select("payload")
+    .eq("event_type", "deal.seeded");
+  if (eventsRes.error) {
+    throw new SeedTeardownQueryError(
+      `deal.seeded event scan: ${eventsRes.error.message}`
+    );
+  }
+
+  const eventShowIds = new Set<string>();
+  const eventCampaignIds = new Set<string>();
+  const eventOutreachIds = new Set<string>();
+  for (const row of eventsRes.data ?? []) {
+    const p = (row as { payload?: unknown }).payload;
+    const showId = payloadString(p, "showId");
+    const campaignId = payloadString(p, "campaignId");
+    const outreachId = payloadString(p, "outreachId");
+    if (showId) eventShowIds.add(showId);
+    if (campaignId) eventCampaignIds.add(campaignId);
+    if (outreachId) eventOutreachIds.add(outreachId);
+  }
+
+  // 2. Independent [SEED]-prefix scan (covers partial seeds — event never fired).
+  const prefixShowIds = idsOrThrow(
+    "shows [SEED] prefix scan",
+    await supabaseAdmin
+      .from("shows")
+      .select("id")
+      .like("name", `${SEED_NAME_PREFIX}%`)
+  );
+  const prefixCampaignIds = idsOrThrow(
+    "campaigns [SEED] prefix scan",
+    await supabaseAdmin
+      .from("campaigns")
+      .select("id")
+      .like("name", `${SEED_NAME_PREFIX}%`)
+  );
+
+  // 3. Union events + prefix scan.
+  const seededShowIds = [...new Set([...eventShowIds, ...prefixShowIds])];
+  const seededCampaignIds = [
+    ...new Set([...eventCampaignIds, ...prefixCampaignIds]),
+  ];
+
+  // 4. Widened outreach discovery: event outreach ids UNION any outreach linked
+  //    to a seeded campaign or show (marker-scoped). This is what makes an
+  //    eventless partial seed's deal cascade away via the outreach delete below.
+  const outreachIdSet = new Set<string>(eventOutreachIds);
+  if (seededCampaignIds.length) {
+    for (const id of idsOrThrow(
+      "outreaches by seeded campaign",
+      await supabaseAdmin
+        .from("outreaches")
+        .select("id")
+        .in("campaign_id", seededCampaignIds)
+    )) {
+      outreachIdSet.add(id);
+    }
+  }
+  if (seededShowIds.length) {
+    for (const id of idsOrThrow(
+      "outreaches by seeded show",
+      await supabaseAdmin
+        .from("outreaches")
+        .select("id")
+        .in("show_id", seededShowIds)
+    )) {
+      outreachIdSet.add(id);
+    }
+  }
+  const seededOutreachIds = [...outreachIdSet];
+
+  // Nothing matched any marker → clean no-op.
+  if (
+    !seededShowIds.length &&
+    !seededCampaignIds.length &&
+    !seededOutreachIds.length
+  ) {
+    return NextResponse.json({ deleted: {} });
+  }
+
+  // --- Pre-count cascaded children (deals + IOs) for honest reporting. The
+  //     parent delete cascades them but does not return them, so gather ids
+  //     up front. Sourced from the DB (not event payloads), so stale events
+  //     never inflate the reported count. Every seeded deal references its
+  //     seeded show (deals.show_id NOT NULL), so the show_id scan is complete.
+  const dealIdSet = new Set<string>();
+  const dealFilterCols: Array<[string, string[]]> = [
+    ["outreach_id", seededOutreachIds],
+    ["show_id", seededShowIds],
+    ["campaign_id", seededCampaignIds],
+  ];
+  for (const [col, ids] of dealFilterCols) {
+    if (!ids.length) continue;
+    for (const id of idsOrThrow(
+      `deals by ${col}`,
+      await supabaseAdmin.from("deals").select("id").in(col, ids)
+    )) {
+      dealIdSet.add(id);
+    }
+  }
+  const expectedDealIds = [...dealIdSet];
+
+  let expectedIoIds: string[] = [];
+  if (expectedDealIds.length) {
+    expectedIoIds = idsOrThrow(
+      "insertion_orders by seeded deal",
+      await supabaseAdmin
+        .from("insertion_orders")
+        .select("id")
+        .in("deal_id", expectedDealIds)
+    );
+  }
+
+  // io_line_items cascade from insertion_orders (ON DELETE CASCADE). Pre-count
+  // for both the RESTRICT guard below and the deleted-count report.
+  let expectedIoLineItemIds: string[] = [];
+  if (expectedIoIds.length) {
+    expectedIoLineItemIds = idsOrThrow(
+      "io_line_items by seeded IO",
+      await supabaseAdmin
+        .from("io_line_items")
+        .select("id")
+        .in("io_id", expectedIoIds)
+    );
+  }
+
+  // --- RESTRICT-descendant guard -------------------------------------------
+  // The cascade removes the whole deal → insertion_orders → io_line_items
+  // subtree. Any row referencing a node in that subtree via a NON-cascading FK
+  // would FK-fail the outreach delete with an opaque error. Enumerate every
+  // known RESTRICT referencer, detect them up front, and REPORT the actual
+  // blocking rows + their parents before any destructive delete — this test
+  // tool never deletes financial/invoice records. Planning-only seeds have none
+  // (no IO, no line items), so this is a no-op for them. (payouts.payment_id and
+  // deal_setup_intents.payment_id are RESTRICT too, but they hang below payments,
+  // so surfacing a payment blocker already covers them.)
+  const restrictChecks: Array<{
+    table: string;
+    fk: string;
+    parentIds: string[];
+  }> = [
+    { table: "payments", fk: "deal_id", parentIds: expectedDealIds },
+    { table: "invoices", fk: "io_id", parentIds: expectedIoIds },
+    { table: "payments", fk: "io_line_item_id", parentIds: expectedIoLineItemIds },
+    {
+      table: "invoice_line_items",
+      fk: "io_line_item_id",
+      parentIds: expectedIoLineItemIds,
+    },
+  ];
+
+  const blockers: Array<{
+    table: string;
+    parentColumn: string;
+    ids: string[];
+    blockedParentIds: string[];
+  }> = [];
+  for (const chk of restrictChecks) {
+    if (!chk.parentIds.length) continue;
+    // chk.table / chk.fk are hardcoded above — never client input. Select "*"
+    // (a literal — a dynamic `id, ${fk}` string trips supabase-js's compile-time
+    // query parser); we only read `id` and the fk column off each blocking row.
+    const res = await supabaseAdmin
+      .from(chk.table)
+      .select("*")
+      .in(chk.fk, chk.parentIds);
+    if (res.error) {
+      throw new SeedTeardownQueryError(
+        `${chk.table} by ${chk.fk}: ${res.error.message}`
+      );
+    }
+    const rows = (res.data ?? []) as Array<Record<string, string>>;
+    if (rows.length) {
+      blockers.push({
+        table: chk.table,
+        parentColumn: chk.fk,
+        ids: rows.map((r) => r.id),
+        blockedParentIds: [...new Set(rows.map((r) => r[chk.fk]))],
+      });
+    }
+  }
+
+  if (blockers.length) {
+    return NextResponse.json(
+      {
+        error:
+          "Teardown aborted: seeded deals have ON DELETE RESTRICT descendants " +
+          "(payments / invoices / invoice_line_items referencing the deal, its " +
+          "insertion orders, or their line items) that would FK-fail the " +
+          "cascade. Clean those financial/invoice records first — this tool " +
+          "does not delete them.",
+        blockers,
+      },
+      { status: 500 }
+    );
+  }
+
+  // --- Deletion ------------------------------------------------------------
+
+  // 1. Outreaches — cascades their deals + insertion_orders.
+  let deletedOutreachIds: string[] = [];
+  if (seededOutreachIds.length) {
+    const { data, error } = await supabaseAdmin
+      .from("outreaches")
+      .delete()
+      .in("id", seededOutreachIds)
+      .select("id");
+    if (error) {
+      return NextResponse.json(
+        { error: `Failed to delete seeded outreaches: ${error.message}` },
+        { status: 500 }
+      );
+    }
+    deletedOutreachIds = collectIds(data);
+  }
+
+  // 2. Verify deals are actually gone before touching shows (deals.show_id is
+  //    RESTRICT). With the widened outreach discovery every seeded deal should
+  //    have cascaded; a survivor here is a genuine anomaly — report, don't
+  //    swallow, and abort before the show delete FK-fails.
+  if (seededShowIds.length) {
+    const { data: survivors, error } = await supabaseAdmin
+      .from("deals")
+      .select("id")
+      .in("show_id", seededShowIds);
+    if (error) {
+      return NextResponse.json(
+        { error: `Failed to verify deal teardown: ${error.message}` },
+        { status: 500 }
+      );
+    }
+    if (survivors && survivors.length) {
+      return NextResponse.json(
+        {
+          error:
+            "Teardown aborted: deals still reference seeded shows after " +
+            "outreach deletion (deals.show_id is RESTRICT). Investigate before retry.",
+          survivingDeals: collectIds(survivors),
+          deleted: {
+            outreaches: {
+              count: deletedOutreachIds.length,
+              ids: deletedOutreachIds,
+            },
+          },
+        },
+        { status: 500 }
+      );
+    }
+  }
+
+  // 3. Shows.
+  let deletedShowIds: string[] = [];
+  if (seededShowIds.length) {
+    const { data, error } = await supabaseAdmin
+      .from("shows")
+      .delete()
+      .in("id", seededShowIds)
+      .select("id");
+    if (error) {
+      return NextResponse.json(
+        {
+          error: `Failed to delete seeded shows: ${error.message}`,
+          deleted: {
+            outreaches: {
+              count: deletedOutreachIds.length,
+              ids: deletedOutreachIds,
+            },
+          },
+        },
+        { status: 500 }
+      );
+    }
+    deletedShowIds = collectIds(data);
+  }
+
+  // 4. Campaigns.
+  let deletedCampaignIds: string[] = [];
+  if (seededCampaignIds.length) {
+    const { data, error } = await supabaseAdmin
+      .from("campaigns")
+      .delete()
+      .in("id", seededCampaignIds)
+      .select("id");
+    if (error) {
+      return NextResponse.json(
+        {
+          error: `Failed to delete seeded campaigns: ${error.message}`,
+          deleted: {
+            outreaches: {
+              count: deletedOutreachIds.length,
+              ids: deletedOutreachIds,
+            },
+            shows: { count: deletedShowIds.length, ids: deletedShowIds },
+          },
+        },
+        { status: 500 }
+      );
+    }
+    deletedCampaignIds = collectIds(data);
+  }
+
+  // Discovered ids can be stale (events referencing already-removed rows). If
+  // nothing was actually deleted, treat it as the clean no-op and skip the event.
+  if (
+    !deletedOutreachIds.length &&
+    !deletedShowIds.length &&
+    !deletedCampaignIds.length
+  ) {
+    return NextResponse.json({ deleted: {} });
+  }
+
+  const deleted = {
+    outreaches: { count: deletedOutreachIds.length, ids: deletedOutreachIds },
+    deals: { count: expectedDealIds.length, ids: expectedDealIds },
+    insertion_orders: { count: expectedIoIds.length, ids: expectedIoIds },
+    io_line_items: {
+      count: expectedIoLineItemIds.length,
+      ids: expectedIoLineItemIds,
+    },
+    shows: { count: deletedShowIds.length, ids: deletedShowIds },
+    campaigns: { count: deletedCampaignIds.length, ids: deletedCampaignIds },
+  };
+
+  // Marker event for the teardown itself (fail-soft; never throws). Hangs off
+  // the admin profile, mirroring admin.impersonate.
+  await logEvent({
+    eventType: "admin.seed_teardown",
+    entityType: "profile",
+    entityId: adminId,
+    actorId: adminId,
+    payload: {
+      seed_teardown: true,
+      outreachIds: deletedOutreachIds,
+      dealIds: expectedDealIds,
+      insertionOrderIds: expectedIoIds,
+      ioLineItemIds: expectedIoLineItemIds,
+      showIds: deletedShowIds,
+      campaignIds: deletedCampaignIds,
+    },
+  });
+
+  return NextResponse.json({ deleted });
 }
