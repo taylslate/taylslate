@@ -1,6 +1,6 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 7, 2026 — test-deal seeding tool Layer 2 (teardown) shipped; Layer 1 + Wave 14 Phase 2D browser verification COMPLETE. 904 tests passing._
+_Volatile snapshot. Updated July 7, 2026 — test-deal seeding tool Layer 2 (teardown) shipped AND verified live; Layer 1 + Wave 14 Phase 2D browser verification COMPLETE. Seed→verify→teardown loop is complete and repeatable. 906 tests passing (76 files)._
 
 ## Most recent — seeding tool Layer 2 (teardown) shipped (July 7, 2026)
 
@@ -14,7 +14,7 @@ Test-deal seeding tool **Layer 2 shipped** — `DELETE /api/admin/seed-deal` (sa
 
 **Test-deal seeding tool Layer 1 shipped** (admin endpoint creating a `planning`-status deal between test accounts brand1 → show1, commit `d488430`) — no code beyond the seeding path. With it, the three deferred 2D browser verifies are **DONE**: all three deal-view surfaces (promo-code save, UTM tracking link, show-notes blurb) verified **live under impersonation, both roles**, against seeded deal `e0bf050b`.
 
-**Persisting seed `e0bf050b`** (planning-status) is the live teardown target for Layer 2's browser verify.
+**Layer 2 (teardown) verified live July 7** (commit `a1c09bf`): full teardown of seed `e0bf050b` confirmed — 1 outreach, 1 deal cascaded, 1 show, 1 campaign deleted; the deal URL now 404s; an empty-state re-run returns `{ deleted: {} }`. The **seed→verify→teardown loop is now complete and repeatable**. The Codex loop added a **financial-records guard**: teardown refuses (500 + `blockers` report) if any `payments`/`invoices` reference the seeded subtree — relevant for future money-loop seeds.
 
 The July 7 verification also surfaced a launch-blocker cluster (accept-flow NOT-NULL, show-side deal visibility, flight-date off-by-one) now logged in PRODUCT_BACKLOG.md → PRE-LAUNCH.
 
@@ -63,12 +63,14 @@ Plus a Codex finding: open redirect on `next` validated to a same-origin path on
 
 ## Current wave
 **Wave 14 Phase 2D COMPLETE (July 6, 2026).** No active build wave. Test-deal
-seeding tool Layer 1 shipped July 7 (`d488430`); Layer 2 (teardown) is next —
-see Next. 2C Layer 5 (overrides + recompute) remains optional polish, not
-GTM-blocking — carried in PRODUCT_BACKLOG.md with its request-scope footgun note.
+seeding tool Layer 1 (`d488430`) + Layer 2 teardown (`a1c09bf`) both shipped and
+verified live July 7 — seed→verify→teardown loop complete. Next is impersonation
+Layer 3 (return-to-admin) — see Next. 2C Layer 5 (overrides + recompute) remains
+optional polish, not GTM-blocking — carried in PRODUCT_BACKLOG.md with its
+request-scope footgun note.
 
 ## Tests
-894 passing (76 files). tsc clean. eslint: all changed files clean; one
+906 passing (76 files). tsc clean. eslint: all changed files clean; one
 pre-existing error in `app/(dashboard)/campaigns/generated/page.tsx`
 (setState-in-effect) is unrelated to this work.
 
@@ -111,11 +113,11 @@ inbox.
   case reopens.
 
 ## Next
-Seeding tool **Layer 2 (teardown)** — remove the seeded deal + supporting
-rows so prod doesn't accumulate test data (one seeded deal, `e0bf050b`,
-persists now). Then impersonation **Layer 3 (return-to-admin)** — swap back
-from a test session without re-logging-in (opaque server-side token, per the
-locked security requirement). Then the **launch-blocker cluster** now logged
-in PRODUCT_BACKLOG.md → PRE-LAUNCH: accept-flow NOT-NULL bug (#1), show-side
-deal visibility (#2), flight-date off-by-one (#3). Auth hardening on the brand
-email/password path [LAUNCH-BLOCKER] still precedes any non-friends traffic.
+Impersonation **Layer 3 (return-to-admin)** — swap back from a test session
+without re-logging-in (opaque server-side token, per the locked security
+requirements in PRODUCT_BACKLOG.md), plus **optional sidebar buttons for
+seed/teardown** (the loop is currently endpoint-only). Then the **launch-blocker
+cluster** now logged in PRODUCT_BACKLOG.md → PRE-LAUNCH: accept-flow NOT-NULL
+bug (#1), show-side deal visibility (#2), flight-date off-by-one (#3). Auth
+hardening on the brand email/password path [LAUNCH-BLOCKER] still precedes any
+non-friends traffic.
