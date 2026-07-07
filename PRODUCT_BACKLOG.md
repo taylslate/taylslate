@@ -39,6 +39,17 @@ Founder impersonation tool, **all three layers shipped.** **Layer 1 endpoint** (
 
 ---
 
+## Test-deal seeding tool (Layers 1-2 COMPLETE — shipped + verified live July 7, 2026)
+
+Admin tool to create a `planning`-status deal between test accounts (brand1 → show1) on demand — the option-(b) admin deal-create bypass from "Test mode for full transaction loop" — without grinding the full campaign→discovery→outreach→accept chain. Enabled by the impersonation tool. Unblocked all three deferred 2D browser verifies (promo code, UTM tracking link, show-notes blurb) against seeded deal `e0bf050b`.
+
+- **Layer 1 (create) SHIPPED July 7, 2026 (commit `d488430`)** — admin endpoint (`POST /api/admin/seed-deal`, `isInternalAdmin`-gated, service-role ops) inserting the `planning`-status deal with ownership columns written directly.
+- **Layer 2 (teardown) SHIPPED + verified live July 7, 2026 (commits `a1c09bf` create + `c214539` verify)** — `DELETE /api/admin/seed-deal` removes ALL seeded test data (union of `deal.seeded` event ids + `[SEED] ` name-prefix scan; outreach-scoped cascade) so seeds never linger. Cascade order respects the `deals.show_id` RESTRICT FK; a **financial-records guard** aborts (500 + `blockers` report) if any `payments`/`invoices` reference the seeded subtree — never deletes money/invoice rows. Fires `admin.seed_teardown`. Verified live: seed `e0bf050b` fully torn down (deal URL 404s), empty-state re-run returns `{ deleted: {} }`. Schema-free — no migration.
+
+**The seed→verify→teardown loop is complete and repeatable**, and (with impersonation Layer 3) the full seed→impersonate→verify→return→teardown loop is self-serve. Byproduct: the July 7 verification surfaced the accept-flow launch-blocker cluster (see PRE-LAUNCH).
+
+---
+
 ## Categorization
 
 - **Operational unblock** — small fixes blocking GTM credibility or daily founder workflow. Pre-launch.
@@ -92,11 +103,8 @@ Things that must finish before GTM. The launch bar.
 - **Effort:** 1-2 days
 - **Why:** Real-user testing is preferred but not always available. Internal testing currently requires manual SQL or workarounds.
 
-### Test-deal seeding tool  [Layer 1 SHIPPED July 7, 2026 — Layer 2 next]
-Create a `planning`-status deal between test accounts (brand1 → show1) on demand, without grinding the full campaign→discovery→outreach→accept chain. Unblocks: (a) all three deferred 2D browser verifies, (b) the money-loop test, (c) any end-to-end confidence before the friends-test. Enabled by the impersonation tool (shipped June 28, 2026).
-- **Layer 1 SHIPPED July 7, 2026 (commit `d488430`)** — admin endpoint that inserts the `planning`-status deal. Used to complete all three 2D browser verifies (seeded deal `e0bf050b`).
-- **Layer 2 remaining — teardown.** Remove the seeded deal + supporting rows so prod doesn't accumulate test data. **One seeded deal (`e0bf050b`) currently persists in prod** until this ships.
-- **Note:** This is option (b) of "Test mode for full transaction loop" above (admin deal-create bypass).
+### ~~Test-deal seeding tool~~ — SHIPPED July 7, 2026 (Layers 1-2 COMPLETE)
+- **Both layers shipped + verified live July 7, 2026** (Layer 1 create `d488430`; Layer 2 teardown `a1c09bf`, verified `c214539`) — see SHIPPED section for detail. The seed→verify→teardown loop is complete and repeatable; no seeded rows linger in prod. This was option (b) of "Test mode for full transaction loop" above (admin deal-create bypass).
 
 ### Auth hardening — brand email/password path  [LAUNCH-BLOCKER]
 The brand login path is email/password and fully live; it was NOT part of the June 28 magic-link fixes and real strangers hit it at launch. Before non-friends touch the product: signup-UI honesty fix, `emailRedirectTo` on magic links, bot-signup protection (Turnstile or Supabase Attack Protection). Currently unprotected against automated signup.
