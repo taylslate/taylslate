@@ -29,13 +29,13 @@ All Phase 1 helpers ship dormant. Phase 2 wires them into the discovery UI at ea
 
 ---
 
-## Internal admin tooling — "log in as test user" (Layers 1+2 shipped June 28, 2026)
+## Internal admin tooling — "log in as test user" (Layers 1-3 COMPLETE — L1+2 June 28, 2026; L3 July 7, 2026)
 
-Founder impersonation tool. **Layer 1 endpoint** (`POST /api/admin/test-login`, commit `ccbc6e5`) + **Layer 2 sidebar UI** ("Log in as …" buttons mapping over `TEST_ACCOUNTS` + "Impersonating &lt;label&gt;" banner, commit `8740670`). Admin-gated by `isInternalAdmin`; impersonable set fixed by `TEST_ACCOUNTS`. Live on prod, verified end-to-end both ways (sidebar click-through, and a real magic-link email to chris+show1 clicked from the inbox). Schema-free — no migration.
+Founder impersonation tool, **all three layers shipped.** **Layer 1 endpoint** (`POST /api/admin/test-login`, commit `ccbc6e5`) + **Layer 2 sidebar UI** ("Log in as …" buttons mapping over `TEST_ACCOUNTS` + "Impersonating &lt;label&gt;" banner, commit `8740670`). Admin-gated by `isInternalAdmin`; impersonable set fixed by `TEST_ACCOUNTS`. Live on prod, verified end-to-end both ways (sidebar click-through, and a real magic-link email to chris+show1 clicked from the inbox). Schema-free — no migration.
 
-**Byproduct:** building it surfaced and fixed **four production auth bugs** on the show magic-link path (none previously testable — Wave 13 gotcha #5): callback path `/auth/callback`→`/callback` + implicit-flow→`verifyOtp(token_hash)` (`8740670`), `/callback` added to the `proxy.ts` allowlist (`8c32570`), magic email pointed at the consuming `/api/auth/magic` route (`0187863`); plus a Codex `next` open-redirect fix (`c355c5e`). This is the first time the show magic-link flow works end-to-end. Durable invariants recorded in CLAUDE.md → "Auth & Admin Access".
+**Layer 3 (return-to-admin) SHIPPED + verified live July 7, 2026 (commit `a4e3805`, Codex clean).** `POST /api/admin/return-to-admin` + a "Return to admin" button on the impersonation banner swaps a test-account session back to the founder's admin session without signing out. Meets the locked security requirement exactly (opaque token, no HMAC-over-plaintext): a 256-bit **capability token** is minted on impersonation start and only its **sha256 hash** is stored at rest in the `admin.impersonate` audit event; the raw token lives only in an httpOnly `tslate_return_token` cookie. Admin identity resolves server-side from the audit record's `actor_id` (re-checked against the current `isInternalAdmin` allowlist), never from the unsigned `tslate_impersonation_origin` cookie. **Atomic single-use** (Codex High — check-then-write race — fixed): the `admin.impersonation_ended` sentinel inserts with a deterministic PK derived from the impersonate event id, so a repeat redeem collides on `23505` → 403, confirmed before any session is minted (fail-closed). 8h TTL. Schema-free — no migration. **The impersonation tool is now COMPLETE and the seed→impersonate→verify→return→teardown loop is fully self-serve.**
 
-**Remaining — Layer 3 (return-to-admin):** tracked under PRE-LAUNCH → Operational Unblock below.
+**Byproduct (Layers 1+2):** building it surfaced and fixed **four production auth bugs** on the show magic-link path (none previously testable — Wave 13 gotcha #5): callback path `/auth/callback`→`/callback` + implicit-flow→`verifyOtp(token_hash)` (`8740670`), `/callback` added to the `proxy.ts` allowlist (`8c32570`), magic email pointed at the consuming `/api/auth/magic` route (`0187863`); plus a Codex `next` open-redirect fix (`c355c5e`). This is the first time the show magic-link flow works end-to-end. Durable invariants recorded in CLAUDE.md → "Auth & Admin Access".
 
 ---
 
@@ -73,12 +73,8 @@ Things that must finish before GTM. The launch bar.
 - **Effort:** 2-3 hours
 - **Why:** Brand outreach emails currently show paragraph-length "from" lines. Looks broken. GTM-blocking.
 
-### Internal admin tooling — log in as test user → Layer 3 (return-to-admin)
-- **Layers 1 + 2 SHIPPED June 28, 2026** (endpoint + sidebar UI; see SHIPPED section). Replaces the Gmail +tag aliases + incognito workflow for switching account types on demand.
-- **Layer 3 remaining:** a "Return to admin" control so the founder can swap back from a test session to their own without re-logging-in.
-- **LOCKED SECURITY REQUIREMENT (Layer 3):** the `tslate_impersonation_origin` cookie set by Layer 1 is currently **unsigned plaintext** (`{adminId, adminEmail}`). Layer 3 must **NOT** trust `adminId`/`adminEmail` from the cookie as-is. Use an **opaque server-side token** — store a random token in the cookie and resolve the admin identity server-side from the `admin.impersonate` audit record — **not** an HMAC over the plaintext.
-- **Effort:** ~0.5 day
-- **Why:** Completes the impersonation loop and closes the cookie-trust gap before the tool is used routinely (e.g., onboarding brand/agent friends).
+### ~~Internal admin tooling — log in as test user → Layer 3 (return-to-admin)~~ — SHIPPED July 7, 2026
+- **All three layers COMPLETE.** Layer 3 (return-to-admin) shipped + verified live July 7, 2026 (commit `a4e3805`, Codex clean) — see SHIPPED section for detail. The locked opaque-token / sha256-at-rest / atomic-single-use security requirement was met exactly (no HMAC-over-plaintext). The cookie-trust gap is closed and the impersonation loop is complete; the tool is now safe for routine use (onboarding brand/agent friends).
 
 ### Direct show search
 - Brands who come in with a specific target list (knowing the shows they want) have no way to search for them by name

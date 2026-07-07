@@ -1,15 +1,15 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 7, 2026 — impersonation Layer 3 (return-to-admin) shipped (Codex clean); seeding tool Layer 2 (teardown) shipped AND verified live; Layer 1 + Wave 14 Phase 2D browser verification COMPLETE. Seed→verify→teardown loop is complete and repeatable. 917 tests passing (78 files)._
+_Volatile snapshot. Updated July 7, 2026 — impersonation Layer 3 (return-to-admin) shipped (`a4e3805`, Codex clean) AND verified live July 7; the impersonation tool is now COMPLETE (Layers 1-3). Seeding tool Layer 2 (teardown) shipped AND verified live; Layer 1 + Wave 14 Phase 2D browser verification COMPLETE. The seed→impersonate→verify→return→teardown loop is now fully self-serve. 917 tests passing (78 files)._
 
-## Most recent — impersonation Layer 3 (return-to-admin) shipped (July 7, 2026)
+## Most recent — impersonation Layer 3 (return-to-admin) shipped + verified live (July 7, 2026)
 
 **Return-to-admin shipped** — `POST /api/admin/return-to-admin` + a "Return to admin" button on the orange impersonation banner. Swaps a test-account session back to the founder's admin session WITHOUT signing out. Schema-free — NO migration.
 - **Opaque capability token, hash-at-rest:** on impersonation start (`test-login`), a 256-bit random token is minted; only its **sha256 hash** is stored in the `admin.impersonate` `domain_events` payload (`lib/admin/return-token.ts`), and the raw token is set in an httpOnly/Secure/SameSite=Lax `tslate_return_token` cookie. The audit log at rest never holds a usable bearer token.
 - **Zero-trust on the plaintext cookie:** the return path resolves the admin identity from the impersonate event's `actor_id` (via `getUserById`), then re-checks `isInternalAdmin` against the CURRENT allowlist (a demoted admin's token → 403). The unsigned `tslate_impersonation_origin` cookie is never read for identity — banner label only.
 - **Atomic single-use (Codex High, resolved):** enforced by inserting the `admin.impersonation_ended` sentinel into `domain_events` with a **deterministic primary key** derived (domain-separated sha256 → uuid shape) from the impersonate event id. A concurrent/repeat redeem collides on the PK (`23505`) → 403; the insert is confirmed BEFORE any session is minted, so a failed write → 500 (fail-closed), never a reusable token. Append-only preserved (insert, not payload mutation). The first non-atomic fail-soft version was caught by the Codex loop.
 - **8h TTL** enforced server-side on the event `created_at`. Session swap reuses the proven `generateLink` → `/callback?token_hash` flow (no `/auth/callback`, no implicit-flow fragment). `/api/*` already in the `proxy.ts` allowlist — no proxy change.
-- **Verification:** 11 colocated route tests (mint+hash+cookie; valid return; consume-before-mint ordering; forged/absent/expired/reuse-23505/fail-closed-500/demoted → 403/500; plaintext-origin-cookie-ignored). Suite **917 passing** (78 files), tsc + eslint clean, **Codex clean** (one High — non-atomic single-use — fixed, re-review confirmed resolved, no new High/Medium). Live verify (impersonate → return → confirm admin session → token re-use rejected) is Chris's step.
+- **Verification:** 11 colocated route tests (mint+hash+cookie; valid return; consume-before-mint ordering; forged/absent/expired/reuse-23505/fail-closed-500/demoted → 403/500; plaintext-origin-cookie-ignored). Suite **917 passing** (78 files), tsc + eslint clean, **Codex clean** (one High — check-then-write single-use race — fixed with the deterministic-PK insert, fail-closed; re-review confirmed resolved, no new High/Medium). **Verified live July 7** (impersonate → return → confirm admin session → token re-use rejected, all confirmed). With Layer 3, the **impersonation tool is COMPLETE (Layers 1-3)** and the seed→impersonate→verify→return→teardown loop is fully self-serve.
 
 ## Most recent — seeding tool Layer 2 (teardown) shipped (July 7, 2026)
 
@@ -74,7 +74,8 @@ Plus a Codex finding: open redirect on `next` validated to a same-origin path on
 **Wave 14 Phase 2D COMPLETE (July 6, 2026).** No active build wave. Test-deal
 seeding tool Layer 1 (`d488430`) + Layer 2 teardown (`a1c09bf`) both shipped and
 verified live July 7 — seed→verify→teardown loop complete. Impersonation Layer 3
-(return-to-admin) shipped July 7 (Codex clean; live verify is Chris's step). 2C
+(return-to-admin) shipped AND verified live July 7 (Codex clean) — the
+impersonation tool is now COMPLETE (Layers 1-3). 2C
 Layer 5 (overrides + recompute) remains optional polish, not GTM-blocking —
 carried in PRODUCT_BACKLOG.md with its request-scope footgun note.
 
@@ -122,10 +123,17 @@ inbox.
   case reopens.
 
 ## Next
-Impersonation **Layer 3 (return-to-admin) SHIPPED July 7** (Codex clean; live
-verify pending — Chris's step). Optional follow-up: **sidebar buttons for
-seed/teardown** (the loop is currently endpoint-only). Then the **launch-blocker
-cluster** now logged in PRODUCT_BACKLOG.md → PRE-LAUNCH: accept-flow NOT-NULL
-bug (#1), show-side deal visibility (#2), flight-date off-by-one (#3). Auth
-hardening on the brand email/password path [LAUNCH-BLOCKER] still precedes any
-non-friends traffic.
+Impersonation **Layer 3 (return-to-admin) SHIPPED + verified live July 7** (Codex
+clean) — the impersonation tool is COMPLETE (Layers 1-3); the
+seed→impersonate→verify→return→teardown loop is fully self-serve. Next:
+1. **Brand auth hardening on the email/password path [LAUNCH-BLOCKER]** — real
+   strangers hit it at launch (it was NOT part of the June 28 magic-link fixes),
+   so it precedes any non-friends traffic: signup-UI honesty, `emailRedirectTo`
+   on magic links, bot-signup protection.
+2. **Accept-flow launch-blocker cluster** (PRODUCT_BACKLOG.md → PRE-LAUNCH):
+   accept-flow NOT-NULL bug (#1), show-side deal visibility (#2), flight-date
+   off-by-one (#3).
+
+Optional polish carried in the backlog: **sidebar buttons for seed/teardown**
+(the loop is endpoint-only today). 2C Layer 5 (overrides + recompute) remains
+optional polish, not GTM-blocking.
