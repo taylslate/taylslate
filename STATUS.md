@@ -1,6 +1,18 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 7, 2026 — impersonation Layer 3 (return-to-admin) shipped (`a4e3805`, Codex clean) AND verified live July 7; the impersonation tool is now COMPLETE (Layers 1-3). Seeding tool Layer 2 (teardown) shipped AND verified live; Layer 1 + Wave 14 Phase 2D browser verification COMPLETE. The seed→impersonate→verify→return→teardown loop is now fully self-serve. 917 tests passing (78 files)._
+_Volatile snapshot. Updated July 8, 2026 — brand auth hardening **Layer 1** (email/password signup path correctness) shipped (`28cce8a` + `5fe246f`, Codex clean) AND verified live July 8. Impersonation tool COMPLETE (Layers 1-3, verified live July 7); seeding tool COMPLETE (Layers 1-2, verified live July 7); Wave 14 Phase 2D browser verification COMPLETE. The seed→impersonate→verify→return→teardown loop is fully self-serve. 944 tests passing (82 files)._
+
+## Most recent — brand auth hardening Layer 1 (signup path correctness) shipped + verified live (July 8, 2026)
+
+First layer of the **brand email/password auth hardening** launch-blocker (real strangers hit this path at launch; it was NOT part of the June 28 magic-link fixes). Schema-free — NO migration. Commits `28cce8a` (build) + `5fe246f` (Codex fixes).
+
+- **`emailRedirectTo` on signup** → `${NEXT_PUBLIC_SITE_URL ?? window.location.origin}/callback?next=/onboarding` (client `resolveSiteOrigin()` mirroring the server helper in `api/auth/magic`). Confirmation link now returns to the one real callback route.
+- **Honest signup UI** — branches on the `signUp` response via a pure, tested `classifySignupOutcome()` (`app/(auth)/signup/signup-outcome.ts`): `session` present → `/onboarding` (confirm-off / already-confirmed edge, no check-email screen); new user → check-email screen; **existing-email decoy** (Supabase returns a user with `identities:[]`) → the *same* neutral screen; no user/session/error → error. The decoy and genuine-new-signup screens are byte-identical (a component test pins this) so account existence never leaks — this deliberately replaced the old personalized "we sent a link to X" copy, which would have defeated Supabase's enumeration obfuscation.
+- **Password `minLength` 6 → 8** on signup only (matches the dashboard min). Login left at 6 so existing 6-char passwords still authenticate.
+- **`safeNextPath` hardened** (Codex Medium) — now rejects any `next` that isn't a clean single-leading-slash path (`//`, `/\`, or missing leading slash → fallback) *before* URL parsing; the `new URL` origin re-check stays as defense in depth. Affects both `/callback` branches (token_hash + PKCE); no legit `next` regresses.
+- **Supabase dashboard config change (manual, July 8 — invisible in the repo, recorded here):** the **Confirm signup** email template was switched to the **token_hash pattern** — `{{ .SiteURL }}/callback?token_hash={{ .TokenHash }}&type=signup&next=/onboarding` (was `{{ .ConfirmationURL }}`). This makes email confirmation server-verifiable and browser-independent, killing the PKCE cross-device fragility (a link opened on a different device/browser than signup now works). `/callback` already accepts `type=signup` in `OTP_TYPES`. Durable form recorded in CLAUDE.md → Auth & admin.
+- **Verification:** 22 new tests across 4 files (classifier branches; `/callback` token_hash-`signup` + PKCE-code branches + `safeNextPath` open-redirect rejection; `SignupPage` no-leak/redirect/error render tests; `proxy.ts` allowlist pins `/signup`/`/login`/`/callback`). Suite **944 passing** (82 files), tsc + eslint clean, **Codex clean** (no High; one Medium + one Low, both resolved). **Verified live July 8:** confirm-signup email delivered via the token_hash flow, link landed on `/onboarding` with a session; 8-char minimum enforced (7 rejected); existing-email re-signup rendered the neutral decoy screen byte-identical to fresh signup (enumeration defense confirmed in incognito); logged-in signup short-circuited to `/onboarding`.
+- **Next (Layer 2):** password-reset path. Pre-flight (July 8, read-only) found **no reset path exists at all** — no "Forgot password?" link, no request/update-password pages, no `resetPasswordForEmail`/`updateUser` calls (only `/callback` already lists `recovery` in `OTP_TYPES`). This is greenfield, not a broken rebuild — and it directly raises the standing build-vs-unify strategy question (building password reset deepens the password model the auth-unification backlog wants to retire). Awaiting founder direction before planning.
 
 ## Most recent — impersonation Layer 3 (return-to-admin) shipped + verified live (July 7, 2026)
 
@@ -80,7 +92,7 @@ Layer 5 (overrides + recompute) remains optional polish, not GTM-blocking —
 carried in PRODUCT_BACKLOG.md with its request-scope footgun note.
 
 ## Tests
-917 passing (78 files). tsc clean. eslint: all changed files clean; one
+944 passing (82 files). tsc clean. eslint: all changed files clean; one
 pre-existing error in `app/(dashboard)/campaigns/generated/page.tsx`
 (setState-in-effect) is unrelated to this work.
 
@@ -123,16 +135,24 @@ inbox.
   case reopens.
 
 ## Next
-Impersonation **Layer 3 (return-to-admin) SHIPPED + verified live July 7** (Codex
-clean) — the impersonation tool is COMPLETE (Layers 1-3); the
-seed→impersonate→verify→return→teardown loop is fully self-serve. Next:
-1. **Brand auth hardening on the email/password path [LAUNCH-BLOCKER]** — real
-   strangers hit it at launch (it was NOT part of the June 28 magic-link fixes),
-   so it precedes any non-friends traffic: signup-UI honesty, `emailRedirectTo`
-   on magic links, bot-signup protection.
+Brand auth hardening **Layer 1 (signup path correctness) SHIPPED + verified live
+July 8** (Codex clean) — see the top section. Remaining:
+1. **Brand auth hardening — remaining layers [LAUNCH-BLOCKER]** — Layer 2
+   (password reset) and Layer 3 (bot-signup protection / Turnstile). **Layer 2 is
+   blocked on a founder decision:** pre-flight found NO reset path exists at all
+   (greenfield, not a broken rebuild), which raises the standing build-vs-unify
+   strategy question — build password reset, or move brands to magic-link+OTP and
+   skip it? Do not plan Layer 2 until this is answered.
 2. **Accept-flow launch-blocker cluster** (PRODUCT_BACKLOG.md → PRE-LAUNCH):
    accept-flow NOT-NULL bug (#1), show-side deal visibility (#2), flight-date
    off-by-one (#3).
+3. **Onboarding role picker offers Show/Creator to a password signup** (traced
+   July 8) — a password user who picks "Show / Creator" gets `profiles.role=show`
+   and runs the normal show onboarding, i.e. a password-based show account, which
+   contradicts the intended shows-are-magic-link-OTP model. Not a crash (the flow
+   works; email-collision with a later outreach magic link is handled by
+   `/api/auth/magic`'s find-by-email reuse). Product-model inconsistency to
+   resolve alongside the build-vs-unify decision. Logged in PRODUCT_BACKLOG.md.
 
 Optional polish carried in the backlog: **sidebar buttons for seed/teardown**
 (the loop is endpoint-only today). 2C Layer 5 (overrides + recompute) remains

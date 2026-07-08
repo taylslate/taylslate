@@ -112,6 +112,14 @@ The brand login path is email/password and fully live; it was NOT part of the Ju
 ### Auth unification (deferred, post-launch acceptable)
 Brands email/password, shows magic-link+OTP. Target: magic-link+OTP for all. Not launch-blocking; the hardening item above is. (Supersedes the "Auth unification" polish item below.)
 
+**Layer 2 (password reset) pre-flight finding, July 8, 2026:** there is **no password-reset path at all** — no "Forgot password?" link on `/login`, no reset-request or update-password page, no `resetPasswordForEmail`/`updateUser` call anywhere (only `/callback` already lists `recovery` in `OTP_TYPES`, so the *landing* half of the plumbing exists but there's no page to set a new password). This is greenfield, not a mis-wired rebuild of the June bug family. It sharpens the build-vs-unify decision: building password reset is net-new work that deepens the password model unification wants to retire. **Decide build-vs-unify before planning Layer 2.**
+
+### Onboarding role picker offers Show/Creator to a password signup  [auth-model inconsistency]
+`app/onboarding/page.tsx` presents all four roles (Brand/Agency/Agent/Show) to every signed-in user regardless of how they authenticated. A password-signup user who picks **Show / Creator** gets `profiles.role=show` (client upsert in `handleRoleSelect`) and is routed into `/onboarding/show/welcome` — i.e. a **password-based show account**, contradicting the intended shows-are-magic-link+OTP model.
+- **Not a crash.** The show onboarding flow runs normally for a password user; `/onboarding/show/welcome` exists. Email-collision with a *later* outreach magic link to the same address is already handled — `/api/auth/magic` finds the existing profile by email (`ilike`) and reuses the same account rather than duplicating.
+- **The issue is model integrity + GTM**, not breakage: it lets shows self-serve with passwords, which the auth-unification target (magic-link+OTP for all) is meant to eliminate.
+- **Resolve alongside the build-vs-unify decision.** Options: hide Show/Creator from the post-password-signup role picker; or accept password shows as part of a decision to keep passwords; or fold into full magic-link+OTP unification. Do not fix in isolation before the strategy call.
+
 ### Accept-flow deal creation — launch-blocker cluster  [LAUNCH-BLOCKER]
 Both surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). The seed tool sidesteps them by writing ownership columns directly; the real accept path does not. Must fix before the friends test.
 
@@ -140,6 +148,12 @@ Both surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b
 - CPM is currently editable downstream but not visibly editable on media plan screen
 - Add edit indicator + inline edit
 - **Effort:** Half day
+
+### Transactional email copy + branding pass  [pre-launch polish]
+- The confirm-signup email (token_hash flow, shipped July 8, 2026) is **functionally correct but bare** — a plain link, no branding, no copy warmth. It is the first impression for real strangers signing up at launch.
+- Do a pass over all transactional emails (confirm-signup, magic-link/OTP, and password-reset if that path gets built) for consistent Taylslate branding, sender name, and copy tone.
+- Keep the token_hash link pattern intact (`{{ .SiteURL }}/callback?token_hash=...&type=...&next=...`) — it's a load-bearing auth invariant, not just styling (see CLAUDE.md → Auth & admin).
+- **Effort:** Half day–1 day. **Why:** First impression for non-friends traffic; bare system emails read as unfinished.
 
 ### Outreach UX polish
 - Rename "Reach out" → "Compose outreach"
