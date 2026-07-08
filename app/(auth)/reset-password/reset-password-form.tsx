@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { validateNewPassword } from "./validate";
+import { clearRecoveryCookie } from "./actions";
 
 // Rendered only when the recovery marker cookie gated us in (see page.tsx).
 // The Supabase recovery session (established server-side by /callback) is what
@@ -33,6 +34,13 @@ export default function ResetPasswordForm() {
     if (error) {
       setError(error.message);
       return;
+    }
+    // Best-effort: retire the one-time recovery marker. A failure here must
+    // not strand the user — the password is already changed.
+    try {
+      await clearRecoveryCookie();
+    } catch {
+      /* best-effort cleanup */
     }
     router.push("/dashboard");
     router.refresh();

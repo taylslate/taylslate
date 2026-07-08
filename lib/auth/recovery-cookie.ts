@@ -10,6 +10,6 @@ export const RECOVERY_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
   sameSite: "lax",
-  path: "/",
+  path: "/reset-password", // only ever read on /reset-password — keep it scoped there
   maxAge: 600, // 10 minutes — a reset link is used promptly or re-requested
 } as const;

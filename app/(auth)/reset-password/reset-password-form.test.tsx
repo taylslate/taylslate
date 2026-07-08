@@ -4,10 +4,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
-const { mockPush, mockRefresh, updateUser } = vi.hoisted(() => ({
+const { mockPush, mockRefresh, updateUser, clearRecoveryCookie } = vi.hoisted(() => ({
   mockPush: vi.fn(),
   mockRefresh: vi.fn(),
   updateUser: vi.fn(),
+  clearRecoveryCookie: vi.fn(async () => {}),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -16,6 +17,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({ auth: { updateUser } }),
 }));
+vi.mock("./actions", () => ({ clearRecoveryCookie }));
 
 import ResetPasswordForm from "./reset-password-form";
 
@@ -31,6 +33,7 @@ beforeEach(() => {
   mockPush.mockReset();
   mockRefresh.mockReset();
   updateUser.mockReset();
+  clearRecoveryCookie.mockClear();
 });
 afterEach(() => cleanup());
 
@@ -43,6 +46,8 @@ describe("ResetPasswordForm", () => {
       expect(updateUser).toHaveBeenCalledWith({ password: "password1234" })
     );
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/dashboard"));
+    // Marker retired on success so it can't re-open the form within its TTL.
+    expect(clearRecoveryCookie).toHaveBeenCalled();
   });
 
   it("rejects mismatched passwords without calling updateUser", async () => {
@@ -65,5 +70,6 @@ describe("ResetPasswordForm", () => {
     fill("password1234", "password1234");
     await screen.findByText("Auth session missing!");
     expect(mockPush).not.toHaveBeenCalled();
+    expect(clearRecoveryCookie).not.toHaveBeenCalled();
   });
 });
