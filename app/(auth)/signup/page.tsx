@@ -1,16 +1,33 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { classifySignupOutcome } from "./signup-outcome";
+
+// Resolve the site origin the confirmation link should return to. Mirrors the
+// server-side helper in app/api/auth/magic/route.ts: prefer the configured
+// site URL (the www host in prod), fall back to the live origin, trim any
+// trailing slash so `${origin}/callback` never doubles up.
+function resolveSiteOrigin(): string {
+  const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
+  const origin =
+    envOrigin || (typeof window !== "undefined" ? window.location.origin : "");
+  return origin.replace(/\/$/, "");
+}
 
 export default function SignupPage() {
+  const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
+  // Set once the signup resolved to a "check your email" outcome (a genuine new
+  // signup or the existing-email decoy — rendered identically to avoid leaking
+  // account existence).
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,25 +35,34 @@ export default function SignupPage() {
     setLoading(true);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signUp({
+    const result = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: { full_name: fullName },
+        emailRedirectTo: `${resolveSiteOrigin()}/callback?next=/onboarding`,
       },
     });
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
+    setLoading(false);
+    const outcome = classifySignupOutcome(result);
+
+    if (outcome.kind === "error") {
+      setError(outcome.message);
       return;
     }
-
-    setSuccess(true);
-    setLoading(false);
+    if (outcome.kind === "session") {
+      // Confirm-email off / already-confirmed edge: signed in already, skip
+      // the check-email screen and go straight to onboarding.
+      router.push("/onboarding");
+      router.refresh();
+      return;
+    }
+    // check-email | obfuscated → same neutral screen.
+    setAwaitingConfirmation(true);
   };
 
-  if (success) {
+  if (awaitingConfirmation) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--brand-surface)] px-4">
         <div className="w-full max-w-sm text-center">
@@ -59,8 +85,8 @@ export default function SignupPage() {
             Check your email
           </h1>
           <p className="text-sm text-[var(--brand-text-secondary)] mb-6">
-            We sent a confirmation link to <strong>{email}</strong>. Click it to
-            activate your account.
+            If <strong>{email}</strong> is new to Taylslate, a confirmation link
+            is on its way. Click it to activate your account.
           </p>
           <Link
             href="/login"
@@ -144,9 +170,9 @@ export default function SignupPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/40 focus:border-[var(--brand-blue)]"
-              placeholder="At least 6 characters"
+              placeholder="At least 8 characters"
             />
           </div>
 

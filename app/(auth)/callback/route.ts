@@ -18,7 +18,7 @@ const OTP_TYPES: string[] = [
 // "https://host@evil.example/path" — an open redirect off the back of a
 // successful auth callback. We keep only the path/query/hash of a same-origin
 // resolution; anything cross-origin or unparseable falls back to /onboarding.
-function safeNextPath(next: string | null, origin: string): string {
+export function safeNextPath(next: string | null, origin: string): string {
   const fallback = "/onboarding";
   if (!next) return fallback;
   try {
