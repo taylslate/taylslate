@@ -1,9 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import {
+  TurnstileWidget,
+  type TurnstileHandle,
+} from "@/components/auth/turnstile-widget";
+import {
+  withCaptchaToken,
+  isCaptchaError,
+  CAPTCHA_RETRY_MESSAGE,
+} from "@/lib/auth/turnstile";
 import { classifySignupOutcome } from "./signup-outcome";
 
 // Resolve the site origin the confirmation link should return to. Mirrors the
@@ -28,6 +37,10 @@ export default function SignupPage() {
   // signup or the existing-email decoy — rendered identically to avoid leaking
   // account existence).
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  // Turnstile token (undefined until the widget solves; stays undefined in
+  // local dev where the widget is disabled). Threaded into signUp when present.
+  const [captchaToken, setCaptchaToken] = useState<string | undefined>();
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,17 +51,29 @@ export default function SignupPage() {
     const result = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: { full_name: fullName },
-        emailRedirectTo: `${resolveSiteOrigin()}/callback?next=/onboarding`,
-      },
+      options: withCaptchaToken(
+        {
+          data: { full_name: fullName },
+          emailRedirectTo: `${resolveSiteOrigin()}/callback?next=/onboarding`,
+        },
+        captchaToken,
+      ),
     });
 
     setLoading(false);
     const outcome = classifySignupOutcome(result);
 
     if (outcome.kind === "error") {
-      setError(outcome.message);
+      // The token is single-use and was consumed by this attempt; reset the
+      // widget so a retry gets a fresh one, and show friendly copy on a
+      // captcha rejection instead of the raw Supabase error.
+      turnstileRef.current?.reset();
+      setCaptchaToken(undefined);
+      setError(
+        isCaptchaError(outcome.message)
+          ? CAPTCHA_RETRY_MESSAGE
+          : outcome.message,
+      );
       return;
     }
     if (outcome.kind === "session") {
@@ -175,6 +200,13 @@ export default function SignupPage() {
               placeholder="At least 8 characters"
             />
           </div>
+
+          <TurnstileWidget
+            ref={turnstileRef}
+            onVerify={setCaptchaToken}
+            onExpire={() => setCaptchaToken(undefined)}
+            onError={() => setCaptchaToken(undefined)}
+          />
 
           <button
             type="submit"

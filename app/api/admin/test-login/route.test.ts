@@ -75,3 +75,18 @@ describe("POST /api/admin/test-login — return token minting", () => {
     expect(res.cookies.get(RETURN_TOKEN_COOKIE)?.value).toBeFalsy();
   });
 });
+
+// Invariant: the impersonation flow is admin-only (isInternalAdmin + service
+// role via generateLink) and is NOT captcha-gated. The Turnstile bot-signup
+// layer must never leak into admin auth — pinned by scanning the route source.
+describe("test-login route stays captcha-free", () => {
+  it("contains no captcha/turnstile reference", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const src = readFileSync(
+      fileURLToPath(new URL("./route.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(src).not.toMatch(/captcha|turnstile/i);
+  });
+});

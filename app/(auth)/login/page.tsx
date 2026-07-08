@@ -1,9 +1,18 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import {
+  TurnstileWidget,
+  type TurnstileHandle,
+} from "@/components/auth/turnstile-widget";
+import {
+  withCaptchaToken,
+  isCaptchaError,
+  CAPTCHA_RETRY_MESSAGE,
+} from "@/lib/auth/turnstile";
 
 function LoginForm() {
   const router = useRouter();
@@ -12,6 +21,10 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Turnstile token (undefined until solved / in local dev). Threaded into
+  // signInWithPassword when present.
+  const [captchaToken, setCaptchaToken] = useState<string | undefined>();
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,10 +35,17 @@ function LoginForm() {
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
+      options: withCaptchaToken({}, captchaToken),
     });
 
     if (error) {
-      setError(error.message);
+      // Reset the single-use token so a retry gets a fresh one; show friendly
+      // copy on a captcha rejection instead of the raw error.
+      turnstileRef.current?.reset();
+      setCaptchaToken(undefined);
+      setError(
+        isCaptchaError(error.message) ? CAPTCHA_RETRY_MESSAGE : error.message,
+      );
       setLoading(false);
       return;
     }
@@ -100,6 +120,13 @@ function LoginForm() {
               placeholder="Your password"
             />
           </div>
+
+          <TurnstileWidget
+            ref={turnstileRef}
+            onVerify={setCaptchaToken}
+            onExpire={() => setCaptchaToken(undefined)}
+            onError={() => setCaptchaToken(undefined)}
+          />
 
           <button
             type="submit"

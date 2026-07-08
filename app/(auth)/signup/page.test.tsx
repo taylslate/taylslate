@@ -4,11 +4,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
-const { mockPush, mockRefresh, signUp } = vi.hoisted(() => ({
-  mockPush: vi.fn(),
-  mockRefresh: vi.fn(),
-  signUp: vi.fn(),
-}));
+const { mockPush, mockRefresh, signUp, mockReset, tokenState } = vi.hoisted(
+  () => ({
+    mockPush: vi.fn(),
+    mockRefresh: vi.fn(),
+    signUp: vi.fn(),
+    mockReset: vi.fn(),
+    // The stubbed Turnstile widget issues this token on mount. Set to null to
+    // simulate the disabled (no site key / local dev) path.
+    tokenState: { current: "tok-test" as string | null },
+  }),
+);
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush, refresh: mockRefresh }),
@@ -21,6 +27,23 @@ vi.mock("next/link", () => ({
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({ auth: { signUp } }),
 }));
+// Stub the Turnstile widget: issue the token on mount (when enabled) and expose
+// reset() via the ref so we can assert the single-use reset-on-failure logic.
+vi.mock("@/components/auth/turnstile-widget", async () => {
+  const { forwardRef, useEffect, useImperativeHandle } = await import("react");
+  return {
+    TurnstileWidget: forwardRef(function Stub(
+      { onVerify }: { onVerify: (t: string) => void },
+      ref: React.Ref<{ reset: () => void }>,
+    ) {
+      useImperativeHandle(ref, () => ({ reset: mockReset }), []);
+      useEffect(() => {
+        if (tokenState.current) onVerify(tokenState.current);
+      }, [onVerify]);
+      return null;
+    }),
+  };
+});
 
 import SignupPage from "./page";
 
@@ -50,6 +73,8 @@ beforeEach(() => {
   signUp.mockReset();
   mockPush.mockReset();
   mockRefresh.mockReset();
+  mockReset.mockReset();
+  tokenState.current = "tok-test";
 });
 afterEach(() => cleanup());
 
@@ -106,5 +131,35 @@ describe("SignupPage", () => {
     await screen.findByText("Password should be at least 8 characters.");
     expect(mockPush).not.toHaveBeenCalled();
     expect(screen.queryByText("Check your email")).toBeNull();
+  });
+
+  it("threads the Turnstile captchaToken into signUp when a token is present", async () => {
+    signUp.mockResolvedValue(NEW_SIGNUP);
+    render(<SignupPage />);
+    fillAndSubmit();
+    await waitFor(() => expect(signUp).toHaveBeenCalled());
+    expect(signUp.mock.calls[0][0].options.captchaToken).toBe("tok-test");
+  });
+
+  it("omits captchaToken when the widget is disabled (no site key / local dev)", async () => {
+    tokenState.current = null; // widget issues no token
+    signUp.mockResolvedValue(NEW_SIGNUP);
+    render(<SignupPage />);
+    fillAndSubmit();
+    await waitFor(() => expect(signUp).toHaveBeenCalled());
+    expect(signUp.mock.calls[0][0].options).not.toHaveProperty("captchaToken");
+  });
+
+  it("resets the widget and shows friendly retry copy on a captcha rejection", async () => {
+    signUp.mockResolvedValue({
+      data: { user: null, session: null },
+      error: { message: "captcha verification process failed" },
+    });
+    render(<SignupPage />);
+    fillAndSubmit();
+    await screen.findByText(/couldn't verify you're human/i);
+    // Raw Supabase captcha error is never shown; widget is reset for a retry.
+    expect(screen.queryByText(/captcha verification process failed/i)).toBeNull();
+    expect(mockReset).toHaveBeenCalled();
   });
 });

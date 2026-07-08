@@ -1,8 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import {
+  TurnstileWidget,
+  type TurnstileHandle,
+} from "@/components/auth/turnstile-widget";
+import {
+  withCaptchaToken,
+  isCaptchaError,
+  CAPTCHA_RETRY_MESSAGE,
+} from "@/lib/auth/turnstile";
 
 // Resolve the site origin the reset link should return to. Mirrors the signup
 // page and the server helper in app/api/auth/magic/route.ts.
@@ -18,6 +27,10 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  // Turnstile token (undefined until solved / in local dev). Threaded into
+  // resetPasswordForEmail when present.
+  const [captchaToken, setCaptchaToken] = useState<string | undefined>();
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,13 +38,23 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${resolveSiteOrigin()}/callback?next=/reset-password`,
-    });
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      email,
+      withCaptchaToken(
+        { redirectTo: `${resolveSiteOrigin()}/callback?next=/reset-password` },
+        captchaToken,
+      ),
+    );
 
     setLoading(false);
     if (error) {
-      setError(error.message);
+      // Reset the single-use token so a retry gets a fresh one; show friendly
+      // copy on a captcha rejection instead of the raw error.
+      turnstileRef.current?.reset();
+      setCaptchaToken(undefined);
+      setError(
+        isCaptchaError(error.message) ? CAPTCHA_RETRY_MESSAGE : error.message,
+      );
       return;
     }
     // Supabase returns success whether or not the address has an account, and
@@ -116,6 +139,13 @@ export default function ForgotPasswordPage() {
               placeholder="you@example.com"
             />
           </div>
+
+          <TurnstileWidget
+            ref={turnstileRef}
+            onVerify={setCaptchaToken}
+            onExpire={() => setCaptchaToken(undefined)}
+            onError={() => setCaptchaToken(undefined)}
+          />
 
           <button
             type="submit"

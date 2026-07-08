@@ -248,3 +248,18 @@ describe("POST /api/admin/return-to-admin", () => {
     );
   });
 });
+
+// Invariant: the return-to-admin flow resolves identity server-side (opaque
+// token → actor_id → isInternalAdmin) and is NOT captcha-gated. The Turnstile
+// bot-signup layer must never leak into admin auth — pinned by source scan.
+describe("return-to-admin route stays captcha-free", () => {
+  it("contains no captcha/turnstile reference", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const src = readFileSync(
+      fileURLToPath(new URL("./route.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(src).not.toMatch(/captcha|turnstile/i);
+  });
+});
