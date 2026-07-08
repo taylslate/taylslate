@@ -1,6 +1,17 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 8, 2026 — brand auth hardening **Layer 1** (email/password signup path correctness) shipped (`28cce8a` + `5fe246f`, Codex clean) AND verified live July 8. Impersonation tool COMPLETE (Layers 1-3, verified live July 7); seeding tool COMPLETE (Layers 1-2, verified live July 7); Wave 14 Phase 2D browser verification COMPLETE. The seed→impersonate→verify→return→teardown loop is fully self-serve. 944 tests passing (82 files)._
+_Volatile snapshot. Updated July 8, 2026 — brand auth hardening **Layer 1** (signup path correctness) shipped + verified live July 8 (`28cce8a`+`5fe246f`, Codex clean). **Layer 2** (password reset + hide Show from role picker) shipped + deployed July 8 (`0c25adf`→`e39dba0`, Codex clean); **PENDING live verification AND the manual recovery email template paste** (see below). Impersonation tool COMPLETE (L1-3, verified live July 7); seeding tool COMPLETE (L1-2, verified live July 7); Wave 14 Phase 2D verification COMPLETE. 963 tests passing (87 files)._
+
+## Most recent — brand auth hardening Layer 2 (password reset) shipped + deployed (July 8, 2026) — PENDING live verify
+
+Second layer of the brand email/password hardening. Build-vs-unify decision (July 8): **keep passwords for launch, build reset** (unification stays post-launch). Schema-free — NO migration. Reuses the token_hash pattern + the existing `/callback` `recovery` branch. Commits `0c25adf` (build) → `9bb482a` (Codex Medium) → `e39dba0` (Codex Lows).
+
+- **`/forgot-password`** — email → `resetPasswordForEmail(redirectTo /callback?next=/reset-password)`; neutral enumeration-safe confirmation ("if that address has an account…") shown on success regardless of existence; error state on failure.
+- **`/reset-password`** — **server-component recovery gate** (Codex-hardened): `/callback` sets a short-lived HttpOnly marker cookie `tslate_pw_recovery` (10-min TTL, path-scoped to `/reset-password`, `lib/auth/recovery-cookie.ts`) ONLY after `verifyOtp({type:"recovery"})` succeeds; the page renders the set-password form ONLY when that marker is present, else the invalid-link state. This closes the gap where any authenticated user — notably a passwordless magic-link show — could reach the form. Form (`reset-password-form.tsx`, client): new password + confirm via pure `validateNewPassword` (min 8, match) → `updateUser` → clears the marker via a server action → `/dashboard`.
+- **Role picker** — `ONBOARDING_ROLES` (`app/onboarding/roles.tsx`) no longer offers **Show / Creator**; shows onboard via magic-link+OTP, not password self-signup (closes the model-integrity gap traced July 8). Dead show-routing branch + unused `totalSteps` removed.
+- **`/login`** "Forgot password?" link; **`proxy.ts`** allowlists `/forgot-password` + `/reset-password`; **`/callback`** unchanged beyond setting the recovery marker (already accepted `type=recovery`).
+- **REQUIRED manual step before this works live — Supabase "Reset Password" email template** must use the token_hash pattern: `{{ .SiteURL }}/callback?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password`. Not yet pasted as of this writing.
+- **Verification:** 27 tests across the auth surface (forgot neutral+redirect+error; reset validator; recovery gate shows form only with marker; form success/mismatch/short/error + marker-clear; `/callback` sets cookie on recovery + not on signup; proxy allowlist; roles excludes show). Suite **963 passing** (87 files), tsc + eslint clean, **Codex clean** (one Medium — recovery-session scoping — fixed; two Lows — cookie path + clear-on-success — fixed; re-review confirmed). Deploy `e39dba0` READY on prod. **Live verification pending** (real reset email → link → set new password → log in with it).
 
 ## Most recent — brand auth hardening Layer 1 (signup path correctness) shipped + verified live (July 8, 2026)
 
@@ -92,7 +103,7 @@ Layer 5 (overrides + recompute) remains optional polish, not GTM-blocking —
 carried in PRODUCT_BACKLOG.md with its request-scope footgun note.
 
 ## Tests
-944 passing (82 files). tsc clean. eslint: all changed files clean; one
+963 passing (87 files). tsc clean. eslint: all changed files clean; one
 pre-existing error in `app/(dashboard)/campaigns/generated/page.tsx`
 (setState-in-effect) is unrelated to this work.
 
@@ -135,24 +146,16 @@ inbox.
   case reopens.
 
 ## Next
-Brand auth hardening **Layer 1 (signup path correctness) SHIPPED + verified live
-July 8** (Codex clean) — see the top section. Remaining:
-1. **Brand auth hardening — remaining layers [LAUNCH-BLOCKER]** — Layer 2
-   (password reset) and Layer 3 (bot-signup protection / Turnstile). **Layer 2 is
-   blocked on a founder decision:** pre-flight found NO reset path exists at all
-   (greenfield, not a broken rebuild), which raises the standing build-vs-unify
-   strategy question — build password reset, or move brands to magic-link+OTP and
-   skip it? Do not plan Layer 2 until this is answered.
+Brand auth hardening **Layers 1 + 2 SHIPPED July 8** (Codex clean). L1 verified
+live; **L2 pending live verification + the manual recovery email template paste**
+(see the top Layer 2 section). Build-vs-unify decision: keep passwords for launch,
+unify post-launch. Role-picker Show/Creator gap closed in L2. Remaining:
+1. **Brand auth hardening — Layer 3 [LAUNCH-BLOCKER]** — bot-signup protection
+   (Turnstile / Supabase Attack Protection). CAPTCHA is currently disabled; do NOT
+   add captcha before this layer.
 2. **Accept-flow launch-blocker cluster** (PRODUCT_BACKLOG.md → PRE-LAUNCH):
    accept-flow NOT-NULL bug (#1), show-side deal visibility (#2), flight-date
    off-by-one (#3).
-3. **Onboarding role picker offers Show/Creator to a password signup** (traced
-   July 8) — a password user who picks "Show / Creator" gets `profiles.role=show`
-   and runs the normal show onboarding, i.e. a password-based show account, which
-   contradicts the intended shows-are-magic-link-OTP model. Not a crash (the flow
-   works; email-collision with a later outreach magic link is handled by
-   `/api/auth/magic`'s find-by-email reuse). Product-model inconsistency to
-   resolve alongside the build-vs-unify decision. Logged in PRODUCT_BACKLOG.md.
 
 Optional polish carried in the backlog: **sidebar buttons for seed/teardown**
 (the loop is endpoint-only today). 2C Layer 5 (overrides + recompute) remains
