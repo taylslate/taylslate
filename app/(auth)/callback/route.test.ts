@@ -64,6 +64,13 @@ describe("GET /callback — token_hash branch (admin-minted, e.g. signup)", () =
     expect(locationOf(res)).toBe(`${ORIGIN}/onboarding`);
   });
 
+  it("verifies type=recovery (password reset) and redirects to the validated next", async () => {
+    verifyOtp.mockResolvedValue({ error: null });
+    const res = await call("?token_hash=rec123&type=recovery&next=/reset-password");
+    expect(verifyOtp).toHaveBeenCalledWith({ type: "recovery", token_hash: "rec123" });
+    expect(locationOf(res)).toBe(`${ORIGIN}/reset-password`);
+  });
+
   it("redirects to /login when verifyOtp fails", async () => {
     verifyOtp.mockResolvedValue({ error: { message: "expired" } });
     const res = await call("?token_hash=abc123&type=signup&next=/onboarding");

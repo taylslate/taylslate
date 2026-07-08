@@ -7,6 +7,7 @@ import {
   type ParsedCSVRow,
 } from "@/lib/utils/fuzzy-match";
 import { createClient } from "@/lib/supabase/client";
+import { ONBOARDING_ROLES } from "./roles";
 import type { Platform } from "@/lib/data/types";
 
 type Step = 1 | 2 | 3;
@@ -143,58 +144,10 @@ export default function OnboardingPage() {
   };
 
   // ---- Role selection ----
-
-  const roles = [
-    {
-      id: "brand",
-      title: "Brand / Advertiser",
-      description: "I'm an advertiser looking to run creator sponsorship campaigns",
-      icon: (
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-          <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-        </svg>
-      ),
-    },
-    {
-      id: "agency",
-      title: "Agency",
-      description: "I manage campaigns for multiple brand clients",
-      icon: (
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
-      ),
-    },
-    {
-      id: "agent",
-      title: "Agent / Talent Manager",
-      description: "I represent shows and manage their ad inventory",
-      icon: (
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-          <line x1="12" x2="12" y1="19" y2="22" />
-        </svg>
-      ),
-    },
-    {
-      id: "show",
-      title: "Show / Creator",
-      description: "I host a podcast or YouTube show and want to accept ad deals",
-      icon: (
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-          <line x1="12" y1="19" x2="12" y2="23" />
-          <line x1="8" y1="23" x2="16" y2="23" />
-        </svg>
-      ),
-    },
-  ];
+  //
+  // Options live in ./roles (ONBOARDING_ROLES). "show" / creator is
+  // deliberately not offered here — shows onboard via the magic-link+OTP
+  // outreach path, not password self-signup.
 
   const handleRoleSelect = async (roleId: string) => {
     const supabase = createClient();
@@ -218,12 +171,6 @@ export default function OnboardingPage() {
       return;
     }
 
-    // Shows/creators go into the Wave 9 conversational onboarding.
-    if (roleId === "show") {
-      router.push("/onboarding/show/welcome");
-      return;
-    }
-
     if (roleId === "agent") {
       setStep(2);
     } else {
@@ -237,7 +184,6 @@ export default function OnboardingPage() {
 
   // ---- Stepper ----
 
-  const totalSteps = selectedRole === "agent" ? 3 : 2;
   const stepLabels = selectedRole === "agent"
     ? ["Choose Role", "Import Shows", "Ready"]
     : ["Choose Role", "Ready"];
@@ -312,7 +258,7 @@ export default function OnboardingPage() {
             </div>
 
             <div className="space-y-3">
-              {roles.map((role) => (
+              {ONBOARDING_ROLES.map((role) => (
                 <button
                   key={role.id}
                   onClick={() => handleRoleSelect(role.id)}

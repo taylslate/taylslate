@@ -37,6 +37,11 @@ export async function proxy(request: NextRequest) {
   //                                OTP user establishes a session in the first
   //                                place. It only sets a session on a valid
   //                                token; otherwise it redirects to /login.
+  // /forgot-password             — request a password reset (signed out)
+  // /reset-password              — set a new password after a recovery link;
+  //                                must be reachable so it can render its own
+  //                                "link expired" state instead of bouncing to
+  //                                /login when no recovery session exists.
   // /outreach/[token]            — Wave 11 public pitch page (token-gated)
   // /auth/magic                  — magic link landing/error states
   // /api/webhooks/docusign       — Wave 12 DocuSign Connect webhook (HMAC-verified)
@@ -47,6 +52,8 @@ export async function proxy(request: NextRequest) {
     pathname === "/login" ||
     pathname === "/signup" ||
     pathname === "/callback" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password" ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/outreach/") ||
     pathname.startsWith("/auth/magic");

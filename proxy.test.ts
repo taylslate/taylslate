@@ -23,7 +23,13 @@ beforeEach(() => {
 });
 
 describe("proxy public-route allowlist (signed out)", () => {
-  for (const path of ["/signup", "/login", "/callback"]) {
+  for (const path of [
+    "/signup",
+    "/login",
+    "/callback",
+    "/forgot-password",
+    "/reset-password",
+  ]) {
     it(`allows ${path} without bouncing to /login`, async () => {
       const res = await run(path);
       expect(redirectedToLogin(res)).toBe(false);
