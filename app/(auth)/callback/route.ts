@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { RECOVERY_COOKIE, RECOVERY_COOKIE_OPTIONS } from "@/lib/auth/recovery-cookie";
 
 // Email-OTP types we accept on the token_hash branch. Anything else falls
 // through rather than being passed to verifyOtp.
@@ -61,6 +63,16 @@ export async function GET(request: Request) {
       token_hash: tokenHash,
     });
     if (!error) {
+      if (type === "recovery") {
+        // Mark that this session came from a password-recovery link so
+        // /reset-password only shows the set-new-password form to a genuine
+        // reset flow — never to an already-authenticated user who merely
+        // navigated there (which would let a passwordless show account set a
+        // password). Propagates on the redirect exactly like the session
+        // cookies the Supabase server client just wrote.
+        const cookieStore = await cookies();
+        cookieStore.set(RECOVERY_COOKIE, "1", RECOVERY_COOKIE_OPTIONS);
+      }
       return NextResponse.redirect(`${origin}${nextPath}`);
     }
   } else if (code) {

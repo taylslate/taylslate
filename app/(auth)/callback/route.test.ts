@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // The route builds a Supabase server client and calls verifyOtp (token_hash
 // branch) or exchangeCodeForSession (PKCE code branch). Both are plain spies.
-const { verifyOtp, exchangeCodeForSession } = vi.hoisted(() => ({
+const { verifyOtp, exchangeCodeForSession, cookieSet } = vi.hoisted(() => ({
   verifyOtp: vi.fn(),
   exchangeCodeForSession: vi.fn(),
+  cookieSet: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -12,8 +13,12 @@ vi.mock("@/lib/supabase/server", () => ({
     auth: { verifyOtp, exchangeCodeForSession },
   })),
 }));
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(async () => ({ set: cookieSet, get: vi.fn() })),
+}));
 
 import { GET, safeNextPath } from "./route";
+import { RECOVERY_COOKIE } from "@/lib/auth/recovery-cookie";
 
 const ORIGIN = "https://www.taylslate.com";
 const call = (query: string) => GET(new Request(`${ORIGIN}/callback${query}`));
@@ -22,6 +27,7 @@ const locationOf = (res: Response) => res.headers.get("location");
 beforeEach(() => {
   verifyOtp.mockReset();
   exchangeCodeForSession.mockReset();
+  cookieSet.mockReset();
 });
 
 describe("safeNextPath", () => {
@@ -64,11 +70,23 @@ describe("GET /callback — token_hash branch (admin-minted, e.g. signup)", () =
     expect(locationOf(res)).toBe(`${ORIGIN}/onboarding`);
   });
 
-  it("verifies type=recovery (password reset) and redirects to the validated next", async () => {
+  it("verifies type=recovery (password reset), sets the recovery marker cookie, and redirects to the validated next", async () => {
     verifyOtp.mockResolvedValue({ error: null });
     const res = await call("?token_hash=rec123&type=recovery&next=/reset-password");
     expect(verifyOtp).toHaveBeenCalledWith({ type: "recovery", token_hash: "rec123" });
+    // The recovery marker gates /reset-password's form; it must be set here.
+    expect(cookieSet).toHaveBeenCalledWith(
+      RECOVERY_COOKIE,
+      "1",
+      expect.objectContaining({ httpOnly: true, maxAge: 600 })
+    );
     expect(locationOf(res)).toBe(`${ORIGIN}/reset-password`);
+  });
+
+  it("does NOT set the recovery marker cookie for a non-recovery type (e.g. signup)", async () => {
+    verifyOtp.mockResolvedValue({ error: null });
+    await call("?token_hash=abc123&type=signup&next=/onboarding");
+    expect(cookieSet).not.toHaveBeenCalled();
   });
 
   it("redirects to /login when verifyOtp fails", async () => {
