@@ -21,7 +21,20 @@ const OTP_TYPES: string[] = [
 export function safeNextPath(next: string | null, origin: string): string {
   const fallback = "/onboarding";
   if (!next) return fallback;
+  // Only clean same-origin absolute paths are allowed through: a single
+  // leading slash, and neither a protocol-relative ("//") nor a
+  // backslash-authority ("/\") prefix. This rejects "@evil/x" (no leading
+  // slash), "//evil.com", and "https://evil.com/x" outright before parsing.
+  if (
+    !next.startsWith("/") ||
+    next.startsWith("//") ||
+    next.startsWith("/\\")
+  ) {
+    return fallback;
+  }
   try {
+    // Defense in depth: resolve and re-confirm same-origin, keeping only the
+    // path/query/hash so a later redirect can never leave our origin.
     const resolved = new URL(next, origin);
     if (resolved.origin !== origin) return fallback;
     return `${resolved.pathname}${resolved.search}${resolved.hash}`;

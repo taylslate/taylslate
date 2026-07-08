@@ -44,13 +44,15 @@ describe("safeNextPath", () => {
     expect(safeNextPath("https://evil.com/steal", ORIGIN)).toBe("/onboarding");
   });
 
-  it("neutralizes @evil/x into a same-origin path (no userinfo open redirect)", () => {
-    // new URL() resolves "@evil/x" as a path, not an authority — so it can
-    // never become https://host@evil.example/… The composed redirect stays
-    // on our origin, which is the property that matters.
-    const path = safeNextPath("@evil/x", ORIGIN);
-    expect(new URL(ORIGIN + path).origin).toBe(ORIGIN);
-    expect(new URL(ORIGIN + path).hostname).toBe("www.taylslate.com");
+  it("rejects @evil/x — no leading slash → fallback", () => {
+    // "@evil/x" has no leading slash, so it's rejected outright rather than
+    // normalized to a same-origin /@evil/x. Guards against userinfo-style
+    // open-redirect attempts before any URL parsing.
+    expect(safeNextPath("@evil/x", ORIGIN)).toBe("/onboarding");
+  });
+
+  it("rejects a backslash-authority /\\evil.com → fallback", () => {
+    expect(safeNextPath("/\\evil.com", ORIGIN)).toBe("/onboarding");
   });
 });
 
