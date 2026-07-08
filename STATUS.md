@@ -1,8 +1,8 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 8, 2026 — brand auth hardening **Layer 1** (signup path correctness) shipped + verified live July 8 (`28cce8a`+`5fe246f`, Codex clean). **Layer 2** (password reset + hide Show from role picker) shipped + deployed July 8 (`0c25adf`→`e39dba0`, Codex clean); **PENDING live verification AND the manual recovery email template paste** (see below). Impersonation tool COMPLETE (L1-3, verified live July 7); seeding tool COMPLETE (L1-2, verified live July 7); Wave 14 Phase 2D verification COMPLETE. 963 tests passing (87 files)._
+_Volatile snapshot. Updated July 8, 2026 — brand auth hardening **Layer 1** (signup path correctness) shipped + verified live July 8 (`28cce8a`+`5fe246f`, Codex clean). **Layer 2** (password reset + hide Show from role picker) shipped + verified live July 8 (`0c25adf`→`e39dba0`, Codex clean). Impersonation tool COMPLETE (L1-3, verified live July 7); seeding tool COMPLETE (L1-2, verified live July 7); Wave 14 Phase 2D verification COMPLETE. 963 tests passing (87 files)._
 
-## Most recent — brand auth hardening Layer 2 (password reset) shipped + deployed (July 8, 2026) — PENDING live verify
+## Most recent — brand auth hardening Layer 2 (password reset) shipped + verified live (July 8, 2026)
 
 Second layer of the brand email/password hardening. Build-vs-unify decision (July 8): **keep passwords for launch, build reset** (unification stays post-launch). Schema-free — NO migration. Reuses the token_hash pattern + the existing `/callback` `recovery` branch. Commits `0c25adf` (build) → `9bb482a` (Codex Medium) → `e39dba0` (Codex Lows).
 
@@ -10,8 +10,8 @@ Second layer of the brand email/password hardening. Build-vs-unify decision (Jul
 - **`/reset-password`** — **server-component recovery gate** (Codex-hardened): `/callback` sets a short-lived HttpOnly marker cookie `tslate_pw_recovery` (10-min TTL, path-scoped to `/reset-password`, `lib/auth/recovery-cookie.ts`) ONLY after `verifyOtp({type:"recovery"})` succeeds; the page renders the set-password form ONLY when that marker is present, else the invalid-link state. This closes the gap where any authenticated user — notably a passwordless magic-link show — could reach the form. Form (`reset-password-form.tsx`, client): new password + confirm via pure `validateNewPassword` (min 8, match) → `updateUser` → clears the marker via a server action → `/dashboard`.
 - **Role picker** — `ONBOARDING_ROLES` (`app/onboarding/roles.tsx`) no longer offers **Show / Creator**; shows onboard via magic-link+OTP, not password self-signup (closes the model-integrity gap traced July 8). Dead show-routing branch + unused `totalSteps` removed.
 - **`/login`** "Forgot password?" link; **`proxy.ts`** allowlists `/forgot-password` + `/reset-password`; **`/callback`** unchanged beyond setting the recovery marker (already accepted `type=recovery`).
-- **REQUIRED manual step before this works live — Supabase "Reset Password" email template** must use the token_hash pattern: `{{ .SiteURL }}/callback?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password`. Not yet pasted as of this writing.
-- **Verification:** 27 tests across the auth surface (forgot neutral+redirect+error; reset validator; recovery gate shows form only with marker; form success/mismatch/short/error + marker-clear; `/callback` sets cookie on recovery + not on signup; proxy allowlist; roles excludes show). Suite **963 passing** (87 files), tsc + eslint clean, **Codex clean** (one Medium — recovery-session scoping — fixed; two Lows — cookie path + clear-on-success — fixed; re-review confirmed). Deploy `e39dba0` READY on prod. **Live verification pending** (real reset email → link → set new password → log in with it).
+- **Supabase dashboard config change (manual, July 8 — invisible in the repo, recorded here):** the **Reset Password** email template was switched to the token_hash pattern: `{{ .SiteURL }}/callback?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password` (was `{{ .ConfirmationURL }}`). Same browser-independent rationale as the Confirm-signup template. Durable form in CLAUDE.md → Auth & admin.
+- **Verification:** 27 tests across the auth surface (forgot neutral+redirect+error; reset validator; recovery gate shows form only with marker; form success/mismatch/short/error + marker-clear; `/callback` sets cookie on recovery + not on signup; proxy allowlist; roles excludes show). Suite **963 passing** (87 files), tsc + eslint clean, **Codex clean** (one Medium — recovery-session scoping — fixed; two Lows — cookie path + clear-on-success — fixed; re-review confirmed). **Verified live July 8:** reset email delivered via the token_hash flow, link landed on `/reset-password` with the form, new password set → `/dashboard`, logged in with the new password; enumeration + recovery-gate checks confirmed.
 
 ## Most recent — brand auth hardening Layer 1 (signup path correctness) shipped + verified live (July 8, 2026)
 
@@ -146,10 +146,9 @@ inbox.
   case reopens.
 
 ## Next
-Brand auth hardening **Layers 1 + 2 SHIPPED July 8** (Codex clean). L1 verified
-live; **L2 pending live verification + the manual recovery email template paste**
-(see the top Layer 2 section). Build-vs-unify decision: keep passwords for launch,
-unify post-launch. Role-picker Show/Creator gap closed in L2. Remaining:
+Brand auth hardening **Layers 1 + 2 SHIPPED + verified live July 8** (Codex
+clean). Build-vs-unify decision: keep passwords for launch, unify post-launch.
+Role-picker Show/Creator gap closed in L2. Remaining:
 1. **Brand auth hardening — Layer 3 [LAUNCH-BLOCKER]** — bot-signup protection
    (Turnstile / Supabase Attack Protection). CAPTCHA is currently disabled; do NOT
    add captcha before this layer.

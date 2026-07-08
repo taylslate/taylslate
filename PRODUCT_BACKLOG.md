@@ -109,13 +109,13 @@ Things that must finish before GTM. The launch bar.
 ### Auth hardening — brand email/password path  [LAUNCH-BLOCKER]
 The brand login path is email/password and fully live; it was NOT part of the June 28 magic-link fixes and real strangers hit it at launch. Layered build:
 - ~~**Layer 1 — signup path correctness**~~ — **SHIPPED + verified live July 8, 2026** (`28cce8a`+`5fe246f`): `emailRedirectTo` → `/callback`, honest signup UI with enumeration-safe copy, 8-char min, token_hash Confirm-signup template. See SHIPPED / STATUS.
-- ~~**Layer 2 — password reset + role-picker fix**~~ — **SHIPPED + deployed July 8, 2026** (`0c25adf`→`e39dba0`, Codex clean); PENDING live verify + the manual "Reset Password" token_hash template paste. `/forgot-password` + `/reset-password` (server-component recovery gate), hides Show/Creator from the role picker. Decision: keep passwords for launch, unify post-launch.
+- ~~**Layer 2 — password reset + role-picker fix**~~ — **SHIPPED + verified live July 8, 2026** (`0c25adf`→`e39dba0`, Codex clean). `/forgot-password` + `/reset-password` (server-component recovery gate), hides Show/Creator from the role picker, Reset Password token_hash template pasted. Decision: keep passwords for launch, unify post-launch.
 - **Layer 3 — bot-signup protection [remaining]** — Turnstile or Supabase Attack Protection. CAPTCHA currently disabled; this is the last hardening layer before non-friends traffic.
 
 ### Auth unification (deferred, post-launch acceptable)
 Brands email/password, shows magic-link+OTP. Target: magic-link+OTP for all. Not launch-blocking; the hardening item above is. (Supersedes the "Auth unification" polish item below.)
 
-**Layer 2 (password reset) — DECIDED + BUILT July 8, 2026.** Pre-flight found no reset path existed (greenfield, not a mis-wired rebuild of the June bug family). Build-vs-unify call: **keep passwords for launch, build reset, unify post-launch.** Shipped `0c25adf`→`e39dba0` (Codex clean); pending live verify + the manual "Reset Password" token_hash template paste. See the Auth hardening item above.
+**Layer 2 (password reset) — DECIDED + BUILT + verified live July 8, 2026.** Pre-flight found no reset path existed (greenfield, not a mis-wired rebuild of the June bug family). Build-vs-unify call: **keep passwords for launch, build reset, unify post-launch.** Shipped `0c25adf`→`e39dba0` (Codex clean), verified live. See the Auth hardening item above.
 
 ### ~~Onboarding role picker offers Show/Creator to a password signup~~ — RESOLVED July 8, 2026 (Layer 2)
 `ONBOARDING_ROLES` (`app/onboarding/roles.tsx`) no longer offers Show/Creator; shows onboard only via the magic-link+OTP outreach path. Was: a password-signup user picking Show got `profiles.role=show` + a password-based show account (not a crash — email-collision with a later outreach magic link was already handled by `/api/auth/magic`'s find-by-email reuse — but a model-integrity/GTM gap). Closed by hiding the card as part of the keep-passwords decision.
