@@ -1,17 +1,22 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 8, 2026 — brand auth hardening **Layer 1** (signup path correctness) shipped + verified live July 8 (`28cce8a`+`5fe246f`, Codex clean). **Layer 2** (password reset + hide Show from role picker) shipped + verified live July 8 (`0c25adf`→`e39dba0`, Codex clean). **Layer 3** (Cloudflare Turnstile bot-signup protection) shipped + deployed green July 8 (`6dfdab4`, Codex clean) — **PENDING** Chris's manual Cloudflare widget + Vercel env + Supabase toggle-flip and live verify (CAPTCHA toggle intentionally still OFF; code degrades gracefully). Impersonation tool COMPLETE (L1-3, verified live July 7); seeding tool COMPLETE (L1-2, verified live July 7); Wave 14 Phase 2D verification COMPLETE. 983 tests passing (89 files)._
+_Volatile snapshot. Updated July 9, 2026 — **brand auth hardening COMPLETE (Layers 1-3), launch blocker CLEARED.** **Layer 1** (signup path correctness) shipped + verified live July 8 (`28cce8a`+`5fe246f`, Codex clean). **Layer 2** (password reset + hide Show from role picker) shipped + verified live July 8 (`0c25adf`→`e39dba0`, Codex clean). **Layer 3** (Cloudflare Turnstile bot-signup protection) shipped + deployed green July 8 (`6dfdab4`, Codex clean), **live-verified July 9 with the CAPTCHA toggle ON** — login, full signup loop, and forgot-password all passed under enforcement, no captcha errors on any flow. Impersonation tool COMPLETE (L1-3, verified live July 7); seeding tool COMPLETE (L1-2, verified live July 7); Wave 14 Phase 2D verification COMPLETE. 983 tests passing (89 files). Next launch blocker: the accept-flow cluster (gated on the parked non-catalog-outreach product decision)._
 
-## Most recent — brand auth hardening Layer 3 (Turnstile bot protection) shipped + deployed, pending toggle-flip + live verify (July 8, 2026)
+## Most recent — brand auth hardening Layer 3 (Turnstile bot protection) COMPLETE — live-verified with CAPTCHA ON (July 9, 2026)
 
 Third layer of the brand email/password hardening: **Cloudflare Turnstile as the provider inside Supabase's built-in Auth CAPTCHA** — widget on the client, `captchaToken` threaded into the Supabase auth calls, Turnstile SECRET entered in the Supabase dashboard (NOT our env). No custom verification route. Schema-free — NO migration. Commit `6dfdab4` (Codex clean, no findings).
 
 - **`components/auth/turnstile-widget.tsx`** — client `TurnstileWidget` (forwardRef, imperative `reset()`): explicit-render, `theme:"light"`, `appearance:"interaction-only"` (managed, minimal friction, does NOT gate submit). Loads the Turnstile script via `next/script`; double-render guard, StrictMode-safe cleanup (`remove` on unmount), seeds `scriptReady` true if the script is already present (client-side nav). **Renders `null` when `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is unset** → no widget, no token, no hard dependency for local dev.
 - **`lib/auth/turnstile.ts`** — pure, React-free helpers: `turnstileEnabled()`, `withCaptchaToken(options, token)` (adds `captchaToken` ONLY when a token is present — returns options byte-identical otherwise, the graceful-degradation core), `isCaptchaError()` + `CAPTCHA_RETRY_MESSAGE` (friendly retry copy, never the raw Supabase captcha error).
 - **`/signup`, `/login`, `/forgot-password`** — render the widget; thread `captchaToken` into `signUp` / `signInWithPassword` / `resetPasswordForEmail` via `withCaptchaToken`. On any failed submit: reset the widget + clear the token (single-use) and, on a captcha rejection, show `CAPTCHA_RETRY_MESSAGE`. `/reset-password`'s session-based `updateUser`, the show magic-link path, `test-login`, and `return-to-admin` are **untouched** (admin flows pinned captcha-free by source-scan tests).
-- **CRITICAL SEQUENCING:** the Supabase Attack-Protection CAPTCHA toggle is **still OFF** and STAYS off until Chris flips it manually after live-verifying the deployed code. Supabase ignores `captchaToken` while CAPTCHA is disabled, so the widget code shipped safely first. Flipping before the code shipped would have broken every brand signup/login/reset.
+- **SEQUENCING (now resolved):** the widget code shipped first with the Supabase Attack-Protection CAPTCHA toggle OFF (Supabase ignores `captchaToken` while disabled), so the code was live and safe before enforcement. The toggle was flipped ON July 9 only after the deployed code was confirmed working, so no brand signup/login/reset window ever broke.
 - **Env:** `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (public site key) → `.env.local` placeholder (blank locally) + Vercel for prod. Turnstile SECRET → Supabase dashboard only, never in our env/code.
-- **Verification:** 20 new tests (turnstile helpers; captchaToken-threaded + graceful-degradation-omitted + reset-on-captcha-rejection for all three forms; new `/login` test; admin no-captcha source-scan pins). Suite **983 passing** (89 files), tsc + eslint clean, **Codex clean** (no High/Medium/Low; all 6 invariants pass). **Deployed green** (`dpl_vuSdpFZQ…`, aliased www.taylslate.com). **PENDING Chris (manual):** (1) create the Cloudflare Turnstile widget for `taylslate.com` + `www.taylslate.com` (+ `localhost` if desired), (2) set `NEXT_PUBLIC_TURNSTILE_SITE_KEY` in Vercel + redeploy, (3) verify live auth still works with the toggle OFF, (4) enter the Turnstile secret + enable CAPTCHA (provider: Turnstile) in Supabase Attack Protection, (5) live-verify signup/login/forgot-password end to end, (6) rollback = toggle CAPTCHA off in Supabase (code degrades gracefully).
+- **Manual dashboard state (July 9, 2026 — invisible in the repo, recorded here):**
+  - **Supabase Attack Protection → CAPTCHA: ENABLED** July 9; provider **Turnstile**; Turnstile **secret entered** in the dashboard (not in our env/code).
+  - **Cloudflare Turnstile widget "Taylslate Auth" ACTIVE** for hostnames `taylslate.com` + `www.taylslate.com` + `localhost`.
+  - **`NEXT_PUBLIC_TURNSTILE_SITE_KEY` set in Vercel Production** (public site key).
+  - **Rollback (unchanged):** toggle CAPTCHA OFF in Supabase Attack Protection — the client code degrades gracefully (no widget/token dependency once Supabase stops requiring it).
+- **Verification:** 20 tests (turnstile helpers; captchaToken-threaded + graceful-degradation-omitted + reset-on-captcha-rejection for all three forms; new `/login` test; admin no-captcha source-scan pins). Suite **983 passing** (89 files), tsc + eslint clean, **Codex clean** (no High/Medium/Low; all 6 invariants pass). **Deployed green** (`dpl_vuSdpFZQ…`, aliased www.taylslate.com). **LIVE-VERIFIED July 9 with the CAPTCHA toggle ON:** login, the full signup loop (`chris+authtest3` — confirmation email delivered, link landed authenticated), and forgot-password all passed under enforcement, with **no captcha errors on any flow**. Brand auth hardening (Layers 1-3) is COMPLETE and this launch blocker is CLEARED.
 
 ## Most recent — brand auth hardening Layer 2 (password reset) shipped + verified live (July 8, 2026)
 
@@ -157,15 +162,24 @@ inbox.
   case reopens.
 
 ## Next
-Brand auth hardening **Layers 1 + 2 SHIPPED + verified live July 8** (Codex
-clean). Build-vs-unify decision: keep passwords for launch, unify post-launch.
-Role-picker Show/Creator gap closed in L2. Remaining:
-1. **Brand auth hardening — Layer 3 [LAUNCH-BLOCKER]** — bot-signup protection
-   (Turnstile / Supabase Attack Protection). CAPTCHA is currently disabled; do NOT
-   add captcha before this layer.
-2. **Accept-flow launch-blocker cluster** (PRODUCT_BACKLOG.md → PRE-LAUNCH):
-   accept-flow NOT-NULL bug (#1), show-side deal visibility (#2), flight-date
-   off-by-one (#3).
+Brand auth hardening **COMPLETE (Layers 1-3), launch blocker CLEARED** — L1+L2
+shipped + verified live July 8, L3 (Turnstile) live-verified July 9 with the
+CAPTCHA toggle ON (Codex clean throughout). Build-vs-unify decision: keep
+passwords for launch, unify post-launch. Role-picker Show/Creator gap closed in L2.
+
+**Next launch blocker: the accept-flow cluster** (PRODUCT_BACKLOG.md → PRE-LAUNCH):
+1. **Accept-flow NOT-NULL bug (#1)** — `createWave12Deal` never sets
+   `deals.brand_id`/`deals.show_id` (both NOT NULL); the first real
+   outreach-accept fails. Masked today by an empty `deals` table.
+2. **Show-side deal visibility (#2)** — `getDealsFiltered` filters legacy
+   ownership columns only, so a show account never sees Wave-12 deals in its
+   pipeline list.
+3. **Flight-date off-by-one (#3)** — Agreed Terms panel vs IO document disagree
+   by a day (date-only UTC-vs-local parse).
+**Gated on the parked product decision:** does accepting a non-catalog outreach
+materialize a `shows` row (put the creator's show into shared discovery
+inventory)? #1's `show_id` derivation depends on the answer. Resolve before
+building the fix.
 
 Optional polish carried in the backlog: **sidebar buttons for seed/teardown**
 (the loop is endpoint-only today). 2C Layer 5 (overrides + recompute) remains

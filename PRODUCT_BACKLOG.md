@@ -1,6 +1,6 @@
 # Taylslate Product Backlog
 
-*Last updated: July 7, 2026*
+*Last updated: July 9, 2026*
 
 This document captures everything that's been identified as worth building. Three parts:
 
@@ -106,11 +106,11 @@ Things that must finish before GTM. The launch bar.
 ### ~~Test-deal seeding tool~~ — SHIPPED July 7, 2026 (Layers 1-2 COMPLETE)
 - **Both layers shipped + verified live July 7, 2026** (Layer 1 create `d488430`; Layer 2 teardown `a1c09bf`, verified `c214539`) — see SHIPPED section for detail. The seed→verify→teardown loop is complete and repeatable; no seeded rows linger in prod. This was option (b) of "Test mode for full transaction loop" above (admin deal-create bypass).
 
-### Auth hardening — brand email/password path  [LAUNCH-BLOCKER]
-The brand login path is email/password and fully live; it was NOT part of the June 28 magic-link fixes and real strangers hit it at launch. Layered build:
+### ~~Auth hardening — brand email/password path~~ — COMPLETE (Layers 1-3), LAUNCH BLOCKER CLEARED July 9, 2026
+The brand login path is email/password and fully live; it was NOT part of the June 28 magic-link fixes and real strangers hit it at launch. Layered build — **all three layers shipped, Codex clean, live-verified:**
 - ~~**Layer 1 — signup path correctness**~~ — **SHIPPED + verified live July 8, 2026** (`28cce8a`+`5fe246f`): `emailRedirectTo` → `/callback`, honest signup UI with enumeration-safe copy, 8-char min, token_hash Confirm-signup template. See SHIPPED / STATUS.
 - ~~**Layer 2 — password reset + role-picker fix**~~ — **SHIPPED + verified live July 8, 2026** (`0c25adf`→`e39dba0`, Codex clean). `/forgot-password` + `/reset-password` (server-component recovery gate), hides Show/Creator from the role picker, Reset Password token_hash template pasted. Decision: keep passwords for launch, unify post-launch.
-- **Layer 3 — bot-signup protection [remaining]** — Turnstile or Supabase Attack Protection. CAPTCHA currently disabled; this is the last hardening layer before non-friends traffic.
+- ~~**Layer 3 — bot-signup protection**~~ — **SHIPPED July 8 (`6dfdab4`, Codex clean); live-verified July 9, 2026 with the CAPTCHA toggle ON** — login, full signup loop, and forgot-password all passed under enforcement, no captcha errors. Cloudflare Turnstile inside Supabase Attack Protection. **Manual dashboard state:** Supabase CAPTCHA enabled July 9 (provider Turnstile, secret entered); Cloudflare Turnstile widget "Taylslate Auth" active for `taylslate.com` + `www.taylslate.com` + `localhost`; `NEXT_PUBLIC_TURNSTILE_SITE_KEY` set in Vercel Production. **Rollback:** toggle CAPTCHA off in Supabase (code degrades gracefully).
 
 ### Auth unification (deferred, post-launch acceptable)
 Brands email/password, shows magic-link+OTP. Target: magic-link+OTP for all. Not launch-blocking; the hardening item above is. (Supersedes the "Auth unification" polish item below.)
