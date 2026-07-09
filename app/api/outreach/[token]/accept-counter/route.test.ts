@@ -21,6 +21,7 @@ const getCampaignById = vi.fn();
 const getOutreachById = vi.fn();
 const getWave12DealByOutreachId = vi.fn();
 const createWave12Deal = vi.fn();
+const resolveOrMaterializeShowIdForOutreach = vi.fn();
 const logEvent = vi.fn().mockResolvedValue(null);
 const sendEmail = vi.fn().mockResolvedValue({ ok: true });
 
@@ -32,6 +33,8 @@ vi.mock("@/lib/data/queries", () => ({
   getOutreachById: (...a: unknown[]) => getOutreachById(...a),
   getWave12DealByOutreachId: (...a: unknown[]) => getWave12DealByOutreachId(...a),
   createWave12Deal: (...a: unknown[]) => createWave12Deal(...a),
+  resolveOrMaterializeShowIdForOutreach: (...a: unknown[]) =>
+    resolveOrMaterializeShowIdForOutreach(...a),
 }));
 vi.mock("@/lib/data/events", () => ({ logEvent: (...a: unknown[]) => logEvent(...a) }));
 vi.mock("@/lib/email/send", () => ({ sendEmail: (...a: unknown[]) => sendEmail(...a) }));
@@ -71,6 +74,7 @@ beforeEach(() => {
   getOutreachById.mockResolvedValue(baseOutreach);
   getCampaignById.mockResolvedValue({ id: "c1", name: "Spring" });
   getWave12DealByOutreachId.mockResolvedValue(null);
+  resolveOrMaterializeShowIdForOutreach.mockResolvedValue("show-cat-1");
   createWave12Deal.mockResolvedValue({
     id: "deal-1",
     outreach_id: "out-1",
@@ -127,7 +131,12 @@ describe("POST /api/outreach/[id]/accept-counter", () => {
     const body = await res.json();
     expect(body.deal.agreed_cpm).toBe(32);
     expect(createWave12Deal).toHaveBeenCalledWith(
-      expect.objectContaining({ agreed_cpm: 32 })
+      expect.objectContaining({
+        agreed_cpm: 32,
+        brand_id: "u-brand",
+        show_id: "show-cat-1",
+        show_profile_id: "sp1",
+      })
     );
     const types = logEvent.mock.calls.map((c) => c[0].eventType);
     expect(types).toContain("io.counter_accepted");

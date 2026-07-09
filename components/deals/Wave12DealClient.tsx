@@ -52,10 +52,14 @@ const STATUS_COLOR: Record<Wave12DealStatus, string> = {
 
 function fmt(d?: string | null): string {
   if (!d) return "—";
+  // Date-only values (agreed_flight_*) are stored as YYYY-MM-DD and parse as
+  // UTC midnight. Render in UTC so a US (negative-offset) viewer doesn't see the
+  // previous day — this MUST match the IO document's date rendering.
   return new Date(d).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: "UTC",
   });
 }
 

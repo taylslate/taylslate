@@ -16,6 +16,7 @@ import {
   getCampaignById,
   getOutreachById,
   getWave12DealByOutreachId,
+  resolveOrMaterializeShowIdForOutreach,
 } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logEvent } from "@/lib/data/events";
@@ -102,9 +103,18 @@ export async function POST(
     return NextResponse.json({ error: "Failed to update outreach" }, { status: 500 });
   }
 
+  // deals.show_id is NOT NULL — resolve the catalog show or materialize a
+  // non-discoverable one from the outreach (migration 031).
+  const showId = await resolveOrMaterializeShowIdForOutreach(outreach);
+  if (!showId) {
+    return NextResponse.json({ error: "Failed to resolve show" }, { status: 500 });
+  }
+
   const deal = await createWave12Deal({
     outreach_id: outreach.id,
     brand_profile_id: outreach.brand_profile_id,
+    brand_id: brandProfile.user_id,
+    show_id: showId,
     show_profile_id: (showProfile as ShowProfile).id,
     agreed_cpm: outreach.counter_cpm,
     agreed_episode_count: outreach.proposed_episode_count,

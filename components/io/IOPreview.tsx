@@ -146,6 +146,7 @@ export default function IOPreview({ io, onEdit, onConfirm, isConfirming }: IOPre
                           month: "short",
                           day: "numeric",
                           year: "numeric",
+                          timeZone: "UTC",
                         })
                       : "—"}
                   </div>

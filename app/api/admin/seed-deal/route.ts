@@ -128,6 +128,9 @@ export async function POST(request: NextRequest) {
     price_type: "cpm",
     contact: { name: "Seed Host", email: show.email, method: "email" },
     data_sources: ["seed"],
+    // Keep seeded shows out of shared brand discovery (migration 031). This is
+    // now a real read-time exclusion, not just the [SEED] name-prefix convention.
+    is_discoverable: false,
   });
   if (!seededShow) {
     return NextResponse.json({ error: "Failed to seed show" }, { status: 500 });

@@ -24,6 +24,7 @@ const sendEmail = vi.fn().mockResolvedValue({ ok: true });
 const checkRateLimit = vi.fn();
 const createWave12Deal = vi.fn();
 const getWave12DealByOutreachId = vi.fn();
+const resolveOrMaterializeShowIdForOutreach = vi.fn();
 const logEvent = vi.fn().mockResolvedValue(null);
 
 vi.mock("@/lib/io/tokens", () => ({
@@ -36,6 +37,8 @@ vi.mock("@/lib/data/queries", () => ({
   isOutreachOpen: (...args: unknown[]) => isOutreachOpen(...args),
   createWave12Deal: (...args: unknown[]) => createWave12Deal(...args),
   getWave12DealByOutreachId: (...args: unknown[]) => getWave12DealByOutreachId(...args),
+  resolveOrMaterializeShowIdForOutreach: (...args: unknown[]) =>
+    resolveOrMaterializeShowIdForOutreach(...args),
 }));
 vi.mock("@/lib/data/events", () => ({ logEvent: (...a: unknown[]) => logEvent(...a) }));
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin }));
@@ -101,10 +104,11 @@ beforeEach(() => {
       error: null,
     });
   // Wave 12: show profile lookup is a maybeSingle on profiles table for the
-  // sent_to_email. Default to "no onboarded show found" so deal creation is
-  // skipped — those tests live in their own files.
+  // sent_to_email. Default to "no onboarded show found" — the deal is now still
+  // created at accept time (show_profile_id NULL, backfilled at onboarding).
   adminBuilder.maybeSingle.mockResolvedValue({ data: null, error: null });
   getWave12DealByOutreachId.mockResolvedValue(null);
+  resolveOrMaterializeShowIdForOutreach.mockResolvedValue("show-mat-1");
 });
 
 describe("POST /api/outreach/[token]/accept", () => {
@@ -137,6 +141,20 @@ describe("POST /api/outreach/[token]/accept", () => {
     const sendArgs = sendEmail.mock.calls[0][0];
     expect(sendArgs.to).toBe("brand@example.com");
     expect(sendArgs.subject).toMatch(/Accepted/);
+  });
+
+  it("creates the deal at accept time even when the show hasn't onboarded", async () => {
+    // Decision 1: NOT-NULL brand_id/show_id are always set; show_profile_id is
+    // NULL when the show isn't onboarded yet (backfilled later).
+    await ACCEPT(jsonReq({}) as never, params as never);
+    expect(createWave12Deal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        brand_id: "u1",
+        show_id: "show-mat-1",
+        show_profile_id: null,
+        agreed_cpm: 28,
+      })
+    );
   });
 });
 

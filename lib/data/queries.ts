@@ -127,6 +127,7 @@ function transformShow(row: Record<string, unknown>): Show {
     rss_url: row.rss_url as string | undefined,
     is_claimed: (row.is_claimed as boolean) ?? false,
     is_verified: (row.is_verified as boolean) ?? false,
+    is_discoverable: (row.is_discoverable as boolean) ?? true,
     available_slots: row.available_slots as number | undefined,
     next_available_date: row.next_available_date as string | undefined,
     created_at: row.created_at as string,
@@ -139,6 +140,9 @@ export async function getAllShows(): Promise<Show[]> {
   const { data, error } = await supabase
     .from("shows")
     .select("*")
+    // Exclude non-discoverable shows (accept-materialized non-catalog shows,
+    // seeds) from shared brand-facing discovery/catalog reads (migration 031).
+    .eq("is_discoverable", true)
     .order("audience_size", { ascending: false });
   if (error || !data) return [];
   return data.map(transformShow);
@@ -177,7 +181,9 @@ export async function getShowsByAgent(agentId: string): Promise<Show[]> {
 /**
  * Batch-load shows by id (Wave 14 Phase 2C — the tier pass resolves the shows
  * behind a pattern's conviction_scores to derive per-show cost). Empty input
- * short-circuits; order is not guaranteed (callers key by id).
+ * short-circuits; order is not guaranteed (callers key by id). Filters to
+ * discoverable shows (migration 031) as defense-in-depth — the ids come from
+ * discovery-scored shows, but a non-discoverable row must never surface here.
  */
 export async function getShowsByIds(ids: string[]): Promise<Show[]> {
   if (ids.length === 0) return [];
@@ -185,7 +191,8 @@ export async function getShowsByIds(ids: string[]): Promise<Show[]> {
   const { data, error } = await supabase
     .from("shows")
     .select("*")
-    .in("id", ids);
+    .in("id", ids)
+    .eq("is_discoverable", true);
   if (error || !data) return [];
   return data.map(transformShow);
 }
@@ -203,7 +210,9 @@ export async function getShowsByIdsAdmin(ids: string[]): Promise<Show[]> {
   const { data, error } = await supabaseAdmin
     .from("shows")
     .select("*")
-    .in("id", ids);
+    .in("id", ids)
+    // Defense-in-depth (migration 031): never surface a non-discoverable show.
+    .eq("is_discoverable", true);
   if (error || !data) return [];
   return data.map(transformShow);
 }
@@ -455,10 +464,18 @@ export async function getDealsFiltered(
   filters: { status?: string; show_id?: string; brand_id?: string }
 ): Promise<(Deal & { show_name?: string })[]> {
   const supabase = await createClient();
+  // Ownership is enforced by RLS on this request-scoped client: a user sees a
+  // deal via the legacy brand/agent/agency columns (migration 001) OR via the
+  // Wave-12 brand_profile / show_profile policies (migration 013). The old
+  // `.or(agent_id/brand_id/agency_id = userId)` filter is REMOVED — it excluded
+  // every Wave-12 deal (whose ownership lives on brand_profile_id /
+  // show_profile_id, never equal to the user id), so show accounts saw
+  // "No deals yet" despite an active deal. userId is retained for signature
+  // stability; RLS derives the viewer from the session JWT.
+  void userId;
   let query = supabase
     .from("deals")
     .select("*, shows!inner(name)")
-    .or(`agent_id.eq.${userId},brand_id.eq.${userId},agency_id.eq.${userId}`)
     .order("updated_at", { ascending: false });
 
   if (filters.status) {
@@ -978,6 +995,7 @@ export async function createShow(
     slug,
     is_claimed: showData.is_claimed ?? false,
     is_verified: showData.is_verified ?? false,
+    is_discoverable: showData.is_discoverable ?? true,
   });
 
   // Remove id field if present — let Supabase generate UUID
@@ -1065,6 +1083,9 @@ export async function getShowsFiltered(filters: {
   let query = supabase
     .from("shows")
     .select("*")
+    // Exclude non-discoverable shows from the catalog/discovery browse
+    // (migration 031). Agent-scoped inventory is still narrowed by showIds below.
+    .eq("is_discoverable", true)
     .order("audience_size", { ascending: false });
 
   if (showIds) {
@@ -1689,7 +1710,52 @@ export async function completeShowProfile(
     console.error("[completeShowProfile] Error:", error?.message);
     return null;
   }
+  // Link any deals created at accept time before this show had onboarded
+  // (show_profile_id was inserted NULL). Fail-soft — never blocks onboarding.
+  await backfillShowProfileOnAcceptedDeals((data as ShowProfile).id, userId);
   return data as ShowProfile;
+}
+
+/**
+ * Onboarding backfill: attach a freshly-onboarded show_profile to any deal that
+ * was created at accept time before the show had onboarded (show_profile_id
+ * inserted NULL — see the accept path in app/api/outreach/[token]/_shared.ts).
+ * Matched via the outreach each deal was created from
+ * (outreaches.sent_to_email = the show's login email). Admin client: a deal
+ * with a NULL show_profile_id has no RLS path for the show user (the migration
+ * 013 show policy keys on show_profile_id), so the service role performs the
+ * update. Fail-soft: never throws; returns the number of deals linked.
+ */
+export async function backfillShowProfileOnAcceptedDeals(
+  showProfileId: string,
+  userId: string
+): Promise<number> {
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("email")
+    .eq("id", userId)
+    .maybeSingle();
+  const email = (profile as { email?: string } | null)?.email;
+  if (!email) return 0;
+
+  const { data: outreaches } = await supabaseAdmin
+    .from("outreaches")
+    .select("id")
+    .ilike("sent_to_email", email);
+  const outreachIds = (outreaches ?? []).map((o) => (o as { id: string }).id);
+  if (!outreachIds.length) return 0;
+
+  const { data: linked, error } = await supabaseAdmin
+    .from("deals")
+    .update({ show_profile_id: showProfileId })
+    .in("outreach_id", outreachIds)
+    .is("show_profile_id", null)
+    .select("id");
+  if (error) {
+    console.error("[backfillShowProfileOnAcceptedDeals] Error:", error.message);
+    return 0;
+  }
+  return (linked ?? []).length;
 }
 
 // ---- Outreach Queries (Wave 11) ----
@@ -1769,7 +1835,10 @@ export function isOutreachOpen(status: OutreachResponseStatus): boolean {
 export interface CreateWave12DealInput {
   outreach_id: string;
   brand_profile_id: string;
-  show_profile_id: string;
+  // Nullable: the deal is created at accept time even before the show has
+  // onboarded (no show_profile row yet). completeShowProfile backfills this via
+  // backfillShowProfileOnAcceptedDeals when the show finishes onboarding.
+  show_profile_id?: string | null;
   agreed_cpm: number;
   agreed_episode_count: number;
   agreed_placement: string;
@@ -1783,6 +1852,42 @@ export interface CreateWave12DealInput {
   // the deal. Spread into the insert below via `...input`.
   brand_id?: string;
   show_id?: string;
+}
+
+/**
+ * Resolve the catalog shows.id for an accepted outreach, materializing a
+ * NON-DISCOVERABLE shows row when the outreach isn't tied to a catalog show.
+ *
+ * deals.show_id is NOT NULL, so a deal cannot be created at accept time without
+ * a shows row. Catalog outreaches (Podscan-sourced / claimed) already carry
+ * outreach.show_id → use it directly. Non-catalog outreaches carry only
+ * show_name + sent_to_email → materialize a shows row flagged
+ * is_discoverable=false so this transaction artifact never leaks into shared
+ * brand discovery (promotion into discovery is a deliberate post-launch flip,
+ * migration 031). Returns null only if materialization failed (the caller then
+ * skips deal creation). NOTE: createShow dedups by slug, so a non-catalog name
+ * that collides with an existing catalog show reuses that row (and does NOT
+ * flip its flag).
+ */
+export async function resolveOrMaterializeShowIdForOutreach(
+  outreach: Outreach
+): Promise<string | null> {
+  if (outreach.show_id) return outreach.show_id;
+  const show = await createShow({
+    name: outreach.show_name,
+    // The outreach carries no medium; podcast is the launch default. If the
+    // show later onboards as YouTube, its show_profile captures that — the
+    // catalog row's platform is not load-bearing for the deal.
+    platform: "podcast",
+    contact: {
+      name: outreach.show_name,
+      email: outreach.sent_to_email,
+      method: "email",
+    },
+    data_sources: ["outreach_accept"],
+    is_discoverable: false,
+  });
+  return show?.id ?? null;
 }
 
 export async function createWave12Deal(

@@ -116,6 +116,14 @@ export interface Show {
   // Verification
   is_claimed: boolean;
   is_verified: boolean;
+  /**
+   * Discovery visibility (migration 031). FALSE excludes the show from all
+   * shared brand-facing discovery/catalog reads (getAllShows / getShowsFiltered).
+   * Written FALSE for accept-materialized non-catalog shows and seeded ([SEED])
+   * test shows; TRUE (the DB default) for catalog + Podscan/YouTube-discovered
+   * shows. Optional in the type — undefined is treated as discoverable.
+   */
+  is_discoverable?: boolean;
 
   // Availability
   available_slots?: number; // open ad slots in next 30 days

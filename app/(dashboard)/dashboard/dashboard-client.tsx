@@ -33,12 +33,16 @@ function fmtCurrency(amount: number): string {
 }
 
 const statusBadge: Record<string, { bg: string; text: string; label: string }> = {
+  planning: { bg: "var(--brand-blue)", text: "#fff", label: "Planning" },
   proposed: { bg: "var(--brand-blue)", text: "#fff", label: "Proposed" },
   negotiating: { bg: "var(--brand-warning)", text: "#fff", label: "Negotiating" },
   approved: { bg: "var(--brand-success)", text: "#fff", label: "Approved" },
   io_sent: { bg: "var(--brand-success)", text: "#fff", label: "IO Sent" },
+  brand_signed: { bg: "var(--brand-warning)", text: "#fff", label: "Brand Signed" },
+  show_signed: { bg: "var(--brand-success)", text: "#fff", label: "Show Signed" },
   signed: { bg: "var(--brand-success)", text: "#fff", label: "Signed" },
   live: { bg: "var(--brand-success)", text: "#fff", label: "Live" },
+  delivering: { bg: "var(--brand-success)", text: "#fff", label: "Delivering" },
   completed: { bg: "var(--brand-text-muted)", text: "#fff", label: "Completed" },
   draft: { bg: "var(--brand-text-muted)", text: "#fff", label: "Draft" },
   sent: { bg: "var(--brand-warning)", text: "#fff", label: "Sent" },

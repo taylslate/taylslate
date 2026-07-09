@@ -214,7 +214,9 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
   const editTotalNet = editNetPerEp * (Number(editNumEpisodes) || 0);
 
   const fmtDate = (d: string) =>
-    new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    // Date-only flight values render in UTC so they don't shift a day for US
+    // viewers (must agree with the IO document rendering).
+    new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
   return (
     <div className="p-8 max-w-3xl">

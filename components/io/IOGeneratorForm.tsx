@@ -42,7 +42,10 @@ function generateLineItems(deal: Deal, show: Show): IOLineItem[] {
 
   for (let i = 0; i < deal.num_episodes; i++) {
     const postDate = new Date(startDate);
-    postDate.setDate(postDate.getDate() + i * spacing);
+    // Advance in UTC. flight_start is a date-only string parsed as UTC midnight;
+    // mixing UTC parse with local getDate/setDate was what shifted post dates a
+    // day off from the Agreed Terms panel.
+    postDate.setUTCDate(postDate.getUTCDate() + i * spacing);
 
     items.push({
       id: `line-new-${i + 1}`,
@@ -605,7 +608,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                     />
                   ) : (
                     <div className={readOnlyClass}>
-                      {new Date(item.post_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      {new Date(item.post_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
                     </div>
                   )}
                 </div>
@@ -827,7 +830,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                         <div>
                           <span className="text-[var(--brand-text-muted)]">Aired: </span>
                           <span className="font-medium text-[var(--brand-text)]">
-                            {new Date(item.actual_post_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            {new Date(item.actual_post_date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}
                           </span>
                         </div>
                       )}

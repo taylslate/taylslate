@@ -17,6 +17,7 @@ import {
   getOutreachById,
   getWave12DealByOutreachId,
   isOutreachOpen,
+  resolveOrMaterializeShowIdForOutreach,
   updateOutreachResponse,
 } from "@/lib/data/queries";
 import { logEvent } from "@/lib/data/events";
@@ -160,13 +161,27 @@ export async function applyAndNotify(
   // after onboarding completes (via the post-magic-link return flow).
   let createdDeal: Wave12Deal | undefined;
   if (args.status === "accepted") {
-    const showProfileId = await resolveShowProfileIdForOutreach(updated);
-    if (showProfileId) {
-      const existing = await getWave12DealByOutreachId(updated.id);
-      if (!existing) {
+    const existing = await getWave12DealByOutreachId(updated.id);
+    if (existing) {
+      createdDeal = existing;
+    } else {
+      // deals.show_id is NOT NULL: resolve the catalog show, or materialize a
+      // non-discoverable one from the outreach. deals.show_profile_id is
+      // nullable and backfilled when the show later onboards — so the deal is
+      // created at accept time even if the show hasn't onboarded yet.
+      const showId = await resolveOrMaterializeShowIdForOutreach(updated);
+      if (!showId) {
+        console.error(
+          "[applyAndNotify] could not resolve/materialize show_id — deal not created",
+          updated.id
+        );
+      } else {
+        const showProfileId = await resolveShowProfileIdForOutreach(updated);
         const dealResult = await createWave12Deal({
           outreach_id: updated.id,
           brand_profile_id: updated.brand_profile_id,
+          brand_id: args.resolved.brandProfile.user_id,
+          show_id: showId,
           show_profile_id: showProfileId,
           agreed_cpm: updated.proposed_cpm,
           agreed_episode_count: updated.proposed_episode_count,
@@ -183,18 +198,12 @@ export async function applyAndNotify(
             payload: {
               deal: dealResult,
               outreach: updated,
+              show_id: showId,
               show_profile_id: showProfileId,
             },
           });
         }
-      } else {
-        createdDeal = existing;
       }
-    } else {
-      console.warn(
-        "[applyAndNotify] outreach accepted but show_profile not yet found — deal creation deferred",
-        updated.id
-      );
     }
   }
 

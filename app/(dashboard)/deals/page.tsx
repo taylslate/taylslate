@@ -4,25 +4,56 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { Deal, DealStatus } from "@/lib/data";
 
-const pipelineColumns: { key: DealStatus; label: string; color: string }[] = [
+type ColumnKey = "planning" | "io_sent" | "live" | "completed";
+
+const pipelineColumns: { key: ColumnKey; label: string; color: string }[] = [
   { key: "planning", label: "Planning", color: "var(--brand-blue)" },
   { key: "io_sent", label: "IO Sent", color: "var(--brand-warning)" },
   { key: "live", label: "Live", color: "var(--brand-success)" },
   { key: "completed", label: "Completed", color: "var(--brand-text-muted)" },
 ];
 
-const statusBadgeStyles: Record<DealStatus, { bg: string; text: string }> = {
-  planning: { bg: "rgba(59,130,246,0.1)", text: "var(--brand-blue)" },
-  io_sent: { bg: "rgba(245,158,11,0.1)", text: "var(--brand-warning)" },
-  live: { bg: "rgba(34,197,94,0.1)", text: "var(--brand-success)" },
-  completed: { bg: "rgba(107,114,128,0.1)", text: "var(--brand-text-muted)" },
+// Every deal status (Wave-12 signing lifecycle + legacy migration-001 values)
+// buckets into one of the 4 board columns, so a deal is never silently dropped
+// from the board while still counting in the totals above it.
+const statusToColumn: Record<string, ColumnKey> = {
+  planning: "planning",
+  io_sent: "io_sent",
+  brand_signed: "io_sent",
+  show_signed: "io_sent",
+  live: "live",
+  delivering: "live",
+  completed: "completed",
+  cancelled: "completed",
+  // legacy values that may exist on older rows
+  proposed: "planning",
+  negotiating: "planning",
+  approved: "io_sent",
+  signed: "io_sent",
 };
 
-const statusLabels: Record<DealStatus, string> = {
+const columnOf = (status: string): ColumnKey => statusToColumn[status] ?? "planning";
+
+const statusBadgeStyles: Record<string, { bg: string; text: string }> = {
+  planning: { bg: "rgba(59,130,246,0.1)", text: "var(--brand-blue)" },
+  io_sent: { bg: "rgba(245,158,11,0.1)", text: "var(--brand-warning)" },
+  brand_signed: { bg: "rgba(245,158,11,0.1)", text: "var(--brand-warning)" },
+  show_signed: { bg: "rgba(34,197,94,0.1)", text: "var(--brand-success)" },
+  live: { bg: "rgba(34,197,94,0.1)", text: "var(--brand-success)" },
+  delivering: { bg: "rgba(34,197,94,0.1)", text: "var(--brand-success)" },
+  completed: { bg: "rgba(107,114,128,0.1)", text: "var(--brand-text-muted)" },
+  cancelled: { bg: "rgba(239,68,68,0.1)", text: "var(--brand-error)" },
+};
+
+const statusLabels: Record<string, string> = {
   planning: "Planning",
   io_sent: "IO Sent",
+  brand_signed: "Brand Signed",
+  show_signed: "Show Signed",
   live: "Live",
+  delivering: "Delivering",
   completed: "Completed",
+  cancelled: "Cancelled",
 };
 
 function DealCard({
@@ -34,7 +65,7 @@ function DealCard({
 }) {
   const showName = deal.show_name ?? "Unknown Show";
   const initial = showName.charAt(0).toUpperCase();
-  const badge = statusBadgeStyles[deal.status];
+  const badge = statusBadgeStyles[deal.status] ?? statusBadgeStyles.planning;
 
   return (
     <div
@@ -78,7 +109,7 @@ function DealCard({
           className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
           style={{ backgroundColor: badge.bg, color: badge.text }}
         >
-          {statusLabels[deal.status]}
+          {statusLabels[deal.status] ?? deal.status}
         </span>
       </div>
 
@@ -99,7 +130,7 @@ function DealCard({
         <span className="text-xs text-[var(--brand-text-muted)]">
           {deal.num_episodes} ep{deal.num_episodes !== 1 ? "s" : ""} · {deal.placement}
         </span>
-        {["io_sent", "live", "completed"].includes(deal.status) && (
+        {["io_sent", "brand_signed", "show_signed", "live", "delivering", "completed"].includes(deal.status) && (
           <Link
             href={`/deals/${deal.id}/io`}
             className="ml-auto text-xs text-[var(--brand-blue)] hover:underline font-medium"
@@ -244,7 +275,7 @@ export default function DealsPage() {
         </div>
         <div className="w-px h-8 bg-[var(--brand-border)]" />
         {pipelineColumns.map((col) => {
-          const count = dealList.filter((d) => d.status === col.key).length;
+          const count = dealList.filter((d) => columnOf(d.status) === col.key).length;
           return (
             <div key={col.key} className="flex items-center gap-2">
               <div
@@ -263,7 +294,7 @@ export default function DealsPage() {
       {dealList.length > 0 ? (
         <div className="grid grid-cols-4 gap-4">
           {pipelineColumns.map((col) => {
-            const columnDeals = dealList.filter((d) => d.status === col.key);
+            const columnDeals = dealList.filter((d) => columnOf(d.status) === col.key);
             const columnValue = columnDeals.reduce((s, d) => s + d.total_net, 0);
             const isOver = dragOverColumn === col.key;
 
