@@ -63,6 +63,21 @@ export async function POST(
     return NextResponse.json({ error: "Outreach missing" }, { status: 500 });
   }
 
+  // The show accepted but hasn't finished onboarding yet, so there's no
+  // show_profile to sign the IO. This is expected (deals are created at accept
+  // time) — surface a clear, actionable state, not a 500. show_profile_id is
+  // backfilled the moment the show completes onboarding.
+  if (!deal.show_profile_id) {
+    return NextResponse.json(
+      {
+        error:
+          "This show hasn't finished setting up their account yet. You'll be able to send the IO for signature once they complete onboarding.",
+        code: "show_not_onboarded",
+      },
+      { status: 409 }
+    );
+  }
+
   const { data: sp } = await supabaseAdmin
     .from("show_profiles")
     .select("*")

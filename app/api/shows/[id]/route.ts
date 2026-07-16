@@ -9,7 +9,11 @@ export async function GET(
   try {
     const { id } = await params;
     const show = await getShowById(id);
-    if (!show) {
+    // Non-discoverable shows (accept-materialized non-catalog rows, seeds) are
+    // transaction artifacts, not catalog entries — never expose them on this
+    // brand-facing detail read, even by direct UUID (migration 031). Deal/IO
+    // surfaces resolve the show through show_profiles, not this route.
+    if (!show || show.is_discoverable === false) {
       return NextResponse.json({ error: "Show not found" }, { status: 404 });
     }
     return NextResponse.json({ show });

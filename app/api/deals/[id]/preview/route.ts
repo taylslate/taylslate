@@ -30,9 +30,23 @@ export async function GET(
   const brandProfile = await getBrandProfileByUserId(user.id);
   const showProfile = await getShowProfileByUserId(user.id);
   const ownsAsBrand = brandProfile?.id === deal.brand_profile_id;
-  const ownsAsShow = showProfile?.id === deal.show_profile_id;
+  const ownsAsShow = !!deal.show_profile_id && showProfile?.id === deal.show_profile_id;
   if (!ownsAsBrand && !ownsAsShow) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // The show accepted but hasn't onboarded yet — no show_profile to render the
+  // IO from. Expected state (deals are created at accept time), so return a
+  // clear signal the client can show instead of a generic 500.
+  if (!deal.show_profile_id) {
+    return NextResponse.json(
+      {
+        error:
+          "IO preview will be available once the show completes onboarding.",
+        code: "show_not_onboarded",
+      },
+      { status: 409 }
+    );
   }
 
   // Pull related entities. Use admin client so RLS doesn't block legitimate

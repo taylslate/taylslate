@@ -606,7 +606,10 @@ export interface Wave12Deal {
   id: string;
   outreach_id: string;
   brand_profile_id: string;
-  show_profile_id: string;
+  // Nullable: a deal is created at accept time even before the show onboards
+  // (backfilled by backfillShowProfileOnAcceptedDeals). Downstream reads must
+  // null-guard before using it (IO preview / DocuSign send).
+  show_profile_id: string | null;
   status: Wave12DealStatus;
 
   agreed_cpm: number;
@@ -693,6 +696,11 @@ export type DomainEventType =
   | "scale_show.promoted_to_test"
   // Wave 14 Phase 2D — per-deal promo code captured/edited at IO time
   | "deal.promo_code_set"
+  // Accept-flow cluster — onboarding backfill of show_profile_id onto deals
+  // created at accept time before the show onboarded. Audit signal so a
+  // 0-count (or ambiguous-email skip) after onboarding is not silent.
+  | "deal.show_profile_backfilled"
+  | "deal.backfill_ambiguous"
   // Layer 1 — founder test-deal seeding tool (fabricated planning-status deal
   // between the test brand + show accounts, for browser-verifying deal-view
   // surfaces). Marker event; payload carries { seeded: true, seed_batch, ids }.

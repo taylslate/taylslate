@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isBrandSide } from "@/lib/nav/items";
 import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
+import { logEvent } from "./events";
 import type {
   Profile,
   Show,
@@ -464,18 +465,31 @@ export async function getDealsFiltered(
   filters: { status?: string; show_id?: string; brand_id?: string }
 ): Promise<(Deal & { show_name?: string })[]> {
   const supabase = await createClient();
-  // Ownership is enforced by RLS on this request-scoped client: a user sees a
-  // deal via the legacy brand/agent/agency columns (migration 001) OR via the
-  // Wave-12 brand_profile / show_profile policies (migration 013). The old
-  // `.or(agent_id/brand_id/agency_id = userId)` filter is REMOVED — it excluded
-  // every Wave-12 deal (whose ownership lives on brand_profile_id /
-  // show_profile_id, never equal to the user id), so show accounts saw
-  // "No deals yet" despite an active deal. userId is retained for signature
-  // stability; RLS derives the viewer from the session JWT.
-  void userId;
+
+  // Ownership: RLS on this request-scoped client is the primary gate (deals
+  // policies in migrations 001 + 013). We ALSO apply an explicit app-side
+  // ownership predicate as defense-in-depth so a future permissive/regressed
+  // RLS policy can't silently over-expose the list. The predicate must cover
+  // BOTH legacy columns (agent/brand/agency_id = user id) AND Wave-12 ownership
+  // (brand_profile_id / show_profile_id resolved from the caller) — the old
+  // legacy-only `.or()` excluded every Wave-12 deal, which is why show accounts
+  // saw "No deals yet" despite an active deal.
+  const [brandProfile, showProfile] = await Promise.all([
+    getBrandProfileByUserId(userId),
+    getShowProfileByUserId(userId),
+  ]);
+  const ownershipClauses = [
+    `agent_id.eq.${userId}`,
+    `brand_id.eq.${userId}`,
+    `agency_id.eq.${userId}`,
+  ];
+  if (brandProfile?.id) ownershipClauses.push(`brand_profile_id.eq.${brandProfile.id}`);
+  if (showProfile?.id) ownershipClauses.push(`show_profile_id.eq.${showProfile.id}`);
+
   let query = supabase
     .from("deals")
     .select("*, shows!inner(name)")
+    .or(ownershipClauses.join(","))
     .order("updated_at", { ascending: false });
 
   if (filters.status) {
@@ -976,10 +990,13 @@ function flattenShowForDB(show: Record<string, unknown>): Record<string, unknown
 }
 
 export async function createShow(
-  showData: Partial<Show> & { name: string; platform: Platform }
+  showData: Partial<Show> & { name: string; platform: Platform; slug?: string }
 ): Promise<Show | null> {
-  // Use admin client to bypass RLS — shows table lacks INSERT policy for anon users
-  const slug = generateSlug(showData.name);
+  // Use admin client to bypass RLS — shows table lacks INSERT policy for anon users.
+  // An explicit slug lets internal materializers (accept-path non-catalog shows)
+  // claim a private slug namespace so they never dedup into — or get reused by —
+  // a discoverable catalog show. Everyone else derives the slug from the name.
+  const slug = showData.slug ?? generateSlug(showData.name);
 
   // New-show ingest applies the purchase-power proxy (Wave 14 Phase 2B
   // Layer 1) so every persisted show carries audience_purchase_power going
@@ -1725,6 +1742,15 @@ export async function completeShowProfile(
  * with a NULL show_profile_id has no RLS path for the show user (the migration
  * 013 show policy keys on show_profile_id), so the service role performs the
  * update. Fail-soft: never throws; returns the number of deals linked.
+ *
+ * AMBIGUITY GUARD (Codex P3): email alone is a weak identity signal. Before
+ * attributing any deal we require that exactly ONE 'show'-role account uses this
+ * email. If two show accounts share an email we cannot safely decide whose
+ * accepted deals these are, so we SKIP and emit `deal.backfill_ambiguous` for
+ * manual admin resolution rather than risk cross-attributing one creator's deal
+ * to another. (In practice Supabase auth enforces unique emails, so this is
+ * defense-in-depth.) A non-zero link and the ambiguous skip both emit a domain
+ * event, so the outcome is auditable — never a silent 0.
  */
 export async function backfillShowProfileOnAcceptedDeals(
   showProfileId: string,
@@ -1732,11 +1758,32 @@ export async function backfillShowProfileOnAcceptedDeals(
 ): Promise<number> {
   const { data: profile } = await supabaseAdmin
     .from("profiles")
-    .select("email")
+    .select("email, role")
     .eq("id", userId)
     .maybeSingle();
   const email = (profile as { email?: string } | null)?.email;
-  if (!email) return 0;
+  const role = (profile as { role?: string } | null)?.role;
+  if (!email || role !== "show") return 0;
+
+  // Ambiguity guard: more than one show account on this email → do not guess.
+  const { data: shareholders } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("role", "show")
+    .ilike("email", email);
+  if ((shareholders?.length ?? 0) > 1) {
+    await logEvent({
+      eventType: "deal.backfill_ambiguous",
+      entityType: "profile",
+      entityId: userId,
+      payload: {
+        show_profile_id: showProfileId,
+        email,
+        show_account_count: shareholders?.length ?? 0,
+      },
+    });
+    return 0;
+  }
 
   const { data: outreaches } = await supabaseAdmin
     .from("outreaches")
@@ -1755,7 +1802,16 @@ export async function backfillShowProfileOnAcceptedDeals(
     console.error("[backfillShowProfileOnAcceptedDeals] Error:", error.message);
     return 0;
   }
-  return (linked ?? []).length;
+  const dealIds = (linked ?? []).map((d) => (d as { id: string }).id);
+  if (dealIds.length) {
+    await logEvent({
+      eventType: "deal.show_profile_backfilled",
+      entityType: "profile",
+      entityId: userId,
+      payload: { show_profile_id: showProfileId, deal_ids: dealIds, count: dealIds.length },
+    });
+  }
+  return dealIds.length;
 }
 
 // ---- Outreach Queries (Wave 11) ----
@@ -1865,9 +1921,14 @@ export interface CreateWave12DealInput {
  * is_discoverable=false so this transaction artifact never leaks into shared
  * brand discovery (promotion into discovery is a deliberate post-launch flip,
  * migration 031). Returns null only if materialization failed (the caller then
- * skips deal creation). NOTE: createShow dedups by slug, so a non-catalog name
- * that collides with an existing catalog show reuses that row (and does NOT
- * flip its flag).
+ * skips deal creation).
+ *
+ * The materialized row is given an OUTREACH-SCOPED slug (`otr-<id8>-<name>`) so
+ * it lives in a private slug namespace: it can never dedup into a discoverable
+ * catalog show (which would hijack that brand's real show), and a later
+ * discovery persist of a same-named show can never reuse this private row
+ * (createShow / getShowBySlug key on slug). The slug is deterministic per
+ * outreach, so a re-accept of the same outreach reuses the same row (idempotent).
  */
 export async function resolveOrMaterializeShowIdForOutreach(
   outreach: Outreach
@@ -1875,6 +1936,8 @@ export async function resolveOrMaterializeShowIdForOutreach(
   if (outreach.show_id) return outreach.show_id;
   const show = await createShow({
     name: outreach.show_name,
+    // Private, deterministic per-outreach slug — see the doc comment above.
+    slug: `otr-${outreach.id.slice(0, 8)}-${generateSlug(outreach.show_name)}`,
     // The outreach carries no medium; podcast is the launch default. If the
     // show later onboards as YouTube, its show_profile captures that — the
     // catalog row's platform is not load-bearing for the deal.

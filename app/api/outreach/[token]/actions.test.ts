@@ -109,6 +109,22 @@ beforeEach(() => {
   adminBuilder.maybeSingle.mockResolvedValue({ data: null, error: null });
   getWave12DealByOutreachId.mockResolvedValue(null);
   resolveOrMaterializeShowIdForOutreach.mockResolvedValue("show-mat-1");
+  // Accept now creates the deal BEFORE flipping the outreach to accepted
+  // (atomicity), so the accept path needs a deal to come back.
+  createWave12Deal.mockResolvedValue({
+    id: "deal-acc-1",
+    outreach_id: "o1",
+    brand_profile_id: "bp1",
+    show_profile_id: null,
+    agreed_cpm: 28,
+    agreed_episode_count: 3,
+    agreed_placement: "mid-roll",
+    agreed_flight_start: "2026-05-01",
+    agreed_flight_end: "2026-05-31",
+    status: "planning",
+    created_at: "",
+    updated_at: "",
+  });
 });
 
 describe("POST /api/outreach/[token]/accept", () => {

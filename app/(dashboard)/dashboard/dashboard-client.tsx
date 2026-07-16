@@ -71,7 +71,12 @@ export default function DashboardClient({ role }: { role: UserRole }) {
         const invoices = Array.isArray(invoicesRes.invoices) ? invoicesRes.invoices : [];
         const stats = invoicesRes.stats ?? {};
 
-        const activeStatuses = ["proposed", "negotiating", "approved", "io_sent", "signed", "live"];
+        const activeStatuses = [
+          // legacy
+          "proposed", "negotiating", "approved", "signed",
+          // Wave-12 lifecycle (a freshly accepted deal is "planning")
+          "planning", "io_sent", "brand_signed", "show_signed", "live", "delivering",
+        ];
         const activeDeals = deals.filter((d) => activeStatuses.includes(d.status));
         const pipelineValue = activeDeals.reduce((s, d) => s + (d.total_net ?? 0), 0);
 

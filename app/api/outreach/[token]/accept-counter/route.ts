@@ -89,20 +89,9 @@ export async function POST(
     return NextResponse.json({ deal: existing, alreadyExisted: true });
   }
 
-  // Move the outreach to "accepted" with the countered CPM as the agreed CPM.
-  const { data: updated, error: updateErr } = await supabaseAdmin
-    .from("outreaches")
-    .update({
-      response_status: "accepted",
-      responded_at: new Date().toISOString(),
-    })
-    .eq("id", outreach.id)
-    .select()
-    .single();
-  if (updateErr || !updated) {
-    return NextResponse.json({ error: "Failed to update outreach" }, { status: 500 });
-  }
-
+  // Atomicity (Codex P6): create the deal BEFORE flipping the outreach to
+  // "accepted". A failure here must leave the outreach in `countered` (still
+  // actionable) rather than a terminal `accepted` with no deal and no retry.
   // deals.show_id is NOT NULL — resolve the catalog show or materialize a
   // non-discoverable one from the outreach (migration 031).
   const showId = await resolveOrMaterializeShowIdForOutreach(outreach);
@@ -124,6 +113,22 @@ export async function POST(
   });
   if (!deal) {
     return NextResponse.json({ error: "Failed to create deal" }, { status: 500 });
+  }
+
+  // Deal exists — now commit the outreach to "accepted" with the countered CPM
+  // as the agreed CPM. If this update fails the deal already exists, so the
+  // idempotency guard above short-circuits a retry cleanly.
+  const { data: updated, error: updateErr } = await supabaseAdmin
+    .from("outreaches")
+    .update({
+      response_status: "accepted",
+      responded_at: new Date().toISOString(),
+    })
+    .eq("id", outreach.id)
+    .select()
+    .single();
+  if (updateErr || !updated) {
+    return NextResponse.json({ error: "Failed to update outreach" }, { status: 500 });
   }
 
   // Two events — counter_accepted captures the negotiation outcome,

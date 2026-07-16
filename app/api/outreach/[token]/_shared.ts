@@ -146,7 +146,62 @@ function siteOrigin(request: Request): string {
 export async function applyAndNotify(
   args: NotifyArgs
 ): Promise<{ outreach: Outreach; deal?: Wave12Deal } | { error: string; status: number }> {
-  const updated = await updateOutreachResponse(args.resolved.outreach.id, {
+  const outreach = args.resolved.outreach;
+
+  // Wave 12 atomicity (Codex P6): when a show accepts, create the Deal BEFORE
+  // flipping the outreach to "accepted". If deal creation fails we return an
+  // error and leave the outreach `pending` (still actionable) — never a terminal
+  // `accepted` with no deal and a false "accepted" email to the brand. Reads use
+  // the pre-update outreach snapshot (id / brand_profile_id / proposed_* are
+  // unchanged by the status flip). deals.show_id is NOT NULL; show_profile_id is
+  // nullable and backfilled at onboarding, so the deal is created even if the
+  // show hasn't onboarded yet.
+  let createdDeal: Wave12Deal | undefined;
+  let dealJustCreated = false;
+  let materializedShowId: string | undefined;
+  let resolvedShowProfileId: string | null | undefined;
+  if (args.status === "accepted") {
+    const existing = await getWave12DealByOutreachId(outreach.id);
+    if (existing) {
+      createdDeal = existing;
+    } else {
+      const showId = await resolveOrMaterializeShowIdForOutreach(outreach);
+      if (!showId) {
+        return {
+          error: "Couldn't resolve a show for this opportunity — please retry",
+          status: 500,
+        };
+      }
+      const showProfileId = await resolveShowProfileIdForOutreach(outreach);
+      const dealResult = await createWave12Deal({
+        outreach_id: outreach.id,
+        brand_profile_id: outreach.brand_profile_id,
+        brand_id: args.resolved.brandProfile.user_id,
+        show_id: showId,
+        show_profile_id: showProfileId,
+        agreed_cpm: outreach.proposed_cpm,
+        agreed_episode_count: outreach.proposed_episode_count,
+        agreed_placement: outreach.proposed_placement,
+        agreed_flight_start: outreach.proposed_flight_start,
+        agreed_flight_end: outreach.proposed_flight_end,
+      });
+      if (!dealResult) {
+        return {
+          error: "Couldn't create the deal for this opportunity — please retry",
+          status: 500,
+        };
+      }
+      createdDeal = dealResult;
+      dealJustCreated = true;
+      materializedShowId = showId;
+      resolvedShowProfileId = showProfileId;
+    }
+  }
+
+  // Deal (if any) is now committed — record the response. For an accept, the
+  // deal already exists, so a failure here self-heals on retry via the
+  // idempotency guard above rather than orphaning an accepted outreach.
+  const updated = await updateOutreachResponse(outreach.id, {
     response_status: args.status,
     responded_at: new Date().toISOString(),
     counter_cpm: args.counter_cpm ?? null,
@@ -155,56 +210,18 @@ export async function applyAndNotify(
   });
   if (!updated) return { error: "Failed to record response", status: 500 };
 
-  // Wave 12: when a show accepts, materialize a Deal so the brand can begin
-  // signing. We need a show_profile_id to satisfy the FK; if the show isn't
-  // onboarded yet we skip deal creation here and the caller will create it
-  // after onboarding completes (via the post-magic-link return flow).
-  let createdDeal: Wave12Deal | undefined;
-  if (args.status === "accepted") {
-    const existing = await getWave12DealByOutreachId(updated.id);
-    if (existing) {
-      createdDeal = existing;
-    } else {
-      // deals.show_id is NOT NULL: resolve the catalog show, or materialize a
-      // non-discoverable one from the outreach. deals.show_profile_id is
-      // nullable and backfilled when the show later onboards — so the deal is
-      // created at accept time even if the show hasn't onboarded yet.
-      const showId = await resolveOrMaterializeShowIdForOutreach(updated);
-      if (!showId) {
-        console.error(
-          "[applyAndNotify] could not resolve/materialize show_id — deal not created",
-          updated.id
-        );
-      } else {
-        const showProfileId = await resolveShowProfileIdForOutreach(updated);
-        const dealResult = await createWave12Deal({
-          outreach_id: updated.id,
-          brand_profile_id: updated.brand_profile_id,
-          brand_id: args.resolved.brandProfile.user_id,
-          show_id: showId,
-          show_profile_id: showProfileId,
-          agreed_cpm: updated.proposed_cpm,
-          agreed_episode_count: updated.proposed_episode_count,
-          agreed_placement: updated.proposed_placement,
-          agreed_flight_start: updated.proposed_flight_start,
-          agreed_flight_end: updated.proposed_flight_end,
-        });
-        if (dealResult) {
-          createdDeal = dealResult;
-          await logEvent({
-            eventType: "deal.created",
-            entityType: "deal",
-            entityId: dealResult.id,
-            payload: {
-              deal: dealResult,
-              outreach: updated,
-              show_id: showId,
-              show_profile_id: showProfileId,
-            },
-          });
-        }
-      }
-    }
+  if (dealJustCreated && createdDeal) {
+    await logEvent({
+      eventType: "deal.created",
+      entityType: "deal",
+      entityId: createdDeal.id,
+      payload: {
+        deal: createdDeal,
+        outreach: updated,
+        show_id: materializedShowId,
+        show_profile_id: resolvedShowProfileId,
+      },
+    });
   }
 
   const brandName =

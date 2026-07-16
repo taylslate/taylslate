@@ -7,11 +7,39 @@ import {
   deleteDeal,
   getWave12DealById,
   getOutreachById,
+  getBrandProfileByUserId,
+  getShowProfileByUserId,
 } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { DealStatus, BrandProfile, ShowProfile } from "@/lib/data/types";
 
 const VALID_STATUSES: DealStatus[] = ["planning", "io_sent", "live", "completed"];
+
+// Ownership gate for a single deal. These routes read/mutate via the admin
+// client (which bypasses RLS), so authorization MUST be enforced here — without
+// it any authenticated user could read or mutate any deal by UUID. Covers both
+// legacy ownership (brand/agent/agency_id = user, migration 001) and Wave-12
+// ownership (brand_profile_id / show_profile_id resolved from the caller,
+// migration 013). `deal` is the raw row so both column families are present.
+async function callerOwnsDeal(
+  userId: string,
+  deal: Record<string, unknown>
+): Promise<boolean> {
+  if (
+    deal.brand_id === userId ||
+    deal.agent_id === userId ||
+    deal.agency_id === userId
+  ) {
+    return true;
+  }
+  const [brandProfile, showProfile] = await Promise.all([
+    getBrandProfileByUserId(userId),
+    getShowProfileByUserId(userId),
+  ]);
+  if (deal.brand_profile_id && brandProfile?.id === deal.brand_profile_id) return true;
+  if (deal.show_profile_id && showProfile?.id === deal.show_profile_id) return true;
+  return false;
+}
 
 // Valid status transitions
 const VALID_TRANSITIONS: Record<DealStatus, DealStatus[]> = {
@@ -34,6 +62,17 @@ export async function GET(
     const { id } = await params;
     console.log(`[GET /api/deals/${id}] user=${user.id} email=${user.email}`);
 
+    // Authorization: these handlers use the admin client, so ownership must be
+    // checked here. Load the raw row once and gate before returning any data.
+    const dealRow = await getDealById(id);
+    if (!dealRow) {
+      return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
+    if (!(await callerOwnsDeal(user.id, dealRow as unknown as Record<string, unknown>))) {
+      // 404 (not 403) so a non-owner can't probe which deal UUIDs exist.
+      return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
+
     const deal = await getDealWithRelations(id);
 
     if (deal && deal.show_name) {
@@ -52,11 +91,15 @@ export async function GET(
         .select("id, brand_identity, brand_website")
         .eq("id", wave12.brand_profile_id)
         .single();
-      const { data: sp } = await supabaseAdmin
-        .from("show_profiles")
-        .select("id, show_name")
-        .eq("id", wave12.show_profile_id)
-        .single();
+      // show_profile_id is null until the show onboards — skip the lookup and
+      // fall back to the outreach's show_name below.
+      const { data: sp } = wave12.show_profile_id
+        ? await supabaseAdmin
+            .from("show_profiles")
+            .select("id, show_name")
+            .eq("id", wave12.show_profile_id)
+            .single()
+        : { data: null };
       const brandName =
         (bp as BrandProfile | null)?.brand_identity?.split(/[.,—–-]/)[0]?.trim() ||
         (bp as BrandProfile | null)?.brand_website ||
@@ -93,6 +136,9 @@ export async function PATCH(
     const existing = await getDealById(id);
 
     if (!existing) {
+      return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
+    if (!(await callerOwnsDeal(user.id, existing as unknown as Record<string, unknown>))) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
@@ -164,6 +210,9 @@ export async function DELETE(
     const existing = await getDealById(id);
 
     if (!existing) {
+      return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
+    if (!(await callerOwnsDeal(user.id, existing as unknown as Record<string, unknown>))) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
