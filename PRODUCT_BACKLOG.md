@@ -18,9 +18,9 @@ Wave model continues as the execution unit. Items get pulled from the backlog in
 
 Items that were on the backlog and are now live in production.
 
-## Accept-flow launch-blocker cluster — SHIPPED + Codex-clean, PENDING LIVE VERIFY (July 16, 2026)
+## Accept-flow launch-blocker cluster — SHIPPED + Codex-clean + LIVE-VERIFIED (July 16, 2026)
 
-The PRE-LAUNCH accept-flow cluster (#1 NOT-NULL, #2 show-side visibility, #3 flight-date) is **built, Codex-clean across three review passes, and merged to `main`** — but **NOT yet live-verified** end-to-end against a real accept, and (as of this writing) **pending push + Vercel deploy confirmation**. Do not call it launch-done until a real outreach→accept→onboard→deal-visible→backfill loop has been exercised.
+The PRE-LAUNCH accept-flow cluster (#1 NOT-NULL, #2 show-side visibility, #3 flight-date) is **built, Codex-clean across three review passes, merged to `main`, pushed + Vercel-green, and LIVE-VERIFIED end-to-end in prod July 16**. A real outreach→accept→onboard→deal-visible→backfill loop ran clean for both variants — **launch-done**.
 
 **Resolved product decision (unblocks #1):** accepting a non-catalog outreach **materializes a `shows` row flagged `is_discoverable=false`** (migration 031) — excluded from all shared discovery/catalog reads. Promotion into discovery is a deliberate post-launch flag flip (not built). Seeds carry the same flag.
 
@@ -30,7 +30,7 @@ The PRE-LAUNCH accept-flow cluster (#1 NOT-NULL, #2 show-side visibility, #3 fli
 - **#3 (flight-date):** date-only values render in UTC across Agreed Terms, IO document, and legacy view; IO line-item generation advances via `setUTCDate`.
 - **Security byproduct (Codex, pre-existing):** `deals/[id]` GET/PATCH/DELETE were unauthenticated-owner (any authed user could read/mutate any deal by UUID) — now gated by `callerOwnsDeal` (legacy + Wave-12 ownership, 404 to non-owners); public `shows/[id]` GET 404s non-discoverable rows; `getDealsFiltered` has an explicit app-side ownership predicate as defense-in-depth over RLS.
 - **Verification:** 989 tests (89 files, +5 authz-gate), tsc + eslint clean, `next build` green. **Codex clean across three passes** (e3c09e7 review → 7642808 fixes → bdca1a9 re-review → e971656 final; verdict LAUNCH-READY, no new findings). Commits `e3c09e7` + `7642808` + `bdca1a9` + `e971656`.
-- **NOT DONE:** live verify of a real accept loop (magic-link/DocuSign can't be exercised in tests) — the one remaining gate before this is launch-done.
+- **LIVE-VERIFIED July 16:** real accept loop exercised in prod for both variants — §1 catalog (deal created at accept; brand + show both see the deal; flight dates correct on deal view + IO), §2 non-catalog (materialize + backfill confirmed via real onboarding). Teardown cascade clean incl. the materialized `shows` row. Operational note: the teardown `DELETE` must be run from an `isInternalAdmin` session — it correctly 403s if the caller's live session is the accept-side account (the `chris+seedotr` alias / impersonated show); the gate is right, not a bug.
 
 ## Wave 14 Phase 1 — Discovery Agent Foundation (shipped April 30, 2026)
 
@@ -134,8 +134,8 @@ Brands email/password, shows magic-link+OTP. Target: magic-link+OTP for all. Not
 ### ~~Onboarding role picker offers Show/Creator to a password signup~~ — RESOLVED July 8, 2026 (Layer 2)
 `ONBOARDING_ROLES` (`app/onboarding/roles.tsx`) no longer offers Show/Creator; shows onboard only via the magic-link+OTP outreach path. Was: a password-signup user picking Show got `profiles.role=show` + a password-based show account (not a crash — email-collision with a later outreach magic link was already handled by `/api/auth/magic`'s find-by-email reuse — but a model-integrity/GTM gap). Closed by hiding the card as part of the keep-passwords decision.
 
-### ~~Accept-flow deal creation — launch-blocker cluster~~ — BUILT + Codex-clean, PENDING LIVE VERIFY (July 16, 2026)
-Surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). **Fix shipped to `main` July 16** (migration 031 + commits `e3c09e7`/`7642808`/`bdca1a9`/`e971656`, Codex-clean across three passes) — full detail in the SHIPPED section above. The parked product decision was resolved: a non-catalog accept materializes a **non-discoverable** `shows` row. **Still gated on a live-verify of a real accept loop before the friends test** (magic-link/DocuSign aren't exercised by the test suite). Original problem statements retained below for reference.
+### ~~Accept-flow deal creation — launch-blocker cluster~~ — SHIPPED + Codex-clean + LIVE-VERIFIED (July 16, 2026)
+Surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). **Fix shipped to `main` July 16** (migration 031 + commits `e3c09e7`/`7642808`/`bdca1a9`/`e971656`, Codex-clean across three passes) — full detail in the SHIPPED section above. The parked product decision was resolved: a non-catalog accept materializes a **non-discoverable** `shows` row. **Live-verified end-to-end in prod July 16** (both variants + clean teardown) — launch gate cleared. Original problem statements retained below for reference.
 
 **#1 — Accept-flow NOT-NULL bug.** `createWave12Deal` never set `deals.brand_id` / `deals.show_id` (both NOT NULL); the first real outreach-accept would fail. → Both set at accept (`brand_id`=`brand_profiles.user_id`; `show_id` via `resolveOrMaterializeShowIdForOutreach`). Deal now created at accept time even pre-onboarding (`show_profile_id` nullable + onboarding backfill).
 
@@ -181,7 +181,7 @@ Surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). *
 
 ### ~~Flight-date off-by-one across surfaces~~ — SHIPPED July 16, 2026 (accept-flow cluster #3)
 - Was: the Agreed Terms panel showed Jul 20–Aug 17 where the IO document showed Jul 21–Aug 18 (same deal, both roles) — date-only string parsed as UTC then rendered in local TZ on one surface but not the other.
-- **Fixed** (commit `e3c09e7`): date-only values render in UTC across the Agreed Terms panel, IO document, and legacy deal view; IO line-item generation advances via `setUTCDate`. Shipped as part of the accept-flow cluster (see SHIPPED). Pending the same live-verify as the rest of the cluster.
+- **Fixed** (commit `e3c09e7`): date-only values render in UTC across the Agreed Terms panel, IO document, and legacy deal view; IO line-item generation advances via `setUTCDate`. Shipped as part of the accept-flow cluster (see SHIPPED). **Live-verified July 16** — flight dates confirmed correct on the deal view + IO during the real accept loop.
 
 ### Auth unification
 - **Moved to Operational Unblock** (see "Auth hardening — brand email/password path" [LAUNCH-BLOCKER] and "Auth unification (deferred, post-launch acceptable)"). The launch bar is the hardening item; full magic-link+OTP unification is post-launch acceptable.

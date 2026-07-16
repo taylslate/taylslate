@@ -1,21 +1,21 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 16, 2026 — **accept-flow launch-blocker cluster BUILT + Codex-clean (three passes), merged to `main`, PENDING LIVE VERIFY** — now with an **accept-path seeding tool** (`POST /api/admin/seed-outreach`, both variants) so the real outreach→accept loop can be driven end-to-end + torn down. 1003 tests (91 files), tsc/eslint/`next build` clean. Migration 031 (`shows.is_discoverable`) applied + introspected. Resolved the parked product decision: a non-catalog accept materializes a **non-discoverable** `shows` row. Fixes #1 (accept NOT-NULL deal creation, brand_id/show_id + at-accept-time creation + onboarding backfill), #2 (show-side deal visibility), #3 (flight-date off-by-one) — plus a pre-existing `deals/[id]` authz-bypass byproduct. Commits `e3c09e7`/`7642808`/`bdca1a9`/`e971656` (+ this doc commit). 989 tests passing (89 files), tsc + eslint clean, `next build` green, Codex verdict LAUNCH-READY. **NOT yet live-verified (real accept loop) and — as of this writing — pending push + Vercel deploy confirmation.** Brand auth hardening COMPLETE (L1-3, verified live July 8-9). Impersonation + seeding tools COMPLETE (verified live July 7). Wave 14 Phase 2D COMPLETE._
+_Volatile snapshot. Updated July 16, 2026 — **accept-flow launch-blocker cluster SHIPPED + Codex-clean (three passes) + LIVE-VERIFIED July 16** — the real outreach→accept loop was driven end-to-end in prod via the **accept-path seeding tool** (`POST /api/admin/seed-outreach`, both variants) and torn down clean. 1003 tests (91 files), tsc/eslint/`next build` clean. Migration 031 (`shows.is_discoverable`) applied + introspected. Resolved the parked product decision: a non-catalog accept materializes a **non-discoverable** `shows` row. Fixes #1 (accept NOT-NULL deal creation, brand_id/show_id + at-accept-time creation + onboarding backfill), #2 (show-side deal visibility), #3 (flight-date off-by-one) — plus a pre-existing `deals/[id]` authz-bypass byproduct. Commits `e3c09e7`/`7642808`/`bdca1a9`/`e971656`/`a3b1856` (+ this doc commit). **Live verify (July 16):** §1 catalog — deal created at accept, brand + show both see it, flight dates correct on deal view + IO; §2 non-catalog — materialize + backfill confirmed via real onboarding; teardown cascade clean incl. the materialized `shows` row. Codex verdict LAUNCH-READY, now live-confirmed. Brand auth hardening COMPLETE (L1-3, verified live July 8-9). Impersonation + seeding tools COMPLETE (verified live July 7). Wave 14 Phase 2D COMPLETE._
 
 ## Most recent — accept-path seeding tool (drive the real accept loop live) SHIPPED (July 16, 2026)
 
-Extends the founder seeding tools so the **accept-flow cluster's fixes can be executed live** — the existing `seed-deal` fabricates a finished planning deal *directly*, bypassing the accept path, so the cluster's code had never run under real conditions. Schema-free — **NO migration** (confirmed). Do not treat the accept cluster as launch-done until the live-verify script below runs clean.
+Extends the founder seeding tools so the **accept-flow cluster's fixes can be executed live** — the existing `seed-deal` fabricates a finished planning deal *directly*, bypassing the accept path, so the cluster's code had never run under real conditions. Schema-free — **NO migration** (confirmed). **Live-verify ran clean July 16** (both variants + teardown — see the accept-flow SHIPPED section below).
 
 - **`POST /api/admin/seed-outreach`** (same `isInternalAdmin` gate + service-role pattern as `seed-deal`) seeds a `[SEED]` campaign + a **`pending`** outreach carrying a **real HMAC token** (`signOutreachToken` → `/outreach/<token>` verifies exactly like a production send), brand hardwired to `brand1`. `variant` is the only client input:
   - **`catalog`** → seeds a `[SEED]` non-discoverable show; `outreach.show_id` points at it; `sent_to_email` = the onboarded `show1`, so accept sets `show_profile_id` at accept time and the deal is show-visible immediately.
   - **`non_catalog`** → `show_id` null; `show_name` `[SEED]`-prefixed + a fresh `chris+seedotr-<nonce>@taylslate.com` alias (routes to the real inbox, un-onboarded each run), so accept **materializes** a non-discoverable `shows` row (`otr-<id8>` slug, null `show_profile_id`), then onboarding **backfills** the deal.
   - Returns `{ variant, outreachId, acceptUrl, sentToEmail, seededEntityIds }`. Fires an `outreach.seeded` marker event (new `DomainEventType`). No email side effects (never calls the send path).
 - **Teardown extended** (`DELETE /api/admin/seed-deal`) to cascade accept-path artifacts: (1) scans **both** `deal.seeded` + `outreach.seeded` markers; (2) a **materialized show** from a non-catalog accept is discovered belt-and-suspenders — `[SEED]` name prefix **OR** its private `otr-<outreachId8>-` slug (scoped to seeded-outreach linkage) — and unioned into the shows delete, so it can never survive teardown. Existing financial-records RESTRICT guard + surviving-deal backstop intact.
-- **Verification:** +22 route tests (gating; both variants; accept-URL token verifies via the real secret; teardown cascades outreach→deal→materialized show; markers-only safety; catalog + non-catalog paths). Suite **1003 passing** (91 files), tsc + eslint clean, `next build` green, new route registered. **Live-verify script handed to Chris (not yet run).**
+- **Verification:** +22 route tests (gating; both variants; accept-URL token verifies via the real secret; teardown cascades outreach→deal→materialized show; markers-only safety; catalog + non-catalog paths). Suite **1003 passing** (91 files), tsc + eslint clean, `next build` green, new route registered. **Live-verify RAN CLEAN July 16** — both variants driven end-to-end in prod, teardown cascade removed the materialized `shows` row (Shows count returned to baseline). One operational gotcha surfaced + resolved: the teardown `DELETE` 403s if the caller's live session is the accept-side account (the `chris+seedotr` alias / impersonated show) rather than an `isInternalAdmin` session — the gate is correct, the fix is to run teardown from the admin session (not a code change).
 
-## Most recent — accept-flow launch-blocker cluster BUILT + Codex-clean (3 passes), PENDING LIVE VERIFY (July 16, 2026)
+## Most recent — accept-flow launch-blocker cluster SHIPPED + Codex-clean (3 passes) + LIVE-VERIFIED (July 16, 2026)
 
-The July 7 accept-flow cluster is **fixed and merged to `main`, Codex-clean across three review passes** — but **not yet live-verified** end-to-end, and (at time of writing) **not yet confirmed pushed / Vercel-green**. Do not treat as launch-done until a real outreach→accept→onboard→deal-visible→backfill loop runs.
+The July 7 accept-flow cluster is **fixed, merged to `main`, Codex-clean across three review passes, and LIVE-VERIFIED end-to-end in prod July 16**. A real outreach→accept→onboard→deal-visible→backfill loop ran clean for both variants: §1 catalog (deal created at accept; brand + show both see the deal; flight dates correct on deal view + IO), §2 non-catalog (materialize + backfill confirmed via real onboarding). Teardown cascade clean including the materialized `shows` row. **Launch-done.**
 
 **Resolved product decision:** accepting a NON-catalog outreach **materializes a `shows` row flagged `is_discoverable=false`** (migration 031) — excluded from all shared discovery/catalog reads. Promotion into discovery is a deliberate post-launch flag flip (NOT built). Seeds carry the same flag.
 
@@ -25,7 +25,7 @@ The July 7 accept-flow cluster is **fixed and merged to `main`, Codex-clean acro
 - **#3 (flight-date, `e3c09e7`):** date-only values render in UTC across Agreed Terms, IO document, legacy view; IO line-item generation advances via `setUTCDate`.
 - **Security byproduct (Codex, pre-existing — `7642808`):** `deals/[id]` GET/PATCH/DELETE were admin-client reads/mutations with NO ownership check — any authed user could read/mutate any deal by UUID. Now gated by `callerOwnsDeal` (legacy + Wave-12 ownership; 404 to non-owners so UUIDs aren't probeable; new `route.test.ts`). Public `shows/[id]` GET 404s non-discoverable rows.
 - **Codex loop:** `e3c09e7` (build) → review found the authz bypass + accept non-atomicity + backfill-email + null-`show_profile_id` + slug-collision → `7642808` (fixes) → re-review PARTIAL on accept-counter reconcile + null guards → `bdca1a9` → final pass RESOLVED, one residual null lookup → `e971656`. **Final verdict: LAUNCH-READY, no new findings.**
-- **Verification:** **989 tests** (89 files, +5 authz-gate), tsc + eslint clean (pre-existing warnings only), **`next build` green**. **NOT DONE:** live verify of a real accept loop — the one remaining gate before launch-done — and (at time of writing) push + Vercel deploy confirmation.
+- **Verification:** **989 tests** (89 files, +5 authz-gate), tsc + eslint clean (pre-existing warnings only), **`next build` green**. **LIVE-VERIFIED July 16** — real accept loop exercised in prod for both variants (deal-at-accept, brand + show visibility, flight dates on deal view + IO, materialize + backfill via real onboarding, clean teardown). Pushed + Vercel-green. The last launch gate is cleared.
 
 ## Most recent — brand auth hardening Layer 3 (Turnstile bot protection) COMPLETE — live-verified with CAPTCHA ON (July 9, 2026)
 
@@ -195,15 +195,14 @@ shipped + verified live July 8, L3 (Turnstile) live-verified July 9 with the
 CAPTCHA toggle ON (Codex clean throughout). Build-vs-unify decision: keep
 passwords for launch, unify post-launch. Role-picker Show/Creator gap closed in L2.
 
-**Accept-flow cluster BUILT + Codex-clean (three passes), PENDING LIVE VERIFY** (see
-"Most recent" above + PRODUCT_BACKLOG.md → SHIPPED). All three bugs (#1 NOT-NULL,
-#2 show-side visibility, #3 flight-date) + the pre-existing `deals/[id]` authz
-byproduct are fixed and merged to `main`; the parked product decision is resolved
-(non-catalog accept → non-discoverable `shows` row, migration 031). **The one
-remaining gate is a live verify** of a real accept loop
-(outreach→accept→onboard→deal-visible→backfill) — magic-link/DocuSign can't be
-exercised by the test suite. Run it via the seed→impersonate loop or a friends-test
-outreach before calling this launch-done. Also confirm push + Vercel deploy green.
+**Accept-flow cluster SHIPPED + Codex-clean (three passes) + LIVE-VERIFIED July 16 —
+launch gate CLEARED** (see "Most recent" above + PRODUCT_BACKLOG.md → SHIPPED). All
+three bugs (#1 NOT-NULL, #2 show-side visibility, #3 flight-date) + the pre-existing
+`deals/[id]` authz byproduct are fixed, merged to `main`, and confirmed against a
+real accept loop in prod; the parked product decision is resolved (non-catalog accept
+→ non-discoverable `shows` row, migration 031). Live verify covered both variants
+(deal-at-accept, brand + show visibility, flight dates on deal view + IO, materialize
++ backfill via real onboarding) and a clean teardown cascade. Pushed + Vercel-green.
 
 Optional polish carried in the backlog: **sidebar buttons for seed/teardown**
 (the loop is endpoint-only today). 2C Layer 5 (overrides + recompute) remains
