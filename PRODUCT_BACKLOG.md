@@ -18,6 +18,20 @@ Wave model continues as the execution unit. Items get pulled from the backlog in
 
 Items that were on the backlog and are now live in production.
 
+## Accept-flow launch-blocker cluster — SHIPPED + Codex-clean, PENDING LIVE VERIFY (July 16, 2026)
+
+The PRE-LAUNCH accept-flow cluster (#1 NOT-NULL, #2 show-side visibility, #3 flight-date) is **built, Codex-clean across three review passes, and merged to `main`** — but **NOT yet live-verified** end-to-end against a real accept, and (as of this writing) **pending push + Vercel deploy confirmation**. Do not call it launch-done until a real outreach→accept→onboard→deal-visible→backfill loop has been exercised.
+
+**Resolved product decision (unblocks #1):** accepting a non-catalog outreach **materializes a `shows` row flagged `is_discoverable=false`** (migration 031) — excluded from all shared discovery/catalog reads. Promotion into discovery is a deliberate post-launch flag flip (not built). Seeds carry the same flag.
+
+- **Migration 031** (`shows.is_discoverable BOOLEAN NOT NULL DEFAULT TRUE`) — applied + introspected in prod (52 existing shows all TRUE) before any dependent code.
+- **#1 (accept NOT-NULL):** both accept paths (`_shared.ts` applyAndNotify + `accept-counter`) set `brand_id` (=`brand_profiles.user_id`) and `show_id` (catalog `outreach.show_id` else a materialized non-discoverable row via `resolveOrMaterializeShowIdForOutreach`, which uses a private `otr-<id8>-` slug namespace so it can't hijack or be reused by a catalog show). Deal is created **at accept time even before the show onboards** (`show_profile_id` nullable); `completeShowProfile` → `backfillShowProfileOnAcceptedDeals` links it on onboarding (role=show + single-account-per-email ambiguity guard + audit events). Accept is **atomic** — deal created before the outreach flips to accepted; accept-counter reconciles a stuck `countered` on retry.
+- **#2 (show-side visibility):** `getDealsFiltered` now honors Wave-12 ownership (`brand_profile_id`/`show_profile_id`) plus legacy columns; deals kanban + dashboard status maps/counts extended to the full Wave-12 lifecycle set.
+- **#3 (flight-date):** date-only values render in UTC across Agreed Terms, IO document, and legacy view; IO line-item generation advances via `setUTCDate`.
+- **Security byproduct (Codex, pre-existing):** `deals/[id]` GET/PATCH/DELETE were unauthenticated-owner (any authed user could read/mutate any deal by UUID) — now gated by `callerOwnsDeal` (legacy + Wave-12 ownership, 404 to non-owners); public `shows/[id]` GET 404s non-discoverable rows; `getDealsFiltered` has an explicit app-side ownership predicate as defense-in-depth over RLS.
+- **Verification:** 989 tests (89 files, +5 authz-gate), tsc + eslint clean, `next build` green. **Codex clean across three passes** (e3c09e7 review → 7642808 fixes → bdca1a9 re-review → e971656 final; verdict LAUNCH-READY, no new findings). Commits `e3c09e7` + `7642808` + `bdca1a9` + `e971656`.
+- **NOT DONE:** live verify of a real accept loop (magic-link/DocuSign can't be exercised in tests) — the one remaining gate before this is launch-done.
+
 ## Wave 14 Phase 1 — Discovery Agent Foundation (shipped April 30, 2026)
 
 - **Pattern library schema** (migration 019) — `campaign_patterns`, `ring_hypotheses`, `conviction_scores`, `analog_matches`, `founder_annotations` tables, plus `show_profiles.brand_history` and `shows.audience_purchase_power` columns. Idempotent.
@@ -120,12 +134,12 @@ Brands email/password, shows magic-link+OTP. Target: magic-link+OTP for all. Not
 ### ~~Onboarding role picker offers Show/Creator to a password signup~~ — RESOLVED July 8, 2026 (Layer 2)
 `ONBOARDING_ROLES` (`app/onboarding/roles.tsx`) no longer offers Show/Creator; shows onboard only via the magic-link+OTP outreach path. Was: a password-signup user picking Show got `profiles.role=show` + a password-based show account (not a crash — email-collision with a later outreach magic link was already handled by `/api/auth/magic`'s find-by-email reuse — but a model-integrity/GTM gap). Closed by hiding the card as part of the keep-passwords decision.
 
-### Accept-flow deal creation — launch-blocker cluster  [LAUNCH-BLOCKER]
-Both surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). The seed tool sidesteps them by writing ownership columns directly; the real accept path does not. Must fix before the friends test.
+### ~~Accept-flow deal creation — launch-blocker cluster~~ — BUILT + Codex-clean, PENDING LIVE VERIFY (July 16, 2026)
+Surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). **Fix shipped to `main` July 16** (migration 031 + commits `e3c09e7`/`7642808`/`bdca1a9`/`e971656`, Codex-clean across three passes) — full detail in the SHIPPED section above. The parked product decision was resolved: a non-catalog accept materializes a **non-discoverable** `shows` row. **Still gated on a live-verify of a real accept loop before the friends test** (magic-link/DocuSign aren't exercised by the test suite). Original problem statements retained below for reference.
 
-**#1 — Accept-flow NOT-NULL bug.** The first real outreach-accept will fail. `createWave12Deal` never sets `deals.brand_id` / `deals.show_id` (both NOT NULL, no default — confirmed in prod via OpenAPI introspection); the `deals` table was empty so the path has never run. Call sites: `outreach/[token]/_shared.ts:167` and `accept-counter/route.ts:105`. Derivations: `brand_id` = `brand_profiles.user_id` via `outreach.brand_profile_id` (trivial). `show_id` is the hard one — `show_profiles` deliberately doesn't link to catalog `shows` (migration 009), and show onboarding never creates a `shows` row. Fix priority: (a) use `outreaches.show_id` if non-null; (b) else materialize a `shows` row from the outreach and backfill. **BLOCKED ON PRODUCT DECISION:** does accepting a non-catalog outreach put the creator's show into shared discovery inventory? `CreateWave12DealInput` already accepts `brand_id`/`show_id` (the seed tool is the working reference).
+**#1 — Accept-flow NOT-NULL bug.** `createWave12Deal` never set `deals.brand_id` / `deals.show_id` (both NOT NULL); the first real outreach-accept would fail. → Both set at accept (`brand_id`=`brand_profiles.user_id`; `show_id` via `resolveOrMaterializeShowIdForOutreach`). Deal now created at accept time even pre-onboarding (`show_profile_id` nullable + onboarding backfill).
 
-**#2 — Show-side deal visibility (clusters with #1).** `getDealsFiltered` filters legacy columns (`agent_id`/`brand_id`/`agency_id`) only — a show account NEVER sees Wave-12 deals in its pipeline list ("No deals yet" despite an active deal; confirmed live July 7). A real creator reads this as the deal not existing; the detail page works via direct URL only. Fix = list query honors Wave-12 ownership (`show_profile_id`/`brand_profile_id`). **Caution (pre-flight):** the list status map only handles `planning`|`io_sent`|`live`|`completed` — Wave-12-only statuses would throw; handle when fixing.
+**#2 — Show-side deal visibility.** `getDealsFiltered` filtered legacy columns only — a show account never saw Wave-12 deals. → Now honors `show_profile_id`/`brand_profile_id`; deals kanban + dashboard status maps extended to the full Wave-12 lifecycle set (no throw on Wave-12-only statuses).
 
 ---
 
@@ -165,10 +179,9 @@ Both surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b
 - Proposed Terms section should show total deal value calculation: CPM × episodes × audience/1000
 - **Effort:** 2-3 hours
 
-### Flight-date off-by-one across surfaces  [pre-launch]
-- The Agreed Terms panel shows Jul 20–Aug 17 where the IO document shows Jul 21–Aug 18 (same deal, both roles). Classic date-only string parsed as UTC then rendered in local TZ on one surface but not the other. The contract surface and the summary panel must agree.
-- **Confirmed live July 7, 2026** (seeded deal `e0bf050b`).
-- **Effort:** Small — align date-only rendering across both surfaces.
+### ~~Flight-date off-by-one across surfaces~~ — SHIPPED July 16, 2026 (accept-flow cluster #3)
+- Was: the Agreed Terms panel showed Jul 20–Aug 17 where the IO document showed Jul 21–Aug 18 (same deal, both roles) — date-only string parsed as UTC then rendered in local TZ on one surface but not the other.
+- **Fixed** (commit `e3c09e7`): date-only values render in UTC across the Agreed Terms panel, IO document, and legacy deal view; IO line-item generation advances via `setUTCDate`. Shipped as part of the accept-flow cluster (see SHIPPED). Pending the same live-verify as the rest of the cluster.
 
 ### Auth unification
 - **Moved to Operational Unblock** (see "Auth hardening — brand email/password path" [LAUNCH-BLOCKER] and "Auth unification (deferred, post-launch acceptable)"). The launch bar is the hardening item; full magic-link+OTP unification is post-launch acceptable.

@@ -1,6 +1,20 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 9, 2026 — **brand auth hardening COMPLETE (Layers 1-3), launch blocker CLEARED.** **Layer 1** (signup path correctness) shipped + verified live July 8 (`28cce8a`+`5fe246f`, Codex clean). **Layer 2** (password reset + hide Show from role picker) shipped + verified live July 8 (`0c25adf`→`e39dba0`, Codex clean). **Layer 3** (Cloudflare Turnstile bot-signup protection) shipped + deployed green July 8 (`6dfdab4`, Codex clean), **live-verified July 9 with the CAPTCHA toggle ON** — login, full signup loop, and forgot-password all passed under enforcement, no captcha errors on any flow. Impersonation tool COMPLETE (L1-3, verified live July 7); seeding tool COMPLETE (L1-2, verified live July 7); Wave 14 Phase 2D verification COMPLETE. 983 tests passing (89 files). Next launch blocker: the accept-flow cluster (gated on the parked non-catalog-outreach product decision)._
+_Volatile snapshot. Updated July 16, 2026 — **accept-flow launch-blocker cluster BUILT + Codex-clean (three passes), merged to `main`, PENDING LIVE VERIFY.** Migration 031 (`shows.is_discoverable`) applied + introspected. Resolved the parked product decision: a non-catalog accept materializes a **non-discoverable** `shows` row. Fixes #1 (accept NOT-NULL deal creation, brand_id/show_id + at-accept-time creation + onboarding backfill), #2 (show-side deal visibility), #3 (flight-date off-by-one) — plus a pre-existing `deals/[id]` authz-bypass byproduct. Commits `e3c09e7`/`7642808`/`bdca1a9`/`e971656` (+ this doc commit). 989 tests passing (89 files), tsc + eslint clean, `next build` green, Codex verdict LAUNCH-READY. **NOT yet live-verified (real accept loop) and — as of this writing — pending push + Vercel deploy confirmation.** Brand auth hardening COMPLETE (L1-3, verified live July 8-9). Impersonation + seeding tools COMPLETE (verified live July 7). Wave 14 Phase 2D COMPLETE._
+
+## Most recent — accept-flow launch-blocker cluster BUILT + Codex-clean (3 passes), PENDING LIVE VERIFY (July 16, 2026)
+
+The July 7 accept-flow cluster is **fixed and merged to `main`, Codex-clean across three review passes** — but **not yet live-verified** end-to-end, and (at time of writing) **not yet confirmed pushed / Vercel-green**. Do not treat as launch-done until a real outreach→accept→onboard→deal-visible→backfill loop runs.
+
+**Resolved product decision:** accepting a NON-catalog outreach **materializes a `shows` row flagged `is_discoverable=false`** (migration 031) — excluded from all shared discovery/catalog reads. Promotion into discovery is a deliberate post-launch flag flip (NOT built). Seeds carry the same flag.
+
+- **Migration 031** — `shows.is_discoverable BOOLEAN NOT NULL DEFAULT TRUE`, idempotent, backfills `[SEED]` shows → FALSE. **Applied + introspected in prod** (column boolean/NOT NULL/default true; all 52 existing shows TRUE) BEFORE any dependent code. No grant block (grandfathered table).
+- **#1 (accept NOT-NULL, `e3c09e7`):** both accept paths (`_shared.ts` applyAndNotify + `accept-counter`) set `brand_id`=`brand_profiles.user_id` and `show_id` — catalog `outreach.show_id`, else `resolveOrMaterializeShowIdForOutreach` materializes a non-discoverable row under a **private `otr-<id8>-` slug namespace** (can't hijack or be reused by a catalog show). Deal is created **at accept time even before the show onboards** (`show_profile_id` nullable, `string | null`); `completeShowProfile` → `backfillShowProfileOnAcceptedDeals` links it on onboarding (role=show + single-account-per-email ambiguity guard + `deal.show_profile_backfilled`/`deal.backfill_ambiguous` audit events). Accept is **atomic** — deal created before the outreach flips to `accepted`; accept-counter reconciles a stuck `countered` on retry (`.eq(response_status, countered)` no-op-safe).
+- **#2 (show-side visibility, `e3c09e7`):** `getDealsFiltered` honors Wave-12 ownership (`brand_profile_id`/`show_profile_id`) + legacy columns (explicit predicate as defense-in-depth over RLS); deals kanban + dashboard status maps/active-counts extended to the full Wave-12 lifecycle (no throw / no silent-hide on Wave-12-only statuses).
+- **#3 (flight-date, `e3c09e7`):** date-only values render in UTC across Agreed Terms, IO document, legacy view; IO line-item generation advances via `setUTCDate`.
+- **Security byproduct (Codex, pre-existing — `7642808`):** `deals/[id]` GET/PATCH/DELETE were admin-client reads/mutations with NO ownership check — any authed user could read/mutate any deal by UUID. Now gated by `callerOwnsDeal` (legacy + Wave-12 ownership; 404 to non-owners so UUIDs aren't probeable; new `route.test.ts`). Public `shows/[id]` GET 404s non-discoverable rows.
+- **Codex loop:** `e3c09e7` (build) → review found the authz bypass + accept non-atomicity + backfill-email + null-`show_profile_id` + slug-collision → `7642808` (fixes) → re-review PARTIAL on accept-counter reconcile + null guards → `bdca1a9` → final pass RESOLVED, one residual null lookup → `e971656`. **Final verdict: LAUNCH-READY, no new findings.**
+- **Verification:** **989 tests** (89 files, +5 authz-gate), tsc + eslint clean (pre-existing warnings only), **`next build` green**. **NOT DONE:** live verify of a real accept loop — the one remaining gate before launch-done — and (at time of writing) push + Vercel deploy confirmation.
 
 ## Most recent — brand auth hardening Layer 3 (Turnstile bot protection) COMPLETE — live-verified with CAPTCHA ON (July 9, 2026)
 
@@ -119,12 +133,15 @@ Layer 5 (overrides + recompute) remains optional polish, not GTM-blocking —
 carried in PRODUCT_BACKLOG.md with its request-scope footgun note.
 
 ## Tests
-963 passing (87 files). tsc clean. eslint: all changed files clean; one
-pre-existing error in `app/(dashboard)/campaigns/generated/page.tsx`
-(setState-in-effect) is unrelated to this work.
+989 passing (89 files). tsc clean. eslint: all changed files clean (pre-existing
+unused-var warnings only). `next build` green.
 
 ## Migration state
-001–030 applied and introspected. Through 028 confirmed previously — 028
+001–031 applied and introspected. **031** (`shows.is_discoverable BOOLEAN NOT NULL
+DEFAULT TRUE`, accept-flow cluster — non-catalog materialized shows + seeds flagged
+FALSE, excluded from discovery reads) applied + introspected July 16, 2026: column
+confirmed boolean / NOT NULL / default true, all 52 existing shows TRUE. No grant
+block (grandfathered table). Through 028 confirmed previously — 028
 (per-show cost + tier curation columns on `conviction_scores`) verified (8
 columns + cost_basis check + `(campaign_pattern_id, tier)` index). 029 (Phase 2C
 Layer 5 portfolio-override inputs: `campaigns.test_spot_count` / `test_placement`,
@@ -167,19 +184,15 @@ shipped + verified live July 8, L3 (Turnstile) live-verified July 9 with the
 CAPTCHA toggle ON (Codex clean throughout). Build-vs-unify decision: keep
 passwords for launch, unify post-launch. Role-picker Show/Creator gap closed in L2.
 
-**Next launch blocker: the accept-flow cluster** (PRODUCT_BACKLOG.md → PRE-LAUNCH):
-1. **Accept-flow NOT-NULL bug (#1)** — `createWave12Deal` never sets
-   `deals.brand_id`/`deals.show_id` (both NOT NULL); the first real
-   outreach-accept fails. Masked today by an empty `deals` table.
-2. **Show-side deal visibility (#2)** — `getDealsFiltered` filters legacy
-   ownership columns only, so a show account never sees Wave-12 deals in its
-   pipeline list.
-3. **Flight-date off-by-one (#3)** — Agreed Terms panel vs IO document disagree
-   by a day (date-only UTC-vs-local parse).
-**Gated on the parked product decision:** does accepting a non-catalog outreach
-materialize a `shows` row (put the creator's show into shared discovery
-inventory)? #1's `show_id` derivation depends on the answer. Resolve before
-building the fix.
+**Accept-flow cluster BUILT + Codex-clean (three passes), PENDING LIVE VERIFY** (see
+"Most recent" above + PRODUCT_BACKLOG.md → SHIPPED). All three bugs (#1 NOT-NULL,
+#2 show-side visibility, #3 flight-date) + the pre-existing `deals/[id]` authz
+byproduct are fixed and merged to `main`; the parked product decision is resolved
+(non-catalog accept → non-discoverable `shows` row, migration 031). **The one
+remaining gate is a live verify** of a real accept loop
+(outreach→accept→onboard→deal-visible→backfill) — magic-link/DocuSign can't be
+exercised by the test suite. Run it via the seed→impersonate loop or a friends-test
+outreach before calling this launch-done. Also confirm push + Vercel deploy green.
 
 Optional polish carried in the backlog: **sidebar buttons for seed/teardown**
 (the loop is endpoint-only today). 2C Layer 5 (overrides + recompute) remains
