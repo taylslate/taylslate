@@ -224,6 +224,9 @@ async function notifyShowOfCancellation(
     .select("brand_identity, brand_website")
     .eq("id", deal.brand_profile_id)
     .single();
+  // Unreachable with null (a cancellation webhook implies an envelope, which
+  // requires send-to-docusign → a non-null show_profile_id) — guard anyway.
+  if (!deal.show_profile_id) return;
   const { data: sp } = await supabaseAdmin
     .from("show_profiles")
     .select("user_id")
