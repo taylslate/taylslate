@@ -3,6 +3,7 @@
 // The brand name is the from-name; the Taylslate footer is small and contextual.
 
 import type { Outreach } from "@/lib/data/types";
+import { formatDateOnly } from "@/lib/format/date-only";
 
 export interface OutreachEmailInput {
   /** Recipient — the show. */
@@ -66,16 +67,6 @@ function placementLabel(p: string): string {
       : "Post-roll";
 }
 
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 // A from-name must be a name, never a paragraph. The upstream resolver can in
 // principle still hand us a long free-text value (legacy data, a future caller);
 // this collapses any input to something that can only render as a name across
@@ -133,7 +124,7 @@ export function renderOutreachEmail(input: OutreachEmailInput): RenderedOutreach
     ["Placement", placementLabel(input.proposed_placement)],
     [
       "Flight",
-      `${fmtDate(input.proposed_flight_start)} – ${fmtDate(input.proposed_flight_end)}`,
+      `${formatDateOnly(input.proposed_flight_start)} – ${formatDateOnly(input.proposed_flight_end)}`,
     ],
   ]
     .map(
@@ -194,7 +185,7 @@ export function renderOutreachEmail(input: OutreachEmailInput): RenderedOutreach
     `Proposed CPM: $${input.proposed_cpm.toFixed(2)}`,
     `Episodes: ${input.proposed_episode_count}`,
     `Placement: ${placementLabel(input.proposed_placement)}`,
-    `Flight: ${fmtDate(input.proposed_flight_start)} – ${fmtDate(input.proposed_flight_end)}`,
+    `Flight: ${formatDateOnly(input.proposed_flight_start)} – ${formatDateOnly(input.proposed_flight_end)}`,
   ].join("\n");
 
   const text = [

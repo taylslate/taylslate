@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Outreach } from "@/lib/data/types";
+import { formatDateOnly } from "@/lib/format/date-only";
 
 interface PitchClientProps {
   token: string;
@@ -12,13 +13,6 @@ interface PitchClientProps {
 }
 
 type Mode = "view" | "magic" | "counter" | "decline" | "done";
-
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
 
 function placementLabel(p: string): string {
   return p === "pre-roll" ? "Pre-roll" : p === "mid-roll" ? "Mid-roll" : "Post-roll";
@@ -128,7 +122,7 @@ export default function PitchClient(props: PitchClientProps) {
           <Row label="Placement" value={placementLabel(outreach.proposed_placement)} />
           <Row
             label="Flight"
-            value={`${fmtDate(outreach.proposed_flight_start)} – ${fmtDate(outreach.proposed_flight_end)}`}
+            value={`${formatDateOnly(outreach.proposed_flight_start)} – ${formatDateOnly(outreach.proposed_flight_end)}`}
           />
         </dl>
         {showStandardCpm != null && showStandardCpm > 0 && (

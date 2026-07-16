@@ -401,6 +401,7 @@ export type ShowProfilePlatform = "podcast" | "youtube" | "both";
 
 export type ShowEpisodeCadence =
   | "daily"
+  | "multiple_weekly"
   | "weekly"
   | "biweekly"
   | "monthly"

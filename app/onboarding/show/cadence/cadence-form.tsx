@@ -6,6 +6,7 @@ import type { ShowEpisodeCadence } from "@/lib/data/types";
 
 const OPTIONS: { value: ShowEpisodeCadence; title: string; sub: string }[] = [
   { value: "daily", title: "Daily", sub: "5+ episodes a week" },
+  { value: "multiple_weekly", title: "A few times a week", sub: "2–4 episodes a week" },
   { value: "weekly", title: "Weekly", sub: "One episode a week (most common)" },
   { value: "biweekly", title: "Biweekly", sub: "Every other week" },
   { value: "monthly", title: "Monthly", sub: "Once a month" },

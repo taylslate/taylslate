@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Wave12Deal, Wave12DealStatus } from "@/lib/data/types";
 import { derivePromoCode } from "@/lib/io/promo-code";
+import { formatDateOnly } from "@/lib/format/date-only";
 
 interface Props {
   deal: Wave12Deal;
@@ -52,9 +53,8 @@ const STATUS_COLOR: Record<Wave12DealStatus, string> = {
 
 function fmt(d?: string | null): string {
   if (!d) return "—";
-  // Date-only values (agreed_flight_*) are stored as YYYY-MM-DD and parse as
-  // UTC midnight. Render in UTC so a US (negative-offset) viewer doesn't see the
-  // previous day — this MUST match the IO document's date rendering.
+  // Signed/cancelled timestamps rendered as a calendar date. Kept in UTC so they
+  // read consistently with the flight dates above (which use formatDateOnly).
   return new Date(d).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -262,7 +262,7 @@ export default function Wave12DealClient({
               <Term label="Placement" value={deal.agreed_placement} />
               <Term
                 label="Flight"
-                value={`${fmt(deal.agreed_flight_start)} – ${fmt(deal.agreed_flight_end)}`}
+                value={`${formatDateOnly(deal.agreed_flight_start)} – ${formatDateOnly(deal.agreed_flight_end)}`}
               />
             </dl>
           </div>

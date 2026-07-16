@@ -19,6 +19,7 @@ import type {
 const ALLOWED_PLATFORMS: ShowProfilePlatform[] = ["podcast", "youtube", "both"];
 const ALLOWED_CADENCES: ShowEpisodeCadence[] = [
   "daily",
+  "multiple_weekly",
   "weekly",
   "biweekly",
   "monthly",

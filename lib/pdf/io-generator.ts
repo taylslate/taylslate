@@ -67,6 +67,7 @@ function brandDisplayName(bp: BrandProfile): string {
 
 const CADENCE_DAYS: Record<ShowEpisodeCadence, number> = {
   daily: 1,
+  multiple_weekly: 3, // ~2-4 episodes a week → roughly every 3 days
   weekly: 7,
   biweekly: 14,
   monthly: 30,

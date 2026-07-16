@@ -24,6 +24,7 @@ const PLATFORM_LABELS: Record<ShowProfilePlatform, string> = {
 };
 const CADENCE_LABELS: Record<ShowEpisodeCadence, string> = {
   daily: "Daily",
+  multiple_weekly: "A few times a week",
   weekly: "Weekly",
   biweekly: "Biweekly",
   monthly: "Monthly",
@@ -90,6 +91,14 @@ export default function SummaryClient({ profile }: { profile: ShowProfile }) {
       const data = await res.json().catch(() => ({}));
       setError(data.error || "Couldn't complete onboarding");
       setFinishing(false);
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    // A show that came from a public pitch gets bounced straight back to it. Use a
+    // HARD navigation (not router.push) so the pitch page's server component re-runs
+    // and the now-onboarded show sees "Accept offer" immediately — no manual refresh.
+    if (data.redirect_to) {
+      window.location.assign(data.redirect_to);
       return;
     }
     router.push("/dashboard");

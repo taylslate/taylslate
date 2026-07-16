@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Deal, DealStatus, Placement, PriceType } from "@/lib/data/types";
+import { formatDateOnly } from "@/lib/format/date-only";
 
 const statusOptions: { value: DealStatus; label: string }[] = [
   { value: "planning", label: "Planning" },
@@ -212,11 +213,6 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
         ? (editFlatRate as number)
         : 0;
   const editTotalNet = editNetPerEp * (Number(editNumEpisodes) || 0);
-
-  const fmtDate = (d: string) =>
-    // Date-only flight values render in UTC so they don't shift a day for US
-    // viewers (must agree with the IO document rendering).
-    new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
   return (
     <div className="p-8 max-w-3xl">
@@ -491,11 +487,11 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Flight Start</label>
-                <div className={readOnlyClass}>{fmtDate(deal.flight_start)}</div>
+                <div className={readOnlyClass}>{formatDateOnly(deal.flight_start)}</div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Flight End</label>
-                <div className={readOnlyClass}>{fmtDate(deal.flight_end)}</div>
+                <div className={readOnlyClass}>{formatDateOnly(deal.flight_end)}</div>
               </div>
               {deal.notes && (
                 <div className="col-span-2">

@@ -1,6 +1,7 @@
 "use client";
 
 import type { InsertionOrder } from "@/lib/data";
+import { formatDateOnly } from "@/lib/format/date-only";
 
 interface IOPreviewProps {
   io: Partial<InsertionOrder>;
@@ -140,16 +141,7 @@ export default function IOPreview({ io, onEdit, onConfirm, isConfirming }: IOPre
               <div className="grid grid-cols-4 gap-3">
                 <div>
                   <label className={labelClass}>Post Date</label>
-                  <div className={valueClass}>
-                    {item.post_date
-                      ? new Date(item.post_date).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                          timeZone: "UTC",
-                        })
-                      : "—"}
-                  </div>
+                  <div className={valueClass}>{formatDateOnly(item.post_date)}</div>
                 </div>
                 <div>
                   <label className={labelClass}>Guaranteed DLs</label>

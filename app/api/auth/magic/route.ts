@@ -7,6 +7,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyMagicLinkToken } from "@/lib/io/tokens";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import {
+  ONBOARDING_RETURN_COOKIE,
+  ONBOARDING_RETURN_COOKIE_OPTIONS,
+  sanitizeReturnPath,
+} from "@/lib/auth/onboarding-return";
 
 function siteOrigin(req: NextRequest): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
@@ -66,8 +71,11 @@ export async function GET(request: NextRequest) {
   // Generate a Supabase magic link the browser can follow to establish a
   // real session. The PKCE/OTP flow returns a hashed link; we extract the
   // action_link and redirect there.
-  const returnAfterOnboarding = encodeURIComponent(payload.return_url);
-  const onboardingPath = `/onboarding/show?return=${returnAfterOnboarding}`;
+  // Onboarding lands here; the pitch URL to return to afterward travels by
+  // cookie (set on the response below), NOT a query param — the
+  // /onboarding/show index redirect strips the query string, and "?return=..."
+  // would collide with the onboarding edit-flow's "?return=summary" sentinel.
+  const onboardingPath = "/onboarding/show";
   const redirectTo = `${origin}/callback?next=${encodeURIComponent(onboardingPath)}`;
 
   const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
@@ -86,5 +94,23 @@ export async function GET(request: NextRequest) {
   const callbackUrl = `${origin}/callback?token_hash=${encodeURIComponent(
     linkData.properties.hashed_token
   )}&type=magiclink&next=${encodeURIComponent(onboardingPath)}`;
-  return NextResponse.redirect(callbackUrl);
+
+  const response = NextResponse.redirect(callbackUrl);
+
+  // Carry the originating pitch URL (validated same-origin) so onboarding
+  // completion can bounce the show straight back to accept/counter/decline.
+  let returnPath: string | null = null;
+  try {
+    const u = new URL(payload.return_url);
+    if (u.origin === origin) {
+      returnPath = sanitizeReturnPath(`${u.pathname}${u.search}`, origin);
+    }
+  } catch {
+    returnPath = null;
+  }
+  if (returnPath) {
+    response.cookies.set(ONBOARDING_RETURN_COOKIE, returnPath, ONBOARDING_RETURN_COOKIE_OPTIONS);
+  }
+
+  return response;
 }

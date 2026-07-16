@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import {
   getAuthenticatedUser,
   getShowProfileByUserId,
   completeShowProfile,
 } from "@/lib/data/queries";
+import {
+  ONBOARDING_RETURN_COOKIE,
+  ONBOARDING_RETURN_COOKIE_OPTIONS,
+  sanitizeReturnPath,
+} from "@/lib/auth/onboarding-return";
 
 /**
  * Marks the authenticated user's show profile as onboarded.
  * Enforces the minimum fields the platform needs to pair the show with
  * advertisers downstream: name, platform, cadence, audience size.
  */
-export async function POST() {
+export async function POST(request: Request) {
   const user = await getAuthenticatedUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -42,5 +48,23 @@ export async function POST() {
     return NextResponse.json({ error: "Failed to complete show profile" }, { status: 500 });
   }
 
-  return NextResponse.json({ show_profile: result });
+  // If the show arrived from a public pitch (magic-link onboarding), the
+  // /api/auth/magic landing stashed the pitch URL in a cookie. Hand it back so
+  // the client can hard-navigate straight to accept/counter/decline — a hard nav
+  // (not router.push) forces the pitch page's server component to re-run, so the
+  // now-onboarded show sees "Accept offer" immediately without a manual refresh.
+  const { origin } = new URL(request.url);
+  const cookieStore = await cookies();
+  const redirectTo = sanitizeReturnPath(
+    cookieStore.get(ONBOARDING_RETURN_COOKIE)?.value,
+    origin
+  );
+
+  const response = NextResponse.json({ show_profile: result, redirect_to: redirectTo });
+  // One-shot: clear the cookie whether or not it was present/valid.
+  response.cookies.set(ONBOARDING_RETURN_COOKIE, "", {
+    ...ONBOARDING_RETURN_COOKIE_OPTIONS,
+    maxAge: 0,
+  });
+  return response;
 }

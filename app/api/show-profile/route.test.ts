@@ -24,7 +24,6 @@ vi.mock("@/lib/podscan/lookup", () => ({
 }));
 
 import { GET, PUT, sanitizeShowProfilePatch } from "./route";
-import { POST as COMPLETE_POST } from "./complete/route";
 import { POST as LOOKUP_POST } from "./lookup/route";
 
 function jsonRequest(body: unknown): Request {
@@ -261,62 +260,8 @@ describe("PUT /api/show-profile", () => {
   });
 });
 
-describe("POST /api/show-profile/complete", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("returns 401 when unauthenticated", async () => {
-    getAuthenticatedUser.mockResolvedValue(null);
-    const res = await COMPLETE_POST();
-    expect(res.status).toBe(401);
-  });
-
-  it("returns 400 when there is no profile", async () => {
-    getAuthenticatedUser.mockResolvedValue({ id: "u1" });
-    getShowProfileByUserId.mockResolvedValue(null);
-    const res = await COMPLETE_POST();
-    expect(res.status).toBe(400);
-  });
-
-  it("returns 400 and lists missing required fields", async () => {
-    getAuthenticatedUser.mockResolvedValue({ id: "u1" });
-    getShowProfileByUserId.mockResolvedValue({
-      id: "sp1",
-      user_id: "u1",
-      show_name: "",
-      ad_formats: [],
-      placements: [],
-    });
-    const res = await COMPLETE_POST();
-    const body = await res.json();
-    expect(res.status).toBe(400);
-    expect(body.missing).toEqual(
-      expect.arrayContaining(["show_name", "platform", "episode_cadence", "audience_size", "ad_formats", "placements"])
-    );
-  });
-
-  it("completes when minimum fields are present", async () => {
-    getAuthenticatedUser.mockResolvedValue({ id: "u1" });
-    getShowProfileByUserId.mockResolvedValue({
-      id: "sp1",
-      user_id: "u1",
-      show_name: "My Show",
-      platform: "podcast",
-      episode_cadence: "weekly",
-      audience_size: 10000,
-      ad_formats: ["host_read_baked"],
-      placements: ["mid_roll"],
-    });
-    completeShowProfile.mockResolvedValue({
-      id: "sp1",
-      user_id: "u1",
-      onboarded_at: "2026-04-22T00:00:00Z",
-    });
-    const res = await COMPLETE_POST();
-    const body = await res.json();
-    expect(res.status).toBe(200);
-    expect(body.show_profile.onboarded_at).toBeTruthy();
-  });
-});
+// The /complete route has its own colocated tests in ./complete/route.test.ts
+// (it now reads a request + return cookie, so its coverage lives there).
 
 function lookupReq(body: unknown): Request {
   return new Request("http://x/api/show-profile/lookup", {

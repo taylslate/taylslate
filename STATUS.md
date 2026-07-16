@@ -2,6 +2,14 @@
 
 _Volatile snapshot. Updated July 16, 2026 — **accept-flow launch-blocker cluster SHIPPED + Codex-clean (three passes) + LIVE-VERIFIED July 16** — the real outreach→accept loop was driven end-to-end in prod via the **accept-path seeding tool** (`POST /api/admin/seed-outreach`, both variants) and torn down clean. 1003 tests (91 files), tsc/eslint/`next build` clean. Migration 031 (`shows.is_discoverable`) applied + introspected. Resolved the parked product decision: a non-catalog accept materializes a **non-discoverable** `shows` row. Fixes #1 (accept NOT-NULL deal creation, brand_id/show_id + at-accept-time creation + onboarding backfill), #2 (show-side deal visibility), #3 (flight-date off-by-one) — plus a pre-existing `deals/[id]` authz-bypass byproduct. Commits `e3c09e7`/`7642808`/`bdca1a9`/`e971656`/`a3b1856` (+ this doc commit). **Live verify (July 16):** §1 catalog — deal created at accept, brand + show both see it, flight dates correct on deal view + IO; §2 non-catalog — materialize + backfill confirmed via real onboarding; teardown cascade clean incl. the materialized `shows` row. Codex verdict LAUNCH-READY, now live-confirmed. Brand auth hardening COMPLETE (L1-3, verified live July 8-9). Impersonation + seeding tools COMPLETE (verified live July 7). Wave 14 Phase 2D COMPLETE._
 
+## Most recent — accept-flow live-verify FOLLOW-UP FIXES (pitch date, onboarding return, cadence gap) BUILT (July 16, 2026)
+
+Three issues surfaced during the July 16 live-verify, out of the accept cluster's scope, now fixed in one pass. Migration **032** required (cadence CHECK widen) — applied + introspected before the dependent code. 1016 tests (94 files), tsc/eslint/`next build` clean. **Pending push + Vercel green + Codex review.**
+
+- **#1 pitch-page flight-date off-by-one (code-only).** The Layer-3 fix left the public pitch page (`app/outreach/[token]/pitch-client.tsx`) with its own timezone-naive `fmtDate`, so it rendered date-only flight values a day early (Jul 29 vs Jul 30). Extracted a single source of truth — **`lib/format/date-only.ts` → `formatDateOnly`** (UTC, matching the Layer-3 options) — and routed every date-only render site through it: pitch page, `Wave12DealClient` (flight only; its `*_signed_at`/`cancelled_at` timestamp formatter left alone), legacy deal view, `IOPreview` post date, and the **outreach EMAIL** (`lib/email/templates/outreach.ts` had the identical off-by-one on the same `proposed_flight_*` fields — same customer-facing flow, so a day-early email → day-correct pitch mismatch is now gone). Test `lib/format/date-only.test.ts` pins the exact UTC output + a source-scan guard that the pitch page never reintroduces a local formatter. **FLAGGED, not fixed:** the downloadable IO **PDF** (`lib/pdf/io-generator.ts`) also renders flight + post dates without UTC, but its `fmtDate` is shared with real timestamps (`created_at`, `signed_at`) so it needs a targeted date-only split, not a blanket UTC — deferred pending founder call (founder had verified the on-screen IOPreview, which was already correct).
+- **#2 onboarding→pitch return didn't complete (code-only, two causes).** (a) The pitch return URL was passed as `/onboarding/show?return=<url>`, but the `/onboarding/show` index `redirect()` strips the query string (and the param collided with the edit-flow `?return=summary` sentinel), so it never reached the summary step. (b) Even landing back on the pitch, `isOnboarded` is server-rendered and the App Router served the cached RSC on soft-nav → Accept stayed hidden until a manual refresh. Fix: carry the pitch path in a short-lived HttpOnly cookie (**`lib/auth/onboarding-return.ts`**, `sanitizeReturnPath` open-redirect guard) set at the magic-link landing (`/api/auth/magic`); `/api/show-profile/complete` reads + clears it and returns `redirect_to`; `summary-client` does a **hard** `window.location.assign` so the pitch server component re-runs with `isOnboarded=true` and Accept is immediately actionable. Tests: `sanitizeReturnPath` unit + `complete/route.test.ts` (cookie present/absent/tampered + clear). The old `?return=` query param is gone; `?return=summary` (edit-flow) is now unambiguous.
+- **#3 cadence gap — needed migration 032.** Added **`multiple_weekly`** ("A few times a week", 2–4 episodes/week) between `daily` and `weekly`. `episode_cadence` is CHECK-constrained on `show_profiles` (009) + `shows` (001); **migration 032** widens both (drops any check referencing the column by introspection, re-adds a named widened one — the inline checks were unnamed). Applied + introspected July 16 (exactly two rows, both include `multiple_weekly`, no lingering constraints) BEFORE shipping the code: `ShowEpisodeCadence` union, cadence-form option, API `ALLOWED_CADENCES`, summary `CADENCE_LABELS`, and `io-generator` `CADENCE_DAYS` (→3).
+
 ## Most recent — accept-path seeding tool (drive the real accept loop live) SHIPPED (July 16, 2026)
 
 Extends the founder seeding tools so the **accept-flow cluster's fixes can be executed live** — the existing `seed-deal` fabricates a finished planning deal *directly*, bypassing the accept path, so the cluster's code had never run under real conditions. Schema-free — **NO migration** (confirmed). **Live-verify ran clean July 16** (both variants + teardown — see the accept-flow SHIPPED section below).
@@ -144,11 +152,15 @@ Layer 5 (overrides + recompute) remains optional polish, not GTM-blocking —
 carried in PRODUCT_BACKLOG.md with its request-scope footgun note.
 
 ## Tests
-989 passing (89 files). tsc clean. eslint: all changed files clean (pre-existing
+1016 passing (94 files). tsc clean. eslint: all changed files clean (pre-existing
 unused-var warnings only). `next build` green.
 
 ## Migration state
-001–031 applied and introspected. **031** (`shows.is_discoverable BOOLEAN NOT NULL
+001–032 applied and introspected. **032** (`cadence_multiple_weekly` — widens the
+`episode_cadence` CHECK on `show_profiles` + `shows` to allow `multiple_weekly`)
+applied + introspected July 16, 2026: exactly two check constraints, both include
+`multiple_weekly`, no lingering constraints. No grant block (grandfathered tables).
+**031** (`shows.is_discoverable BOOLEAN NOT NULL
 DEFAULT TRUE`, accept-flow cluster — non-catalog materialized shows + seeds flagged
 FALSE, excluded from discovery reads) applied + introspected July 16, 2026: column
 confirmed boolean / NOT NULL / default true, all 52 existing shows TRUE. No grant
