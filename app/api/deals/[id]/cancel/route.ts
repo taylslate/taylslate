@@ -83,12 +83,17 @@ export async function POST(
     },
   });
 
-  // Notify the show.
-  const { data: sp } = await supabaseAdmin
-    .from("show_profiles")
-    .select("user_id")
-    .eq("id", deal.show_profile_id)
-    .single();
+  // Notify the show — but only if it has onboarded. A deal can be created at
+  // accept time before the show onboards (show_profile_id null); there is no
+  // show account to email in that case, so skip cleanly (avoids a malformed
+  // `WHERE id = NULL` lookup).
+  const { data: sp } = deal.show_profile_id
+    ? await supabaseAdmin
+        .from("show_profiles")
+        .select("user_id")
+        .eq("id", deal.show_profile_id)
+        .single()
+    : { data: null };
   if (sp) {
     const { data: showUser } = await supabaseAdmin
       .from("profiles")

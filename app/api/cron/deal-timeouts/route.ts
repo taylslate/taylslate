@@ -136,12 +136,15 @@ async function cancelTimedOutDeal(
     entityId: deal.id,
     payload: { deal: updated, days_open: CANCEL_DAYS },
   });
-  // Notify show.
-  const { data: sp } = await supabaseAdmin
-    .from("show_profiles")
-    .select("user_id")
-    .eq("id", deal.show_profile_id)
-    .single();
+  // Notify show — only if it onboarded (show_profile_id may be null for a deal
+  // created at accept time before onboarding; nothing to email then).
+  const { data: sp } = deal.show_profile_id
+    ? await supabaseAdmin
+        .from("show_profiles")
+        .select("user_id")
+        .eq("id", deal.show_profile_id)
+        .single()
+    : { data: null };
   if (sp) {
     const { data: showUser } = await supabaseAdmin
       .from("profiles")

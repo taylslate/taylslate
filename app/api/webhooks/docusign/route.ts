@@ -171,6 +171,10 @@ async function notifyShowOfBrandSignature(dealId: string): Promise<void> {
     .select("brand_identity, brand_website")
     .eq("id", deal.brand_profile_id)
     .single();
+  // An envelope only exists after send-to-docusign, which requires a non-null
+  // show_profile_id — so this is unreachable with null in practice. Guard
+  // explicitly anyway (defense-in-depth; avoids a malformed null lookup).
+  if (!deal.show_profile_id) return;
   const { data: sp } = await supabaseAdmin
     .from("show_profiles")
     .select("user_id, show_name")

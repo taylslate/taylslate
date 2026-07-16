@@ -83,9 +83,28 @@ export async function POST(
     );
   }
 
-  // Idempotent: don't double-create.
+  // Idempotent: don't double-create. If a prior attempt created the deal but
+  // failed to flip the outreach (it's still `countered` — this route's 409 guard
+  // above only admits `countered`), reconcile the status now before returning so
+  // the outreach can't stay stuck `countered` with a live deal. The
+  // `.eq(response_status, countered)` filter makes the reconcile a no-op if it
+  // was already flipped, so this is safe to run every time (Codex re-review).
   const existing = await getWave12DealByOutreachId(outreach.id);
   if (existing) {
+    const { error: reconcileErr } = await supabaseAdmin
+      .from("outreaches")
+      .update({
+        response_status: "accepted",
+        responded_at: new Date().toISOString(),
+      })
+      .eq("id", outreach.id)
+      .eq("response_status", "countered");
+    if (reconcileErr) {
+      console.error(
+        "[accept-counter] outreach reconcile failed:",
+        reconcileErr.message
+      );
+    }
     return NextResponse.json({ deal: existing, alreadyExisted: true });
   }
 

@@ -15,7 +15,6 @@ const {
   getOutreachById,
   getBrandProfileByUserId,
   getShowProfileByUserId,
-  adminBuilder,
   supabaseAdmin,
 } = vi.hoisted(() => {
   const builder = {
