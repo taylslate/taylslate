@@ -298,13 +298,21 @@ function idsOrThrow(
 // Removes ALL seeded test data so seeds never linger (the day-3/day-14 planning
 // timeout cron would otherwise email/cancel stale seeds, and they pollute prod).
 //
-// Discovery is belt-and-suspenders: seeded entity ids come from BOTH the
-// deal.seeded event payloads AND an independent [SEED]-prefix scan of shows +
-// campaigns, unioned — so a partial seed whose event never fired is still found.
-// Outreach discovery is widened to any outreach linked to a seeded campaign or
-// show (both marker-scoped via the prefix), so a partial seed that got as far as
-// an outreach+deal but never fired its event is torn down through the normal
-// cascade rather than tripping the surviving-deal backstop.
+// Handles BOTH seed tools' artifacts: seed-deal's fabricated planning deal, and
+// seed-outreach's `pending` outreach PLUS whatever the real accept path then
+// created from it (a deal, and — for a non-catalog accept — a materialized
+// non-discoverable shows row).
+//
+// Discovery is belt-and-suspenders: seeded entity ids come from BOTH the seed
+// marker events (deal.seeded + outreach.seeded) AND an independent [SEED]-prefix
+// scan of shows + campaigns, unioned — so a partial seed whose event never fired
+// is still found. Outreach discovery is widened to any outreach linked to a
+// seeded campaign or show (both marker-scoped via the prefix), so a partial seed
+// that got as far as an outreach+deal but never fired its event is torn down
+// through the normal cascade rather than tripping the surviving-deal backstop.
+// Accept-path MATERIALIZED shows are discovered a third way — by their private
+// `otr-<outreachId8>-` slug, scoped to seeded-outreach linkage — so one can
+// never survive teardown even if its [SEED] name were somehow absent.
 //
 // Deletion order follows the FK cascade:
 //   1. outreaches — deals.outreach_id is ON DELETE CASCADE (013) and
@@ -348,14 +356,19 @@ export async function DELETE() {
 async function runTeardown(adminId: string) {
   // --- Discovery -----------------------------------------------------------
 
-  // 1. deal.seeded event payloads → the ids each completed seed recorded.
+  // 1. Seed marker event payloads → the ids each completed seed recorded. Both
+  //    seed tools fire a marker carrying its entity ids: seed-deal fires
+  //    `deal.seeded`; the accept-path seed tool (POST /api/admin/seed-outreach)
+  //    fires `outreach.seeded` (showId null for its non-catalog variant, which
+  //    payloadString drops). Scanning both keeps discovery direct even if the
+  //    [SEED]-prefix linkage scan below ever misses.
   const eventsRes = await supabaseAdmin
     .from("domain_events")
     .select("payload")
-    .eq("event_type", "deal.seeded");
+    .in("event_type", ["deal.seeded", "outreach.seeded"]);
   if (eventsRes.error) {
     throw new SeedTeardownQueryError(
-      `deal.seeded event scan: ${eventsRes.error.message}`
+      `seed marker event scan: ${eventsRes.error.message}`
     );
   }
 
@@ -431,6 +444,34 @@ async function runTeardown(adminId: string) {
     return NextResponse.json({ deleted: {} });
   }
 
+  // 5. Materialized-show discovery (accept-path non-catalog seeds). Accepting a
+  //    NON-catalog seeded outreach materializes a NON-discoverable shows row
+  //    under a private, per-outreach slug `otr-<outreachId8>-<name>`
+  //    (resolveOrMaterializeShowIdForOutreach). Its name copies the seeded
+  //    outreach's [SEED] show_name, so the prefix scan above already finds it —
+  //    but discover it here by slug too, scoped strictly to seeded-outreach
+  //    linkage, so a materialized show can NEVER survive teardown regardless of
+  //    its name. `otr-` + 8 hex chars + `-` is a literal prefix (no LIKE
+  //    metacharacters), so `${prefix}%` matches exactly that namespace.
+  const materializedShowIds = new Set<string>();
+  for (const outreachId of seededOutreachIds) {
+    const prefix = `otr-${outreachId.slice(0, 8)}-`;
+    for (const id of idsOrThrow(
+      `materialized shows by otr-slug ${prefix}`,
+      await supabaseAdmin.from("shows").select("id").like("slug", `${prefix}%`)
+    )) {
+      materializedShowIds.add(id);
+    }
+  }
+  // The full set of seeded shows to pre-count, guard, and delete: [SEED]-prefix
+  // + event shows UNION accept-path materialized shows. Materialized shows are
+  // not referenced by any outreach.show_id (the non-catalog outreach's is null),
+  // so unioning them in AFTER the outreach-by-show discovery above misses no
+  // outreach.
+  const allSeededShowIds = [
+    ...new Set([...seededShowIds, ...materializedShowIds]),
+  ];
+
   // --- Pre-count cascaded children (deals + IOs) for honest reporting. The
   //     parent delete cascades them but does not return them, so gather ids
   //     up front. Sourced from the DB (not event payloads), so stale events
@@ -439,7 +480,7 @@ async function runTeardown(adminId: string) {
   const dealIdSet = new Set<string>();
   const dealFilterCols: Array<[string, string[]]> = [
     ["outreach_id", seededOutreachIds],
-    ["show_id", seededShowIds],
+    ["show_id", allSeededShowIds],
     ["campaign_id", seededCampaignIds],
   ];
   for (const [col, ids] of dealFilterCols) {
@@ -571,11 +612,11 @@ async function runTeardown(adminId: string) {
   //    RESTRICT). With the widened outreach discovery every seeded deal should
   //    have cascaded; a survivor here is a genuine anomaly — report, don't
   //    swallow, and abort before the show delete FK-fails.
-  if (seededShowIds.length) {
+  if (allSeededShowIds.length) {
     const { data: survivors, error } = await supabaseAdmin
       .from("deals")
       .select("id")
-      .in("show_id", seededShowIds);
+      .in("show_id", allSeededShowIds);
     if (error) {
       return NextResponse.json(
         { error: `Failed to verify deal teardown: ${error.message}` },
@@ -601,13 +642,13 @@ async function runTeardown(adminId: string) {
     }
   }
 
-  // 3. Shows.
+  // 3. Shows — [SEED] catalog shows AND accept-path materialized shows.
   let deletedShowIds: string[] = [];
-  if (seededShowIds.length) {
+  if (allSeededShowIds.length) {
     const { data, error } = await supabaseAdmin
       .from("shows")
       .delete()
-      .in("id", seededShowIds)
+      .in("id", allSeededShowIds)
       .select("id");
     if (error) {
       return NextResponse.json(

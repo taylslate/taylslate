@@ -54,6 +54,10 @@ const { adminBuilder, supabaseAdmin, setResolver } = vi.hoisted(() => {
 function makeResolver(cfg: {
   events?: Array<{ payload: Record<string, unknown> }>;
   shows?: Array<{ id: string }>;
+  // Accept-path materialized shows — returned for a shows SELECT filtered by
+  // `slug` (the otr-<id8> scan) and included in the shows DELETE result. Left
+  // empty by default so the [SEED]-prefix-only tests are unaffected.
+  materializedShows?: Array<{ id: string }>;
   campaigns?: Array<{ id: string }>;
   outreaches?: Array<{ id: string }>;
   deals?: Array<{ id: string }>;
@@ -66,25 +70,34 @@ function makeResolver(cfg: {
   errors?: Record<string, unknown>;
 }) {
   const {
-    events = [], shows = [], campaigns = [], outreaches = [],
+    events = [], shows = [], materializedShows = [], campaigns = [], outreaches = [],
     deals = [], ios = [], ioLineItems = [], payments = [], invoices = [],
     invoiceLineItems = [], dealsSurviveCascade = false, errors = {},
   } = cfg;
   const deletions: string[] = [];
   let cascaded = false;
-  const resolver = ({ table, op }: QueryState): QueryResult => {
+  const resolver = ({ table, op, filters }: QueryState): QueryResult => {
     const err = errors[`${table}:${op}`];
     if (err) return { data: null, error: err };
     if (op === "delete") {
       deletions.push(table);
       if (table === "outreaches") { cascaded = true; return { data: outreaches, error: null }; }
-      if (table === "shows") return { data: shows, error: null };
+      // The shows delete targets both [SEED]-prefix catalog shows AND accept-path
+      // materialized shows (the union teardown computes as allSeededShowIds).
+      if (table === "shows") return { data: [...shows, ...materializedShows], error: null };
       if (table === "campaigns") return { data: campaigns, error: null };
       return { data: [], error: null };
     }
+    // A shows SELECT is one of two discovery scans, distinguished by its LIKE
+    // column: `name` → the [SEED]-prefix scan; `slug` → the otr-<id8> scan that
+    // finds accept-path materialized shows.
+    if (table === "shows") {
+      const likeCol = Array.isArray(filters.like) ? filters.like[0] : undefined;
+      if (likeCol === "slug") return { data: materializedShows, error: null };
+      return { data: shows, error: null };
+    }
     switch (table) {
       case "domain_events": return { data: events, error: null };
-      case "shows": return { data: shows, error: null };
       case "campaigns": return { data: campaigns, error: null };
       case "outreaches": return { data: outreaches, error: null };
       case "deals": return { data: cascaded && !dealsSurviveCascade ? [] : deals, error: null };
@@ -571,5 +584,80 @@ describe("DELETE /api/admin/seed-deal", () => {
     expect(body.error).toMatch(/before any deletion/);
     expect(adminBuilder.delete).not.toHaveBeenCalled();
     expect(logEvent).not.toHaveBeenCalled();
+  });
+
+  // --- Accept-path seeds (POST /api/admin/seed-outreach) driven through the
+  //     real accept path, then torn down by THIS endpoint. ------------------
+
+  it("scans BOTH deal.seeded and outreach.seeded markers", async () => {
+    const { resolver } = makeResolver({
+      events: [{ payload: { outreachId: "otr-1", campaignId: "camp-1", showId: null } }],
+      campaigns: [{ id: "camp-1" }],
+      outreaches: [{ id: "otr-1" }],
+    });
+    setResolver(resolver);
+
+    await DELETE();
+    // The seed marker scan unions both tools' events, not just deal.seeded.
+    expect(adminBuilder.in).toHaveBeenCalledWith("event_type", [
+      "deal.seeded",
+      "outreach.seeded",
+    ]);
+  });
+
+  it("tears down an accepted NON-catalog seed: outreach → deal → materialized show (otr-slug)", async () => {
+    // outreach.seeded marker for a non-catalog seed (showId null). The accept
+    // path created a deal + a materialized non-discoverable show under an
+    // otr-<id8> slug — the show is found only by the slug scan (no [SEED] catalog
+    // show present here), proving the belt-and-suspenders slug discovery.
+    const { resolver, deletions } = makeResolver({
+      events: [
+        { payload: { seeded: true, variant: "non_catalog", outreachId: "otr-1", campaignId: "camp-1", showId: null } },
+      ],
+      shows: [], // non-catalog: no [SEED]-prefix catalog show
+      materializedShows: [{ id: "mat-1" }],
+      campaigns: [{ id: "camp-1" }],
+      outreaches: [{ id: "otr-1" }],
+      deals: [{ id: "deal-1" }],
+    });
+    setResolver(resolver);
+
+    const res = await DELETE();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    // Deleting the outreach cascades the deal; then the materialized show is removed.
+    expect(deletions).toEqual(["outreaches", "shows", "campaigns"]);
+    expect(body.deleted.outreaches).toEqual({ count: 1, ids: ["otr-1"] });
+    expect(body.deleted.deals).toEqual({ count: 1, ids: ["deal-1"] });
+    expect(body.deleted.shows).toEqual({ count: 1, ids: ["mat-1"] });
+    expect(body.deleted.campaigns).toEqual({ count: 1, ids: ["camp-1"] });
+
+    // The materialized show was scoped into the shows delete by id — never a
+    // non-seeded row. A materialized show must never survive teardown.
+    expect(new Set(scopedDeleteIds())).toEqual(new Set(["otr-1", "mat-1", "camp-1"]));
+  });
+
+  it("tears down an accepted CATALOG seed: the deal cascades and the [SEED] catalog show is removed", async () => {
+    // Catalog accept reuses the [SEED] catalog show (no materialization).
+    const { resolver, deletions } = makeResolver({
+      events: [
+        { payload: { seeded: true, variant: "catalog", outreachId: "otr-c", campaignId: "camp-c", showId: "show-c" } },
+      ],
+      shows: [{ id: "show-c" }],
+      campaigns: [{ id: "camp-c" }],
+      outreaches: [{ id: "otr-c" }],
+      deals: [{ id: "deal-c" }],
+    });
+    setResolver(resolver);
+
+    const res = await DELETE();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    expect(deletions).toEqual(["outreaches", "shows", "campaigns"]);
+    expect(body.deleted.deals).toEqual({ count: 1, ids: ["deal-c"] });
+    expect(body.deleted.shows).toEqual({ count: 1, ids: ["show-c"] });
+    expect(body.deleted.campaigns).toEqual({ count: 1, ids: ["camp-c"] });
   });
 });

@@ -705,6 +705,10 @@ export type DomainEventType =
   // between the test brand + show accounts, for browser-verifying deal-view
   // surfaces). Marker event; payload carries { seeded: true, seed_batch, ids }.
   | "deal.seeded"
+  // Verification layer — founder accept-path seeding tool (seeds a `pending`
+  // campaign + outreach so the REAL public accept path can be driven live).
+  // Marker event; payload carries { seeded, seed_batch, variant, ids }.
+  | "outreach.seeded"
   // Layer 1 — founder test-account impersonation
   | "admin.impersonate"
   // Layer 3 — founder returned from an impersonated session to their admin
