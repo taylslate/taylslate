@@ -1,6 +1,6 @@
 # Taylslate Product Backlog
 
-*Last updated: July 9, 2026*
+*Last updated: July 23, 2026*
 
 This document captures everything that's been identified as worth building. Three parts:
 
@@ -31,6 +31,17 @@ The PRE-LAUNCH accept-flow cluster (#1 NOT-NULL, #2 show-side visibility, #3 fli
 - **Security byproduct (Codex, pre-existing):** `deals/[id]` GET/PATCH/DELETE were unauthenticated-owner (any authed user could read/mutate any deal by UUID) — now gated by `callerOwnsDeal` (legacy + Wave-12 ownership, 404 to non-owners); public `shows/[id]` GET 404s non-discoverable rows; `getDealsFiltered` has an explicit app-side ownership predicate as defense-in-depth over RLS.
 - **Verification:** 989 tests (89 files, +5 authz-gate), tsc + eslint clean, `next build` green. **Codex clean across three passes** (e3c09e7 review → 7642808 fixes → bdca1a9 re-review → e971656 final; verdict LAUNCH-READY, no new findings). Commits `e3c09e7` + `7642808` + `bdca1a9` + `e971656`.
 - **LIVE-VERIFIED July 16:** real accept loop exercised in prod for both variants — §1 catalog (deal created at accept; brand + show both see the deal; flight dates correct on deal view + IO), §2 non-catalog (materialize + backfill confirmed via real onboarding). Teardown cascade clean incl. the materialized `shows` row. Operational note: the teardown `DELETE` must be run from an `isInternalAdmin` session — it correctly 403s if the caller's live session is the accept-side account (the `chris+seedotr` alias / impersonated show); the gate is right, not a bug.
+
+## Accept-flow live-verify follow-up fixes — SHIPPED + Codex-clean + LIVE-VERIFIED (July 23, 2026)
+
+Four issues surfaced during the July 16 accept-flow live-verify, out of the cluster's scope, now **fixed, Codex-reviewed, pushed + Vercel-green, and LIVE-VERIFIED end-to-end July 23** — launch-done. Migration **032** (widen `episode_cadence` CHECK on `show_profiles` + `shows` for the new cadence) applied + introspected before the dependent code. 1021 tests (94 files), tsc/eslint/`next build` clean. Commits `1e2d97a` (#1-3) + `9430bd8` (#4) + `875c936` (Codex-resolution).
+
+- **#1 pitch-page flight-date off-by-one** — the public pitch page rendered date-only flight values a day early via its own timezone-naive formatter. Extracted `lib/format/date-only.ts` → `formatDateOnly` (UTC) as the single source of truth and routed every date-only render through it: pitch page, Wave12 deal view (flight only), legacy deal view, IOPreview, and the outreach email (same off-by-one on the same `proposed_flight_*` fields).
+- **#2 onboarding→pitch return** — (a) the pitch return URL was dropped (the `/onboarding/show` index redirect strips the query string; it also collided with the `?return=summary` edit-flow sentinel), and (b) even back on the pitch, `isOnboarded` was a stale cached RSC on soft-nav. Fix: carry the pitch path in a short-lived HttpOnly cookie (`lib/auth/onboarding-return.ts`, open-redirect-guarded) set at the magic-link landing, read + cleared by `/api/show-profile/complete`, then a **hard** `window.location.assign` back to the pitch so the server component re-runs and **Accept is immediately actionable** (no manual nav, no refresh).
+- **#3 cadence gap** — added `multiple_weekly` ("A few times a week", 2–4 episodes/week) between daily and weekly. Migration 032 widened the CHECK on both tables; code updated across the `ShowEpisodeCadence` enum, cadence form, API allow-list, summary label, and the (now centralized) cadence→days spacing.
+- **#4 IO PDF flight + post date off-by-one** — the signed IO is the document of record; both PDF generators (`lib/pdf/io-generator.ts` + legacy `lib/pdf/io-pdf.ts`) now render date-only flight + post dates via `formatDateOnly` (UTC), keeping `created_at`/`signed_at` on the local formatter. Post-date derivation switched to UTC arithmetic (`setUTCDate`); cadence→days spacing centralized in `lib/io/cadence-days.ts`.
+- **Codex:** no High; 3 Medium + 2 Low. Resolved 3 Medium (UTC post-date arithmetic; legacy `io-pdf.ts` split; shared cadence map) + 1 Low (exact post-date test). 1 Low accepted (migration 032's introspection-based CHECK drop — already applied, and safer than guessing the unnamed original constraint's name).
+- **LIVE-VERIFIED July 23:** pitch flight dates correct (**Aug 6 – Sep 3**); "A few times a week" present and driving IO post-date spacing (**Aug 6 / 9 / 12**); onboarding returns to the pitch with **Accept actionable immediately**; IO PDF flight + post dates match the pitch/deal/email. Teardown cascade clean incl. the materialized show. Two small deferred copy items logged in Polish (see below).
 
 ## Wave 14 Phase 1 — Discovery Agent Foundation (shipped April 30, 2026)
 
@@ -182,6 +193,13 @@ Surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). *
 ### ~~Flight-date off-by-one across surfaces~~ — SHIPPED July 16, 2026 (accept-flow cluster #3)
 - Was: the Agreed Terms panel showed Jul 20–Aug 17 where the IO document showed Jul 21–Aug 18 (same deal, both roles) — date-only string parsed as UTC then rendered in local TZ on one surface but not the other.
 - **Fixed** (commit `e3c09e7`): date-only values render in UTC across the Agreed Terms panel, IO document, and legacy deal view; IO line-item generation advances via `setUTCDate`. Shipped as part of the accept-flow cluster (see SHIPPED). **Live-verified July 16** — flight dates confirmed correct on the deal view + IO during the real accept loop.
+- **Follow-up (July 23):** the same off-by-one on the remaining surfaces — the public **pitch page**, the downloadable IO **PDF** (both generators), and the **outreach email** — was fixed via the shared `formatDateOnly` (UTC) helper + UTC post-date arithmetic (commits `1e2d97a`/`9430bd8`/`875c936`) and **live-verified July 23**. The date-only bug class is now closed on every surface. See SHIPPED → "Accept-flow live-verify follow-up fixes."
+
+### Onboarding→pitch return copy + post-accept dead-end (deferred, logged July 23, 2026)
+Two small copy/UX items surfaced during the July 23 follow-up live-verify. Functionality is correct — these are polish only:
+- **Onboarding summary button label.** `app/onboarding/show/summary/summary-client.tsx` still reads "Looks good — take me to my dashboard", but a show that onboarded from a pitch now returns to the **pitch** (hard-nav via the return cookie), not the dashboard. The button can't read the HttpOnly return cookie client-side, so have the summary **server** component pass a `hasReturn` flag and switch the label (e.g. "Looks good — back to the offer") when a pitch return is pending; fall back to the dashboard copy otherwise.
+- **Post-accept confirmation is a dead end for a just-onboarded show.** After accepting, the pitch "done" panel (`DonePanel` in `app/outreach/[token]/pitch-client.tsx`) says "you can close this tab" — but a show that just created an account has a dashboard to go to. Add a **"Go to my dashboard"** link on the confirmation for authenticated/onboarded shows (the public/forwarded-link case keeps the close-tab copy).
+- **Effort:** ~1-2 hours each.
 
 ### Auth unification
 - **Moved to Operational Unblock** (see "Auth hardening — brand email/password path" [LAUNCH-BLOCKER] and "Auth unification (deferred, post-launch acceptable)"). The launch bar is the hardening item; full magic-link+OTP unification is post-launch acceptable.
