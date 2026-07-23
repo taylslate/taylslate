@@ -9,14 +9,7 @@ import {
   updateDeal,
   getIOByDealId,
 } from "@/lib/data/queries";
-
-// Map episode cadence to days between episodes
-const CADENCE_DAYS: Record<string, number> = {
-  daily: 1,
-  weekly: 7,
-  biweekly: 14,
-  monthly: 30,
-};
+import { cadenceDays } from "@/lib/io/cadence-days";
 
 export async function POST(
   _request: NextRequest,
@@ -73,13 +66,15 @@ export async function POST(
     const ioNumber = await getNextIONumber();
 
     // Generate line items — one per episode, spaced by show's episode_cadence
-    const cadenceDays = CADENCE_DAYS[show.episode_cadence || "weekly"] || 7;
+    const spacingDays = cadenceDays(show.episode_cadence);
     const flightStart = new Date(deal.flight_start);
 
     const lineItems = [];
     for (let i = 0; i < deal.num_episodes; i++) {
       const postDate = new Date(flightStart);
-      postDate.setDate(postDate.getDate() + i * cadenceDays);
+      // UTC arithmetic: flight_start is a date-only value parsed as UTC midnight
+      // and toISOString reads UTC — local getDate/setDate can drift a day.
+      postDate.setUTCDate(postDate.getUTCDate() + i * spacingDays);
 
       lineItems.push({
         format: show.platform as "podcast" | "youtube",

@@ -97,6 +97,26 @@ describe("derivePostDates", () => {
     expect(derivePostDates("nope", "2026-01-01", 1, "weekly")).toEqual([]);
     expect(derivePostDates("2026-01-01", "2026-01-10", 0, "weekly")).toEqual([]);
   });
+
+  it("emits exact UTC date-only strings (no timezone drift)", () => {
+    // Weekly spacing from a date-only start; must land on exact UTC calendar days
+    // regardless of the runner's local zone (uses UTC date arithmetic).
+    expect(derivePostDates("2026-05-01", "2026-06-30", 4, "weekly")).toEqual([
+      "2026-05-01",
+      "2026-05-08",
+      "2026-05-15",
+      "2026-05-22",
+    ]);
+  });
+
+  it("uses 3-day spacing for the multiple_weekly cadence", () => {
+    expect(derivePostDates("2026-05-01", "2026-05-31", 4, "multiple_weekly")).toEqual([
+      "2026-05-01",
+      "2026-05-04",
+      "2026-05-07",
+      "2026-05-10",
+    ]);
+  });
 });
 
 describe("generateIoPdfFromDeal", () => {

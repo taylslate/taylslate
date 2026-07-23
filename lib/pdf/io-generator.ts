@@ -15,6 +15,7 @@ import type {
   ShowAdReadType,
 } from "@/lib/data/types";
 import { formatDateOnly } from "@/lib/format/date-only";
+import { CADENCE_DAYS, DEFAULT_CADENCE_DAYS } from "@/lib/io/cadence-days";
 
 // ---- Visual constants (mirror lib/pdf/io-pdf.ts) ----
 
@@ -71,15 +72,6 @@ function brandDisplayName(bp: BrandProfile): string {
   return "Advertiser";
 }
 
-const CADENCE_DAYS: Record<ShowEpisodeCadence, number> = {
-  daily: 1,
-  multiple_weekly: 3, // ~2-4 episodes a week → roughly every 3 days
-  weekly: 7,
-  biweekly: 14,
-  monthly: 30,
-  irregular: 7, // best-effort default for irregular cadence
-};
-
 /**
  * Derive evenly spaced post dates across the agreed flight window using the
  * show's stated cadence. Falls back to evenly distributing if the math
@@ -97,7 +89,7 @@ export function derivePostDates(
     return [];
   }
   const flightDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
-  const cadenceDays = cadence ? CADENCE_DAYS[cadence] : 7;
+  const cadenceDays = cadence ? CADENCE_DAYS[cadence] : DEFAULT_CADENCE_DAYS;
 
   // If cadence × episodes fits in the flight, use cadence spacing. Otherwise
   // distribute evenly so the last episode lands on or before flight_end.
@@ -110,7 +102,10 @@ export function derivePostDates(
   const dates: string[] = [];
   for (let i = 0; i < episodeCount; i++) {
     const d = new Date(start);
-    d.setDate(d.getDate() + i * spacing);
+    // UTC arithmetic: the start is a date-only value parsed as UTC midnight, and
+    // toISOString reads UTC — local getDate/setDate could drift a day across a
+    // timezone/DST boundary before formatDateOnly ever renders it.
+    d.setUTCDate(d.getUTCDate() + i * spacing);
     dates.push(d.toISOString().split("T")[0]);
   }
   return dates;

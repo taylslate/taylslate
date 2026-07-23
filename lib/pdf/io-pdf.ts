@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import type { InsertionOrder } from "@/lib/data/types";
+import { formatDateOnly } from "@/lib/format/date-only";
 
 // VeritoneOne-style IO PDF generator
 // Professional document layout: header, parties, line items table, terms, signature blocks
@@ -20,6 +21,10 @@ function fmt(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Real timestamps (created_at / signed_at) rendered as a date. Date-only values
+// (line-item post dates) use formatDateOnly (UTC) instead so they match the deal
+// view, pitch page, outreach email, and the Wave 12 IO — forcing UTC on a real
+// timestamp would misreport the calendar day, so those keep this local formatter.
 function fmtDate(dateStr: string): string {
   if (!dateStr) return "—";
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -205,7 +210,7 @@ export function generateIOPdf(io: InsertionOrder): Buffer {
     const rowData = [
       String(i + 1),
       li.show_name.length > 18 ? li.show_name.slice(0, 16) + "..." : li.show_name,
-      fmtDate(li.post_date),
+      formatDateOnly(li.post_date),
       capitalize(li.placement),
       li.guaranteed_downloads.toLocaleString(),
       li.price_type === "cpm" ? "CPM" : "Flat",
