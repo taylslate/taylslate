@@ -65,6 +65,7 @@ Load-bearing standing rules swept from every wave. Reintroducing any of these si
 - **`LLM_MAX_RETRIES` stays 0** — do not wrap Claude API calls in retry loops; the setting is deliberate.
 - **Turbopack + Stripe/DocuSign SDKs use the lazy-require pattern `(0,eval)("require")`** (they ship UMD modules).
 - **Brand safety is metadata — shown but never used to exclude shows** from discovery.
+- **Two Podscan clients — one is dead code.** `lib/enrichment/podscan.ts` is the LIVE path (discovery via `/episodes/search` + the admin enrich routes). `lib/podscan/` feeds ONLY the **Wave 5 scorer** (`lib/scoring/index.ts` + `scoring/dimensions/audience-fit.ts`) — orphaned, nothing imports it; live discovery is `runConvictionDiscovery`. Add new Podscan fetches to `lib/enrichment/podscan.ts`; don't wire into or resurrect the Wave 5 scorer (its demographics/audience-fit neutral fallback never executes).
 
 ## Supabase Conventions (REQUIRED)
 

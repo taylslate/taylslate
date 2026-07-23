@@ -267,6 +267,14 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 
 ## Foundational Architecture
 
+### Podscan data-layer audit follow-ups (surfaced July 23, 2026)
+From the read-only Podscan consumption audit (see STATUS.md → "Podscan data audit"; verification script `378698a`). Four items, in rough priority:
+
+- **Wire Podscan demographics into the live conviction path.** `shows.demographics` is always `{}` in prod — the live discovery path never fetches it, and the only code that does (`lib/podscan/demographics.ts` → `getPodcastDemographics`) feeds the dead Wave 5 scorer. The client + types already exist and **we already pay Podscan for this data**, so this is *wiring, not integration*: fetch per candidate, persist to `shows.demographics`, have the conviction audience-fit dimension consume it. **Effort:** ~1 day. **Design question (the real cost, not the wiring):** demographics is a per-podcast endpoint call, so fetching for every discovery candidate has an API-cost / rate-limit budget — decide fetch-on-discovery vs. fetch-on-select vs. cache-and-backfill. **Why:** audience fit is scored blind today; this is the single biggest discovery-quality unlock from the audit.
+- **Consolidate the two Podscan clients.** `lib/enrichment/podscan.ts` (live) and `lib/podscan/` (Wave 5 scorer only) are parallel clients with duplicate types. Debt, **not demo-blocking**. **Effort:** ~1-2 days. **Why:** two clients invite wiring a new fetch into the wrong (dead) one.
+- **Delete or quarantine the dead Wave 5 scorer** (`lib/scoring/index.ts` + `lib/scoring/dimensions/audience-fit.ts` — orphaned; nothing imports them, live discovery is `runConvictionDiscovery`). Either delete, or add a header comment marking them dead. **Effort:** ~half day. **Sequence with the demographics item** — that audience-fit logic is the natural home for a revived scorer, so decide keep-vs-rewrite together (don't delete then rebuild).
+- **Remove `past_sponsors` dead schema, or document why it stays.** `shows.past_sponsors` is never written (test seed only) and never read. Drop the column (idempotent migration), or add an explicit "reserved for X" note so the next audit doesn't re-flag it. **Effort:** ~half day.
+
 ### English language filter
 - Non-English shows currently surface in results without filtering
 - Add language filter to discovery query
