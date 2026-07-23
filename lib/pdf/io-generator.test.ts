@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { derivePostDates, generateIoPdfFromDeal } from "./io-generator";
+import { formatDateOnly } from "@/lib/format/date-only";
 import type {
   Wave12Deal,
   BrandProfile,
@@ -148,5 +149,67 @@ describe("generateIoPdfFromDeal", () => {
     });
     expect(out.totalDownloads).toBe(0);
     expect(out.totalGross).toBe(0);
+  });
+});
+
+// The signed IO is the document of record: its flight + post dates are date-only
+// values that MUST render the same calendar day as the pitch page, deal view, and
+// outreach email — i.e. via formatDateOnly (UTC), never a timezone-naive formatter
+// that shifts them a day for negative-offset viewers.
+describe("IO PDF date-only rendering (matches pitch/deal/email)", () => {
+  // jsPDF is created without compression, so drawn text lands in the content
+  // stream as readable bytes we can search.
+  const pdfText = () => {
+    const out = generateIoPdfFromDeal({
+      deal: baseDeal, // flight 2026-05-01 → 2026-05-31, weekly, 4 eps
+      brandProfile: baseBrand,
+      showProfile: baseShow,
+      outreach: baseOutreach,
+      brandSigningEmail: "x",
+      showSigningEmail: "y",
+    });
+    return { text: out.pdfBuffer.toString("latin1"), postDates: out.postDates };
+  };
+
+  it("renders flight dates in UTC (day-correct), independent of the runner timezone", () => {
+    const { text } = pdfText();
+    // formatDateOnly is UTC-pinned, so these strings are stable everywhere.
+    expect(formatDateOnly("2026-05-01")).toBe("May 1, 2026");
+    expect(formatDateOnly("2026-05-31")).toBe("May 31, 2026");
+    expect(text).toContain("May 1, 2026");
+    expect(text).toContain("May 31, 2026");
+    // The day-before must never leak in from a naive local-zone format.
+    expect(text).not.toContain("Apr 30, 2026");
+  });
+
+  it("renders each line-item post date through the same UTC helper", () => {
+    const { text, postDates } = pdfText();
+    expect(postDates.length).toBe(4);
+    for (const iso of postDates) {
+      expect(text).toContain(formatDateOnly(iso));
+    }
+  });
+});
+
+// Deterministic regression guard (TZ-independent): pin the targeted split so a
+// future edit can't route date-only values back through the naive formatter, nor
+// force UTC on the real timestamps.
+describe("io-generator date-formatter split", () => {
+  it("uses formatDateOnly for flight + post dates and fmtDate for timestamps", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const src = readFileSync(fileURLToPath(new URL("./io-generator.ts", import.meta.url)), "utf8");
+
+    // Date-only values → shared UTC helper.
+    expect(src).toContain("formatDateOnly(deal.agreed_flight_start)");
+    expect(src).toContain("formatDateOnly(deal.agreed_flight_end)");
+    expect(src).toContain("postDates[i] ? formatDateOnly(postDates[i])");
+    // ...never the naive local formatter.
+    expect(src).not.toContain("fmtDate(deal.agreed_flight");
+    expect(src).not.toContain("fmtDate(postDates[i])");
+
+    // Real timestamps stay on the local-zone formatter.
+    expect(src).toContain("fmtDate(deal.created_at)");
+    expect(src).toContain("fmtDate(signedAt)");
   });
 });

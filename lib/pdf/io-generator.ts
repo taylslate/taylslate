@@ -14,6 +14,7 @@ import type {
   ShowEpisodeCadence,
   ShowAdReadType,
 } from "@/lib/data/types";
+import { formatDateOnly } from "@/lib/format/date-only";
 
 // ---- Visual constants (mirror lib/pdf/io-pdf.ts) ----
 
@@ -36,6 +37,11 @@ function money(n: number): string {
   });
 }
 
+// Real timestamps (created_at / signed_at) rendered as a date. Date-only values
+// (flight dates, line-item post dates) do NOT use this — they go through
+// formatDateOnly (UTC) so the signed IO, the deal view, the pitch page, and the
+// outreach email all show the same calendar day. Forcing UTC on a real timestamp
+// would misreport the calendar day, so those keep this local formatter.
 function fmtDate(iso: string): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-US", {
@@ -193,7 +199,7 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   const dateText = `Issued: ${fmtDate(deal.created_at)}`;
   let tw = doc.getTextWidth(dateText);
   doc.text(dateText, PAGE_WIDTH - MARGIN - tw, 36);
-  const flightText = `Flight: ${fmtDate(deal.agreed_flight_start)} – ${fmtDate(deal.agreed_flight_end)}`;
+  const flightText = `Flight: ${formatDateOnly(deal.agreed_flight_start)} – ${formatDateOnly(deal.agreed_flight_end)}`;
   tw = doc.getTextWidth(flightText);
   doc.text(flightText, PAGE_WIDTH - MARGIN - tw, 54);
 
@@ -308,7 +314,7 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     const rowData = [
       String(i + 1),
       publisherName.length > 22 ? publisherName.slice(0, 20) + "..." : publisherName,
-      postDates[i] ? fmtDate(postDates[i]) : "TBD",
+      postDates[i] ? formatDateOnly(postDates[i]) : "TBD",
       placementLabel(deal.agreed_placement),
       audience.toLocaleString(),
       `$${money(cpm)}`,
