@@ -14,6 +14,7 @@
 // require()s the SDK lazily).
 
 import { getDocuSignClient } from "./client";
+import { SIGNATURE_ANCHORS } from "./anchors";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type SdkAny = any;
@@ -46,8 +47,13 @@ export interface SigningUrl {
   url: string;
 }
 
-const ANCHOR_BRAND = "Advertiser Signature Tab";
-const ANCHOR_SHOW = "Publisher Signature Tab";
+const ANCHOR_BRAND = SIGNATURE_ANCHORS.advertiser;
+const ANCHOR_SHOW = SIGNATURE_ANCHORS.publisher;
+
+// Recipient ids — single source shared by createEnvelope, the signing-URL view,
+// and the post-create tab-placement backstop so they can never drift.
+const RECIPIENT_BRAND = "1";
+const RECIPIENT_SHOW = "2";
 
 interface BuildSignerOpts {
   name: string;
@@ -96,7 +102,7 @@ export async function createEnvelope(
     name: input.brand.name,
     email: input.brand.email,
     routingOrder: "1",
-    recipientId: "1",
+    recipientId: RECIPIENT_BRAND,
     anchorString: ANCHOR_BRAND,
     clientUserId: "brand",
   });
@@ -105,7 +111,7 @@ export async function createEnvelope(
     name: input.show.name,
     email: input.show.email,
     routingOrder: "2",
-    recipientId: "2",
+    recipientId: RECIPIENT_SHOW,
     anchorString: ANCHOR_SHOW,
   });
 
@@ -129,6 +135,88 @@ export async function createEnvelope(
   return { envelopeId: result.envelopeId };
 }
 
+export interface TabPlacementResult {
+  /** True when every recipient has at least one resolved SignHere tab. */
+  ok: boolean;
+  /** Recipient ids that came back with no placed SignHere tab. */
+  missing: string[];
+  /** Set when the check itself failed (throw/timeout); `ok` is false. */
+  error?: string;
+}
+
+/**
+ * Log-only backstop for the anchor-tab bug: after createEnvelope, confirm
+ * DocuSign actually RESOLVED the SignHere anchors. An unmatched anchor is
+ * silently dropped, producing a "sent" envelope with no signature fields — the
+ * exact failure that shipped once. This reads back the tabs DocuSign placed.
+ *
+ * NEVER throws and is time-bounded: a failure here must not affect the signer
+ * flow. Callers run it off the response path (Next `after()`) and log a domain
+ * event on `!ok`. Returns `{ ok:false }` (never rejects) if listTabs throws or
+ * the check exceeds `timeoutMs` — the caller decides what to do with that.
+ */
+export async function verifyEnvelopeTabsPlaced(
+  envelopeId: string,
+  timeoutMs = 8000
+): Promise<TabPlacementResult> {
+  // Strict scalar → finite number. Rejects null/undefined/""/whitespace, booleans,
+  // arrays, and objects so a malformed tab with blank/absent coordinates is NOT
+  // coerced to 0 and mistaken for a resolved tab (DocuSign returns positions as
+  // numeric strings when an anchor actually resolves).
+  const finiteNum = (v: unknown): number | null => {
+    if (typeof v === "number") return Number.isFinite(v) ? v : null;
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+    return null;
+  };
+
+  // Never rejects: any error becomes a structured, non-fatal result.
+  const check = async (): Promise<TabPlacementResult> => {
+    try {
+      const { api, accountId, sdk: sdkRaw } = await getDocuSignClient();
+      const sdk = sdkRaw as SdkAny;
+      const envelopesApi = new sdk.EnvelopesApi(api);
+      const recipientIds = [RECIPIENT_BRAND, RECIPIENT_SHOW];
+      const results = await Promise.all(
+        recipientIds.map(async (rid) => {
+          const tabs = await envelopesApi.listTabs(accountId, envelopeId, rid);
+          const signHere = (tabs?.signHereTabs ?? []) as Array<Record<string, unknown>>;
+          const placed = signHere.some((t) => {
+            const page = finiteNum(t.pageNumber);
+            const x = finiteNum(t.xPosition);
+            const yPos = finiteNum(t.yPosition);
+            return page !== null && page >= 1 && x !== null && yPos !== null;
+          });
+          return { rid, placed };
+        })
+      );
+      const missing = results.filter((r) => !r.placed).map((r) => r.rid);
+      return { ok: missing.length === 0, missing };
+    } catch (err) {
+      return {
+        ok: false,
+        missing: [],
+        error: err instanceof Error ? err.message : "unknown",
+      };
+    }
+  };
+
+  // Time-bound the check; the timeout RESOLVES (never rejects) to a sentinel so
+  // no unhandled rejection can leak from the losing race branch.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<TabPlacementResult>((resolve) => {
+    timer = setTimeout(
+      () => resolve({ ok: false, missing: [], error: `tab check timed out after ${timeoutMs}ms` }),
+      timeoutMs
+    );
+  });
+  const outcome = await Promise.race([check(), timeout]);
+  if (timer) clearTimeout(timer);
+  return outcome;
+}
+
 export async function getBrandSigningUrl(input: SigningUrlInput): Promise<SigningUrl> {
   const { api, accountId, sdk: sdkRaw } = await getDocuSignClient();
   const sdk = sdkRaw as SdkAny;
@@ -137,7 +225,7 @@ export async function getBrandSigningUrl(input: SigningUrlInput): Promise<Signin
   const viewRequest = sdk.RecipientViewRequest.constructFromObject({
     authenticationMethod: "none",
     clientUserId: input.signer.clientUserId,
-    recipientId: "1",
+    recipientId: RECIPIENT_BRAND,
     returnUrl: input.returnUrl,
     userName: input.signer.name,
     email: input.signer.email,

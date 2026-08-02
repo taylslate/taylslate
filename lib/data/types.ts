@@ -651,6 +651,9 @@ export type DomainEventType =
   | "io.declined"
   | "io.counter_accepted"
   | "io.timeout_cancelled"
+  // Log-only backstop: DocuSign accepted the envelope but did not resolve the
+  // SignHere anchor tabs for one or more recipients (see send-to-docusign).
+  | "io.tabs_unverified"
   // Wave 13 — subscription/plan transitions
   | "customer.upgraded"
   | "customer.downgraded"

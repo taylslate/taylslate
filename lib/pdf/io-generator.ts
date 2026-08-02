@@ -16,6 +16,7 @@ import type {
 } from "@/lib/data/types";
 import { formatDateOnly } from "@/lib/format/date-only";
 import { CADENCE_DAYS, DEFAULT_CADENCE_DAYS } from "@/lib/io/cadence-days";
+import { SIGNATURE_ANCHORS } from "@/lib/docusign/anchors";
 
 // ---- Visual constants (mirror lib/pdf/io-pdf.ts) ----
 
@@ -458,7 +459,8 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     label: string,
     signedAt: string | null | undefined,
     signedBy: string,
-    startX: number
+    startX: number,
+    anchorString: string
   ): void {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
@@ -466,6 +468,18 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     doc.text(label.toUpperCase(), startX, y);
 
     const sigY = y + 30;
+
+    // Invisible (white-on-white) DocuSign anchor. createEnvelope places the
+    // SignHere tab on this exact string (see lib/docusign/anchors.ts). Rendered
+    // on the signature line so the tab lands just above it (anchorYOffset -12).
+    // Must stay in sync with envelope.ts via the shared SIGNATURE_ANCHORS.
+    // Drawn BEFORE the line so the line paints over it — white glyph descenders
+    // never mask the gray rule.
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6);
+    doc.setTextColor(...WHITE);
+    doc.text(anchorString, startX, sigY);
+
     doc.setDrawColor(...LIGHT_GRAY);
     doc.setLineWidth(0.5);
     doc.line(startX, sigY, startX + sigColWidth - 20, sigY);
@@ -500,13 +514,15 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     "Advertiser",
     deal.brand_signed_at,
     advertiserName,
-    MARGIN
+    MARGIN,
+    SIGNATURE_ANCHORS.advertiser
   );
   drawSignatureBlock(
     "Publisher",
     deal.show_signed_at,
     publisherName,
-    MARGIN + sigColWidth + 20
+    MARGIN + sigColWidth + 20,
+    SIGNATURE_ANCHORS.publisher
   );
 
   // ---- Footer ----

@@ -6,7 +6,7 @@
 // Idempotent on the envelope side — if the deal already has an envelope,
 // we reuse it and just refresh the signing URL.
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import {
   getAuthenticatedUser,
   getBrandProfileByUserId,
@@ -15,10 +15,20 @@ import {
   updateWave12Deal,
 } from "@/lib/data/queries";
 import { generateIoPdfFromDeal } from "@/lib/pdf/io-generator";
-import { createEnvelope, getBrandSigningUrl } from "@/lib/docusign/envelope";
+import {
+  createEnvelope,
+  getBrandSigningUrl,
+  verifyEnvelopeTabsPlaced,
+} from "@/lib/docusign/envelope";
 import { logEvent } from "@/lib/data/events";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { BrandProfile, ShowProfile } from "@/lib/data/types";
+
+// Give the post-response after() tab-placement check (bounded ~8s + a Supabase
+// insert) headroom before Vercel tears the invocation down, so the
+// io.tabs_unverified tripwire isn't dropped near a timeout. Effective cap still
+// depends on the Vercel plan (Hobby caps at 10s; Pro honors this).
+export const maxDuration = 30;
 
 function siteOrigin(req: NextRequest): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
@@ -149,6 +159,44 @@ export async function POST(
         { status: 502 }
       );
     }
+  }
+
+  // Log-only anchor-tab backstop — runs for BOTH freshly-created and reused
+  // envelopes (a reused envelope could predate the anchor fix, or a future
+  // regression could ship tabless envelopes; either way we want the tripwire).
+  // Runs AFTER the response (Next `after()`), so the signer's happy path is
+  // byte-for-byte unchanged — no added latency, no new failure path, never voids.
+  // On unresolved anchors it writes an `io.tabs_unverified` row to domain_events
+  // (keyed to the deal) plus a console.error. verifyEnvelopeTabsPlaced never
+  // throws and is time-bounded. Registering after() is itself wrapped so a runtime
+  // without waitUntil can't turn a successful send into an error.
+  const envelopeIdForCheck = envelopeId;
+  try {
+    after(async () => {
+      const tabCheck = await verifyEnvelopeTabsPlaced(envelopeIdForCheck);
+      if (!tabCheck.ok) {
+        console.error(
+          `[send-to-docusign] anchor tab placement UNVERIFIED for envelope ${envelopeIdForCheck} (deal ${deal.id}) — missing=[${tabCheck.missing.join(",")}] error=${tabCheck.error ?? "none"}`
+        );
+        await logEvent({
+          eventType: "io.tabs_unverified",
+          entityType: "deal",
+          entityId: deal.id,
+          actorId: user.id,
+          payload: {
+            envelope_id: envelopeIdForCheck,
+            io_number: rendered.ioNumber,
+            missing_recipients: tabCheck.missing,
+            error: tabCheck.error ?? null,
+          },
+        });
+      }
+    });
+  } catch (scheduleErr) {
+    console.error(
+      `[send-to-docusign] could not schedule tab-placement check for ${envelopeIdForCheck}:`,
+      scheduleErr instanceof Error ? scheduleErr.message : scheduleErr
+    );
   }
 
   // Generate brand signing URL. Returns to the deal page after signing.

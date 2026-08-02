@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { derivePostDates, generateIoPdfFromDeal } from "./io-generator";
 import { formatDateOnly } from "@/lib/format/date-only";
+import { SIGNATURE_ANCHORS } from "@/lib/docusign/anchors";
 import type {
   Wave12Deal,
   BrandProfile,
@@ -231,5 +232,28 @@ describe("io-generator date-formatter split", () => {
     // Real timestamps stay on the local-zone formatter.
     expect(src).toContain("fmtDate(deal.created_at)");
     expect(src).toContain("fmtDate(signedAt)");
+  });
+});
+
+// Regression guard for the DocuSign anchor bug (July 2026): createEnvelope
+// places SignHere tabs by these EXACT strings, so the generated IO MUST contain
+// them (rendered as invisible white text at the signature lines). If they ever
+// drift or go missing again, real envelopes get created with no signature tabs
+// — DocuSign silently drops an anchor tab whose string it can't find, so the
+// failure is invisible without this test. Same source of truth as envelope.ts:
+// lib/docusign/anchors.ts.
+describe("io-generator renders DocuSign signature anchors", () => {
+  it("embeds both SIGNATURE_ANCHORS strings in the PDF content stream", () => {
+    const out = generateIoPdfFromDeal({
+      deal: baseDeal,
+      brandProfile: baseBrand,
+      showProfile: baseShow,
+      outreach: baseOutreach,
+      brandSigningEmail: "x",
+      showSigningEmail: "y",
+    });
+    const text = out.pdfBuffer.toString("latin1");
+    expect(text).toContain(SIGNATURE_ANCHORS.advertiser);
+    expect(text).toContain(SIGNATURE_ANCHORS.publisher);
   });
 });
