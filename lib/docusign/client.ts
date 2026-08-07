@@ -22,6 +22,13 @@ type DocuSignApiClient = {
     privateKey: Buffer,
     expiresIn: number
   ): Promise<{ body: { access_token: string; expires_in: number } }>;
+  getUserInfo(accessToken: string): Promise<{
+    accounts?: Array<{
+      accountId?: string;
+      isDefault?: string;
+      baseUri?: string;
+    }>;
+  }>;
 };
 
 function loadSdk(): { ApiClient: new () => DocuSignApiClient } {
@@ -44,12 +51,6 @@ function getOAuthBasePath(): string {
     : "account-d.docusign.com";
 }
 
-function getRestBasePath(): string {
-  return getEnv() === "production"
-    ? `https://www.docusign.net/restapi`
-    : `https://demo.docusign.net/restapi`;
-}
-
 function normalizePrivateKey(raw: string): Buffer {
   // Vercel strips real newlines; env vars often arrive with literal "\n".
   const withNewlines = raw.replace(/\\n/g, "\n");
@@ -59,22 +60,29 @@ function normalizePrivateKey(raw: string): Buffer {
 interface TokenCache {
   accessToken: string;
   expiresAt: number; // unix seconds
+  // Region-specific REST base discovered from the account's base_uri, e.g.
+  // "https://na4.docusign.net/restapi". Cached with the token (both refresh together).
+  restBasePath: string;
 }
 
 let cachedToken: TokenCache | null = null;
 
-async function fetchAccessToken(): Promise<string> {
+async function fetchAuth(): Promise<{ accessToken: string; restBasePath: string }> {
   const now = Math.floor(Date.now() / 1000);
   if (cachedToken && cachedToken.expiresAt - 300 > now) {
-    return cachedToken.accessToken;
+    return {
+      accessToken: cachedToken.accessToken,
+      restBasePath: cachedToken.restBasePath,
+    };
   }
 
   const integrationKey = process.env.DOCUSIGN_INTEGRATION_KEY;
   const userId = process.env.DOCUSIGN_USER_ID;
   const rsaKey = process.env.DOCUSIGN_RSA_PRIVATE_KEY;
-  if (!integrationKey || !userId || !rsaKey) {
+  const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+  if (!integrationKey || !userId || !rsaKey || !accountId) {
     throw new Error(
-      "DocuSign JWT auth missing env vars (DOCUSIGN_INTEGRATION_KEY, DOCUSIGN_USER_ID, DOCUSIGN_RSA_PRIVATE_KEY)"
+      "DocuSign JWT auth missing env vars (DOCUSIGN_INTEGRATION_KEY, DOCUSIGN_USER_ID, DOCUSIGN_RSA_PRIVATE_KEY, DOCUSIGN_ACCOUNT_ID)"
     );
   }
 
@@ -91,8 +99,25 @@ async function fetchAccessToken(): Promise<string> {
   );
   const token = body.access_token;
   const expiresIn = Number(body.expires_in ?? 3600);
-  cachedToken = { accessToken: token, expiresAt: now + expiresIn };
-  return token;
+
+  // Discover the account's region-specific base_uri (e.g. https://na4.docusign.net)
+  // instead of hardcoding a host. Region-bound accounts (na4, eu1, au1, …) MUST call
+  // their own base_uri — a generic www.docusign.net fails for them. getUserInfo hits
+  // the OAuth host set above and returns the correct base_uri for both sandbox and prod.
+  const userInfo = await api.getUserInfo(token);
+  const accounts = userInfo?.accounts ?? [];
+  const match =
+    accounts.find((a) => a.accountId === accountId) ??
+    accounts.find((a) => a.isDefault === "true");
+  const baseUri = match?.baseUri;
+  if (!baseUri) {
+    throw new Error(
+      `DocuSign getUserInfo returned no base_uri for account ${accountId}`
+    );
+  }
+  const restBasePath = `${baseUri}/restapi`;
+  cachedToken = { accessToken: token, expiresAt: now + expiresIn, restBasePath };
+  return { accessToken: token, restBasePath };
 }
 
 /**
@@ -106,11 +131,11 @@ export async function getDocuSignClient(): Promise<{
 }> {
   const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
   if (!accountId) throw new Error("DOCUSIGN_ACCOUNT_ID not set");
-  const accessToken = await fetchAccessToken();
+  const { accessToken, restBasePath } = await fetchAuth();
 
   const sdk = loadSdk() as ReturnType<typeof loadSdk> & Record<string, unknown>;
   const api = new sdk.ApiClient();
-  api.setBasePath(getRestBasePath());
+  api.setBasePath(restBasePath);
   api.addDefaultHeader("Authorization", `Bearer ${accessToken}`);
   return { api, accountId, sdk };
 }
