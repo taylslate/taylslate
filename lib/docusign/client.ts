@@ -57,6 +57,29 @@ function normalizePrivateKey(raw: string): Buffer {
   return Buffer.from(withNewlines, "utf8");
 }
 
+const USERINFO_TIMEOUT_MS = 10_000;
+
+// Race a promise against a timeout that rejects. Used to bound the getUserInfo
+// discovery hop so a hung OAuth host can't stall envelope creation indefinitely.
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms
+    );
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 interface TokenCache {
   accessToken: string;
   expiresAt: number; // unix seconds
@@ -104,18 +127,29 @@ async function fetchAuth(): Promise<{ accessToken: string; restBasePath: string 
   // instead of hardcoding a host. Region-bound accounts (na4, eu1, au1, …) MUST call
   // their own base_uri — a generic www.docusign.net fails for them. getUserInfo hits
   // the OAuth host set above and returns the correct base_uri for both sandbox and prod.
-  const userInfo = await api.getUserInfo(token);
+  //
+  // Bound the call: it's an extra network hop on the envelope-creation path and the
+  // SDK sets no timeout on getUserInfo, so a slow OAuth host would otherwise stall the
+  // send indefinitely. Cap it and let a clear error surface fast instead.
+  const userInfo = await withTimeout(
+    api.getUserInfo(token),
+    USERINFO_TIMEOUT_MS,
+    "DocuSign getUserInfo"
+  );
+  // Resolve STRICTLY by the configured account. Do not fall back to the default
+  // account's base_uri: pairing one account's host with a different configured
+  // accountId silently targets the wrong data center (fails only later, downstream).
   const accounts = userInfo?.accounts ?? [];
-  const match =
-    accounts.find((a) => a.accountId === accountId) ??
-    accounts.find((a) => a.isDefault === "true");
-  const baseUri = match?.baseUri;
-  if (!baseUri) {
+  const account = accounts.find((a) => a.accountId === accountId);
+  if (!account?.baseUri) {
     throw new Error(
-      `DocuSign getUserInfo returned no base_uri for account ${accountId}`
+      `DocuSign getUserInfo returned no base_uri for account ${accountId} ` +
+        `(user ${userId} may not be a member of it)`
     );
   }
-  const restBasePath = `${baseUri}/restapi`;
+  // Trim any trailing slash before appending /restapi (defensive against a future
+  // host-format change) so we never build a "…net//restapi" double slash.
+  const restBasePath = `${account.baseUri.replace(/\/+$/, "")}/restapi`;
   cachedToken = { accessToken: token, expiresAt: now + expiresIn, restBasePath };
   return { accessToken: token, restBasePath };
 }
