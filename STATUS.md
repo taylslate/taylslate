@@ -1,6 +1,6 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated July 23, 2026 — **accept-flow launch-blocker cluster SHIPPED + Codex-clean (three passes) + LIVE-VERIFIED July 16** — the real outreach→accept loop was driven end-to-end in prod via the **accept-path seeding tool** (`POST /api/admin/seed-outreach`, both variants) and torn down clean. 1003 tests (91 files), tsc/eslint/`next build` clean. Migration 031 (`shows.is_discoverable`) applied + introspected. Resolved the parked product decision: a non-catalog accept materializes a **non-discoverable** `shows` row. Fixes #1 (accept NOT-NULL deal creation, brand_id/show_id + at-accept-time creation + onboarding backfill), #2 (show-side deal visibility), #3 (flight-date off-by-one) — plus a pre-existing `deals/[id]` authz-bypass byproduct. Commits `e3c09e7`/`7642808`/`bdca1a9`/`e971656`/`a3b1856` (+ this doc commit). **Live verify (July 16):** §1 catalog — deal created at accept, brand + show both see it, flight dates correct on deal view + IO; §2 non-catalog — materialize + backfill confirmed via real onboarding; teardown cascade clean incl. the materialized `shows` row. Codex verdict LAUNCH-READY, now live-confirmed. Brand auth hardening COMPLETE (L1-3, verified live July 8-9). Impersonation + seeding tools COMPLETE (verified live July 7). Wave 14 Phase 2D COMPLETE. **Four accept-flow live-verify follow-up fixes (pitch flight date, onboarding→pitch return, `multiple_weekly` cadence, IO PDF flight/post dates) SHIPPED + Codex-clean + LIVE-VERIFIED July 23; migration 032 applied.**_
+_Volatile snapshot. Updated Aug 7, 2026. **Frontier: DocuSign production cutover DONE + live-verified against `na4`. Next unproven seams — email deliverability rehearsal + the Stripe money loop.** Production key promoted, all five `DOCUSIGN_*` env vars cut to Production scope, auth + createEnvelope proven against `na4.docusign.net` (envelope `6bd19309`, voided). Region-host bug (`www` hardcode → `base_uri` discovery via `getUserInfo`) fixed + Codex-reviewed, commits `0774bba` + `738b152`, deployed green. Still unverified vs prod: Connect webhook, embedded brand signing through the real route, completion→SetupIntent. Correction (standing): July "end-to-end" runs never fired envelope creation — signature loop first ran Aug 4 (sandbox), Aug 7 (prod). Prior, still true: accept-flow cluster + date/cadence fixes SHIPPED + LIVE-VERIFIED July 16/23 (migrations 031/032); brand auth L1-3, impersonation, seeding, Wave 14 Phase 2D all COMPLETE._
 
 ## Podscan data audit (read-only, July 23, 2026) — what we consume vs. what's null in prod
 
@@ -12,6 +12,26 @@ Inventory of the four Podscan-derived fields; **no code changed** (audit only). 
 - **`shows.past_sponsors` — dead schema.** Never written by any prod code (test seed only), never read.
 - **`shows.current_sponsors` — written only by the admin enrich route** (`/api/shows/[id]/enrich`, `enrich-batch`), empty from the automated discovery path; surfaced in the outreach-email prompt + campaign UI, **never scored**.
 - **Two separate Podscan clients:** `lib/enrichment/podscan.ts` (live: discovery + enrich) and `lib/podscan/` (Wave 5 scorer only, dead).
+
+## Most recent — DocuSign PRODUCTION CUTOVER complete + live-verified against na4 (Aug 7, 2026)
+
+Production DocuSign is live and proven. Go-Live is approved and the integration key promoted (correcting the Aug 4 "form submitted, ~48hr review pending" framing below); the env is fully cut over; JWT auth + createEnvelope executed against the real production `na4.docusign.net`; and a region-host bug that would have broken production envelope creation was found, fixed, Codex-reviewed, and deployed green.
+
+- **DocuSign PRODUCTION CUTOVER complete + live-verified against na4.** Go-Live approved, key promoted. Production account `18e5e14c-...` on `na4.docusign.net`, user `09dbd051-...`, new production RSA keypair generated on the na4 app, production consent granted, all five `DOCUSIGN_*` Vercel env vars swapped to production (**Production scope only, NOT preview**).
+- **Auth + createEnvelope PROVEN against production.** Real envelope `6bd19309-...` authenticated via `account.docusign.com`, created against `na4.docusign.net` (logged live from the SDK), voided clean.
+- **Region bug FOUND + FIXED.** `getRestBasePath()` hardcoded `www.docusign.net`, which fails for na4 accounts. Replaced with `base_uri` discovery via `getUserInfo` (resolves the account's region host from the JWT userinfo, caches with the token). Codex-reviewed (2 Medium resolved: strict account-id resolution, bounded 10s `getUserInfo` timeout). Commits `0774bba` + `738b152`, deployed `dpl_8nV15WPvEJeFzecDj3uPDoKkzYCD`, Vercel green.
+- **STILL UNVERIFIED against production (deferred, next DocuSign work, couples with the Stripe money loop):** Connect webhook end-to-end (needs production Connect config + secret); embedded brand signing via `getBrandSigningUrl` through the real `send-to-docusign` route (this test used the harness with email signers, not the embedded recipient-view); completion → deal transition → Stripe SetupIntent chain.
+
+## Most recent — DocuSign signature path LIVE-VERIFIED in sandbox (first time) + anchor-tab bug FOUND & FIXED + runtime tripwire SHIPPED + production Go-Live form SUBMITTED (Aug 4, 2026)
+
+The DocuSign signature path executed against the live sandbox for the first time — the code the test suite only mocks (JWT auth + createEnvelope) genuinely ran against `demo.docusign.net`. A silent anchor-tab bug that would have shipped real envelopes with **no signature fields** was found and fixed, a runtime tripwire shipped, and the production Go-Live form was submitted. **1029 tests (94 files)**, tsc/eslint/`next build` clean. Commit `6b2ca19`, Vercel green (`dpl_58J1isy1MdFRUnZFm7uSK7jp5c58`).
+
+- **DocuSign signature path LIVE-VERIFIED in sandbox for the first time.** Auth (`lib/docusign/client.ts` JWT grant) and createEnvelope (`lib/docusign/envelope.ts`) genuinely executed against `demo.docusign.net` — the code the test suite only mocks. First real envelope `1b112e58-5d14-8b08-813a-db99bf741e89`; **~102 successful sandbox API calls, 0 failed**, on integration key `6ce438c5-53a1-454b-a24a-ca9988a3fdf3`.
+- **Anchor-tab bug FOUND + FIXED.** The IO generator rendered signature blocks as "ADVERTISER"/"PUBLISHER" but createEnvelope anchors `SignHere` tabs to "Advertiser Signature Tab"/"Publisher Signature Tab" — strings absent from the document. DocuSign **silently drops unmatched-anchor tabs** (201, no error), so real envelopes would have shipped with **NO signature fields**. Fix: shared **`lib/docusign/anchors.ts`** as single source of truth (imported by both `envelope.ts` and `io-generator.ts` so they can't drift); white anchor text rendered in `drawSignatureBlock`; regression test asserting anchors appear in the generated PDF. **PROVEN** via `scripts/verify-docusign-tabs.ts`: real IOs → createEnvelope → listTabs, tabs confirmed placed on page 2 for a multi-page IO (survives the page break), envelopes voided after.
+- **Runtime tripwire SHIPPED.** `send-to-docusign` calls `verifyEnvelopeTabsPlaced` (listTabs) after createEnvelope on both the create and reuse paths; if a tab is missing it emits an `io.tabs_unverified` `domain_events` row + `console.error` but **never blocks the signer** (failure-isolated, runs in `after()`, `maxDuration=30`).
+- **Go-Live form SUBMITTED Aug 4.** Production account `18e5e14c-8d65-41ae-9d19-9090478b5e26` (`na4.docusign.net`), Developer Starter plan ($75/mo month-to-month), private custom integration (Option 1). **~48hr DocuSign review pending; production DocuSign NOT usable until approved.** Env cutover (`DOCUSIGN_ENV`, production account id/user id, Connect config) **NOT yet done** — waiting on approval.
+- **STILL UNVERIFIED (deferred, do not mark done):** the Connect webhook end-to-end; embedded brand signing via `getBrandSigningUrl` through the real `send-to-docusign` route (the harness used two email signers, not the embedded recipient-view the product serves); the completion → deal transition → Stripe SetupIntent chain.
+- **KNOWN GAP:** no external alert is wired on `domain_events`. The `io.tabs_unverified` tripwire is only as good as a query someone runs — add a saved query or alert before relying on it in production.
 
 ## Most recent — accept-flow live-verify FOLLOW-UP FIXES (pitch date, onboarding return, cadence gap, IO PDF date) SHIPPED + Codex-clean + LIVE-VERIFIED July 23, 2026
 
@@ -50,6 +70,7 @@ The July 7 accept-flow cluster is **fixed, merged to `main`, Codex-clean across 
 - **Security byproduct (Codex, pre-existing — `7642808`):** `deals/[id]` GET/PATCH/DELETE were admin-client reads/mutations with NO ownership check — any authed user could read/mutate any deal by UUID. Now gated by `callerOwnsDeal` (legacy + Wave-12 ownership; 404 to non-owners so UUIDs aren't probeable; new `route.test.ts`). Public `shows/[id]` GET 404s non-discoverable rows.
 - **Codex loop:** `e3c09e7` (build) → review found the authz bypass + accept non-atomicity + backfill-email + null-`show_profile_id` + slug-collision → `7642808` (fixes) → re-review PARTIAL on accept-counter reconcile + null guards → `bdca1a9` → final pass RESOLVED, one residual null lookup → `e971656`. **Final verdict: LAUNCH-READY, no new findings.**
 - **Verification:** **989 tests** (89 files, +5 authz-gate), tsc + eslint clean (pre-existing warnings only), **`next build` green**. **LIVE-VERIFIED July 16** — real accept loop exercised in prod for both variants (deal-at-accept, brand + show visibility, flight dates on deal view + IO, materialize + backfill via real onboarding, clean teardown). Pushed + Vercel-green. The last launch gate is cleared.
+- **Correction (Aug 4, 2026) — the "end-to-end" / "accept loop" live-verify did NOT include DocuSign.** The July 16 (and the July 23 follow-up) runs exercised IO PDF generation + deal state transitions but **never fired envelope creation** — the DocuSign API showed **0 calls** on the integration key across all of July. The accept→**signature** loop was first genuinely executed Aug 4 (see the top "Most recent" block). Read the "end-to-end" framing here as accept → onboard → deal-visible → IO, **not** accept → signature.
 
 ## Most recent — brand auth hardening Layer 3 (Turnstile bot protection) COMPLETE — live-verified with CAPTCHA ON (July 9, 2026)
 
@@ -167,8 +188,15 @@ impersonation tool is now COMPLETE (Layers 1-3). 2C
 Layer 5 (overrides + recompute) remains optional polish, not GTM-blocking —
 carried in PRODUCT_BACKLOG.md with its request-scope footgun note.
 
+**Current frontier — DocuSign go-live (Aug 4, 2026):** signature path
+live-verified in sandbox for the first time, the anchor-tab bug fixed, and a
+runtime tab-placement tripwire shipped; the production Go-Live form is submitted
+with a ~48hr DocuSign review pending (production not usable until approved, env/
+Connect cutover deferred). See the top "Most recent" block for detail. **Email
+deliverability rehearsal is the next frontier.**
+
 ## Tests
-1021 passing (94 files). tsc clean. eslint: all changed files clean (pre-existing
+1029 passing (94 files). tsc clean. eslint: all changed files clean (pre-existing
 unused-var warnings only). `next build` green.
 
 ## Migration state
@@ -218,6 +246,13 @@ inbox.
   case reopens.
 
 ## Next
+**DocuSign go-live is the live frontier (Aug 4, 2026):** signature path
+live-verified in sandbox + anchor bug fixed + tripwire shipped + Go-Live form
+submitted; **~48hr DocuSign review pending** (production not usable until
+approved — then env/Connect cutover). Once that clears, **email deliverability
+rehearsal is the next frontier.** Detail in the top "Most recent" block; the
+accept-flow/auth work below is prior-frontier context, all shipped.
+
 Brand auth hardening **COMPLETE (Layers 1-3), launch blocker CLEARED** — L1+L2
 shipped + verified live July 8, L3 (Turnstile) live-verified July 9 with the
 CAPTCHA toggle ON (Codex clean throughout). Build-vs-unify decision: keep
