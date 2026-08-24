@@ -624,6 +624,12 @@ export interface Wave12Deal {
   show_signed_at?: string | null;
   signed_io_pdf_url?: string | null;
   signature_certificate_url?: string | null;
+  // Wave 13 — brand card-on-file for pay-as-delivers charges. The SetupIntent
+  // is created after brand signature; the Stripe webhook persists the confirmed
+  // payment method here so episode charges use the deal-specific card.
+  setup_intent_id?: string | null;
+  setup_intent_client_secret?: string | null;
+  payment_method_id?: string | null;
   brand_reminder_sent_at?: string | null;
   cancelled_at?: string | null;
   cancellation_reason?: string | null;
@@ -671,7 +677,11 @@ export type DomainEventType =
   | "subscription.deleted"
   // Wave 13 — Pay-as-delivers SetupIntent + payout flow
   | "deal.setup_intent_created"
+  | "deal.setup_intent_failed"
   | "deal.payment_method_attached"
+  // Stripe customer-level payment method attach (audit; deal-level attach is
+  // authoritative via setup_intent.succeeded which carries the deal_id).
+  | "payment_method.attached"
   | "payout.transferred"
   | "payout.early_requested"
   // Wave 14 Phase 2A — brief intake + interpretation loop

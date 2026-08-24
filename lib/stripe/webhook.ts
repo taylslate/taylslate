@@ -25,6 +25,8 @@ import { transferPayoutForPayment } from "@/lib/payouts/transfer";
 
 export const HANDLED_STRIPE_EVENTS = [
   "setup_intent.succeeded",
+  "setup_intent.setup_failed",
+  "payment_method.attached",
   "payment_intent.succeeded",
   "payment_intent.payment_failed",
   "charge.succeeded",
@@ -79,6 +81,14 @@ export async function verifyAndHandleStripeEvent(
     switch (event.type) {
       case "setup_intent.succeeded":
         await handleSetupIntentSucceeded(event);
+        handled = true;
+        break;
+      case "setup_intent.setup_failed":
+        await handleSetupIntentFailed(event);
+        handled = true;
+        break;
+      case "payment_method.attached":
+        await handlePaymentMethodAttached(event);
         handled = true;
         break;
       case "payment_intent.succeeded":
@@ -163,6 +173,76 @@ async function handleSetupIntentSucceeded(event: Stripe.Event): Promise<void> {
       setup_intent_id: setupIntent.id,
       payment_method_id: paymentMethodId,
       deal_id: dealId,
+    },
+  });
+}
+
+/**
+ * `setup_intent.setup_failed` — the brand's card-on-file attempt failed
+ * (declined, authentication abandoned, etc.). We do NOT flip the deal out of
+ * `brand_signed`; the deal is still legitimately signed and the brand can
+ * retry via the deal page. We persist the failure against the deal as a
+ * domain event (keyed to deal_id from the SetupIntent metadata) so the signal
+ * isn't lost and support/ops can see why a card never landed.
+ */
+async function handleSetupIntentFailed(event: Stripe.Event): Promise<void> {
+  const setupIntent = event.data.object as Stripe.SetupIntent;
+  const dealId = setupIntent.metadata?.deal_id ?? null;
+  if (!dealId) {
+    console.warn(
+      `[stripe.webhook] setup_intent.setup_failed ${setupIntent.id} has no metadata.deal_id — ignoring`
+    );
+    return;
+  }
+  await logEvent({
+    eventType: "deal.setup_intent_failed",
+    entityType: "deal",
+    entityId: dealId,
+    payload: {
+      setup_intent_id: setupIntent.id,
+      deal_id: dealId,
+      error_code: setupIntent.last_setup_error?.code ?? null,
+      error_message: setupIntent.last_setup_error?.message ?? null,
+    },
+  });
+}
+
+/**
+ * `payment_method.attached` — a PaymentMethod was attached to a Customer.
+ * The authoritative deal-level attach is handled by `setup_intent.succeeded`
+ * (which carries `metadata.deal_id`); this event has no deal context, so we
+ * record it as a customer-level audit signal against the owning profile and
+ * never lose the fact that a card landed. No-op when the customer is unknown.
+ */
+async function handlePaymentMethodAttached(event: Stripe.Event): Promise<void> {
+  const pm = event.data.object as Stripe.PaymentMethod;
+  const customerId =
+    typeof pm.customer === "string" ? pm.customer : pm.customer?.id ?? null;
+  if (!customerId) {
+    console.warn(`[stripe.webhook] payment_method.attached ${pm.id} has no customer`);
+    return;
+  }
+  const { data: profile, error } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("stripe_customer_id", customerId)
+    .single<{ id: string }>();
+  if (error || !profile) {
+    // Unknown customer (test PM, or a customer created outside our profiles) —
+    // acknowledge without writing. setup_intent.succeeded remains the
+    // authoritative path for deal card-on-file.
+    console.warn(
+      `[stripe.webhook] payment_method.attached for unknown customer ${customerId}: ${error?.message ?? "no profile"}`
+    );
+    return;
+  }
+  await logEvent({
+    eventType: "payment_method.attached",
+    entityType: "profile",
+    entityId: profile.id,
+    payload: {
+      stripe_customer_id: customerId,
+      payment_method_id: pm.id,
     },
   });
 }

@@ -125,6 +125,7 @@ describe("chargeForEpisode", () => {
         id: "deal_1",
         brand_id: "user_brand_1",
         brand_profile_id: null,
+        payment_method_id: "pm_deal_card",
       },
       error: null,
     };
@@ -163,7 +164,7 @@ describe("chargeForEpisode", () => {
       amount: 25000,
       currency: "usd",
       customer: "cus_brand_1",
-      payment_method: "pm_card_visa",
+      payment_method: "pm_deal_card",
       off_session: true,
       confirm: true,
       application_fee_amount: 2500,
@@ -222,7 +223,28 @@ describe("chargeForEpisode", () => {
     });
   });
 
-  it("refuses to charge when the brand has no saved payment method", async () => {
+  it("falls back to the customer default payment method for legacy/manual card flows", async () => {
+    supabaseTables.deals.row = {
+      id: "deal_1",
+      brand_id: "user_brand_1",
+      brand_profile_id: null,
+      payment_method_id: null,
+    };
+
+    await chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" });
+
+    expect(stripe.customers.retrieve).toHaveBeenCalledWith("cus_brand_1");
+    const [createArg] = stripe.paymentIntents.create.mock.calls[0];
+    expect(createArg.payment_method).toBe("pm_card_visa");
+  });
+
+  it("refuses to charge when the deal and customer have no saved payment method", async () => {
+    supabaseTables.deals.row = {
+      id: "deal_1",
+      brand_id: "user_brand_1",
+      brand_profile_id: null,
+      payment_method_id: null,
+    };
     stripe.customers.retrieve.mockResolvedValueOnce({
       id: "cus_brand_1",
       invoice_settings: { default_payment_method: null },
@@ -230,7 +252,7 @@ describe("chargeForEpisode", () => {
 
     await expect(
       chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" })
-    ).rejects.toThrow(/no default payment method/);
+    ).rejects.toThrow(/no saved payment_method_id/);
     expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
   });
 

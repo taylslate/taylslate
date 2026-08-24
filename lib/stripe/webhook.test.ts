@@ -179,6 +179,83 @@ describe("verifyAndHandleStripeEvent — handlers", () => {
     expect(logEvent).not.toHaveBeenCalled();
   });
 
+  it("setup_intent.setup_failed persists the failure on the deal as a domain event", async () => {
+    stripe.webhooks.constructEvent.mockReturnValueOnce({
+      id: "evt_si_fail",
+      type: "setup_intent.setup_failed",
+      data: {
+        object: {
+          id: "seti_fail",
+          metadata: { deal_id: "deal_fail_1" },
+          last_setup_error: { code: "card_declined", message: "Your card was declined." },
+        },
+      },
+    });
+
+    const r = await verifyAndHandleStripeEvent({ rawBody: "{}", signatureHeader: "sig" });
+    expect(r.handled).toBe(true);
+    // Never flips the deal out of brand_signed — no deals write.
+    expect(supabaseAdmin._builders.deals).toBeUndefined();
+    expect(logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "deal.setup_intent_failed",
+        entityType: "deal",
+        entityId: "deal_fail_1",
+        payload: {
+          setup_intent_id: "seti_fail",
+          deal_id: "deal_fail_1",
+          error_code: "card_declined",
+          error_message: "Your card was declined.",
+        },
+      })
+    );
+  });
+
+  it("setup_intent.setup_failed with no metadata.deal_id is a no-op", async () => {
+    stripe.webhooks.constructEvent.mockReturnValueOnce({
+      id: "evt_si_fail_no_deal",
+      type: "setup_intent.setup_failed",
+      data: { object: { id: "seti_x", metadata: {} } },
+    });
+
+    const r = await verifyAndHandleStripeEvent({ rawBody: "{}", signatureHeader: "sig" });
+    expect(r.handled).toBe(true);
+    expect(logEvent).not.toHaveBeenCalled();
+  });
+
+  it("payment_method.attached records a customer-level audit event against the profile", async () => {
+    stripe.webhooks.constructEvent.mockReturnValueOnce({
+      id: "evt_pm_attached",
+      type: "payment_method.attached",
+      data: { object: { id: "pm_att_1", customer: "cus_brand_1" } },
+    });
+    supabaseAdmin.from("profiles")._stage({ id: "prof_1" });
+
+    const r = await verifyAndHandleStripeEvent({ rawBody: "{}", signatureHeader: "sig" });
+    expect(r.handled).toBe(true);
+    expect(logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "payment_method.attached",
+        entityType: "profile",
+        entityId: "prof_1",
+        payload: { stripe_customer_id: "cus_brand_1", payment_method_id: "pm_att_1" },
+      })
+    );
+  });
+
+  it("payment_method.attached for an unknown customer is a no-op", async () => {
+    stripe.webhooks.constructEvent.mockReturnValueOnce({
+      id: "evt_pm_unknown",
+      type: "payment_method.attached",
+      data: { object: { id: "pm_x", customer: "cus_unknown" } },
+    });
+    supabaseAdmin.from("profiles")._stage(null, { message: "no rows" });
+
+    const r = await verifyAndHandleStripeEvent({ rawBody: "{}", signatureHeader: "sig" });
+    expect(r.handled).toBe(true);
+    expect(logEvent).not.toHaveBeenCalled();
+  });
+
   it("payment_intent.succeeded flips status to succeeded and fires payment.charged", async () => {
     stripe.webhooks.constructEvent.mockReturnValueOnce({
       id: "evt_pi_ok",
@@ -394,6 +471,8 @@ describe("verifyAndHandleStripeEvent — handlers", () => {
 describe("HANDLED_STRIPE_EVENTS", () => {
   it("exports the canonical event-type list for the webhook subscriber to register", () => {
     expect(HANDLED_STRIPE_EVENTS).toContain("setup_intent.succeeded");
+    expect(HANDLED_STRIPE_EVENTS).toContain("setup_intent.setup_failed");
+    expect(HANDLED_STRIPE_EVENTS).toContain("payment_method.attached");
     expect(HANDLED_STRIPE_EVENTS).toContain("payment_intent.succeeded");
     expect(HANDLED_STRIPE_EVENTS).toContain("payment_intent.payment_failed");
     expect(HANDLED_STRIPE_EVENTS).toContain("charge.succeeded");

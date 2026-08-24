@@ -70,6 +70,7 @@ interface DealRow {
   id: string;
   brand_id: string | null;
   brand_profile_id: string | null;
+  payment_method_id: string | null;
 }
 
 interface BrandProfileRow {
@@ -141,7 +142,7 @@ export async function chargeForEpisode(
   // ---- Load the deal ----
   const { data: deal, error: dealErr } = await supabaseAdmin
     .from("deals")
-    .select("id,brand_id,brand_profile_id")
+    .select("id,brand_id,brand_profile_id,payment_method_id")
     .eq("id", input.dealId)
     .single<DealRow>();
   if (dealErr || !deal) {
@@ -184,17 +185,23 @@ export async function chargeForEpisode(
   const amountCents = Math.round(grossDollars * 100);
   const applicationFeeCents = computeApplicationFeeCents(amountCents, feePercentage);
 
-  // ---- Pull the brand's default payment method (the one saved by SetupIntent) ----
-  const customer = (await stripe.customers.retrieve(
-    profile.stripe_customer_id
-  )) as Stripe.Customer;
-  const defaultPaymentMethod =
-    typeof customer.invoice_settings?.default_payment_method === "string"
-      ? customer.invoice_settings.default_payment_method
-      : customer.invoice_settings?.default_payment_method?.id ?? null;
-  if (!defaultPaymentMethod) {
+  // ---- Resolve the payment method saved for this signed deal ----
+  let paymentMethodId = deal.payment_method_id ?? null;
+  if (!paymentMethodId) {
+    // Legacy/manual cards created from settings may only exist as the Stripe
+    // Customer default. Deal-specific SetupIntents write deals.payment_method_id;
+    // keep this fallback so old test/admin flows still charge cleanly.
+    const customer = (await stripe.customers.retrieve(
+      profile.stripe_customer_id
+    )) as Stripe.Customer;
+    paymentMethodId =
+      typeof customer.invoice_settings?.default_payment_method === "string"
+        ? customer.invoice_settings.default_payment_method
+        : customer.invoice_settings?.default_payment_method?.id ?? null;
+  }
+  if (!paymentMethodId) {
     throw new Error(
-      `Brand customer ${profile.stripe_customer_id} has no default payment method — SetupIntent confirmation required`
+      `Deal ${deal.id} has no saved payment_method_id and brand customer ${profile.stripe_customer_id} has no default payment method — SetupIntent confirmation required`
     );
   }
 
@@ -206,7 +213,7 @@ export async function chargeForEpisode(
       amount: amountCents,
       currency: "usd",
       customer: profile.stripe_customer_id,
-      payment_method: defaultPaymentMethod,
+      payment_method: paymentMethodId,
       off_session: true,
       confirm: true,
       application_fee_amount: applicationFeeCents,

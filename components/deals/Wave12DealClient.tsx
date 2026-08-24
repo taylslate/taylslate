@@ -6,6 +6,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { loadStripe, type Stripe } from "@stripe/stripe-js";
+import { Elements, CardElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import type { Wave12Deal, Wave12DealStatus } from "@/lib/data/types";
 import { derivePromoCode } from "@/lib/io/promo-code";
 import { formatDateOnly } from "@/lib/format/date-only";
@@ -63,6 +65,67 @@ function fmt(d?: string | null): string {
   });
 }
 
+function DealCardSetupForm({
+  clientSecret,
+  onSaved,
+}: {
+  clientSecret: string;
+  onSaved: () => void;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+
+    const card = elements.getElement(CardElement);
+    if (!card) return;
+
+    setSaving(true);
+    setError(null);
+    const { error: setupError } = await stripe.confirmCardSetup(clientSecret, {
+      payment_method: { card },
+    });
+    if (setupError) {
+      setError(setupError.message ?? "Couldn't save this card.");
+      setSaving(false);
+      return;
+    }
+
+    onSaved();
+    setSaving(false);
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-3 space-y-3">
+      <div className="rounded-lg border border-[var(--brand-border)] bg-white px-3 py-3">
+        <CardElement
+          options={{
+            style: {
+              base: {
+                fontSize: "14px",
+                color: "#1a1a2e",
+                "::placeholder": { color: "#9ca3af" },
+              },
+            },
+          }}
+        />
+      </div>
+      <button
+        type="submit"
+        disabled={!stripe || saving}
+        className="w-full px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold disabled:opacity-50"
+      >
+        {saving ? "Saving card..." : "Save card on file"}
+      </button>
+      {error && <p className="text-sm text-[var(--brand-error)]">{error}</p>}
+    </form>
+  );
+}
+
 export default function Wave12DealClient({
   deal,
   showName,
@@ -80,6 +143,13 @@ export default function Wave12DealClient({
   const [error, setError] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [blurbCopied, setBlurbCopied] = useState(false);
+  const [stripeInstance, setStripeInstance] = useState<Promise<Stripe | null> | null>(null);
+  const [loadingStripe, setLoadingStripe] = useState(false);
+  const [cardSaved, setCardSaved] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
+  // Recovery secret — set when the webhook-provisioned SetupIntent was missing
+  // and we (re)obtained one via the deal SetupIntent route.
+  const [resolvedSecret, setResolvedSecret] = useState<string | null>(null);
 
   // Promo code — prefill is display-only (never persisted until Save). If the
   // deal has a saved code, show it; otherwise seed the show-name slug.
@@ -180,6 +250,48 @@ export default function Wave12DealClient({
     }
   };
 
+  const loadPaymentForm = async () => {
+    setLoadingStripe(true);
+    setCardError(null);
+    try {
+      const cfg = await fetch("/api/stripe/config");
+      const cfgData = await cfg.json();
+      if (!cfg.ok || !cfgData.publishableKey) {
+        throw new Error(cfgData.error ?? "Stripe is not configured.");
+      }
+      // Ensure a SetupIntent client secret exists. The DocuSign webhook
+      // provisions one at signature time; if that didn't land (Stripe
+      // unreachable then), recover it now via the deal SetupIntent route
+      // rather than dead-ending on a missing secret.
+      let secret = deal.setup_intent_client_secret ?? resolvedSecret;
+      if (!secret) {
+        const si = await fetch(`/api/deals/${deal.id}/setup-intent`, { method: "POST" });
+        const siData = await si.json();
+        if (si.ok && siData.status === "already_saved") {
+          // Stripe already has the card (webhook lagged) — reflect it.
+          setCardSaved(true);
+          router.refresh();
+          return;
+        }
+        if (!si.ok || !siData.client_secret) {
+          throw new Error(siData.error ?? "Couldn't start card setup.");
+        }
+        secret = siData.client_secret as string;
+        setResolvedSecret(secret);
+      }
+      setStripeInstance(loadStripe(cfgData.publishableKey));
+    } catch (err) {
+      setCardError(err instanceof Error ? err.message : "Couldn't load Stripe.");
+    } finally {
+      setLoadingStripe(false);
+    }
+  };
+
+  const handleCardSaved = () => {
+    setCardSaved(true);
+    router.refresh();
+  };
+
   const grossPerEp =
     deal.agreed_cpm > 0 && deal.agreed_episode_count > 0
       ? // Without audience size on the deal directly, leave the totals to the IO PDF.
@@ -192,6 +304,12 @@ export default function Wave12DealClient({
   // Brand can set the promo code at IO time (before signature). Otherwise the
   // stored code renders read-only — and only if one was actually saved.
   const canEditPromo = viewerRole === "brand" && deal.status === "planning";
+  const needsPaymentMethod =
+    viewerRole === "brand" && deal.status === "brand_signed" && !deal.payment_method_id;
+  const hasPaymentMethod = viewerRole === "brand" && Boolean(deal.payment_method_id);
+  // The client secret to confirm: the webhook-stored one, or the one we
+  // recovered on demand. Null until a SetupIntent exists for this deal.
+  const activeCardSecret = resolvedSecret ?? deal.setup_intent_client_secret ?? null;
 
   return (
     <div className="px-8 py-6 max-w-6xl">
@@ -394,6 +512,59 @@ export default function Wave12DealClient({
               </div>
             )}
           </div>
+
+          {(needsPaymentMethod || hasPaymentMethod) && (
+            <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
+              <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+                Payment method
+              </h2>
+              {hasPaymentMethod ? (
+                <p className="text-sm text-[var(--brand-success)] font-medium">
+                  Card on file saved
+                </p>
+              ) : (
+                <>
+                  {activeCardSecret ? (
+                    <p className="text-sm text-[var(--brand-text-secondary)]">
+                      Add the card Taylslate should charge as each episode is verified.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-[var(--brand-text-secondary)]">
+                      Card setup will appear after DocuSign confirms your signature. You
+                      can also add it now.
+                    </p>
+                  )}
+                  {activeCardSecret && stripeInstance ? (
+                    <Elements
+                      stripe={stripeInstance}
+                      options={{ clientSecret: activeCardSecret }}
+                    >
+                      <DealCardSetupForm
+                        clientSecret={activeCardSecret}
+                        onSaved={handleCardSaved}
+                      />
+                    </Elements>
+                  ) : (
+                    <button
+                      onClick={loadPaymentForm}
+                      disabled={loadingStripe}
+                      className="mt-3 w-full px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold disabled:opacity-50"
+                    >
+                      {loadingStripe ? "Loading Stripe..." : "Add card on file"}
+                    </button>
+                  )}
+                  {cardSaved && (
+                    <p className="mt-2 text-xs text-[var(--brand-success)] font-medium">
+                      Card saved. Stripe will confirm it on this deal shortly.
+                    </p>
+                  )}
+                  {cardError && (
+                    <p className="mt-2 text-sm text-[var(--brand-error)]">{cardError}</p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {/* Actions */}
           {(canSign || isCancellable) && (
