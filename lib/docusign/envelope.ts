@@ -4,9 +4,10 @@
 //   routing 1 — brand (advertiser)   — signs first
 //   routing 2 — show (publisher)     — countersigns
 //
-// We attach SignHere anchor tabs keyed off invisible text we render at the
-// signature lines in the PDF (see io-generator.ts: "Signature" labels). DocuSign
-// finds those strings and places the click-to-sign tab over them, no fixed
+// We attach SignHere and DateSigned anchor tabs keyed off invisible text we
+// render at the signature and date lines in the PDF (see io-generator.ts and the
+// shared strings in anchors.ts). DocuSign finds those strings and places the
+// click-to-sign tab and the auto-stamped completion date over them, no fixed
 // pixel coordinates needed.
 //
 // IMPORTANT: docusign-esign uses AMD/UMD modules that Turbopack can't bundle.
@@ -49,6 +50,8 @@ export interface SigningUrl {
 
 const ANCHOR_BRAND = SIGNATURE_ANCHORS.advertiser;
 const ANCHOR_SHOW = SIGNATURE_ANCHORS.publisher;
+const ANCHOR_BRAND_DATE = SIGNATURE_ANCHORS.advertiserDate;
+const ANCHOR_SHOW_DATE = SIGNATURE_ANCHORS.publisherDate;
 
 // Recipient ids — single source shared by createEnvelope, the signing-URL view,
 // and the post-create tab-placement backstop so they can never drift.
@@ -61,6 +64,8 @@ interface BuildSignerOpts {
   routingOrder: string;
   recipientId: string;
   anchorString: string;
+  /** Anchor for the DateSigned tab (rendered on the date line in the PDF). */
+  dateAnchorString: string;
   /** If set, enables embedded signing for this recipient. */
   clientUserId?: string;
 }
@@ -80,7 +85,21 @@ function buildSigner(sdk: SdkAny, opts: BuildSignerOpts): SdkAny {
     anchorXOffset: "0",
     anchorYOffset: "-12",
   });
-  signer.tabs = sdk.Tabs.constructFromObject({ signHereTabs: [signHere] });
+  // DateSigned auto-stamps the completion date when THIS recipient signs. Anchored
+  // to the date-line string (same yOffset convention as SignHere → the value sits
+  // just above its line). Placed beside/under the signature per the PDF layout,
+  // never off-page — the publisher block is in the right column, so a rightward
+  // x-offset would overflow; the date line below is the safe, labeled home.
+  const dateSigned = sdk.DateSigned.constructFromObject({
+    anchorString: opts.dateAnchorString,
+    anchorUnits: "pixels",
+    anchorXOffset: "0",
+    anchorYOffset: "-12",
+  });
+  signer.tabs = sdk.Tabs.constructFromObject({
+    signHereTabs: [signHere],
+    dateSignedTabs: [dateSigned],
+  });
   return signer;
 }
 
@@ -104,6 +123,7 @@ export async function createEnvelope(
     routingOrder: "1",
     recipientId: RECIPIENT_BRAND,
     anchorString: ANCHOR_BRAND,
+    dateAnchorString: ANCHOR_BRAND_DATE,
     clientUserId: "brand",
   });
 
@@ -113,6 +133,7 @@ export async function createEnvelope(
     routingOrder: "2",
     recipientId: RECIPIENT_SHOW,
     anchorString: ANCHOR_SHOW,
+    dateAnchorString: ANCHOR_SHOW_DATE,
   });
 
   const recipients = sdk.Recipients.constructFromObject({

@@ -460,7 +460,8 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     signedAt: string | null | undefined,
     signedBy: string,
     startX: number,
-    anchorString: string
+    anchorString: string,
+    dateAnchorString: string
   ): void {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
@@ -497,6 +498,19 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     }
 
     const dateLineY = sigY + 30;
+
+    // Invisible (white-on-white) DocuSign DateSigned anchor. createEnvelope
+    // attaches a DateSigned tab to this exact string so DocuSign auto-stamps the
+    // signing date just above the date line (anchorYOffset -12), mirroring the
+    // SignHere anchor above. Drawn BEFORE the line so the rule paints over the
+    // white glyph descenders. Same sync contract via the shared SIGNATURE_ANCHORS.
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6);
+    doc.setTextColor(...WHITE);
+    doc.text(dateAnchorString, startX, dateLineY);
+
+    doc.setDrawColor(...LIGHT_GRAY);
+    doc.setLineWidth(0.5);
     doc.line(startX, dateLineY, startX + sigColWidth - 20, dateLineY);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
@@ -515,14 +529,16 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     deal.brand_signed_at,
     advertiserName,
     MARGIN,
-    SIGNATURE_ANCHORS.advertiser
+    SIGNATURE_ANCHORS.advertiser,
+    SIGNATURE_ANCHORS.advertiserDate
   );
   drawSignatureBlock(
     "Publisher",
     deal.show_signed_at,
     publisherName,
     MARGIN + sigColWidth + 20,
-    SIGNATURE_ANCHORS.publisher
+    SIGNATURE_ANCHORS.publisher,
+    SIGNATURE_ANCHORS.publisherDate
   );
 
   // ---- Footer ----

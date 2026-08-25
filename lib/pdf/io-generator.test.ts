@@ -243,7 +243,7 @@ describe("io-generator date-formatter split", () => {
 // failure is invisible without this test. Same source of truth as envelope.ts:
 // lib/docusign/anchors.ts.
 describe("io-generator renders DocuSign signature anchors", () => {
-  it("embeds both SIGNATURE_ANCHORS strings in the PDF content stream", () => {
+  it("embeds all SIGNATURE_ANCHORS strings (SignHere + DateSigned) in the PDF content stream", () => {
     const out = generateIoPdfFromDeal({
       deal: baseDeal,
       brandProfile: baseBrand,
@@ -255,5 +255,9 @@ describe("io-generator renders DocuSign signature anchors", () => {
     const text = out.pdfBuffer.toString("latin1");
     expect(text).toContain(SIGNATURE_ANCHORS.advertiser);
     expect(text).toContain(SIGNATURE_ANCHORS.publisher);
+    // DateSigned anchors — without these rendered, DocuSign silently drops the
+    // date tab and the completed IO has no date stamp (the bug this fixes).
+    expect(text).toContain(SIGNATURE_ANCHORS.advertiserDate);
+    expect(text).toContain(SIGNATURE_ANCHORS.publisherDate);
   });
 });
