@@ -3,11 +3,20 @@
 // Token TTL is 1 hour from DocuSign; we cache it in-memory with a 5-minute
 // safety margin. On a fresh cold start the SDK fetches a new token.
 //
-// IMPORTANT: docusign-esign is loaded via require(), not import. The SDK
-// uses AMD/UMD-style modules that Turbopack can't bundle, so we keep it
-// out of the dependency graph and resolve at runtime.
+// IMPORTANT: docusign-esign is a CommonJS/UMD package Turbopack can't bundle, so
+// it's marked serverExternal (next.config.ts) and loaded with a real runtime
+// require. We use createRequire(import.meta.url) — NOT (0, eval)("require") —
+// because Turbopack emits this as an ESM server module with no global `require`
+// binding, so the eval form throws "require is not defined" at runtime.
+
+import { createRequire } from "node:module";
 
 export type DocuSignEnv = "sandbox" | "production";
+
+// Node's own CommonJS require, bound to this module's URL. Independent of any
+// global `require`, so it resolves docusign-esign correctly inside the ESM
+// server bundle (where an indirect eval("require") finds nothing).
+const nodeRequire = createRequire(import.meta.url);
 
 // Avoid `any` in the public surface by type-aliasing the runtime client.
 // The wrapper interface for the bits we actually call is in envelope.ts.
@@ -32,13 +41,18 @@ type DocuSignApiClient = {
 };
 
 function loadSdk(): { ApiClient: new () => DocuSignApiClient } {
-  // Turbopack tries to statically analyze and bundle docusign-esign even with
-  // serverExternalPackages set, and the SDK's UMD/AMD wrappers break the
-  // bundler. Hiding the require() behind (0, eval) makes the module fully
-  // opaque so the bundler ignores it; Node.js resolves it at runtime.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const requireFn = (0, eval)("require") as (id: string) => unknown;
-  return requireFn("docusign-esign") as { ApiClient: new () => DocuSignApiClient };
+  // Load through a Function whose body Turbopack cannot statically analyze, so it
+  // never traces docusign-esign's AMD/UMD wrapper — Turbopack chokes on its
+  // define() form (TP1200) even with serverExternalPackages set. We inject
+  // `nodeRequire` (a real createRequire-based require) as the parameter, so the
+  // load does NOT depend on a global `require`, which the ESM server bundle lacks
+  // (that absence is what made the old (0, eval)("require") throw at runtime).
+  // serverExternalPackages still guarantees the package ships in node_modules for
+  // createRequire to resolve.
+  const load = new Function("require", "return require('docusign-esign')") as (
+    r: (id: string) => unknown
+  ) => unknown;
+  return load(nodeRequire) as { ApiClient: new () => DocuSignApiClient };
 }
 
 function getEnv(): DocuSignEnv {

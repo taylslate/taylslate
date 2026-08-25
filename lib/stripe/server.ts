@@ -13,18 +13,28 @@
 // next.config.ts → serverExternalPackages.
 
 import type Stripe from "stripe";
+import { createRequire } from "node:module";
 
 const STRIPE_API_VERSION = "2026-03-25.dahlia" as const;
 
 let cachedClient: Stripe | null = null;
 
+// Node's own CommonJS require, bound to this module's URL. Independent of any
+// global `require` — the previous (0, eval)("require") threw "require is not
+// defined" in Turbopack's ESM server bundle, where no global require exists.
+const nodeRequire = createRequire(import.meta.url);
+
 function loadStripeCtor(): new (key: string, opts: Stripe.StripeConfig) => Stripe {
-  // (0, eval) hides the require call from Turbopack's static analysis so
-  // the module is fully opaque to the bundler. Node.js resolves it at
-  // runtime exactly like a normal CommonJS require.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const requireFn = (0, eval)("require") as (id: string) => any;
-  const mod = requireFn("stripe");
+  // Load through a Function whose body Turbopack cannot statically analyze, so it
+  // never traces stripe's UMD internals (which the bundler can't handle). We
+  // inject `nodeRequire` (a real createRequire-based require) as the parameter,
+  // so the load does NOT depend on a global `require`, which the ESM server
+  // bundle lacks. serverExternalPackages still guarantees the package ships in
+  // node_modules for createRequire to resolve.
+  const load = new Function("require", "return require('stripe')") as (
+    r: (id: string) => unknown
+  ) => { default?: unknown };
+  const mod = load(nodeRequire);
   // The CJS build exports a constructor as the default export.
   return (mod.default ?? mod) as new (
     key: string,
