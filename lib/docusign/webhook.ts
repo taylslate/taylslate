@@ -89,7 +89,11 @@ export function parseDocuSignEvent(payload: unknown): DocuSignEvent | null {
 export type WebhookAction =
   | { kind: "brand_signed"; signedAt: string }
   | { kind: "show_signed"; signedAt: string }
-  | { kind: "completed"; signedAt: string }
+  // `signedAt` is the show's countersignature time; `brandSignedAt` is the
+  // brand's, surfaced so the route can back-fill the brand_signed handoff when a
+  // one-shot envelope-completed is the FIRST signal we ever get (accounts whose
+  // Connect emits envelope-level events only, no discrete recipient-completed).
+  | { kind: "completed"; signedAt: string; brandSignedAt?: string }
   | { kind: "declined"; reason?: string }
   | { kind: "voided"; reason?: string }
   | { kind: "ignored" };
@@ -103,8 +107,17 @@ export function classifyEvent(evt: DocuSignEvent): WebhookAction {
     return { kind: "declined", reason: evt.voidedReason };
   }
   if (evt.envelopeStatus === "completed") {
+    // Envelope fully executed — both signers are done by definition. Surface
+    // recipient 1's (brand) timestamp alongside recipient 2's (show) so the route
+    // can record the brand signature + provision the SetupIntent if it never saw
+    // a discrete recipient-completed for the brand.
     const showSigned = evt.recipientSignedAt["2"];
-    return { kind: "completed", signedAt: showSigned ?? new Date().toISOString() };
+    const brandSigned = evt.recipientSignedAt["1"];
+    return {
+      kind: "completed",
+      signedAt: showSigned ?? new Date().toISOString(),
+      brandSignedAt: brandSigned,
+    };
   }
   // Recipient-level events for partial signatures.
   if (evt.event === "recipient-completed" || evt.event === "recipient-finished") {

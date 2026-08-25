@@ -205,6 +205,101 @@ describe("POST /api/webhooks/docusign", () => {
     expect(types).toContain("io.completed");
   });
 
+  it("back-fills brand_signed + provisions SetupIntent on a one-shot envelope-completed", async () => {
+    // Production case (envelope a6bc2e98…): this account's Connect emits
+    // envelope-level events only, so a fully executed brand→show envelope arrives
+    // as `completed` on a still-planning deal that never passed through a discrete
+    // brand_signed. The deal must record the brand signature AND provision the
+    // SetupIntent (so the card-capture form is reachable), then record completion.
+    adminBuilder.single
+      // The completed branch does NOT notify the show, so the provisioner's
+      // brand_profiles lookup is the first single() call.
+      .mockResolvedValueOnce({
+        data: { id: "bp1", user_id: "u_brand", brand_identity: "Acme Co." },
+        error: null,
+      })
+      // provisioner: profiles
+      .mockResolvedValueOnce({
+        data: {
+          id: "u_brand",
+          email: "brand@example.com",
+          full_name: "Brand Owner",
+          company_name: null,
+          stripe_customer_id: null,
+        },
+        error: null,
+      })
+      .mockResolvedValue({ data: null, error: null });
+
+    const res = await POST(
+      signedRequest({
+        event: "envelope-completed",
+        data: {
+          envelopeId: "env-1",
+          envelopeSummary: {
+            status: "completed",
+            recipients: {
+              signers: [
+                { recipientId: "1", signedDateTime: "2026-04-23T12:00:00Z" },
+                { recipientId: "2", signedDateTime: "2026-04-24T08:00:00Z" },
+              ],
+            },
+          },
+        },
+      }) as never
+    );
+    expect(res.status).toBe(200);
+    // Brand handoff ran: brand_signed_at recorded from recipient 1, card provisioned.
+    expect(updateWave12Deal).toHaveBeenCalledWith(
+      "deal-1",
+      expect.objectContaining({ brand_signed_at: "2026-04-23T12:00:00Z" })
+    );
+    expect(createSetupIntentForBrand).toHaveBeenCalledWith(
+      expect.objectContaining({ dealId: "deal-1" })
+    );
+    // Completion still recorded (both timestamps, PDFs, terminal status).
+    expect(updateWave12Deal).toHaveBeenCalledWith(
+      "deal-1",
+      expect.objectContaining({ status: "show_signed" })
+    );
+    const types = logEvent.mock.calls.map((c) => c[0].eventType);
+    expect(types).toContain("io.brand_signed");
+    expect(types).toContain("deal.setup_intent_created");
+    expect(types).toContain("io.show_signed");
+    expect(types).toContain("io.completed");
+  });
+
+  it("does not double-provision when the deal already went through brand_signed", async () => {
+    // A recipient-events-working deal (brand_signed_at already set) that then
+    // completes must NOT re-run the brand handoff.
+    getWave12DealByEnvelopeId.mockResolvedValueOnce({
+      ...baseDeal,
+      brand_signed_at: "2026-04-23T12:00:00Z",
+    });
+    const res = await POST(
+      signedRequest({
+        event: "envelope-completed",
+        data: {
+          envelopeId: "env-1",
+          envelopeSummary: {
+            status: "completed",
+            recipients: {
+              signers: [
+                { recipientId: "1", signedDateTime: "2026-04-23T12:00:00Z" },
+                { recipientId: "2", signedDateTime: "2026-04-24T08:00:00Z" },
+              ],
+            },
+          },
+        },
+      }) as never
+    );
+    expect(res.status).toBe(200);
+    expect(createSetupIntentForBrand).not.toHaveBeenCalled();
+    const types = logEvent.mock.calls.map((c) => c[0].eventType);
+    expect(types).not.toContain("io.brand_signed");
+    expect(types).toContain("io.completed");
+  });
+
   it("voids and cancels on declined", async () => {
     const res = await POST(
       signedRequest({

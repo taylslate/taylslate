@@ -75,6 +75,26 @@ describe("classifyEvent", () => {
     expect(action.kind).toBe("completed");
   });
 
+  it("surfaces both signer timestamps on a both-signed envelope-completed", () => {
+    // The production shape: event envelope-completed with recipients 1 (brand)
+    // and 2 (show) both completed. brandSignedAt must be exposed so the route can
+    // back-fill the brand_signed handoff it never saw discretely.
+    const action = classifyEvent({
+      event: "envelope-completed",
+      envelopeId: "a6bc2e98",
+      envelopeStatus: "completed",
+      recipientSignedAt: {
+        "1": "2026-04-23T12:00:00Z",
+        "2": "2026-04-24T08:00:00Z",
+      },
+    });
+    expect(action).toEqual({
+      kind: "completed",
+      signedAt: "2026-04-24T08:00:00Z",
+      brandSignedAt: "2026-04-23T12:00:00Z",
+    });
+  });
+
   it("flags voided", () => {
     const action = classifyEvent({
       event: "envelope-voided",

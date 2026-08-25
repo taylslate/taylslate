@@ -304,8 +304,18 @@ export default function Wave12DealClient({
   // Brand can set the promo code at IO time (before signature). Otherwise the
   // stored code renders read-only — and only if one was actually saved.
   const canEditPromo = viewerRole === "brand" && deal.status === "planning";
+  // Gate on brand_signed_at, not status === "brand_signed" — that mirrors the
+  // server's own eligibility rule (POST /api/deals/[id]/setup-intent: "IO must be
+  // signed"). A sequential brand→show envelope can reach show_signed before the
+  // brand adds a card (the show may countersign first, or a one-shot
+  // envelope-completed lands both signatures at once); keying off the timestamp
+  // keeps the card form reachable in every post-signature state. Cancelled deals
+  // never need a card.
   const needsPaymentMethod =
-    viewerRole === "brand" && deal.status === "brand_signed" && !deal.payment_method_id;
+    viewerRole === "brand" &&
+    Boolean(deal.brand_signed_at) &&
+    !deal.payment_method_id &&
+    deal.status !== "cancelled";
   const hasPaymentMethod = viewerRole === "brand" && Boolean(deal.payment_method_id);
   // The client secret to confirm: the webhook-stored one, or the one we
   // recovered on demand. Null until a SetupIntent exists for this deal.

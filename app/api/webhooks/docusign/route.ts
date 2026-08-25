@@ -334,6 +334,35 @@ export async function POST(request: NextRequest) {
     if (deal.show_signed_at && deal.signed_io_pdf_url) {
       return NextResponse.json({ ok: true, idempotent: true });
     }
+
+    // Brand-signature back-fill for the one-shot completion path. This account's
+    // Connect emits envelope-level events only, so a sequential brand→show
+    // envelope surfaces here as `completed` having NEVER passed through a discrete
+    // recipient-completed → brand_signed. If we haven't recorded the brand
+    // signature yet, run that handoff now — record brand_signed_at, fire
+    // io.brand_signed, and provision the Stripe SetupIntent — so the card-capture
+    // form becomes reachable instead of the deal skipping straight past the one
+    // state that provisions payment. Guarded by brand_signed_at so a deal that DID
+    // go through brand_signed (recipient events working) never double-provisions.
+    if (!deal.brand_signed_at) {
+      const brandSignedAt =
+        (action.kind === "completed" ? action.brandSignedAt : undefined) ??
+        action.signedAt;
+      await updateWave12Deal(deal.id, { brand_signed_at: brandSignedAt });
+      await logEvent({
+        eventType: "io.brand_signed",
+        entityType: "deal",
+        entityId: deal.id,
+        payload: {
+          envelope_id: evt.envelopeId,
+          signed_at: brandSignedAt,
+          via: "envelope_completed",
+        },
+      });
+      // Additive, never throws, never alters signing state even if Stripe is down.
+      await provisionBrandSetupIntent(deal.id, deal.brand_profile_id ?? null);
+    }
+
     // Download the signed PDF and certificate of completion. These are the
     // permanent record we keep — DocuSign retention isn't infinite.
     let signedPath: string | null = null;
