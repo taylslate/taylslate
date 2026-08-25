@@ -63,7 +63,7 @@ Load-bearing standing rules swept from every wave. Reintroducing any of these si
 
 **Platform / build:**
 - **`LLM_MAX_RETRIES` stays 0** — do not wrap Claude API calls in retry loops; the setting is deliberate.
-- **Turbopack + Stripe/DocuSign SDKs use the lazy-require pattern `(0,eval)("require")`** (they ship UMD modules).
+- **Turbopack + Stripe/DocuSign SDKs (UMD) load via `createRequire(import.meta.url)` inside a `new Function` body** (`lib/stripe/server.ts`, `lib/docusign/client.ts`), NOT `(0,eval)("require")`. The old eval form threw `require is not defined` at runtime — Turbopack emits these as ESM server modules with no global `require` binding. `createRequire` supplies a real require; the `new Function` wrapper keeps the specifier opaque so the bundler can't trace the AMD/UMD wrapper (`TP1200`). Keep both packages in `next.config.ts → serverExternalPackages` so they ship in `node_modules`. Do NOT revert to eval-require.
 - **Brand safety is metadata — shown but never used to exclude shows** from discovery.
 - **Two Podscan clients — one is dead code.** `lib/enrichment/podscan.ts` is the LIVE path (discovery via `/episodes/search` + the admin enrich routes). `lib/podscan/` feeds ONLY the **Wave 5 scorer** (`lib/scoring/index.ts` + `scoring/dimensions/audience-fit.ts`) — orphaned, nothing imports it; live discovery is `runConvictionDiscovery`. Add new Podscan fetches to `lib/enrichment/podscan.ts`; don't wire into or resurrect the Wave 5 scorer (its demographics/audience-fit neutral fallback never executes).
 
