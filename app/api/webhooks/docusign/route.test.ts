@@ -161,6 +161,25 @@ describe("POST /api/webhooks/docusign", () => {
     );
   });
 
+  it("records io.webhook_ignored when a delivered event carries no usable recipient data", async () => {
+    // Mirrors the production failure: Connect delivers + HMAC passes, but the
+    // configuration omits envelopeSummary/recipients ("Include Data" gap), so
+    // there is no status or signedDateTime to classify on. Must NOT transition,
+    // and must leave a queryable trail instead of a silent 200.
+    const res = await POST(
+      signedRequest({
+        event: "recipient-completed",
+        data: { envelopeId: "env-1" },
+      }) as never
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ignored).toBe("ignored");
+    expect(updateWave12Deal).not.toHaveBeenCalled();
+    const types = logEvent.mock.calls.map((c) => c[0].eventType);
+    expect(types).toContain("io.webhook_ignored");
+  });
+
   it("uploads PDFs and fires io.completed on full signature", async () => {
     const res = await POST(
       signedRequest({

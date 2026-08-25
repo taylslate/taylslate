@@ -660,6 +660,10 @@ export type DomainEventType =
   // Log-only backstop: DocuSign accepted the envelope but did not resolve the
   // SignHere anchor tabs for one or more recipients (see send-to-docusign).
   | "io.tabs_unverified"
+  // Diagnostic: a Connect webhook was delivered + HMAC-verified + matched to a
+  // deal but classified as no-op (e.g. Connect not subscribed to
+  // recipient-completed, or "Include Data" omitting the recipients block).
+  | "io.webhook_ignored"
   // Wave 13 — subscription/plan transitions
   | "customer.upgraded"
   | "customer.downgraded"

@@ -266,7 +266,14 @@ export async function POST(request: NextRequest) {
     process.env.DOCUSIGN_WEBHOOK_SECRET
   );
   if (!ok) {
-    console.warn("[docusign webhook] signature verification failed");
+    // Distinguish the HMAC failure modes so a live test is diagnosable from the
+    // logs alone: no signature header at all ⇒ Connect HMAC is not enabled on the
+    // configuration; header present but mismatched ⇒ wrong/absent
+    // DOCUSIGN_WEBHOOK_SECRET in this environment (or a body-encoding drift).
+    console.warn("[docusign webhook] signature verification failed", {
+      hadSignatureHeader: Boolean(getSignatureHeader(request)),
+      secretConfigured: Boolean(process.env.DOCUSIGN_WEBHOOK_SECRET),
+    });
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
@@ -288,6 +295,18 @@ export async function POST(request: NextRequest) {
   }
 
   const action = classifyEvent(evt);
+
+  // One structured line per delivered-and-authenticated webhook, so the Connect
+  // config ↔ our handling is traceable end-to-end during verification. An empty
+  // event/envelope_status here is the fingerprint of a Connect "Include Data" gap
+  // (payload delivered, but without the envelopeSummary/recipients we classify on).
+  console.info("[docusign webhook] received", {
+    envelope_id: evt.envelopeId,
+    event: evt.event,
+    envelope_status: evt.envelopeStatus,
+    action: action.kind,
+    deal_id: deal.id,
+  });
 
   if (action.kind === "brand_signed") {
     if (deal.brand_signed_at) {
@@ -392,5 +411,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // Delivered + authenticated + matched to a deal, but classified as nothing to
+  // do. This is the silent failure mode behind "signed but stuck in planning":
+  // e.g. Connect not subscribed to recipient-completed, or "Include Data"
+  // omitting the envelope/recipients block so status + signedDateTime never
+  // arrive. Record it (fail-soft) so it's queryable in domain_events instead of
+  // vanishing into a bare 200.
+  await logEvent({
+    eventType: "io.webhook_ignored",
+    entityType: "deal",
+    entityId: deal.id,
+    payload: {
+      envelope_id: evt.envelopeId,
+      event: evt.event,
+      envelope_status: evt.envelopeStatus,
+      had_recipient_signed_at: Object.keys(evt.recipientSignedAt).length > 0,
+    },
+  });
   return NextResponse.json({ ok: true, ignored: action.kind });
 }
