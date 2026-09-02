@@ -18,7 +18,6 @@ import type { BrandProfile, ShowProfile } from "@/lib/data/types";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ signing?: string }>;
 }
 
 function brandDisplayName(bp: Partial<BrandProfile> | null): string {
@@ -32,9 +31,8 @@ function brandDisplayName(bp: Partial<BrandProfile> | null): string {
   return "Brand";
 }
 
-export default async function DealDetailPage({ params, searchParams }: PageProps) {
+export default async function DealDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const search = await searchParams;
   const user = await getAuthenticatedUser();
   if (!user) notFound();
 
@@ -82,7 +80,6 @@ export default async function DealDetailPage({ params, searchParams }: PageProps
         showName={showName}
         brandName={brandName}
         viewerRole={ownsAsBrand ? "brand" : "show"}
-        signingHint={search.signing ?? null}
         trackingLink={trackingLink}
         showNotesBlurb={showNotesBlurb}
       />

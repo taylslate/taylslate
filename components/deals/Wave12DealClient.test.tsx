@@ -2,11 +2,19 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Wave12Deal } from "@/lib/data/types";
 
+// Hoisted so the module-level vi.mock factory can reference these. `params.current`
+// lets each test set the ?signing value the component reads via useSearchParams.
+const nav = vi.hoisted(() => ({
+  refreshMock: vi.fn(),
+  params: { current: new URLSearchParams() },
+}));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ refresh: nav.refreshMock }),
+  useSearchParams: () => nav.params.current,
 }));
 
 vi.mock("next/link", () => ({
@@ -66,6 +74,11 @@ function renderDeal(
   );
 }
 
+beforeEach(() => {
+  nav.refreshMock.mockClear();
+  nav.params.current = new URLSearchParams();
+});
+
 afterEach(() => cleanup());
 
 describe("Wave12DealClient payment method card", () => {
@@ -119,5 +132,69 @@ describe("Wave12DealClient payment method card", () => {
     renderDeal({}, "show");
 
     expect(screen.queryByText("Payment method")).not.toBeInTheDocument();
+  });
+});
+
+describe("Wave12DealClient signing auto-revalidation", () => {
+  it("polls the server after a completed signing return until the signature lands, capped at 15s", () => {
+    vi.useFakeTimers();
+    nav.params.current = new URLSearchParams("signing=signing_complete");
+
+    // brand_signed_at null → the Connect webhook hasn't written it yet.
+    renderDeal({
+      brand_signed_at: null,
+      setup_intent_id: null,
+      setup_intent_client_secret: null,
+    });
+
+    expect(screen.getByText(/Confirming your signature with DocuSign/i)).toBeInTheDocument();
+    expect(nav.refreshMock).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(2000);
+    expect(nav.refreshMock).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(4000); // t = 6s → two more refreshes
+    expect(nav.refreshMock).toHaveBeenCalledTimes(3);
+
+    // Well past the 15s cap: polling stops, no unbounded refresh loop.
+    vi.advanceTimersByTime(60_000);
+    expect(nav.refreshMock).toHaveBeenCalledTimes(7);
+
+    vi.useRealTimers();
+  });
+
+  it("does not poll when the brand signature is already confirmed", () => {
+    vi.useFakeTimers();
+    nav.params.current = new URLSearchParams("signing=signing_complete");
+
+    // baseDeal.brand_signed_at is set → the webhook already landed.
+    renderDeal();
+
+    vi.advanceTimersByTime(30_000);
+    expect(nav.refreshMock).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it("strips the transient ?signing param once the signature is confirmed", () => {
+    nav.params.current = new URLSearchParams("signing=signing_complete");
+    window.history.replaceState({}, "", "/deals/deal_12345678?signing=signing_complete");
+
+    // baseDeal.brand_signed_at is set → cleanup branch removes the param.
+    renderDeal();
+
+    expect(new URL(window.location.href).searchParams.has("signing")).toBe(false);
+  });
+
+  it("does not poll for a non-completion signing event (e.g. cancel)", () => {
+    vi.useFakeTimers();
+    nav.params.current = new URLSearchParams("signing=cancel");
+
+    renderDeal({ brand_signed_at: null });
+
+    vi.advanceTimersByTime(30_000);
+    expect(nav.refreshMock).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
 });

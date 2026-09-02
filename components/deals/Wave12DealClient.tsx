@@ -3,9 +3,9 @@
 // Wave 12 deal detail — IO preview iframe + sign / cancel actions.
 // Server-rendered shell loads the deal; this client hosts interactivity.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import type { Wave12Deal, Wave12DealStatus } from "@/lib/data/types";
@@ -18,7 +18,6 @@ interface Props {
   brandName: string;
   /** "brand" | "show" — drives which actions render. */
   viewerRole: "brand" | "show";
-  signingHint?: string | null;
   /**
    * UTM-tagged tracking link for the show's show notes. Generated on read from
    * the brand website + deal — never persisted. Null when unavailable; render
@@ -131,11 +130,20 @@ export default function Wave12DealClient({
   showName,
   brandName,
   viewerRole,
-  signingHint,
   trackingLink,
   showNotesBlurb,
 }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // DocuSign's hosted-signing return bounces the brand back to this page with
+  // ?signing=<event> (see /api/deals/[id]/docusign-return). We read it live from
+  // the URL — not a server prop — so clearing it below re-renders reactively.
+  const signingParam = searchParams.get("signing");
+  // "signing_complete" only means the brand *finished in DocuSign*; the
+  // authoritative brand_signed_at is written asynchronously by the Connect
+  // webhook. Until that lands we're still waiting on confirmation.
+  const awaitingSignatureConfirmation =
+    signingParam === "signing_complete" && !deal.brand_signed_at;
   const [signing, setSigning] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [showCancelForm, setShowCancelForm] = useState(false);
@@ -158,6 +166,38 @@ export default function Wave12DealClient({
   );
   const [savingPromo, setSavingPromo] = useState(false);
   const [promoSaved, setPromoSaved] = useState(false);
+
+  // Auto-revalidate after returning from DocuSign so the brand never has to
+  // manually refresh to see the signature confirmed (and the card form unlock).
+  // The return URL is NOT authoritative — brand_signed_at is set by the Connect
+  // webhook a beat later. While we're awaiting that write, poll the server
+  // (router.refresh re-runs the deal page's server component, which re-reads the
+  // deal) every 2s, capped at 15s so a webhook that never lands doesn't spin
+  // forever. Once brand_signed_at appears, drop the transient ?signing param so a
+  // reload/back-nav doesn't restart the loop; needsPaymentMethod then renders the
+  // SetupIntent card section on its own.
+  useEffect(() => {
+    if (signingParam !== "signing_complete") return;
+
+    if (deal.brand_signed_at) {
+      // Webhook confirmed. Strip the one-shot param without a server round-trip
+      // or full re-render — replaceState (App-Router-synced), not router.replace.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("signing");
+      window.history.replaceState(window.history.state, "", url.toString());
+      return;
+    }
+
+    const deadline = Date.now() + 15_000;
+    const interval = window.setInterval(() => {
+      if (Date.now() >= deadline) {
+        window.clearInterval(interval);
+        return;
+      }
+      router.refresh();
+    }, 2000);
+    return () => window.clearInterval(interval);
+  }, [signingParam, deal.brand_signed_at, router]);
 
   const sendToDocuSign = async () => {
     setSigning(true);
@@ -344,9 +384,15 @@ export default function Wave12DealClient({
         {deal.docusign_envelope_id ? ` · DocuSign Envelope: ${deal.docusign_envelope_id.slice(0, 8)}` : ""}
       </p>
 
-      {signingHint && (
+      {signingParam && (
         <div className="mb-4 p-3 rounded-lg border border-[var(--brand-blue)]/30 bg-[var(--brand-blue)]/[0.06] text-sm text-[var(--brand-text)]">
-          DocuSign signing event: <strong>{signingHint}</strong>. Webhook will update this page within a few seconds.
+          {awaitingSignatureConfirmation ? (
+            <>Confirming your signature with DocuSign — this page updates automatically once the webhook lands…</>
+          ) : (
+            <>
+              DocuSign signing event: <strong>{signingParam}</strong>. Webhook will update this page within a few seconds.
+            </>
+          )}
         </div>
       )}
       {error && (
