@@ -156,7 +156,7 @@ async function handleSetupIntentSucceeded(event: Stripe.Event): Promise<void> {
 
   const { error } = await supabaseAdmin
     .from("deals")
-    .update({ payment_method_id: paymentMethodId })
+    .update({ payment_method_id: paymentMethodId, card_on_file_at: new Date().toISOString() })
     .eq("id", dealId);
   if (error) {
     console.warn(

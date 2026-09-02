@@ -11,6 +11,21 @@ Per the plan's LIVE PROOF PROTOCOL: "If live Stripe is not connected: stop after
 
 ---
 
+## Update — 2026-09-02 · Track 1 closed (strictly additive, no core logic touched)
+
+Follow-up pass after the 2026-08-24 run. All changes were **additive** (new tests, one migration, one timestamp field, docs) — no `route.ts` or component business logic was edited. Verification: **100 files, 1070 tests pass**, `tsc --noEmit` clean, eslint 0 errors (the 1 pre-existing `_eventType` warning at `webhook.ts:460` is unrelated and untouched). Mode is still AUTOMATED + BUILD only — **G6 live proof remains open and human-gated** (below, unchanged).
+
+- **A2 — auto-revalidation hook SHIPPED (commit `516e918`).** The deal page (`components/deals/Wave12DealClient.tsx`) now reads `?signing` via `useSearchParams`; on `signing_complete` with `brand_signed_at` still null it polls `router.refresh()` every 2s (capped 15s) until the **webhook** writes the signature, then strips the param with `window.history.replaceState`. This makes the "UI flips to signed only after A1 fires" criterion automatic (no manual refresh) and keeps the return URL non-authoritative. Redundant `signingHint` server prop removed. Tests: `Wave12DealClient.test.tsx` — polls until signed, respects the 15s cap, cleans the URL, ignores non-completion events.
+- **A3 — `card_on_file_at` marker ADDED (closes the spec's card_on_file_at requirement).** Migration **`033_deal_card_on_file_at.sql`** adds `deals.card_on_file_at TIMESTAMPTZ` (idempotent; grandfathered grants). `lib/stripe/webhook.ts` `handleSetupIntentSucceeded` now stamps `card_on_file_at = new Date().toISOString()` alongside `payment_method_id` — server-authoritative on `setup_intent.succeeded`. **⚠️ Migration 033 is written but NOT yet applied/introspected in Supabase** — paste it and confirm the column exists before relying on it (the "applied = introspected" invariant). Card last4/brand/exp are still NOT persisted (still inferred as `payment_method_id IS NOT NULL` for presence); only the timestamp was added.
+- **New additive tests (+13):**
+  - `app/api/deals/[id]/send-to-docusign/route.test.ts` — 401 unauth, 403 non-owner brand, 409 non-planning, and **create-vs-resume** (fresh envelope persisted + `getBrandSigningUrl` for the new id; existing `docusign_envelope_id` reused with **no** `createEnvelope`/`updateWave12Deal`). Closes the biggest A2 route-test gap.
+  - `app/api/deals/[id]/docusign-return/route.test.ts` — asserts UX-only redirect (`307` → `/deals/[id]?signing=…`, default `unknown`) and **zero DB writes** (regression guard on the webhook-authoritative model).
+  - `lib/stripe/setup-intent.test.ts` — asserts `usage:"off_session"`, `payment_method_types:["card"]` (+ override), deal metadata, and **no subscription/invoice created at capture** (alpha fee = 0).
+
+The accepted deviations are unchanged: **G1** (state-guard idempotency, no raw-event table) and **G5** (card-on-file is column-based — now `payment_method_id` + `card_on_file_at` — not a named deal status).
+
+---
+
 ## Automated evidence
 
 Commands (repo root):
@@ -18,7 +33,7 @@ Commands (repo root):
 ```
 npx tsc --noEmit          # clean (0 errors)
 npx eslint <changed>      # 0 errors (1 pre-existing warning in mapStripeSubStatus, untouched)
-npx vitest run            # 97 files, 1048 tests passed (was 96/1034 → +14)
+npx vitest run            # 100 files, 1070 tests passed (Track 1 close, 2026-09-02; was 97/1048)
 npx next build            # exit 0 (Turbopack, incl. new nodejs-runtime route)
 ```
 

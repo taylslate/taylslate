@@ -148,7 +148,11 @@ describe("verifyAndHandleStripeEvent — handlers", () => {
 
     const r = await verifyAndHandleStripeEvent({ rawBody: "{}", signatureHeader: "sig" });
     expect(r.handled).toBe(true);
-    expect(supabaseAdmin._builders.deals._updated()).toEqual({ payment_method_id: "pm_card_1" });
+    // Persists the payment method AND stamps card_on_file_at (Pile A A3 enrichment).
+    expect(supabaseAdmin._builders.deals._updated()).toEqual({
+      payment_method_id: "pm_card_1",
+      card_on_file_at: expect.any(String),
+    });
     expect(logEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: "deal.payment_method_attached",
