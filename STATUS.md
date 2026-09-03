@@ -1,6 +1,6 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated Sep 2, 2026. **Frontier: Pile A (A1–A4) code + tests DONE (1070 tests); the only remaining Pile A work is G6 live proof — production DocuSign Connect config + Stripe keys/webhook endpoint, human-gated (see `PILE_A_PROOF.md`). DocuSign production cutover DONE + live-verified against `na4`. Next unproven seams — email deliverability rehearsal + the Stripe money loop (live).** Production key promoted, all five `DOCUSIGN_*` env vars cut to Production scope, auth + createEnvelope proven against `na4.docusign.net` (envelope `6bd19309`, voided). Region-host bug (`www` hardcode → `base_uri` discovery via `getUserInfo`) fixed + Codex-reviewed, commits `0774bba` + `738b152`, deployed green. Still unverified vs prod: Connect webhook, embedded brand signing through the real route, completion→SetupIntent. Correction (standing): July "end-to-end" runs never fired envelope creation — signature loop first ran Aug 4 (sandbox), Aug 7 (prod). Prior, still true: accept-flow cluster + date/cadence fixes SHIPPED + LIVE-VERIFIED July 16/23 (migrations 031/032); brand auth L1-3, impersonation, seeding, Wave 14 Phase 2D all COMPLETE._
+_Volatile snapshot. Updated Sep 3, 2026. **Frontier: Pile A (A1–A4) code + tests DONE (1070 tests) AND G6 LIVE PROOF DONE (2026-09-03) — the full DocuSign Connect → brand signature → Stripe SetupIntent → card-on-file chain ran end to end against production DocuSign (`na4`) + live Stripe (`acct_1Kejm5Fw`); A1–A4 are live-proven, A5/A6 remain open (see `PILE_A_PROOF.md` → "Live run — 2026-09-03"). Migration 033 (`deals.card_on_file_at`) now applied + introspected. DocuSign production cutover DONE + live-verified against `na4`. Next unproven seam — a live Stripe *charge* (A5/A6; card-on-file is proven end to end, settlement is not) + email deliverability rehearsal.** Production key promoted, all five `DOCUSIGN_*` env vars cut to Production scope, auth + createEnvelope proven against `na4.docusign.net` (envelope `6bd19309`, voided). Region-host bug (`www` hardcode → `base_uri` discovery via `getUserInfo`) fixed + Codex-reviewed, commits `0774bba` + `738b152`, deployed green. NOW live-verified vs prod (2026-09-03 first live G6 run): Connect webhook (real `recipient-completed`, retry 0), embedded brand signing through the real route, and completion→SetupIntent→card-on-file — all against production `na4` + live Stripe `acct_1Kejm5Fw`. Correction (standing): July "end-to-end" runs never fired envelope creation — signature loop first ran Aug 4 (sandbox), Aug 7 (prod). Prior, still true: accept-flow cluster + date/cadence fixes SHIPPED + LIVE-VERIFIED July 16/23 (migrations 031/032); brand auth L1-3, impersonation, seeding, Wave 14 Phase 2D all COMPLETE._
 
 ## Podscan data audit (read-only, July 23, 2026) — what we consume vs. what's null in prod
 
@@ -13,12 +13,26 @@ Inventory of the four Podscan-derived fields; **no code changed** (audit only). 
 - **`shows.current_sponsors` — written only by the admin enrich route** (`/api/shows/[id]/enrich`, `enrich-batch`), empty from the automated discovery path; surfaced in the outreach-email prompt + campaign UI, **never scored**.
 - **Two separate Podscan clients:** `lib/enrichment/podscan.ts` (live: discovery + enrich) and `lib/podscan/` (Wave 5 scorer only, dead).
 
+## Most recent — Pile A G6 LIVE PROOF DONE: DocuSign Connect → signature → Stripe SetupIntent → card-on-file, end to end against production (Sep 3, 2026)
+
+**First live G6 proof.** The full A1–A4 chain ran end to end against **production DocuSign (`na4`) + live Stripe (`acct_1Kejm5Fw`)** — real envelope, real Connect delivery, real Amex. This closes the last open Pile A item: **A1–A4 are now LIVE-PROVEN; A5/A6 remain open.** Recording-only pass (no code changed); full ids + timeline in `PILE_A_PROOF.md` → "Live run — 2026-09-03".
+
+- **Mode: LIVE** — production DocuSign `na4`, live Stripe `acct_1Kejm5Fw`. No test keys, no sandbox, no mocks. First time the Connect webhook, embedded brand signing through the real route, and completion→SetupIntent have all executed against production.
+- **Timeline (UTC, 2026-09-03):** deal `4bea8769-bff9-41c9-b915-7fb04420fecd` seeded → `planning` → envelope `5768f9d8-04c6-8720-8213-d9c4618533ac` → Connect `recipient-completed` **delivered Success, retry 0, 16:40:57Z** → `deals.brand_signed_at` **16:40:33Z written by the webhook** (not the return URL) → SetupIntent `seti_1UBdh6FwAaCc9OhAsElCYhYX` **created 16:40:56Z server-side** → card confirmed (Amex …1005) → Stripe `setup_intent.succeeded` **16:53:18Z** → `deals.payment_method_id pm_1UBdt3FwAaCc9OhABohd4KoQ` + `card_on_file_at` **16:53:19Z**.
+- **A1 LIVE-PROVEN** — real Connect `recipient-completed`, Success first try (retry 0), webhook-authoritative `brand_signed_at` (not the return URL).
+- **A2 LIVE-PROVEN** — embedded brand signing through the real `/deals/[id]` route (the recipient-view the product serves, not the sandbox two-email-signer harness).
+- **A3 LIVE-PROVEN** — `card_on_file_at` (16:53:19Z) stamped alongside `payment_method_id` on `setup_intent.succeeded`; real Amex ending 1005, `usage: off_session`, metadata carried `deal_id` + `profile_id`.
+- **A4 LIVE-PROVEN** — SetupIntent provisioned server-side off the `brand_signed` transition (no admin script); `setup_intent.succeeded` drove the write. **No charge, no invoice, no subscription created** (alpha fee = 0; SetupIntent charges nothing).
+- **Both webhook HMAC secrets verified by successful delivery** — DocuSign Connect + Stripe each validated a real signed payload end to end.
+- **Migration 033 (`deals.card_on_file_at`) applied + introspected** — clears the "written but NOT yet applied" caveat from the Sep 2 Track 1 note; the A3-spec column is now live in prod.
+- **Still open:** A5/A6 (not exercised this run); no live charge was run (this pile proves card-on-file / ready-to-charge, not settlement). Accepted deviations unchanged: G1 (state-guard idempotency) + G5 (column-based card-on-file).
+
 ## Most recent — Pile A Track 1 CLOSED: auto-revalidation shipped + additive test/enrichment pass (Sep 2, 2026)
 
 Closed the remaining Pile A (A1–A4) code/test gaps with **strictly-additive** changes — no core `route.ts`/component logic touched. The DocuSign→Stripe rail was already implemented + tested; this pass hardens coverage, adds the `card_on_file_at` marker the A3 spec calls for, and records the earlier auto-revalidation hook. **1070 tests (100 files)**, `tsc --noEmit` clean, eslint 0 errors (1 pre-existing `_eventType` warning at `webhook.ts:460`, untouched). The one thing still open across A1–A4 is **G6 live proof** — human-gated on Chris; see `PILE_A_PROOF.md`.
 
 - **A2 auto-revalidation SHIPPED (commit `516e918`).** Returning from DocuSign (`?signing=signing_complete`) now polls `router.refresh()` every 2s (capped 15s) until the Connect webhook writes `brand_signed_at`, then strips the transient param via `history.replaceState` — no manual refresh, and the SetupIntent card form unlocks on its own. Reinforces the "return URL is UX-only; webhook is authoritative" invariant. `useSearchParams`-driven; the now-redundant `signingHint` server prop was dropped. 4 tests in `Wave12DealClient.test.tsx`.
-- **A3 `card_on_file_at` ADDED (migration 033).** `deals.card_on_file_at TIMESTAMPTZ` (idempotent; grandfathered grants, no grant block). The Stripe rail webhook now stamps it alongside `payment_method_id` on `setup_intent.succeeded` (`lib/stripe/webhook.ts`) — server-authoritative, closes the A3 spec's explicit `card_on_file_at` requirement. **Migration 033 NOT yet applied in Supabase — paste + introspect before relying on the column** (per the "applied = introspected" invariant).
+- **A3 `card_on_file_at` ADDED (migration 033).** `deals.card_on_file_at TIMESTAMPTZ` (idempotent; grandfathered grants, no grant block). The Stripe rail webhook now stamps it alongside `payment_method_id` on `setup_intent.succeeded` (`lib/stripe/webhook.ts`) — server-authoritative, closes the A3 spec's explicit `card_on_file_at` requirement. **Migration 033 applied + introspected Sep 3, 2026 during the first live G6 proof** — the column is live in prod (this Sep 2 "not yet applied" caveat is superseded by the Sep 3 section above).
 - **Additive test coverage (+13 tests).** New `app/api/deals/[id]/send-to-docusign/route.test.ts` (401 unauth / 403 wrong-brand / 409 non-planning / create-vs-resume envelope), new `app/api/deals/[id]/docusign-return/route.test.ts` (UX-only redirect, asserts zero DB writes), new `lib/stripe/setup-intent.test.ts` (`usage:"off_session"`, `payment_method_types:["card"]`, deal metadata, and no subscription/invoice created at capture).
 - **STILL OPEN — G6 live proof (unchanged, human-only):** production DocuSign Connect config + HMAC secret, Stripe live/test keys, Stripe webhook endpoint. Nothing in the Connect→SetupIntent chain has run against real webhooks. Exact steps in `PILE_A_PROOF.md §G6`.
 - **Accepted deviations (unchanged):** G1 (state-guard idempotency, no raw-event table) and G5 (card-on-file is column-based — `payment_method_id` + now `card_on_file_at` — not a named deal status).
@@ -198,19 +212,24 @@ impersonation tool is now COMPLETE (Layers 1-3). 2C
 Layer 5 (overrides + recompute) remains optional polish, not GTM-blocking —
 carried in PRODUCT_BACKLOG.md with its request-scope footgun note.
 
-**Current frontier — DocuSign go-live (Aug 4, 2026):** signature path
-live-verified in sandbox for the first time, the anchor-tab bug fixed, and a
-runtime tab-placement tripwire shipped; the production Go-Live form is submitted
-with a ~48hr DocuSign review pending (production not usable until approved, env/
-Connect cutover deferred). See the top "Most recent" block for detail. **Email
-deliverability rehearsal is the next frontier.**
+**Current frontier — Pile A G6 live proof DONE (Sep 3, 2026):** the full DocuSign
+Connect → brand signature → Stripe SetupIntent → card-on-file chain ran end to end
+against production `na4` + live Stripe `acct_1Kejm5Fw` (A1–A4 live-proven; A5/A6
+open). DocuSign go-live + production cutover are complete and now exercised through
+a real Connect webhook. See the top "Most recent" block for ids + timeline. **A live
+Stripe charge (A5/A6) and an email deliverability rehearsal are the next frontiers.**
 
 ## Tests
 1029 passing (94 files). tsc clean. eslint: all changed files clean (pre-existing
 unused-var warnings only). `next build` green.
 
 ## Migration state
-001–032 applied and introspected. **032** (`cadence_multiple_weekly` — widens the
+001–033 applied and introspected. **033** (`deal_card_on_file_at` —
+`deals.card_on_file_at TIMESTAMPTZ`, stamped server-side alongside
+`payment_method_id` on `setup_intent.succeeded`) applied + introspected Sep 3,
+2026 during the first live G6 proof; column confirmed present — clears the Sep 2
+"written but NOT yet applied" caveat. Idempotent, grandfathered grants (no grant
+block). **032** (`cadence_multiple_weekly` — widens the
 `episode_cadence` CHECK on `show_profiles` + `shows` to allow `multiple_weekly`)
 applied + introspected July 16, 2026: exactly two check constraints, both include
 `multiple_weekly`, no lingering constraints. No grant block (grandfathered tables).
@@ -256,12 +275,14 @@ inbox.
   case reopens.
 
 ## Next
-**DocuSign go-live is the live frontier (Aug 4, 2026):** signature path
-live-verified in sandbox + anchor bug fixed + tripwire shipped + Go-Live form
-submitted; **~48hr DocuSign review pending** (production not usable until
-approved — then env/Connect cutover). Once that clears, **email deliverability
-rehearsal is the next frontier.** Detail in the top "Most recent" block; the
-accept-flow/auth work below is prior-frontier context, all shipped.
+**Pile A G6 live proof DONE (Sep 3, 2026) — A1–A4 live-proven end to end** against
+production DocuSign `na4` + live Stripe `acct_1Kejm5Fw` (Connect webhook, embedded
+brand signing through the real route, completion→SetupIntent→card-on-file all
+exercised live; ids + timeline in the top "Most recent" block and
+`PILE_A_PROOF.md`). DocuSign go-live + production cutover are complete. **Next
+frontiers: a live Stripe *charge* (A5/A6 — settlement, not just card-on-file) and
+an email deliverability rehearsal.** The accept-flow/auth work below is
+prior-frontier context, all shipped.
 
 Brand auth hardening **COMPLETE (Layers 1-3), launch blocker CLEARED** — L1+L2
 shipped + verified live July 8, L3 (Turnstile) live-verified July 9 with the

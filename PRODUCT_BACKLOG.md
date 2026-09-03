@@ -158,6 +158,7 @@ Surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). *
 
 ### Brand onboarding fixes
 - Hybrid AI-prefill from URL (currently full manual entry)
+  - When this ships, `brand_name` should be part of the prefill set — populated and editable, no separate confirm step
 - Remove duplicate age question (currently asked twice)
 - Remove artificial 1-5 category cap and 1-3 goals cap
 - Add "Back to Summary" CTA when editing from summary view
