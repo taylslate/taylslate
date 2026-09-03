@@ -369,6 +369,12 @@ export interface BrandProfile {
   id: string;
   user_id: string;
 
+  // Durable, user-confirmed short brand name (A6). Preferred over the
+  // brand_identity paragraph split for the outreach From: name, IO advertiser
+  // name, and pitch/notification sender. Optional; when null, callers fall back
+  // to the bounded brand_identity clause / website domain.
+  brand_name?: string | null;
+
   // Step 2–4 (free text)
   brand_identity?: string | null;
   brand_website?: string | null;

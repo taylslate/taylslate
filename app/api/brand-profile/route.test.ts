@@ -55,6 +55,18 @@ describe("sanitizeBrandProfilePatch", () => {
     expect(patch.exclusions).toBeNull();
   });
 
+  it("accepts, trims, and length-caps brand_name", () => {
+    expect(sanitizeBrandProfilePatch({ brand_name: "  Aurora Sleep  " }).brand_name).toBe(
+      "Aurora Sleep"
+    );
+    const long = "A".repeat(200);
+    expect(sanitizeBrandProfilePatch({ brand_name: long }).brand_name).toBe("A".repeat(80));
+  });
+
+  it("collapses an empty brand_name to null", () => {
+    expect(sanitizeBrandProfilePatch({ brand_name: "   " }).brand_name).toBeNull();
+  });
+
   it("clamps age bounds and rounds floats", () => {
     const patch = sanitizeBrandProfilePatch({
       target_age_min: 12.6,

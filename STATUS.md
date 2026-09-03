@@ -224,7 +224,14 @@ Stripe charge (A5/A6) and an email deliverability rehearsal are the next frontie
 unused-var warnings only). `next build` green.
 
 ## Migration state
-001–033 applied and introspected. **033** (`deal_card_on_file_at` —
+001–034 applied and introspected. **034** (`brand_profiles_brand_name` —
+`brand_profiles.brand_name TEXT`, the durable A6 brand-name field preferred over
+the legacy `brand_identity` paragraph split for the outreach From: name, IO
+advertiser name, and pitch/notification sender) applied + introspected Sep 3,
+2026: column confirmed present; the campaign-product-name backfill populated 2 of
+3 existing brand profiles (the third left NULL by design — runtime helper falls
+back). Idempotent, grandfathered grants (no grant block). **033**
+(`deal_card_on_file_at` —
 `deals.card_on_file_at TIMESTAMPTZ`, stamped server-side alongside
 `payment_method_id` on `setup_intent.succeeded`) applied + introspected Sep 3,
 2026 during the first live G6 proof; column confirmed present — clears the Sep 2

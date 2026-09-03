@@ -21,6 +21,7 @@ import {
   updateOutreachResponse,
 } from "@/lib/data/queries";
 import { logEvent } from "@/lib/data/events";
+import { brandNameFromProfile } from "@/lib/brand/display-name";
 import { renderBrandNotification } from "@/lib/email/templates/outreach-response-brand";
 import { renderIoReadyForSignature } from "@/lib/email/templates/io-ready-for-signature";
 import { sendEmail } from "@/lib/email/send";
@@ -225,7 +226,7 @@ export async function applyAndNotify(
   }
 
   const brandName =
-    args.resolved.brandProfile.brand_identity?.split(/[.,—–-]/)[0]?.trim() ||
+    brandNameFromProfile(args.resolved.brandProfile) ||
     args.resolved.brandUser.full_name ||
     args.resolved.brandUser.company_name ||
     "Your campaign";

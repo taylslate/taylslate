@@ -69,6 +69,7 @@ export default function SummaryClient({ profile }: { profile: BrandProfile }) {
 
           <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] divide-y divide-[var(--brand-border)]">
             <Row label="Website" value={profile.brand_website ?? ""} editSlug="welcome" emptyLabel="Add your website" placeholderAsEmpty />
+            <Row label="Brand name" value={profile.brand_name ?? ""} editSlug="identity" emptyLabel="Add your brand name" placeholderAsEmpty />
             <Row label="Brand" value={profile.brand_identity ?? ""} editSlug="identity" emptyLabel="Add your brand description" />
             <Row label="Ideal customer" value={profile.target_customer ?? ""} editSlug="customer" emptyLabel="Describe your ideal customer" />
             <Row label="Age range" value={formatAgeRange(profile.target_age_min, profile.target_age_max)} editSlug="age" />

@@ -12,6 +12,7 @@ import {
   getAuthenticatedUser,
   getBrandProfileByUserId,
 } from "@/lib/data/queries";
+import { brandNameFromProfile } from "@/lib/brand/display-name";
 import type { OutreachPlacement } from "@/lib/data/types";
 
 interface DraftBody {
@@ -45,9 +46,7 @@ export async function POST(request: NextRequest) {
 
   const brandProfile = await getBrandProfileByUserId(user.id);
   const brandName =
-    brandProfile?.brand_identity?.split(/[.,—–-]/)[0]?.trim() ||
-    brandProfile?.brand_website?.replace(/^https?:\/\/(www\.)?/, "").split("/")[0] ||
-    "Your brand";
+    (brandProfile ? brandNameFromProfile(brandProfile) : null) || "Your brand";
 
   const input = {
     brand_name: brandName,

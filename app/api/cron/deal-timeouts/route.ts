@@ -17,6 +17,7 @@ import {
 } from "@/lib/data/queries";
 import { voidEnvelope } from "@/lib/docusign/envelope";
 import { logEvent } from "@/lib/data/events";
+import { brandNameFromProfile } from "@/lib/brand/display-name";
 import { renderBrandSignatureReminder } from "@/lib/email/templates/brand-signature-reminder";
 import { renderDealCancelledShow } from "@/lib/email/templates/deal-cancelled-show";
 import { sendEmail } from "@/lib/email/send";
@@ -55,7 +56,7 @@ async function loadBrandContext(deal: Wave12Deal): Promise<{
 } | null> {
   const { data: bp } = await supabaseAdmin
     .from("brand_profiles")
-    .select("user_id, brand_identity, brand_website")
+    .select("user_id, brand_name, brand_identity, brand_website")
     .eq("id", deal.brand_profile_id)
     .single();
   if (!bp) return null;
@@ -64,10 +65,7 @@ async function loadBrandContext(deal: Wave12Deal): Promise<{
     .select("email")
     .eq("id", (bp as BrandProfile).user_id)
     .single();
-  const brandName =
-    (bp as BrandProfile).brand_identity?.split(/[.,—–-]/)[0]?.trim() ||
-    (bp as BrandProfile).brand_website ||
-    "Brand";
+  const brandName = brandNameFromProfile(bp as BrandProfile) || "Brand";
   return {
     brandName,
     brandEmail: (brandUser?.email as string | undefined) ?? null,

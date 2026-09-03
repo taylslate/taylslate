@@ -17,6 +17,7 @@ import type {
 import { formatDateOnly } from "@/lib/format/date-only";
 import { CADENCE_DAYS, DEFAULT_CADENCE_DAYS } from "@/lib/io/cadence-days";
 import { SIGNATURE_ANCHORS } from "@/lib/docusign/anchors";
+import { brandNameFromProfile } from "@/lib/brand/display-name";
 
 // ---- Visual constants (mirror lib/pdf/io-pdf.ts) ----
 
@@ -64,13 +65,10 @@ function placementLabel(p: string): string {
 }
 
 function brandDisplayName(bp: BrandProfile): string {
-  if (bp.brand_identity) {
-    return bp.brand_identity.split(/[.,—–-]/)[0]?.trim() || bp.brand_identity;
-  }
-  if (bp.brand_website) {
-    return bp.brand_website.replace(/^https?:\/\/(www\.)?/, "").split("/")[0];
-  }
-  return "Advertiser";
+  // Prefers the durable brand_name; bounded identity-clause / website fallback
+  // for legacy rows (shared helper). Purely a visual label here — never the
+  // DocuSign anchor text (those are the fixed SIGNATURE_ANCHORS constants).
+  return brandNameFromProfile(bp) ?? "Advertiser";
 }
 
 /**

@@ -2,13 +2,16 @@ import { describe, it, expect } from "vitest";
 import { resolveBrandName } from "./_shared";
 import type { BrandProfile, Campaign } from "@/lib/data/types";
 
-// resolveBrandName only reads `brief`, `name`, and `brand_identity`; cast loose
-// fixtures so each test states just the fields that matter.
+// resolveBrandName reads `brief`, `name`, `brand_name`, and `brand_identity`;
+// cast loose fixtures so each test states just the fields that matter.
 function makeCampaign(name: string, brief: unknown): Campaign {
   return { name, brief } as unknown as Campaign;
 }
-function makeProfile(brand_identity: string | null): BrandProfile {
-  return { brand_identity } as unknown as BrandProfile;
+function makeProfile(
+  brand_identity: string | null,
+  brand_name: string | null = null
+): BrandProfile {
+  return { brand_identity, brand_name } as unknown as BrandProfile;
 }
 
 describe("resolveBrandName", () => {
@@ -21,6 +24,36 @@ describe("resolveBrandName", () => {
       makeProfile("A long identity paragraph that should be ignored entirely.")
     );
     expect(out).toBe("Sauna Box");
+  });
+
+  it("prefers the durable brand_name over the brand-identity paragraph", () => {
+    const paragraph =
+      "We are a premium cold-plunge and sauna company helping busy founders " +
+      "recover faster between deep-work sessions every single day of the week";
+    const out = resolveBrandName(
+      makeCampaign("Untitled campaign", { version: 2 }),
+      makeProfile(paragraph, "Aurora Sleep")
+    );
+    // Returns the brand name, never any of the brief/paragraph prose.
+    expect(out).toBe("Aurora Sleep");
+    expect(out).not.toContain("every single day");
+    expect(out).not.toContain("cold-plunge");
+  });
+
+  it("ranks the durable brand_name above the campaign-name fallback", () => {
+    const out = resolveBrandName(
+      makeCampaign("Legacy Parsed Co — June 2026", { version: 2 }),
+      makeProfile(null, "Aurora Sleep")
+    );
+    expect(out).toBe("Aurora Sleep");
+  });
+
+  it("ignores a blank brand_name and falls through the chain", () => {
+    const out = resolveBrandName(
+      makeCampaign("Acme Co — June 2026", { version: 2 }),
+      makeProfile(null, "   ")
+    );
+    expect(out).toBe("Acme Co");
   });
 
   it("ignores a V2 product whose brand_name is blank, falling through", () => {

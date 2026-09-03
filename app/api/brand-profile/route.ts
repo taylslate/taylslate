@@ -26,6 +26,8 @@ export function sanitizeBrandProfilePatch(
 ): Partial<Omit<BrandProfile, "id" | "user_id" | "created_at" | "updated_at" | "onboarded_at">> {
   const patch: Partial<BrandProfile> = {};
 
+  // Length-capped: this becomes the outreach From: name, so bound it defensively.
+  if (typeof body.brand_name === "string") patch.brand_name = body.brand_name.trim().slice(0, 80) || null;
   if (typeof body.brand_identity === "string") patch.brand_identity = body.brand_identity.trim() || null;
   if (typeof body.brand_website === "string") patch.brand_website = body.brand_website.trim() || null;
   if (typeof body.target_customer === "string") patch.target_customer = body.target_customer.trim() || null;

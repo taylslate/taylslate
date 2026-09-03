@@ -20,6 +20,7 @@ import {
 } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logEvent } from "@/lib/data/events";
+import { brandNameFromProfile } from "@/lib/brand/display-name";
 import { renderIoReadyForSignature } from "@/lib/email/templates/io-ready-for-signature";
 import { sendEmail } from "@/lib/email/send";
 import type { Profile, ShowProfile } from "@/lib/data/types";
@@ -175,9 +176,7 @@ export async function POST(
   const campaign = await getCampaignById(outreach.campaign_id);
   const origin = siteOrigin(request);
   const brandName =
-    brandProfile.brand_identity?.split(/[.,—–-]/)[0]?.trim() ||
-    campaign?.name ||
-    "Your campaign";
+    brandNameFromProfile(brandProfile) || campaign?.name || "Your campaign";
   const email = renderIoReadyForSignature({
     brand_name: brandName,
     show_name: outreach.show_name,
