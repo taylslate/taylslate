@@ -26,7 +26,7 @@ function req(event?: string): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.NEXT_PUBLIC_SITE_URL = "https://www.taylslate.com";
+  process.env.NEXT_PUBLIC_SITE_URL = "https://www.taylslate.com/";
 });
 
 describe("GET /api/deals/[id]/docusign-return", () => {

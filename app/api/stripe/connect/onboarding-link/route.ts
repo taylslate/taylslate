@@ -3,6 +3,12 @@ import { getAuthenticatedUser } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe } from "@/lib/stripe/server";
 
+function siteOrigin(req: NextRequest): string {
+  const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
+  if (envOrigin) return envOrigin.replace(/\/$/, "");
+  return new URL(req.url).origin;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser();
@@ -30,8 +36,8 @@ export async function POST(request: NextRequest) {
 
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
-      refresh_url: `${process.env.NEXT_PUBLIC_SITE_URL}/settings?stripe_refresh=true`,
-      return_url: `${process.env.NEXT_PUBLIC_SITE_URL}/settings?stripe_onboarded=true`,
+      refresh_url: `${siteOrigin(request)}/settings?stripe_refresh=true`,
+      return_url: `${siteOrigin(request)}/settings?stripe_onboarded=true`,
       type: "account_onboarding",
     });
 
