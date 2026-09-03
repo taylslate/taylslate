@@ -12,6 +12,7 @@
 // Phase 1 ships these helpers; Phase 2 wires them into the discovery agent.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { transformShow } from "@/lib/data/show-transform";
 import type {
   BrandDecision,
   CampaignPatternRow,
@@ -918,12 +919,17 @@ export async function getConvictionScoresWithShowsForPattern(
       );
       return [];
     }
-    return ((data ?? []) as Array<ConvictionScoreRow & { shows: Show | null }>).map(
-      (row) => {
-        const { shows, ...score } = row;
-        return { ...(score as ConvictionScoreRow), show: shows ?? null };
-      }
-    );
+    return (
+      (data ?? []) as Array<
+        ConvictionScoreRow & { shows: Record<string, unknown> | null }
+      >
+    ).map((row) => {
+      const { shows, ...score } = row;
+      // Transform the raw joined row into the Show domain shape (nested contact,
+      // coalesced defaults). Casting `shows` to Show without this leaves
+      // `contact` undefined and every nullable column raw null.
+      return { ...(score as ConvictionScoreRow), show: shows ? transformShow(shows) : null };
+    });
   } catch (err) {
     console.warn(
       "[reasoning-log.getConvictionScoresWithShowsForPattern] threw:",
@@ -1264,17 +1270,23 @@ export async function getConvictionUniverse(
     }
 
     const rows = (data ?? []) as Array<
-      ConvictionScoreRow & { shows: Show | null }
+      ConvictionScoreRow & { shows: Record<string, unknown> | null }
     >;
 
     // Bucket scores by ring id (rows arrive composite desc, so each bucket is
-    // already sorted). Split the embedded `shows` off the flat row.
+    // already sorted). Split the embedded `shows` off the flat row and transform
+    // it into the Show domain shape (nested contact, coalesced defaults) — a raw
+    // cast would leave contact undefined and demographics/rate_card/price_type
+    // as raw nulls, which the compute-on-read cost/tier path reads.
     const byRing = new Map<string, ConvictionUniverseShow[]>();
     for (const row of rows) {
       if (!row.ring_hypothesis_id) continue;
       const { shows, ...score } = row;
       const bucket = byRing.get(row.ring_hypothesis_id) ?? [];
-      bucket.push({ score: score as ConvictionScoreRow, show: shows ?? null });
+      bucket.push({
+        score: score as ConvictionScoreRow,
+        show: shows ? transformShow(shows) : null,
+      });
       byRing.set(row.ring_hypothesis_id, bucket);
     }
 
