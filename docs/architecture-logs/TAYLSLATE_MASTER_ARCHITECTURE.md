@@ -540,14 +540,16 @@ Nothing ships to a paying customer until these are proven with **live proof agai
 
 | # | Item | State |
 |---|---|---|
-| A1 | **DocuSign Connect webhook on the production account** — end-to-end, never fired against prod | **UNVERIFIED** |
-| A2 | **Embedded brand signing via the real `send-to-docusign` route** (`getBrandSigningUrl`) — the sandbox harness used two email signers, not the embedded recipient-view the product actually serves | **UNVERIFIED** |
-| A3 | **completion → deal transition → Stripe SetupIntent chain** — the seam where DocuSign and Stripe join. Treat A1–A3 as **one continuous chain run**, not three separate proofs; prior "end-to-end" claims failed at exactly this seam. | **UNVERIFIED** |
-| A4 | **Stripe live money loop** — card capture at signature. **Never run against live Stripe.** | **UNVERIFIED** |
-| A5 | **Email deliverability rehearsal** — outreach has never been sent to a real external inbox; **DMARC unconfirmed** | **UNVERIFIED** |
-| A6 | **`buildFromAndReply()` from-name bug** (below) — moved *into* Pile A because a rehearsal with a broken `From:` line produces invalid signal | **OPEN** |
+| A1 | **DocuSign Connect webhook on the production account** — end-to-end; real `recipient-completed` delivered Success (retry 0), webhook-authoritative `brand_signed_at` | **LIVE-PROVEN Sep 3, 2026** |
+| A2 | **Embedded brand signing via the real `send-to-docusign` route** (`getBrandSigningUrl`) — the embedded recipient-view the product actually serves | **LIVE-PROVEN Sep 3, 2026** |
+| A3 | **completion → deal transition → Stripe SetupIntent chain** — the seam where DocuSign and Stripe join. A1–A3 ran as **one continuous chain**, not three separate proofs. | **LIVE-PROVEN Sep 3, 2026** |
+| A4 | **Stripe live money loop** — card capture at signature (SetupIntent card-on-file against live Stripe `acct_1Kejm5Fw`; **no charge** — settlement is a separate, later proof) | **LIVE-PROVEN Sep 3, 2026** |
+| A5 | **Email deliverability rehearsal** — outreach delivered to a real external **Gmail** inbox with **SPF, DKIM, and DMARC all passing** | **VERIFIED Sep 3, 2026** |
+| A6 | **`buildFromAndReply()` from-name bug** (below) — durable `brand_name` field now drives the `From:` line; moved *into* Pile A because a rehearsal with a broken `From:` produces invalid signal | **VERIFIED Sep 3, 2026** |
 
-**A6 detail — outreach email "from name" bug.** `buildFromAndReply()` in `lib/email/templates/outreach.ts` receives `brandName` = *the full brief paragraph* instead of the brand name, so outreach emails show paragraph-length "from" lines. Fix: add a dedicated `brand_name` field on the brand profile and route the outreach pipeline through it. Effort 2–3h. GTM-blocking.
+**Pile A is COMPLETE (Sep 3, 2026) — all six items live-proven.** The remaining money-rail frontier is a live Stripe *charge* / settlement (card-on-file is proven; a charge has never run) — a separate, later proof, not a Pile A item.
+
+**A6 detail — outreach email "from name" bug (RESOLVED Sep 3, 2026).** `buildFromAndReply()` in `lib/email/templates/outreach.ts` had been receiving `brandName` = *the full brief paragraph* instead of the brand name, so outreach emails showed paragraph-length "from" lines. Fixed by adding a dedicated `brand_name` field on the brand profile (migration 034, commit `2e7809d`) and routing all six sender sites through a shared helper — verified live. One follow-up remains: the public **pitch page headline** still renders the `brand_identity` paragraph where the name belongs (same root cause, one site missed) — logged in PRODUCT_BACKLOG.md → Polish.
 
 **Related known gap:** **no external alert is wired on `domain_events`.** The `io.tabs_unverified` tripwire is only as good as a query someone runs — add a saved query or alert before relying on it in production.
 
@@ -561,14 +563,14 @@ Two silent bugs were found and fixed during go-live:
 - **Anchor-tab mismatch** — the IO generator rendered signature blocks as "ADVERTISER"/"PUBLISHER" while `createEnvelope` anchored tabs to strings absent from the document. **DocuSign silently drops unmatched anchors and returns 201 with no error.** Fixed with a shared `lib/docusign/anchors.ts` single source of truth plus the `verifyEnvelopeTabsPlaced` runtime tripwire.
 - **Hardcoded `www.docusign.net` REST base** — would have failed for the `na4`-provisioned production account. Replaced with `getUserInfo` `base_uri` discovery rather than an `na4` hardcode.
 
-Remaining cutovers to confirm:
+Production cutovers — **all four closed Sep 3, 2026** (production host is **`www.taylslate.com`**, the Vercel primary domain; the apex `taylslate.com` 307s to `www`):
 
-- [ ] DocuSign Connect webhook URL → `taylslate.com/api/webhooks/docusign` (+ HMAC secret)
-- [ ] Stripe webhook endpoint → `taylslate.com/api/webhooks/stripe` (+ `STRIPE_WEBHOOK_SECRET`, Wave 13 event list)
-- [ ] Supabase project Site URL + auth Redirect URLs → `taylslate.com`
-- [ ] Vercel `NEXT_PUBLIC_SITE_URL=https://taylslate.com`
+- [x] DocuSign Connect webhook URL → `www.taylslate.com/api/webhooks/docusign` (+ HMAC secret) — confirmed by A1's live `recipient-completed` delivery
+- [x] Stripe webhook endpoint → `www.taylslate.com/api/webhooks/stripe` (+ `STRIPE_WEBHOOK_SECRET`, Wave 13 event list) — confirmed by A4's live `setup_intent.succeeded`
+- [x] Supabase project Site URL + auth Redirect URLs → `www.taylslate.com`
+- [x] Vercel `NEXT_PUBLIC_SITE_URL=https://www.taylslate.com`
 
-*Proofs run against the wrong host are invalid and have to be redone — close these before any live rail proof.*
+*Host correction (Sep 3, 2026): these were previously written against the apex `taylslate.com`; production serves from `www.taylslate.com`, so all four were confirmed against the `www` host. The Sep 3 live rail proof (A1–A4) ran against `www` — valid.*
 
 ### 5.3 Pile B — frontend and polish (sequenced after A)
 

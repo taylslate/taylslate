@@ -103,11 +103,8 @@ Things that must finish before GTM. The launch bar.
 - **Effort:** 1-2 hours
 - **Why:** External service URL cutovers still pending. Required for production correctness.
 
-### Outreach email "from name" bug
-- `buildFromAndReply()` in `lib/email/templates/outreach.ts` is receiving `brandName=full brief paragraph` instead of brand name
-- Add dedicated `brand_name` field on brand profile, update outreach pipeline to use it
-- **Effort:** 2-3 hours
-- **Why:** Brand outreach emails currently show paragraph-length "from" lines. Looks broken. GTM-blocking.
+### ~~Outreach email "from name" bug~~ — SHIPPED Sep 3, 2026 (Pile A6)
+- **RESOLVED.** Added a durable `brand_name` field on the brand profile (migration 034, commit `2e7809d`) and routed all six sender sites — outreach From: name, IO advertiser name, and pitch/notification sender — through a shared helper, replacing the `brand_identity` paragraph `buildFromAndReply()` had been receiving as `brandName`. **Verified live Sep 3, 2026** (A6, Pile A) rendering a real brand name. One follow-up surfaced during verify — the public pitch page headline still shows the paragraph — logged in Polish below.
 
 ### ~~Internal admin tooling — log in as test user → Layer 3 (return-to-admin)~~ — SHIPPED July 7, 2026
 - **All three layers COMPLETE.** Layer 3 (return-to-admin) shipped + verified live July 7, 2026 (commit `a4e3805`, Codex clean) — see SHIPPED section for detail. The locked opaque-token / sha256-at-rest / atomic-single-use security requirement was met exactly (no HMAC-over-plaintext). The cookie-trust gap is closed and the impersonation loop is complete; the tool is now safe for routine use (onboarding brand/agent friends).
@@ -190,6 +187,12 @@ Surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). *
 ### Pitch page deal value display
 - Proposed Terms section should show total deal value calculation: CPM × episodes × audience/1000
 - **Effort:** 2-3 hours
+
+### Pitch page headline shows the `brand_identity` paragraph where `brand_name` belongs
+- The public pitch page headline renders the full `brand_identity` paragraph in the brand-*name* slot — producing "we are a nutrition company that sells…wants to work with X" instead of the name reading naturally.
+- **Same root cause as the A6 fix** — the durable `brand_name` field on the brand profile (migration 034, commit `2e7809d`) that rerouted the outreach From: name, IO advertiser name, and pitch/notification sender through a shared helper. This pitch-page headline site was **missed** in that reroute.
+- Route the headline through the same `brand_name` helper (with its existing fallback).
+- **Effort:** ~1 hour. **Why:** Prospect-facing — the offer page is the first thing a show sees, and a paragraph where the brand name should be reads broken. Belongs in the pre-launch credibility pass.
 
 ### ~~Flight-date off-by-one across surfaces~~ — SHIPPED July 16, 2026 (accept-flow cluster #3)
 - Was: the Agreed Terms panel showed Jul 20–Aug 17 where the IO document showed Jul 21–Aug 18 (same deal, both roles) — date-only string parsed as UTC then rendered in local TZ on one surface but not the other.
@@ -275,6 +278,12 @@ From the read-only Podscan consumption audit (see STATUS.md → "Podscan data au
 - **Consolidate the two Podscan clients.** `lib/enrichment/podscan.ts` (live) and `lib/podscan/` (Wave 5 scorer only) are parallel clients with duplicate types. Debt, **not demo-blocking**. **Effort:** ~1-2 days. **Why:** two clients invite wiring a new fetch into the wrong (dead) one.
 - **Delete or quarantine the dead Wave 5 scorer** (`lib/scoring/index.ts` + `lib/scoring/dimensions/audience-fit.ts` — orphaned; nothing imports them, live discovery is `runConvictionDiscovery`). Either delete, or add a header comment marking them dead. **Effort:** ~half day. **Sequence with the demographics item** — that audience-fit logic is the natural home for a revived scorer, so decide keep-vs-rewrite together (don't delete then rebuild).
 - **Remove `past_sponsors` dead schema, or document why it stays.** `shows.past_sponsors` is never written (test seed only) and never read. Drop the column (idempotent migration), or add an explicit "reserved for X" note so the next audit doesn't re-flag it. **Effort:** ~half day.
+
+### Discovery returned 1 topically-irrelevant show at a $10k budget (scoring gap)
+- A real discovery run — high-AOV product, $10k budget — returned a **single show with no topical relevance**, not a usable test portfolio.
+- **`transformShow` null hypothesis ruled out** — the conviction join-site transform (commit `ea12e61`) was not dropping candidates, so this is a **genuine scoring issue**, not a data-plumbing / materialization bug.
+- **Likely the demographics gap:** `shows.demographics` is always `{}` in prod, so the audience-fit dimension scores blind (see "Wire Podscan demographics into the live conviction path" above). With no demographics signal and thin topical relevance, the composite collapses toward empty at this budget/AOV.
+- **Effort:** investigate alongside the demographics-wiring item (that fix is the natural first thing to re-test against this case). **Why:** One irrelevant show at $10k is a discovery-quality failure a real brand would immediately distrust — discovery is the wedge.
 
 ### English language filter
 - Non-English shows currently surface in results without filtering
