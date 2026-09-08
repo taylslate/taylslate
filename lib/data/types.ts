@@ -539,6 +539,15 @@ export interface ScoredShowRecord {
    *  'pre-roll'/'mid-roll'/'post-roll'). Optional — legacy scored shows omit it
    *  and the builder falls back to its default placement. */
   placement?: Placement;
+  /** True when `estimatedCpm` is a Podscan-derived band CPM (a guess), false when
+   *  it is a real onboarded rate card or a brand's own CPM override. Carried from
+   *  discovery so the media plan can mark the CPM/spend as an estimate. Optional —
+   *  legacy scored shows omit it (treated as not-an-estimate). */
+  costIsEstimate?: boolean;
+  /** True when `audienceSize` is a Podscan-derived figure (a discovered show),
+   *  false when the show is onboarded (self-reported reach). Lets the plan mark
+   *  the audience/downloads number as an estimate. Optional — legacy omit. */
+  audienceIsEstimate?: boolean;
 }
 
 // ---- Outreach Drafts ----
@@ -718,6 +727,11 @@ export type DomainEventType =
   | "scale_show.saved"
   | "scale_show.dismissed"
   | "scale_show.promoted_to_test"
+  // Discovery selection signal — one append-only snapshot per discovery session
+  // at the media-plan handoff: the shown set, the selected set, the filters
+  // applied, and the estimated prices at selection time. Preserves optionality
+  // for later intelligence (what a brand chose vs. what it was shown).
+  | "discovery.selection_captured"
   // Wave 14 Phase 2D — per-deal promo code captured/edited at IO time
   | "deal.promo_code_set"
   // Accept-flow cluster — onboarding backfill of show_profile_id onto deals

@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser, getCampaignById } from "@/lib/data/queries";
 import { logEvent } from "@/lib/data/events";
 import {
+  clearConvictionScores,
   getLatestCampaignPatternForCampaign,
   persistConfirmationAtomic,
 } from "@/lib/data/reasoning-log";
@@ -71,6 +72,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json(
       { error: "Failed to confirm interpretation", code: "confirm_failed" },
       { status: 500 }
+    );
+  }
+
+  // Defect #602 + Q5: on a RE-confirm (the brand refined rings and confirmed
+  // again) any prior conviction_scores are now stale — they were scored against
+  // the OLD ring set. Clear them so the discovery view drops to its empty state
+  // and re-runs against the confirmed rings, instead of rendering stale rows.
+  // This is also what keeps the relaxed-floor change safe: with no composite
+  // floor, below-floor rows now persist, so a stale row could otherwise be
+  // rolled up as a show's top confirmed ring after a refine. Clearing on confirm
+  // makes that impossible. First-confirm is a no-op (nothing scored yet).
+  // Fail-soft: a clear failure must not block the confirmation.
+  try {
+    await clearConvictionScores(pattern.id);
+  } catch (err) {
+    console.warn(
+      "[interpret/confirm] clearConvictionScores failed (non-blocking):",
+      err instanceof Error ? err.message : err
     );
   }
 

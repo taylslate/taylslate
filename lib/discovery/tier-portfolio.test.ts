@@ -16,7 +16,6 @@ import {
   classifyTier,
   rollupShowComposite,
   tierCampaignPortfolio,
-  MEDIUM_FLOOR,
   THREE_SPOT_THRESHOLD,
   MIN_TEST_SHOWS,
   type ClassifyTierInput,
@@ -33,7 +32,7 @@ function classifyInput(
   overrides: Partial<ClassifyTierInput> = {}
 ): ClassifyTierInput {
   return {
-    compositeScore: 70, // ≥ MEDIUM_FLOOR
+    compositeScore: 70, // informational only — composite no longer gates the tier
     threeSpotCents: 420_000, // affordable (≤ 750_000)
     costBasis: "derived",
     needsQuote: false,
@@ -47,27 +46,27 @@ describe("classifyTier — gate-worthy cost (derived/rate_card)", () => {
     expect(classifyTier(classifyInput())).toBe("test");
   });
 
-  it("affordable + derived + composite < floor → dropped", () => {
-    expect(
-      classifyTier(classifyInput({ compositeScore: MEDIUM_FLOOR - 1 }))
-    ).toBe("dropped");
+  it("affordable + derived + LOW composite → test (no floor; composite never gates)", () => {
+    // A low-conviction show that is affordable is still test — it just ranks
+    // lower. Curation is by sort order, not a cutoff.
+    expect(classifyTier(classifyInput({ compositeScore: 1 }))).toBe("test");
   });
 
-  it("over-threshold + derived + composite ≥ floor → scale", () => {
+  it("affordable + derived + null composite → test (composite is not a gate)", () => {
+    expect(classifyTier(classifyInput({ compositeScore: null }))).toBe("test");
+  });
+
+  it("over-threshold + derived → scale regardless of composite", () => {
     expect(
       classifyTier(classifyInput({ threeSpotCents: CEILING + 1 }))
     ).toBe("scale");
-  });
-
-  it("over-threshold + derived + composite < floor → dropped (floor wins)", () => {
+    // Even a low-conviction show over the ceiling is scale (selectable, warned),
+    // never benched for being low-conviction.
     expect(
       classifyTier(
-        classifyInput({
-          threeSpotCents: CEILING + 1,
-          compositeScore: MEDIUM_FLOOR - 1,
-        })
+        classifyInput({ threeSpotCents: CEILING + 1, compositeScore: 1 })
       )
-    ).toBe("dropped");
+    ).toBe("scale");
   });
 
   it("rate_card gates exactly like derived (affordable → test, over → scale)", () => {
@@ -377,13 +376,22 @@ describe("tierCampaignPortfolio — confirmed-ring filter (Layer 3.5)", () => {
   });
 
   it("rolls a multi-ring show up from the CONFIRMED ring only (not the higher rejected ring)", async () => {
-    // One show on two rings: a rejected ring with the higher composite (88 →
-    // would be test) and the confirmed ring with a sub-floor composite (40 →
-    // dropped). Filtering BEFORE rollup means the confirmed ring governs, so the
-    // show is classified 'dropped'. The pre-fix rollup would have picked 88.
+    // One show on two rings. The rejected ring has the higher composite (88) and
+    // NO override → would price as an affordable 'test'. The confirmed ring (40)
+    // carries a per-row CPM override so large the show blows past the budget →
+    // 'scale'. Filtering BEFORE rollup means the CONFIRMED ring's row governs the
+    // cost derivation, so the override is applied and the show is 'scale'. If the
+    // filter ran after rollup it would have picked the rejected ring (88, no
+    // override) and priced an affordable 'test'. (Composite no longer gates the
+    // tier — the per-row override is the observable that proves which ring won.)
     const rows = [
       makeRow({ show_id: "show-A", ring_hypothesis_id: "ring-rejected", composite_score: 88 }),
-      makeRow({ show_id: "show-A", ring_hypothesis_id: "ring-confirmed", composite_score: 40 }),
+      makeRow({
+        show_id: "show-A",
+        ring_hypothesis_id: "ring-confirmed",
+        composite_score: 40,
+        cpm_override_cents: 500_000, // $5,000 CPM → 3-spot far over the 25% ceiling → scale
+      }),
     ];
     const shows = [makeShow({ id: "show-A", audience_size: 10_000 })];
     const { deps, persistCalls } = makeDeps({
@@ -395,10 +403,10 @@ describe("tierCampaignPortfolio — confirmed-ring filter (Layer 3.5)", () => {
 
     expect(result.showsClassified).toBe(1);
     expect(result.testCount).toBe(0);
-    expect(result.droppedCount).toBe(1);
+    expect(result.scaleCount).toBe(1);
     expect(persistCalls).toHaveLength(1);
     expect(persistCalls[0].showId).toBe("show-A");
-    expect(persistCalls[0].tier).toBe("dropped");
+    expect(persistCalls[0].tier).toBe("scale");
   });
 });
 

@@ -138,5 +138,14 @@ export function tieredShowToScoredShowRecord(
     // The builder seeds the line item's placement from this and prices the base
     // CPM above against it — reproducing the discovery per-spot price.
     placement,
+    // Estimate provenance (Wave 14): carry the cost/audience "is this a guess?"
+    // flags into the plan so it marks Podscan-derived numbers as estimates.
+    // costIsEstimate mirrors the discovery card (band CPM = estimate; a real
+    // onboarded rate card or a brand CPM override is not). audienceIsEstimate is
+    // true for a discovered show (Podscan reach) and false once onboarded — an
+    // onboarded show carries a real rate_card, so costBasis 'rate_card' is the
+    // onboarding signal (see spot-cost.deriveSpotCost).
+    costIsEstimate: entry.isEstimate,
+    audienceIsEstimate: entry.costBasis !== "rate_card",
   };
 }

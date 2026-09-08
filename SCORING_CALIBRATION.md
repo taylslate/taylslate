@@ -79,3 +79,39 @@ relative-within-campaign banding** (spec §"Tier + threshold logic").
 - **Rounding (Codex gate):** `dollarsToCents` rounds half-UP with a
   magnitude-scaled epsilon so IEEE-754 half-cents (e.g. `(200093/1000)×35` =
   $7003.255) don't silently round a cent low at the affordability boundary.
+
+---
+
+## The medium conviction floor was REMOVED (September 7, 2026)
+
+Evidence: campaign `a55b7e2b` (SaunaBox®, $10K, 4 confirmed rings) returned **1
+show from 63 candidates** — 62 died at the medium band floor (composite ≥ 50).
+Two reasons the cut was unjustified *on today's data*, both open calibration items
+above: (2) audience fit is pinned at a flat neutral 50 catalog-wide (demographics
+empty), so composites cluster in a narrow band and the floor cuts arbitrarily
+inside the cluster; and the affordability inputs are Podscan CPM estimates found
+unreliable, so a cost-based exclusion filters on noise.
+
+Change (honors the locked discovery philosophy — *return more results, not fewer;
+the brand narrows down; curation happens in sort order, not cutoff*):
+
+- **Persist every scored candidate**, no lower bound. Removed the
+  `isMediumOrAbove(score.band)` gate in `scoreCandidatesAgainstRings`
+  (`lib/discovery/conviction-discovery.ts`). Composite is now purely the SORT key.
+- **`classifyTier` no longer benches on composite.** Removed Gate 2
+  (`composite < MEDIUM_FLOOR → dropped`) and the `MEDIUM_FLOOR` constant
+  (`lib/discovery/tier-portfolio.ts`). Tier is now: `needsQuote → bench`, else
+  affordability decides test vs scale. **Bench = un-pricable only.**
+- **25% affordability ceiling is a WARNING, not an exclusion.** Scale cards are
+  directly cart-selectable with a budget-impact note; the footer budget meter is
+  the aggregate guardrail.
+- **`BAND_MEDIUM_COMPOSITE` (=50) stays in `conviction.ts`** — bands still LABEL
+  shows (high/medium/low/speculative) for display and the band filter; they just
+  don't gate.
+
+Projected volume for `a55b7e2b` under no floor: 63 candidates × 4 rings = **252
+`conviction_scores` rows** upper bound (pre `(show,ring)`/simulcast dedup) →
+~63 distinct shows after rollup. Negligible; no floor added to preempt it.
+
+Q5 stale-tier invariant (below) is deliberately relaxed and made moot by clearing
+conviction scores on ring re-confirm (`interpret/confirm` route) — see STATUS.md.

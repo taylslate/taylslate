@@ -686,27 +686,6 @@ function TieredScoredUniverse({
     [callWatchlist, persistSelection]
   );
 
-  const promoteToTest = useCallback(
-    (s: TieredShow) => {
-      const cost = formatMoneyCents(s.threeSpotCents);
-      const ok = window.confirm(
-        `Move "${s.show?.name ?? "this show"}" into your test cart?\n\n` +
-          `Its 3-spot cost (${cost}) is above the per-show test ceiling, so it ` +
-          `will push your test spend up. You can fine-tune spots and placement ` +
-          `in the media plan (single-spot tests land in a later step).`
-      );
-      if (!ok) return;
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        next.add(s.showId);
-        persistSelection(next);
-        return next;
-      });
-      callWatchlist(s.showId, "promote");
-    },
-    [persistSelection, callWatchlist]
-  );
-
   // ---- Budget meter (selected derived/rate_card 3-spot vs test budget) ----
   const selectedCostCents = useMemo(() => {
     let sum = 0;
@@ -736,7 +715,13 @@ function TieredScoredUniverse({
       const res = await fetch(`/api/campaigns/${campaignId}/plan-handoff`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ showIds: [...selectedIds] }),
+        // shownShowIds + filters feed the append-only selection-signal event the
+        // route emits; the server snapshots prices itself (never trusts them here).
+        body: JSON.stringify({
+          showIds: [...selectedIds],
+          shownShowIds: allShows.map((s) => s.showId),
+          filters: { ring: ringFilter, band: bandFilter, sort: "composite_desc" },
+        }),
       });
       if (!res.ok) {
         setCtaError("Couldn't open the media plan. Try again.");
@@ -748,7 +733,16 @@ function TieredScoredUniverse({
     } finally {
       setHandingOff(false);
     }
-  }, [campaignId, canBuild, handingOff, selectedIds, router]);
+  }, [
+    campaignId,
+    canBuild,
+    handingOff,
+    selectedIds,
+    allShows,
+    ringFilter,
+    bandFilter,
+    router,
+  ]);
 
   // ---- Section lists (filtered) ----
   const visibleTest = useMemo(
@@ -887,7 +881,7 @@ function TieredScoredUniverse({
               recomputing={recomputing}
             />
 
-            {/* SCALE TIER (secondary) */}
+            {/* SCALE TIER (secondary) — over the 25% guideline, still selectable */}
             <ScaleSection
               shows={visibleScale}
               dismissed={dismissedScale}
@@ -895,8 +889,7 @@ function TieredScoredUniverse({
               onToggleShowDismissed={() => setShowDismissed((v) => !v)}
               selectedIds={selectedIds}
               savedIds={savedIds}
-              onPromote={promoteToTest}
-              onRemoveFromCart={toggleSelect}
+              onToggle={toggleSelect}
               onToggleSave={toggleSave}
               onDismiss={(id) => setDismiss(id, true)}
               onRestore={(id) => setDismiss(id, false)}
@@ -1034,8 +1027,7 @@ function ScaleSection({
   onToggleShowDismissed,
   selectedIds,
   savedIds,
-  onPromote,
-  onRemoveFromCart,
+  onToggle,
   onToggleSave,
   onDismiss,
   onRestore,
@@ -1050,8 +1042,7 @@ function ScaleSection({
   onToggleShowDismissed: () => void;
   selectedIds: Set<string>;
   savedIds: Set<string>;
-  onPromote: (s: TieredShow) => void;
-  onRemoveFromCart: (showId: string) => void;
+  onToggle: (showId: string) => void;
   onToggleSave: (showId: string) => void;
   onDismiss: (showId: string) => void;
   onRestore: (showId: string) => void;
@@ -1069,7 +1060,7 @@ function ScaleSection({
     <section data-testid="tier-scale">
       <SectionHeading
         title="Scale tier"
-        sub="Deferred — fits a future budget. High intent, above the test ceiling."
+        sub="Above the 25% per-show test guideline — selectable, but they push your test spend up."
         count={shows.length}
         muted
       />
@@ -1078,10 +1069,9 @@ function ScaleSection({
           <ScaleShowCard
             key={s.showId}
             entry={s}
-            inCart={selectedIds.has(s.showId)}
+            selected={selectedIds.has(s.showId)}
             saved={savedIds.has(s.showId)}
-            onPromote={() => onPromote(s)}
-            onRemoveFromCart={() => onRemoveFromCart(s.showId)}
+            onToggle={() => onToggle(s.showId)}
             onToggleSave={() => onToggleSave(s.showId)}
             onDismiss={() => onDismiss(s.showId)}
             ringLabel={
@@ -1315,10 +1305,9 @@ function TestShowCard({
 
 function ScaleShowCard({
   entry,
-  inCart,
+  selected,
+  onToggle,
   saved,
-  onPromote,
-  onRemoveFromCart,
   onToggleSave,
   onDismiss,
   ringLabel,
@@ -1327,10 +1316,9 @@ function ScaleShowCard({
   recomputing,
 }: {
   entry: TieredShow;
-  inCart: boolean;
+  selected: boolean;
+  onToggle: () => void;
   saved: boolean;
-  onPromote: () => void;
-  onRemoveFromCart: () => void;
   onToggleSave: () => void;
   onDismiss: () => void;
   ringLabel: string | null;
@@ -1343,12 +1331,26 @@ function ScaleShowCard({
   const meta = BAND_META[band];
   const name = show?.name ?? "Show unavailable";
 
+  // Directly cart-selectable (decision: the 25% ceiling is a WARNING, not an
+  // exclusion). Same label+checkbox affordance as a test card; the budget-impact
+  // note below and the footer budget meter are the guardrails.
   return (
-    <div
+    <label
       data-testid="scale-show-card"
-      className="px-4 py-3.5 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)]"
+      className={`block px-4 py-3.5 rounded-xl border cursor-pointer transition-all ${
+        selected
+          ? "border-[var(--brand-blue)]/60 bg-[var(--brand-blue)]/[0.04]"
+          : "border-[var(--brand-border)] bg-[var(--brand-surface)] hover:border-[var(--brand-blue)]/30"
+      }`}
     >
       <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggle}
+          className="mt-1 h-4 w-4 rounded accent-[var(--brand-blue)] cursor-pointer"
+          aria-label={`Add ${name} to the test`}
+        />
         <ShowAvatar show={show} name={name} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -1370,8 +1372,11 @@ function ScaleShowCard({
           )}
         </div>
         <div className="text-right flex-shrink-0">
-          <div className="text-sm font-semibold text-[var(--brand-text)]">
-            {formatMoneyCents(entry.threeSpotCents)}
+          <div className="flex items-center justify-end gap-1.5">
+            <span className="text-sm font-semibold text-[var(--brand-text)]">
+              {formatMoneyCents(entry.threeSpotCents)}
+            </span>
+            {entry.isEstimate && <EstimateTag />}
           </div>
           <div className="text-[10px] text-[var(--brand-text-muted)]">
             3 spots
@@ -1382,36 +1387,27 @@ function ScaleShowCard({
       {entry.budgetDeltaCents != null && entry.budgetDeltaCents > 0 && (
         <div
           data-testid="budget-delta"
-          className="mt-2 text-xs text-[var(--brand-warning)]"
+          className="mt-2 px-2.5 py-1.5 rounded-lg bg-[var(--brand-warning)]/[0.08] text-xs text-[var(--brand-warning)] leading-snug"
         >
-          ~{formatMoneyCents(entry.budgetDeltaCents)} over the per-show test
-          ceiling
+          <span className="font-semibold">Budget impact:</span> its 3-spot cost is
+          ~{formatMoneyCents(entry.budgetDeltaCents)} over the 25% per-show test
+          guideline. Still selectable — keep an eye on the total budget below.
         </div>
       )}
 
-      <div className="flex items-center gap-3 mt-3">
-        {inCart ? (
-          <button
-            onClick={onRemoveFromCart}
-            className="text-xs font-medium text-[var(--brand-blue)] hover:underline"
-          >
-            ✓ Added to test — remove
-          </button>
-        ) : (
-          <button
-            onClick={onPromote}
-            className="text-xs font-medium px-3 py-1.5 rounded-lg border border-[var(--brand-blue)]/40 text-[var(--brand-blue)] hover:bg-[var(--brand-blue)]/[0.06] transition-all"
-          >
-            Move to test
-          </button>
-        )}
+      <div
+        className="flex items-center gap-3 mt-3"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
+          type="button"
           onClick={onToggleSave}
           className="text-xs text-[var(--brand-text-secondary)] hover:text-[var(--brand-text)]"
         >
-          {saved ? "★ Saved" : "☆ Save"}
+          {saved ? "★ Saved" : "☆ Save for later"}
         </button>
         <button
+          type="button"
           onClick={onDismiss}
           className="text-xs text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] ml-auto"
         >
@@ -1427,7 +1423,7 @@ function ScaleShowCard({
       />
 
       <ShowAnnotations showId={entry.showId} />
-    </div>
+    </label>
   );
 }
 
@@ -1478,8 +1474,9 @@ function BenchShowCard({
               cost unknown — quote at outreach
             </span>
           ) : (
-            <span className="text-xs text-[var(--brand-text-muted)]">
+            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--brand-text-muted)]">
               {formatMoneyCents(entry.threeSpotCents)}
+              {entry.isEstimate && <EstimateTag />}
             </span>
           )}
         </div>
@@ -1487,6 +1484,25 @@ function BenchShowCard({
 
       <ShowAnnotations showId={entry.showId} />
     </div>
+  );
+}
+
+// ============================================================
+// Estimate marker (shared)
+// ============================================================
+
+/** Marks a number as a Podscan-derived estimate — cost, CPM, or audience — as
+ *  opposed to a real onboarded rate card / self-reported figure. One affordance
+ *  everywhere so "estimated" reads the same across every surface. Podscan-only:
+ *  a brand's own CPM override or an onboarded rate card is NOT tagged. */
+function EstimateTag({ label = "estimated" }: { label?: string }) {
+  return (
+    <span
+      data-testid="cost-estimate"
+      className="px-1.5 py-0.5 rounded bg-[var(--brand-border)]/50 text-[var(--brand-text-muted)] font-medium whitespace-nowrap"
+    >
+      {label}
+    </span>
   );
 }
 
@@ -1533,14 +1549,7 @@ function CostLine({ entry }: { entry: TieredShow }) {
         {formatMoneyCents(entry.threeSpotCents)}
       </span>
       <span className="text-[var(--brand-text-muted)]">for 3 spots</span>
-      {entry.isEstimate && (
-        <span
-          data-testid="cost-estimate"
-          className="px-1.5 py-0.5 rounded bg-[var(--brand-border)]/50 text-[var(--brand-text-muted)] font-medium"
-        >
-          estimated
-        </span>
-      )}
+      {entry.isEstimate && <EstimateTag />}
     </div>
   );
 }

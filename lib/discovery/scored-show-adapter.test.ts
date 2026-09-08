@@ -90,6 +90,30 @@ describe("tieredShowToScoredShowRecord", () => {
     expect(tieredShowToScoredShowRecord(tiered({ show: null }))).toBeNull();
   });
 
+  it("carries cost + audience estimate provenance into the plan record", () => {
+    // Derived band CPM on a discovered show → both the CPM and the audience are estimates.
+    const derived = tieredShowToScoredShowRecord(
+      tiered({ costBasis: "derived", isEstimate: true })
+    )!;
+    expect(derived.costIsEstimate).toBe(true);
+    expect(derived.audienceIsEstimate).toBe(true);
+
+    // Onboarded rate card → neither is an estimate (real rate + self-reported reach).
+    const onboarded = tieredShowToScoredShowRecord(
+      tiered({ costBasis: "rate_card", isEstimate: false })
+    )!;
+    expect(onboarded.costIsEstimate).toBe(false);
+    expect(onboarded.audienceIsEstimate).toBe(false);
+
+    // Brand CPM override on a discovered show: the CPM is trusted, but the
+    // audience is still a Podscan figure → cost not an estimate, audience is.
+    const override = tieredShowToScoredShowRecord(
+      tiered({ costBasis: "derived", isEstimate: false })
+    )!;
+    expect(override.costIsEstimate).toBe(false);
+    expect(override.audienceIsEstimate).toBe(true);
+  });
+
   it("maps the discovery placement to the Wave 7 vocabulary (Layer 5 handoff)", () => {
     expect(tieredShowToScoredShowRecord(tiered({ placement: "postroll" }))!.placement).toBe("post-roll");
     expect(tieredShowToScoredShowRecord(tiered({ placement: "preroll" }))!.placement).toBe("pre-roll");

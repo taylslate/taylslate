@@ -395,15 +395,25 @@ function ShowRow({
         </div>
       </div>
 
-      {/* Audience */}
+      {/* Audience — Podscan estimate */}
       <div className="text-center w-20 flex-shrink-0">
-        <div className="text-xs text-[var(--brand-text-muted)]">Audience</div>
+        <div
+          className="text-xs text-[var(--brand-text-muted)]"
+          title="Estimated from Podscan data — confirmed at outreach"
+        >
+          Audience · est.
+        </div>
         <div className="text-sm font-medium text-[var(--brand-text)]">{formatNumber(show.audienceSize)}</div>
       </div>
 
-      {/* CPM */}
+      {/* CPM — Podscan estimate */}
       <div className="text-center w-16 flex-shrink-0">
-        <div className="text-xs text-[var(--brand-text-muted)]">CPM</div>
+        <div
+          className="text-xs text-[var(--brand-text-muted)]"
+          title="Estimated from Podscan data — confirmed at outreach"
+        >
+          CPM · est.
+        </div>
         <div className="text-sm font-medium text-[var(--brand-text)]">${show.estimatedCpm}</div>
       </div>
 

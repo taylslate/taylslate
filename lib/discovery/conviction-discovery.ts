@@ -182,8 +182,10 @@ export function fillPurchasePower(shows: Show[]): void {
 // ---- Pure scoring core (no I/O) ----
 
 /**
- * Score every candidate against every ring; keep, per ring, the shows at
- * `medium` band or above, sorted by composite descending. Pure — no DB, no
+ * Score every candidate against every ring and keep ALL of them, per ring,
+ * sorted by composite descending. No conviction floor — the philosophy is
+ * "return more results, not fewer": the brand narrows down, curation happens in
+ * sort order, not a cutoff. Composite is the sort key only. Pure — no DB, no
  * network. `persistedShowId` is left null here; the orchestrator fills it after
  * persistence.
  */
@@ -201,9 +203,15 @@ export function scoreCandidatesAgainstRings(
       // when a real value lands.
       const composite = clamp100(Math.round(raw.composite * daiModifier(show)));
       const score: ConvictionScore = { ...raw, composite };
-      if (isMediumOrAbove(score.band)) {
-        shows.push({ show, score, persistedShowId: null, reasoning: null });
-      }
+      // NO FLOOR (discovery philosophy: return more results, not fewer — the brand
+      // narrows down; curation happens in sort order, not cutoff). Every scored
+      // candidate×ring entry is kept and persisted; `composite` is purely the SORT
+      // key (see the sort below), never a cutoff. Whether a show is buyable is
+      // decided downstream by affordability + needs-quote alone (tier-portfolio
+      // classifyTier), so a low-composite show still surfaces, ranked lower. The
+      // old `isMediumOrAbove(score.band)` band gate is retired here (it dropped 62
+      // of 63 candidates on campaign a55b7e2b while audience-fit is pinned neutral).
+      shows.push({ show, score, persistedShowId: null, reasoning: null });
     }
     shows.sort((a, b) => b.score.composite - a.score.composite);
     return { ring, shows };

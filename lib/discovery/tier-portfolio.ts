@@ -1,24 +1,29 @@
 // ============================================================
 // TIER CLASSIFIER + PORTFOLIO PASS (Wave 14 Phase 2C — Layer 2)
 //
-// Deterministic. No LLM. Splits the 2B conviction-scored universe into
-// three tiers and persists the result onto conviction_scores:
-//   - test    — affordable at the 3-spot test cadence, conviction ≥ medium.
-//   - scale   — wanted (conviction ≥ medium) but too expensive for this test.
-//   - dropped — bench: below the medium floor, or no derivable cost.
+// Deterministic. No LLM. Splits the conviction-scored universe into three tiers
+// and persists the result onto conviction_scores:
+//   - test    — pricable AND affordable at the 3-spot test cadence.
+//   - scale   — pricable but over the per-show test budget (still selectable;
+//               carries a budget-impact warning, not an exclusion).
+//   - dropped — bench: NO derivable cost only (needs a quote at outreach).
 //
-// TWO GATES, in order (classifyTier):
+// NO CONVICTION FLOOR. The composite is a SORT key, never a tier gate — the
+// discovery philosophy is "return more results, not fewer; curate by sort order,
+// not cutoff." A low-composite show is still classified by affordability and
+// surfaces (ranked lower), it is not benched for being low-conviction.
+//
+// ONE GATE, then a cost split (classifyTier):
 //   1. needsQuote → dropped (no cost → can't price, can't gate).
-//   2. composite < MEDIUM_FLOOR → dropped.
 //   Then cost-CONFIDENCE decides whether cost is allowed to split test/scale:
 //     - rate_card / derived  → gate-worthy: affordability decides test vs scale.
-//     - flat_fee             → NOT gate-worthy: conviction-only (always test if
-//                              it cleared the floor); never scale on cost — the
-//                              non-onboarded-YouTube number is a wild guess.
+//     - flat_fee             → NOT gate-worthy: conviction-only (always test);
+//                              never scale on cost — the non-onboarded-YouTube
+//                              number is a wild guess.
 //
-// Scale is gated on AFFORDABILITY + COMPOSITE, NOT the conviction band
-// (pre-flight Flag 7: audience-fit is pinned neutral at launch, so the `high`
-// band is structurally unreachable — a band gate would render scale empty).
+// Scale is gated on AFFORDABILITY alone, NOT the conviction band (pre-flight
+// Flag 7: audience-fit is pinned neutral at launch, so bands are compressed —
+// a band gate would render tiers meaningless).
 //
 // UNITS: every cost is integer cents (Layer 1). The campaign budget is DECIMAL
 // dollars; it is converted through the SAME dollarsToCents boundary Layer 1
@@ -39,7 +44,6 @@ import {
   type Placement,
   type SpotCost,
 } from "./spot-cost";
-import { BAND_MEDIUM_COMPOSITE } from "@/lib/scoring/conviction";
 import {
   getCampaignContextForPattern,
   getConfirmedRings,
@@ -53,13 +57,11 @@ import { logEvent, type LogEventInput } from "@/lib/data/events";
 
 // ---- Tunable constants (first-pass; see SCORING_CALIBRATION.md) ----
 
-/**
- * Composite cutoff for test/scale eligibility. REUSES 2B's medium band floor
- * (BAND_MEDIUM_COMPOSITE = 50) — one source of truth, no divergent constant.
- * Below it → bench. Tier eligibility is composite-based, never band-based
- * (Flag 7), so this tracks the medium floor automatically as the scorer evolves.
- */
-export const MEDIUM_FLOOR = BAND_MEDIUM_COMPOSITE;
+// NOTE: there is no composite floor. Conviction is a SORT key, not a tier gate
+// (discovery philosophy: return more, curate by sort not cutoff). The old
+// MEDIUM_FLOOR (= BAND_MEDIUM_COMPOSITE) that benched composite < 50 was retired
+// — it dropped 62 of 63 candidates on campaign a55b7e2b while audience-fit is
+// pinned neutral and composites are compressed.
 
 /** 3-spot cost ≤ 25% of test budget → affordable (the 3-spot test floor). */
 export const THREE_SPOT_THRESHOLD = 0.25;
@@ -70,7 +72,10 @@ export const MIN_TEST_SHOWS = 3;
 // ---- Pure classifier ----
 
 export interface ClassifyTierInput {
-  /** Show-level rolled-up highest composite across the show's rings (0-100). */
+  /** Show-level rolled-up highest composite across the show's rings (0-100).
+   *  INFORMATIONAL ONLY — no longer gates the tier (the composite floor was
+   *  retired; conviction is a sort key, not a cutoff). Kept on the input because
+   *  callers already compute it and a future soft-signal calibration may use it. */
   compositeScore: number | null;
   /** The N-spot cost from Layer 1, integer cents (cadence already applied). */
   threeSpotCents: number | null;
@@ -84,20 +89,18 @@ export interface ClassifyTierInput {
 
 /**
  * Classify one show into test / scale / dropped. Pure, total, deterministic —
- * never throws. `cadence` is intentionally absent: the cost arg already encodes
- * the spot count (Layer 1 derived it), so a cadence param would double-count.
- * Layer 5's spot-count override changes the cost passed in, not this signature.
+ * never throws. NO conviction floor: composite never benches a show (it is a
+ * sort key, not a gate). Only an un-pricable show (needsQuote) is benched;
+ * everything pricable is test or scale by affordability. `cadence` is
+ * intentionally absent: the cost arg already encodes the spot count (Layer 1
+ * derived it), so a cadence param would double-count. Layer 5's spot-count
+ * override changes the cost passed in, not this signature.
  */
 export function classifyTier(input: ClassifyTierInput): ConvictionTier {
   const threshold = input.threshold ?? THREE_SPOT_THRESHOLD;
 
-  // Gate 1 — no derivable cost: can't price, can't affordability-gate → bench.
+  // The ONLY bench gate — no derivable cost: can't price, can't affordability-gate.
   if (input.needsQuote) return "dropped";
-
-  // Gate 2 — composite floor. Below medium → bench, regardless of cost.
-  if (input.compositeScore == null || input.compositeScore < MEDIUM_FLOOR) {
-    return "dropped";
-  }
 
   // flat_fee (non-onboarded YouTube): the number is a guess, so cost is NOT
   // allowed to decide the split. Conviction-only → test. Never scale on cost.

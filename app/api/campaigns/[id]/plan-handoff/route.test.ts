@@ -9,6 +9,7 @@ const {
   mockGetLatestPattern,
   mockGetTieredUniverse,
   mockAdapter,
+  mockLogEvent,
 } = vi.hoisted(() => ({
   mockGetAuthenticatedUser: vi.fn(),
   mockGetCampaignById: vi.fn(),
@@ -18,6 +19,7 @@ const {
   mockGetLatestPattern: vi.fn(),
   mockGetTieredUniverse: vi.fn(),
   mockAdapter: vi.fn(),
+  mockLogEvent: vi.fn(),
 }));
 
 vi.mock("@/lib/data/queries", () => ({
@@ -39,6 +41,10 @@ vi.mock("@/lib/discovery/tiered-universe", () => ({
 
 vi.mock("@/lib/discovery/scored-show-adapter", () => ({
   tieredShowToScoredShowRecord: mockAdapter,
+}));
+
+vi.mock("@/lib/data/events", () => ({
+  logEvent: mockLogEvent,
 }));
 
 import { POST } from "./route";
@@ -81,6 +87,7 @@ beforeEach(() => {
     name: t.showId,
   }));
   mockUpdatePlanHandoff.mockResolvedValue(true);
+  mockLogEvent.mockResolvedValue(null);
 });
 
 describe("POST /api/campaigns/[id]/plan-handoff — auth + ownership", () => {
@@ -162,5 +169,50 @@ describe("POST plan-handoff — atomic single write", () => {
     expect(mockUpdatePlanHandoff).toHaveBeenCalledTimes(1);
     expect(mockUpdateScoredShows).not.toHaveBeenCalled();
     expect(mockUpdateSelections).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST plan-handoff — selection-signal event", () => {
+  it("emits one discovery.selection_captured with shown/selected/filters/prices", async () => {
+    mockGetTieredUniverse.mockResolvedValue(tieredWith(["s1", "s3"], ["s2"]));
+    const res = await call({
+      showIds: ["s1", "s2"],
+      shownShowIds: ["s1", "s2", "s3"],
+      filters: { ring: "ring-a", band: "medium", sort: "composite_desc" },
+    });
+    expect(res.status).toBe(200);
+
+    expect(mockLogEvent).toHaveBeenCalledTimes(1);
+    const arg = mockLogEvent.mock.calls[0][0];
+    expect(arg.eventType).toBe("discovery.selection_captured");
+    expect(arg.entityType).toBe("campaign");
+    expect(arg.entityId).toBe("camp_1");
+    expect(arg.payload).toMatchObject({
+      campaign_pattern_id: "pat_1",
+      shown_show_ids: ["s1", "s2", "s3"],
+      shown_count: 3,
+      selected_show_ids: ["s1", "s2"],
+      selected_count: 2,
+      filters_applied: { ring: "ring-a", band: "medium", sort: "composite_desc" },
+    });
+    // Prices are snapshot SERVER-side for the whole shown universe (test∪scale∪bench).
+    expect(
+      arg.payload.estimated_prices.map((p: { show_id: string }) => p.show_id)
+    ).toEqual(["s1", "s3", "s2"]);
+  });
+
+  it("falls back to the server universe for the shown set when the client omits it", async () => {
+    mockGetTieredUniverse.mockResolvedValue(tieredWith(["s1"], ["s2"]));
+    await call({ showIds: ["s1"] });
+    const arg = mockLogEvent.mock.calls[0][0];
+    expect(arg.payload.shown_show_ids).toEqual(["s1", "s2"]);
+    expect(arg.payload.filters_applied).toBeNull();
+  });
+
+  it("does not emit when the handoff write fails", async () => {
+    mockUpdatePlanHandoff.mockResolvedValue(false);
+    const res = await call({ showIds: ["s1"] });
+    expect(res.status).toBe(500);
+    expect(mockLogEvent).not.toHaveBeenCalled();
   });
 });

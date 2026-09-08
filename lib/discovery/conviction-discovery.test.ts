@@ -116,7 +116,9 @@ function recoveryShow(overrides: Partial<Show> = {}): Show {
   });
 }
 
-// A show with no topical overlap and no demographics → band low → excluded.
+// A show with no topical overlap and no demographics → band low. No longer
+// excluded (the conviction floor was retired); it still scores and surfaces,
+// ranked below stronger matches.
 function offTopicShow(overrides: Partial<Show> = {}): Show {
   return makeShow({
     id: "discovered-podscan-offtopic",
@@ -344,15 +346,24 @@ describe("inclusion floor + DAI seam", () => {
 });
 
 describe("scoreCandidatesAgainstRings (pure)", () => {
-  it("keeps only medium+ shows, sorted by composite desc", () => {
-    const candidates = [recoveryShow(), offTopicShow()];
+  it("keeps ALL shows (no conviction floor), sorted by composite desc", () => {
+    // Deliberately worst-first so the sort is exercised, not the input order.
+    const candidates = [offTopicShow(), recoveryShow()];
     fillPurchasePower(candidates);
     const groups = scoreCandidatesAgainstRings(candidates, [makeRing()], makePattern("mid"));
     expect(groups).toHaveLength(1);
     const ids = groups[0].shows.map((s) => s.show.id);
+    // The off-topic show is now SURFACED, not dropped — curation is by sort order.
     expect(ids).toContain("discovered-podscan-recovery");
-    expect(ids).not.toContain("discovered-podscan-offtopic");
-    groups[0].shows.forEach((s) => expect(isMediumOrAbove(s.score.band)).toBe(true));
+    expect(ids).toContain("discovered-podscan-offtopic");
+    // Strong match leads; the off-topic show trails.
+    expect(ids[0]).toBe("discovered-podscan-recovery");
+    expect(ids[ids.length - 1]).toBe("discovered-podscan-offtopic");
+    // Composite is non-increasing across the group (it is the sort key).
+    const comps = groups[0].shows.map((s) => s.score.composite);
+    for (let i = 1; i < comps.length; i++) {
+      expect(comps[i]).toBeLessThanOrEqual(comps[i - 1]);
+    }
   });
 });
 
@@ -443,7 +454,7 @@ describe("runConvictionDiscovery", () => {
     expect(events.map((e) => e.eventType)).toContain("conviction.scored");
   });
 
-  it("honors the medium+ inclusion rule (medium in, below-floor excluded)", async () => {
+  it("persists every scored show — no conviction floor (below-floor surfaces, ranked)", async () => {
     const { deps, recordCalls } = makeDeps({
       discovered: [recoveryShow(), offTopicShow()],
       rings: [makeRing()],
@@ -452,10 +463,13 @@ describe("runConvictionDiscovery", () => {
 
     expect(result.candidateCount).toBe(2); // both discovered, both scored
     const scoredIds = recordCalls.map((r) => r.showId);
-    expect(scoredIds).toHaveLength(1); // only the recovery show cleared medium
+    expect(scoredIds).toHaveLength(2); // BOTH persisted now — the floor no longer drops the off-topic show
     const ringShows = result.rings[0].shows.map((s) => s.show.id);
     expect(ringShows).toContain("discovered-podscan-recovery");
-    expect(ringShows).not.toContain("discovered-podscan-offtopic");
+    expect(ringShows).toContain("discovered-podscan-offtopic");
+    // Curation is by sort order: the strong match leads, the off-topic trails.
+    expect(ringShows[0]).toBe("discovered-podscan-recovery");
+    expect(ringShows[ringShows.length - 1]).toBe("discovered-podscan-offtopic");
   });
 
   it("excludes Sleep / Meditation / ASMR before scoring", async () => {
@@ -633,9 +647,11 @@ describe("runConvictionDiscovery", () => {
   });
 
   it("skips the tier pass when nothing scored", async () => {
-    // offTopic alone never clears medium → scoredCount 0 → no rows to tier.
+    // No candidates at all → scoredCount 0 → no rows to tier. (There is no
+    // conviction floor anymore, so a low-conviction show would still score;
+    // "nothing scored" now means an empty candidate universe.)
     const { deps, tierCalls } = makeDeps({
-      discovered: [offTopicShow()],
+      discovered: [],
       rings: [makeRing()],
     });
     const result = await runConvictionDiscovery("camp-1", deps);

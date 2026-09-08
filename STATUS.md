@@ -289,9 +289,16 @@ inbox.
   Wave 7/2D.
 - scale-watchlist not tier-validated; plan-handoff non-atomic double-write —
   both degrade safely.
-- Q5 invariant: stale-tier safety relies on "only composite ≥ MEDIUM_FLOOR rows
-  persist." If below-floor rows ever persist, the confirmed-ring stale-tier
-  case reopens.
+- Q5 invariant: ~~stale-tier safety relies on "only composite ≥ MEDIUM_FLOOR rows
+  persist."~~ **RELAXED (Sep 7, 2026, uncommitted on `main` — pending deploy +
+  re-run verify).** The medium conviction floor was removed (see
+  SCORING_CALIBRATION.md): every scored candidate now persists, so below-floor
+  rows DO persist by design. This is safe because (a) tier is now a pure function
+  of cost + affordability, not the floor — a stale tier at worst mis-sorts a weak
+  show, never a money/handoff bug; and (b) the `interpret/confirm` route now calls
+  `clearConvictionScores(pattern.id)` on every (re-)confirm, so a ring refine can't
+  render stale rows (closes the pre-existing "stale scores on re-confirm" defect).
+  The old "only ≥ floor persists" guarantee no longer holds and is no longer needed.
 
 ## Next
 **Pile A COMPLETE (Sep 3, 2026) — A1–A4 live-proven end to end** against

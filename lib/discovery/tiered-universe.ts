@@ -4,9 +4,11 @@
 // Read-only loader the /campaigns/[id] page calls to render the dual-output
 // discovery view (Layer 4). Reads the 2B conviction_scores (with the per-show
 // tier + cost the tier pass persisted) and returns three partitions:
-//   - test   — affordable at the 3-spot floor, conviction ≥ medium.
-//   - scale  — wanted but over test budget; carries a budget delta.
-//   - bench  — tier 'dropped' (below the medium floor, or no derivable cost).
+//   - test   — pricable and affordable at the 3-spot floor.
+//   - scale  — pricable but over test budget; carries a budget delta (still
+//              selectable — the delta is a warning, not an exclusion).
+//   - bench  — tier 'dropped': un-pricable only (needs a quote at outreach).
+//              NO conviction floor — composite is a sort key, never a cutoff.
 //
 // READ, do not regenerate: reasoning prose comes straight off the persisted
 // conviction_scores row (2B / Layer 4 wrote it) — no LLM in this path.
@@ -86,7 +88,7 @@ export interface TieredShow {
 export interface TieredUniverse {
   test: TieredShow[];
   scale: TieredShow[];
-  /** tier 'dropped' — below the medium floor or un-pricable (needs_quote). */
+  /** tier 'dropped' — un-pricable only (needs_quote). No conviction floor. */
   bench: TieredShow[];
   /** Campaign budget in integer cents (the single dollars→cents boundary). */
   testBudgetCents: number;

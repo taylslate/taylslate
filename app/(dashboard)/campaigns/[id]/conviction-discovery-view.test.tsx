@@ -239,15 +239,30 @@ describe("ConvictionDiscoveryView — tiered dual output", () => {
     expect(screen.getByText("Bench Show")).toBeInTheDocument();
   });
 
-  it("makes test shows selectable but not scale shows", () => {
+  it("makes both test and scale shows cart-selectable (bench is not)", () => {
     renderTiered({
       test: [tieredShow({ showId: "t1", show: show({ id: "t1", name: "Test Show" }) })],
       scale: [
         tieredShow({ showId: "s1", tier: "scale", show: show({ id: "s1", name: "Scale Show" }) }),
       ],
+      bench: [
+        tieredShow({
+          showId: "b1",
+          tier: "dropped",
+          needsQuote: true,
+          show: show({ id: "b1", name: "Bench Show" }),
+        }),
+      ],
     });
-    // Only the test show carries a checkbox; the scale card has none.
-    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    // Test AND scale cards each carry a checkbox (25% ceiling is a warning, not
+    // an exclusion). Bench is un-pricable → not selectable.
+    expect(
+      screen.getByRole("checkbox", { name: /Add Test Show to the test/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: /Add Scale Show to the test/i })
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(2);
   });
 
   it("sums selected derived shows in the budget meter and warns when over, excluding flat_fee", () => {
@@ -275,8 +290,7 @@ describe("ConvictionDiscoveryView — tiered dual output", () => {
     expect(screen.getByTestId("budget-warning")).toBeInTheDocument();
   });
 
-  it("promotes a scale show to the test cart with a budget-impact warning", () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("adds a scale show to the test cart via its checkbox and shows a budget-impact warning", () => {
     renderTiered({
       scale: [
         tieredShow({
@@ -289,19 +303,19 @@ describe("ConvictionDiscoveryView — tiered dual output", () => {
       ],
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Move to test/i }));
+    // The 25% guideline is a PERSISTENT warning, not an exclusion or a one-time
+    // confirm dialog — the show is directly selectable.
+    expect(screen.getByTestId("budget-delta")).toBeInTheDocument();
 
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
-    // Fires the promote intent and reflects the cart state.
-    expect(global.fetch).toHaveBeenCalledWith(
-      "/api/campaigns/camp-1/scale-watchlist",
-      expect.objectContaining({ method: "POST" })
+    const meter = screen.getByTestId("budget-meter");
+    expect(within(meter).getByText(/0 selected/)).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Add Scale Show to the test/i })
     );
-    expect(screen.getByText(/Added to test/i)).toBeInTheDocument();
+    expect(within(meter).getByText(/1 selected/)).toBeInTheDocument();
   });
 
-  it("removes a promoted scale show from the cart when it is dismissed", () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("removes a selected scale show from the cart when it is dismissed", () => {
     renderTiered({
       scale: [
         tieredShow({ showId: "s1", tier: "scale", show: show({ id: "s1", name: "Scale Show" }) }),
@@ -309,13 +323,14 @@ describe("ConvictionDiscoveryView — tiered dual output", () => {
     });
     const meter = screen.getByTestId("budget-meter");
 
-    fireEvent.click(screen.getByRole("button", { name: /Move to test/i }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Add Scale Show to the test/i })
+    );
     expect(within(meter).getByText(/1 selected/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^Dismiss$/i }));
     // Pulled from the cart (count back to 0) and out of the active scale list.
     expect(within(meter).getByText(/0 selected/)).toBeInTheDocument();
-    expect(screen.queryByText(/Added to test/i)).not.toBeInTheDocument();
   });
 
   it("resyncs the cart from props after a refresh (re-run discovery)", () => {
@@ -342,17 +357,6 @@ describe("ConvictionDiscoveryView — tiered dual output", () => {
       />
     );
     expect(screen.getByRole("checkbox")).toBeChecked();
-  });
-
-  it("does NOT promote when the brand cancels the warning", () => {
-    vi.spyOn(window, "confirm").mockReturnValue(false);
-    renderTiered({
-      scale: [
-        tieredShow({ showId: "s1", tier: "scale", show: show({ id: "s1", name: "Scale Show" }) }),
-      ],
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Move to test/i }));
-    expect(screen.queryByText(/Added to test/i)).not.toBeInTheDocument();
   });
 
   it("marks derived costs estimated and flat_fee as a quote-to-confirm range", () => {
@@ -389,7 +393,7 @@ describe("ConvictionDiscoveryView — tiered dual output", () => {
       ],
     });
     const delta = screen.getByTestId("budget-delta");
-    expect(delta).toHaveTextContent(/over the per-show test ceiling/i);
+    expect(delta).toHaveTextContent(/over the 25% per-show test guideline/i);
     expect(delta).toHaveTextContent("$28,500");
   });
 
@@ -424,8 +428,16 @@ describe("ConvictionDiscoveryView — tiered dual output", () => {
       (c) => String(c[0]).endsWith("/plan-handoff")
     );
     expect(call).toBeTruthy();
-    expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
-      showIds: ["t1"],
+    const body = JSON.parse((call![1] as RequestInit).body as string);
+    // Only the selected id is handed off (the cart)…
+    expect(body.showIds).toEqual(["t1"]);
+    // …but the full shown set + active filters ride along for the append-only
+    // selection-signal event the route emits (server snapshots the prices).
+    expect(body.shownShowIds).toEqual(["t1", "t2"]);
+    expect(body.filters).toEqual({
+      ring: "all",
+      band: "all",
+      sort: "composite_desc",
     });
   });
 

@@ -153,6 +153,9 @@ Surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). *
 
 ## Polish
 
+### Orphaned promote-to-test path (logged Sep 7, 2026)
+- Promote-to-test path orphaned by the Scale-selectable change — the `scale-watchlist` route's `promote` action and the `scale_show.promoted_to_test` event still exist, but the UI never calls them (Scale cards are now directly cart-selectable). Remove or repurpose in a later cleanup.
+
 ### Brand onboarding fixes
 - Hybrid AI-prefill from URL (currently full manual entry)
   - When this ships, `brand_name` should be part of the prefill set — populated and editable, no separate confirm step

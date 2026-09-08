@@ -46,6 +46,20 @@ function formatImpressions(n: number): string {
   return n.toLocaleString();
 }
 
+/** Compact "est." marker for a Podscan-derived number (audience or CPM) — mirrors
+ *  the discovery EstimateTag so provenance reads the same on the plan. */
+function EstTag() {
+  return (
+    <span
+      data-testid="plan-estimate"
+      title="Estimated from Podscan data — confirmed at outreach"
+      className="px-1 py-0.5 rounded bg-[var(--brand-border)]/50 text-[10px] text-[var(--brand-text-muted)] font-medium"
+    >
+      est.
+    </span>
+  );
+}
+
 function placementLabel(p: Placement): string {
   return p === "pre-roll" ? "Pre-roll" : p === "mid-roll" ? "Mid-roll" : "Post-roll";
 }
@@ -467,10 +481,16 @@ export default function MediaPlanBuilder({
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-[var(--brand-text-secondary)]">
-                        {formatImpressions(show.audienceSize)}
+                        <span className="inline-flex items-center gap-1.5 justify-end">
+                          {formatImpressions(show.audienceSize)}
+                          {show.audienceIsEstimate && <EstTag />}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
-                        <div className="text-[var(--brand-text)]">${adj.toFixed(2)}</div>
+                        <div className="inline-flex items-center gap-1.5 justify-end text-[var(--brand-text)]">
+                          ${adj.toFixed(2)}
+                          {show.costIsEstimate && <EstTag />}
+                        </div>
                         <div className="text-xs text-[var(--brand-text-muted)]">
                           ${show.estimatedCpm.toFixed(2)} × {multiplier}
                         </div>
@@ -525,6 +545,15 @@ export default function MediaPlanBuilder({
                 })}
               </tbody>
             </table>
+            {visibleItems.some((li) => {
+              const s = showById.get(li.podcast_id);
+              return Boolean(s?.costIsEstimate || s?.audienceIsEstimate);
+            }) && (
+              <p className="px-4 py-3 border-t border-[var(--brand-border)] text-xs text-[var(--brand-text-muted)] flex items-center gap-1.5">
+                <EstTag /> Audience &amp; CPM are Podscan estimates; spot prices and
+                line totals are derived from them and confirmed at outreach.
+              </p>
+            )}
           </div>
         )}
 

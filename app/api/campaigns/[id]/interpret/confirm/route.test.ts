@@ -6,12 +6,14 @@ const {
   mockLogEvent,
   mockGetLatestForCampaign,
   mockPersistConfirmation,
+  mockClearConvictionScores,
 } = vi.hoisted(() => ({
   mockGetAuthenticatedUser: vi.fn(),
   mockGetCampaignById: vi.fn(),
   mockLogEvent: vi.fn(),
   mockGetLatestForCampaign: vi.fn(),
   mockPersistConfirmation: vi.fn(),
+  mockClearConvictionScores: vi.fn(),
 }));
 
 vi.mock("@/lib/data/queries", () => ({
@@ -22,6 +24,7 @@ vi.mock("@/lib/data/events", () => ({ logEvent: mockLogEvent }));
 vi.mock("@/lib/data/reasoning-log", () => ({
   getLatestCampaignPatternForCampaign: mockGetLatestForCampaign,
   persistConfirmationAtomic: mockPersistConfirmation,
+  clearConvictionScores: mockClearConvictionScores,
 }));
 
 import { POST } from "./route";
@@ -48,6 +51,7 @@ beforeEach(() => {
     confirmed: 2,
     rejected: 1,
   });
+  mockClearConvictionScores.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -71,6 +75,18 @@ describe("POST /api/campaigns/[id]/interpret/confirm", () => {
     expect(mockLogEvent.mock.calls[0][0].eventType).toBe(
       "brief.interpretation_confirmed"
     );
+    // Defect #602 + Q5: a (re-)confirm clears any stale conviction scores so a
+    // refined ring set re-runs instead of rendering rows scored against the old set.
+    expect(mockClearConvictionScores).toHaveBeenCalledWith("pat_1");
+  });
+
+  it("does NOT clear conviction scores when the confirm fails validation", async () => {
+    mockPersistConfirmation.mockResolvedValue({ ok: false, reason: "validation" });
+    const res = await call({
+      rings: [{ id: "ring_refined", decision: "confirmed" }],
+    });
+    expect(res.status).toBe(400);
+    expect(mockClearConvictionScores).not.toHaveBeenCalled();
   });
 
   it("400s with a structured error on a validation failure (unknown/refined/invalid ring)", async () => {
