@@ -40,7 +40,7 @@ Sources: [source map](SOURCE_MAP.md). File modification timestamps alone were no
 
 ## Highest-value next inputs
 
-1. **Recover the validation working document.** It is the missing primary source for the latest ICP, sales motion, and founder conversations. Identify where it lives and whether other strategy chats supersede it.
+1. **Use the available validation synthesis.** Chris does not recognize the referenced validation filename, and a follow-up local search did not find it. Its existence as a separately saved file is unverified. Continue from the attributed master-architecture synthesis and future real customer evidence; recovery is optional, not a prerequisite. See the source map for additional strategy and brand documents found in Downloads.
 2. **Confirm the first buyer and offer.** Is the next sales effort aimed at first-time podcast buyers, or repeat direct buyers who already have a show in mind? What real commitment should the first sale ask for?
 3. **Locate actual business records.** Current customer/conversation status, revenue/cost records, and any brand/legal assets may already exist outside this repository. Record their location before creating replacements.
 4. **Reconcile technical status during the next engineering wrap-up.** Record deployment, migration 035 introspection, and live verification for September work; refresh stale summaries from evidence.

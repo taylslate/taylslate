@@ -43,9 +43,26 @@ Pre-existing uncommitted changes were observed in `lib/enrichment/podscan-match.
 ## Referenced sources missing locally
 
 - `TAYLSLATE_VALIDATION_WORKING_DOC.md` — master architecture Appendix C describes it as the wedge/ICP/sales-motion/founder-log source. Highest-value recovery candidate.
-- `TAYLSLATE_AGENTIC_ROADMAP.md` — referenced long-horizon agent/MCP source.
+- `TAYLSLATE_AGENTIC_ROADMAP.md` — recovered in Downloads during the follow-up below; not yet imported or fully reviewed.
 - Claude Design “Document B” and “Conviction C,” plus current wordmark direction — referenced in master architecture §5.7; source assets not found in the document inventory.
 - Original April scoring observations — calibration log explicitly says they may live in the Claude.ai workspace.
 - Original validation conversations, interview transcripts, and the full assumption model behind pricing projections — not located as dedicated records.
 
 Recover originals into a suitable shared location, record provenance, then update this map. Do not recreate missing conversations as if they were original evidence.
+
+## Local recovery follow-up — September 9, 2026
+
+Chris does not recognize the validation filename or know its location. A filename search of Documents, Downloads, and Desktop, plus repository history for validation-named files, found no matching validation document. Its name is present in the master architecture's “Compiled from” list and Appendix C, but its existence as a separately saved original remains unverified. It may refer to unsaved conversation material or be an inaccurate reference; neither explanation is established. This is not a blocker or a task Chris must solve.
+
+Additional sources found outside the repository (filenames/headings inspected, not fully reviewed or imported):
+
+| Local source | Potential use | Treatment |
+|---|---|---|
+| [Agentic roadmap](/Users/christaylor/Downloads/TAYLSLATE_AGENTIC_ROADMAP.md) | Product agents and agent-ready infrastructure | Dated April 27; historical roadmap, not a current company-agent architecture |
+| [Brand brief](/Users/christaylor/Downloads/TAYLSLATE_BRAND_BRIEF.md) | Personality, voice, typography, identity directions | File modified June 26; design brief, approval/current status not established |
+| [Founder execution notes](/Users/christaylor/Downloads/TAYLSLATE_FOUNDER_EXECUTION_NOTES.md) | Early customer acquisition and founder operating advice | Dated April 23; advice is not evidence that its recommendations were adopted |
+| [Pricing preparation](/Users/christaylor/Downloads/taylslate_pricing_strategy_prep.md) | Alternatives before the April 28 pricing decision | Historical inputs; later pricing decision controls |
+| [Market summary](/Users/christaylor/Downloads/taylslate-market-summary.md) | Earlier market and competitor research | April snapshot; claims unverified |
+| [Early strategy](/Users/christaylor/Downloads/TAYLSLATE_FINAL_STRATEGY_v2.md) | Earlier plans and assumptions | January file; “FINAL” in its name does not establish current authority |
+
+Other company-named files include product specifications, logo assets, and legal/tax PDFs. Their contents were not opened in this follow-up. Sensitive originals remain outside the general Company Brain. These absolute links are local pointers and will not work on another computer unless those sources are deliberately shared.
