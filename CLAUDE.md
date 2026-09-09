@@ -4,6 +4,8 @@
 
 ## Context Map
 
+- **[company-brain/START_HERE.md](company-brain/START_HERE.md)** — cross-functional company context: source map, sourced brief, decision index, gaps/conflicts, and maintenance workflow. Read before company strategy or operations work; it also flags drift between dated documents and newer implementation.
+
 - **STATUS.md** — current state: what shipped, current wave, next, test count, migration state. The volatile snapshot. Read it first.
 - **PRODUCT_BACKLOG.md** — the queue: pre-launch backlog, post-launch / customer-driven, killed ideas.
 - **docs/WAVE_HISTORY.md** — wave-by-wave build narrative (Waves 1-14), Wave 12/13/14 integration references, and the as-of-a-date sections moved out of this file (pricing model, attribution philosophy, data schema detail, project structure, discovery reasoning, competitive, build queue).

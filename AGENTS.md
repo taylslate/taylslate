@@ -1,5 +1,7 @@
 # AGENTS.md — Taylslate Project Context
 
+> **Company context entry point (September 9, 2026):** Read [company-brain/START_HERE.md](company-brain/START_HERE.md) for the source map, current synthesis, decision index, and known conflicts. The April product/build snapshot below is historical; use `STATUS.md` plus newer implementation and live-proof records for current state. This note does not replace the engineering conventions below.
+
 *Last updated: April 30, 2026 — Wave 13 shipped, Wave 14 Phase 1 shipped. Wave 14 Phase 2 (Discovery Agent UX) is next, pre-launch.*
 
 **For deep strategic context, the discovery agent thesis, competitive research, and domain knowledge, see `TAYLSLATE_CONTEXT.md`.**
