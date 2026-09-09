@@ -11,12 +11,16 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { updateShowEnrichment } from "@/lib/data/queries";
+import {
+  updateShowEnrichment,
+  backfillShowPodscanData,
+} from "@/lib/data/queries";
 import {
   getPodscanClientSafe,
   getPodcastDetails,
   PodscanError,
 } from "@/lib/enrichment/podscan";
+import { isVerifiedPodcastMatch } from "@/lib/enrichment/podscan-match";
 import { getYouTubeClientSafe } from "@/lib/enrichment/youtube";
 import { getRephonicClientSafe } from "@/lib/enrichment/rephonic";
 
@@ -127,11 +131,32 @@ async function enrichPodcast(
 
       const enrichedShow = await updateShowEnrichment(showId, enrichmentData);
 
+      // Persist podscan_id only on a VERIFIED match (rss/name equality) —
+      // getPodcastDetails matches by name search with a first-result
+      // fallback, which is fine for display enrichment but not for a durable
+      // id write (a wrong podscan_id silently poisons demographics).
+      // Fill-empty-only: an existing podscan_id is never overwritten.
+      const verifiedMatch = isVerifiedPodcastMatch(
+        {
+          name: show.name as string,
+          rss_url: show.rss_url as string | null,
+        },
+        podcast
+      );
+      let podscanIdPersisted = false;
+      if (verifiedMatch && !show.podscan_id) {
+        podscanIdPersisted = await backfillShowPodscanData(showId, {
+          podscan_id: podcast.podcast_id,
+        });
+      }
+
       return NextResponse.json({
         message: "Show enriched successfully via Podscan",
         show_id: showId,
         source: "podscan",
         podscan_id: podcast.podcast_id,
+        podscan_id_verified: verifiedMatch,
+        podscan_id_persisted: podscanIdPersisted,
         sponsors_found: sponsors.length,
         show: enrichedShow,
       });

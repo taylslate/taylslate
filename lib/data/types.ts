@@ -108,6 +108,12 @@ export interface Show {
   past_sponsors?: string[];
 
   // External IDs
+  /**
+   * Podscan podcast id (pd_...) — key for Podscan podcast-level endpoints
+   * (demographics, migration 035). Set at discovery ingest / backfill;
+   * undefined for YouTube-only and unmatched shows.
+   */
+  podscan_id?: string;
   apple_id?: string;
   spotify_id?: string;
   youtube_channel_id?: string;

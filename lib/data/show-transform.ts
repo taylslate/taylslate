@@ -44,6 +44,7 @@ export function transformShow(row: Record<string, unknown>): Show {
     avg_episode_length_min: (row.avg_episode_length_min as number) ?? 0,
     current_sponsors: (row.current_sponsors as string[]) ?? [],
     past_sponsors: (row.past_sponsors as string[]) ?? [],
+    podscan_id: row.podscan_id as string | undefined,
     apple_id: row.apple_id as string | undefined,
     spotify_id: row.spotify_id as string | undefined,
     youtube_channel_id: row.youtube_channel_id as string | undefined,

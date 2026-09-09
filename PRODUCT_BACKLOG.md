@@ -338,6 +338,7 @@ Things that respond to real customer signal once the product is live.
 ## Post-Launch Hardening
 
 - Cleanup cron for `interpretation_locks` rows older than ~10 minutes — handles orphaned locks from crashed Node processes (the interpret endpoint releases on failure paths, but a hard crash mid-run leaves the sentinel until the brief is resubmitted).
+- **Measured purchase power from Podscan demographics** (deferred Sep 8, 2026, audience-fit-live build): the demographics payload includes `purchasing_power` (`low|medium|high`) — a measured signal that beats the category proxy currently feeding `shows.audience_purchase_power` (anchors 25/50/80). Deliberately NOT shipped alongside the demographics work so only one scoring dimension changed at a time (attribution). When taken up: map via `tierToPurchasePowerScore`, overwrite proxy values, and report the per-show before/after diff. The field is already typed on `PodscanDemographics` (`lib/enrichment/podscan.ts`) but unread.
 
 ## Customer-Driven
 

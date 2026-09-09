@@ -140,6 +140,13 @@ interface DepsHarness {
   clearCalls: () => number;
   /** Pattern ids passed to the Phase 2C tier pass, in call order. */
   tierCalls: string[];
+  /** Candidate arrays handed to the pre-scoring demographics hydration. */
+  hydrateCalls: Show[][];
+  /** (id, input) pairs from the slug-collision podscan write-back. */
+  backfillCalls: Array<{
+    id: string;
+    input: { podscan_id?: string; demographics?: Show["demographics"] };
+  }>;
 }
 
 function makeDeps(opts: {
@@ -151,11 +158,15 @@ function makeDeps(opts: {
   discover?: ConvictionDiscoveryDeps["discover"];
   generateReasoning?: ConvictionDiscoveryDeps["generateReasoning"];
   tierPortfolio?: ConvictionDiscoveryDeps["tierPortfolio"];
+  hydrateDemographics?: ConvictionDiscoveryDeps["hydrateDemographics"];
+  backfillShowPodscanData?: ConvictionDiscoveryDeps["backfillShowPodscanData"];
 } = {}): DepsHarness {
   const recordCalls: RecordConvictionScoreInput[] = [];
   const events: LogEventInput[] = [];
   const persistCalls: Array<Partial<Show>> = [];
   const tierCalls: string[] = [];
+  const hydrateCalls: Show[][] = [];
+  const backfillCalls: DepsHarness["backfillCalls"] = [];
   const harness = { reasoningCalls: 0 };
   let clearCount = 0;
   let seq = 0;
@@ -219,6 +230,20 @@ function makeDeps(opts: {
           errors: [],
         };
       }),
+    // Audience-fit hydration: record every call, then delegate to the
+    // override (a test may stamp demographics in place) or a no-op default.
+    hydrateDemographics: async (candidates) => {
+      hydrateCalls.push([...candidates]);
+      if (opts.hydrateDemographics) return opts.hydrateDemographics(candidates);
+      return { fromDb: 0, fromApi: 0, skipped: candidates.length, errors: [] };
+    },
+    backfillShowPodscanData: async (id, input) => {
+      backfillCalls.push({ id, input });
+      if (opts.backfillShowPodscanData) {
+        return opts.backfillShowPodscanData(id, input);
+      }
+      return true;
+    },
   };
 
   return {
@@ -231,6 +256,8 @@ function makeDeps(opts: {
       return harness.reasoningCalls;
     },
     clearCalls: () => clearCount,
+    hydrateCalls,
+    backfillCalls,
   };
 }
 
@@ -692,5 +719,138 @@ describe("runConvictionDiscovery", () => {
     const result = await runConvictionDiscovery("camp-1", deps);
     expect(result.scoredCount).toBeGreaterThan(0);
     expect(result.errors).toContain("persist returned false for show x.");
+  });
+
+  // ---- Audience-fit hydration wiring ----
+
+  // Target the pattern must carry for audience fit to score at all.
+  const TARGETED = { target_audience: { age_min: 25, age_max: 44, gender: "mixed" } };
+
+  it("hydrates candidates once, pre-scoring, with the post-merge pool", async () => {
+    const h = makeDeps({
+      discovered: [recoveryShow(), offTopicShow()],
+      rings: [makeRing()],
+    });
+    await runConvictionDiscovery("camp-1", h.deps);
+    expect(h.hydrateCalls).toHaveLength(1);
+    expect(h.hydrateCalls[0].map((s) => s.id).sort()).toEqual([
+      "discovered-podscan-offtopic",
+      "discovered-podscan-recovery",
+    ]);
+  });
+
+  it("hydrated demographics reach the scorer — audience fit leaves neutral-degraded", async () => {
+    const demographics = { age_25_34: 60, age_35_44: 30, male: 50, female: 50 };
+    const h = makeDeps({
+      discovered: [recoveryShow()],
+      rings: [makeRing()],
+      pattern: makePattern("mid", TARGETED),
+      // Stamp demographics in place, exactly like the real hydrator.
+      hydrateDemographics: async (candidates) => {
+        for (const c of candidates) c.demographics = demographics;
+        return { fromDb: 0, fromApi: candidates.length, skipped: 0, errors: [] };
+      },
+    });
+    await runConvictionDiscovery("camp-1", h.deps);
+    expect(h.recordCalls.length).toBeGreaterThan(0);
+    // 90% of audience in-range + balanced gender for a mixed target → well
+    // above the neutral 50 every show scored before hydration existed.
+    for (const call of h.recordCalls) {
+      expect(call.audienceFitScore).toBeGreaterThan(50);
+    }
+    // Hydrated demographics also ride into the persisted row.
+    expect(h.persistCalls[0].demographics).toEqual(demographics);
+  });
+
+  it("fail-soft: a throwing hydrator never aborts the run (neutral audience fit)", async () => {
+    const h = makeDeps({
+      discovered: [recoveryShow()],
+      rings: [makeRing()],
+      pattern: makePattern("mid", TARGETED),
+      hydrateDemographics: async () => {
+        throw new Error("hydration blew up");
+      },
+    });
+    const result = await runConvictionDiscovery("camp-1", h.deps);
+    expect(result.scoredCount).toBeGreaterThan(0);
+    // No demographics → neutral-degraded, exactly the pre-hydration behavior.
+    expect(h.recordCalls[0].audienceFitScore).toBe(50);
+  });
+
+  it("surfaces hydration soft errors and counts on the result/event", async () => {
+    const h = makeDeps({
+      discovered: [recoveryShow()],
+      rings: [makeRing()],
+      hydrateDemographics: async (candidates) => ({
+        fromDb: 1,
+        fromApi: 2,
+        skipped: candidates.length,
+        errors: ["Podscan rate limit during demographics hydration — 3 podcast(s) left unhydrated this run."],
+      }),
+    });
+    const result = await runConvictionDiscovery("camp-1", h.deps);
+    expect(result.errors.some((e) => e.includes("rate limit"))).toBe(true);
+    const scored = h.events.find((e) => e.eventType === "conviction.scored");
+    expect(scored?.payload).toMatchObject({
+      demographics_from_db: 1,
+      demographics_from_api: 2,
+    });
+  });
+
+  it("persists podscan_id with the show", async () => {
+    const h = makeDeps({
+      discovered: [recoveryShow({ podscan_id: "pd_rec1" })],
+      rings: [makeRing()],
+    });
+    await runConvictionDiscovery("camp-1", h.deps);
+    expect(h.persistCalls[0].podscan_id).toBe("pd_rec1");
+    // Fresh insert already carries podscan_id/demographics → no write-back.
+    expect(h.backfillCalls).toHaveLength(0);
+  });
+
+  it("slug collision: fills podscan_id + demographics onto a stale existing row", async () => {
+    const demographics = { age_25_34: 80, male: 60, female: 40 };
+    const h = makeDeps({
+      discovered: [
+        recoveryShow({ podscan_id: "pd_rec1", demographics }),
+      ],
+      rings: [makeRing()],
+      // Simulate createShow's collision branch: an existing row without
+      // podscan_id or demographics comes back unmodified.
+      persistShow: async (input) =>
+        ({
+          ...(input as Show),
+          id: "uuid-existing",
+          podscan_id: undefined,
+          demographics: {},
+        }) as Show,
+    });
+    await runConvictionDiscovery("camp-1", h.deps);
+    expect(h.backfillCalls).toEqual([
+      {
+        id: "uuid-existing",
+        input: { podscan_id: "pd_rec1", demographics },
+      },
+    ]);
+  });
+
+  it("a throwing write-back never nullifies a successful persist", async () => {
+    const h = makeDeps({
+      discovered: [recoveryShow({ podscan_id: "pd_rec1" })],
+      rings: [makeRing()],
+      persistShow: async (input) =>
+        ({
+          ...(input as Show),
+          id: "uuid-existing",
+          podscan_id: undefined,
+          demographics: {},
+        }) as Show,
+      backfillShowPodscanData: async () => {
+        throw new Error("write-back blew up");
+      },
+    });
+    const result = await runConvictionDiscovery("camp-1", h.deps);
+    // Persist succeeded → conviction_scores rows still written.
+    expect(result.scoredCount).toBeGreaterThan(0);
   });
 });

@@ -28,7 +28,15 @@
 // (LOCK_TTL_MS) so the next request can steal it.
 
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser, getCampaignById } from "@/lib/data/queries";
+import {
+  getAuthenticatedUser,
+  getBrandProfileByUserId,
+  getCampaignById,
+} from "@/lib/data/queries";
+import {
+  buildTargetAudience,
+  type BrandTargetAudience,
+} from "@/lib/scoring/target-audience";
 import { logEvent } from "@/lib/data/events";
 import {
   getCampaignPatternById,
@@ -242,12 +250,22 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     );
   }
 
+  // Brand-level audience target → product_attributes.target_audience (the
+  // structured target conviction's readTargetAudience scores against).
+  // Fail-soft: a missing/errored profile just omits the field, exactly the
+  // pre-wiring behavior. campaigns.brand_profile_id stays unused — the
+  // profile is keyed off the authenticated user, same as ownership.
+  const targetAudience = buildTargetAudience(
+    await getBrandProfileByUserId(user.id)
+  );
+
   const response = await persistInterpretation(
     id,
     user.id,
     resolved,
     output,
-    analogs
+    analogs,
+    targetAudience
   );
 
   if (!response.campaign_pattern_id) {
@@ -720,7 +738,8 @@ async function persistInterpretation(
   userId: string,
   resolved: ResolvedBrief,
   output: ParsedInterpretation,
-  analogs: CampaignPatternRow[]
+  analogs: CampaignPatternRow[],
+  targetAudience: BrandTargetAudience | null
 ): Promise<BriefInterpretation> {
   const weights = effectiveWeightsForBucket(resolved.aovBucket);
   // Server-side parse of the raw exclusions text — a deterministic split,
@@ -761,6 +780,11 @@ async function persistInterpretation(
     customerId: userId,
     productAttributes: {
       ...resolved.derivation,
+      // Brand-level audience target — the shape readTargetAudience
+      // (conviction.ts) reads. Omitted entirely when the brand has no
+      // targeting set; a future per-campaign refinement layer overrides
+      // this same key.
+      ...(targetAudience ? { target_audience: targetAudience } : {}),
       customer_summary: output.customer_summary,
       interpretation_confidence: output.interpretation_confidence,
       brief_context: {

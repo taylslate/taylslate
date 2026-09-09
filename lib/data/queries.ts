@@ -13,6 +13,7 @@ import { transformShow } from "./show-transform";
 import type {
   Profile,
   Show,
+  ShowDemographics,
   Platform,
   Deal,
   InsertionOrder,
@@ -923,8 +924,13 @@ export async function checkMakeGoods(
 
 // ---- Show Management Queries ----
 
-/** Generate a URL-safe slug from a show name */
-function generateSlug(name: string): string {
+/**
+ * Generate a URL-safe slug from a show name. Exported because this is the
+ * createShow dedup key — any lookup that wants to find the row a discovered
+ * candidate would collide with (e.g. demographics hydration) MUST derive
+ * slugs with this exact function or DB-first lookups silently miss.
+ */
+export function generateSlug(name: string): string {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -1004,6 +1010,33 @@ export async function getShowBySlug(slug: string): Promise<Show | null> {
     .single();
   if (error || !data) return null;
   return transformShow(data);
+}
+
+/**
+ * Batch slug lookup for demographics hydration (pre-scoring DB-first fill).
+ * Uses supabaseAdmin — the cookie client's RLS/discoverability filters could
+ * hide rows (non-discoverable materialized shows) and make hydration miss a
+ * slug the createShow dedup would still collide with.
+ */
+export async function getShowsBySlugs(
+  slugs: string[]
+): Promise<Array<Show & { slug: string }>> {
+  if (slugs.length === 0) return [];
+  const { data, error } = await supabaseAdmin
+    .from("shows")
+    .select("*")
+    .in("slug", slugs);
+  if (error) {
+    console.error("[getShowsBySlugs] Error:", error.message);
+    return [];
+  }
+  // Keep the row's slug on the result — transformShow drops it, and callers
+  // key matches on the STORED slug (which is the dedup identity), not on a
+  // re-derived one.
+  return (data ?? []).map((row) => ({
+    ...transformShow(row),
+    slug: row.slug as string,
+  }));
 }
 
 export async function updateShow(
@@ -1279,6 +1312,61 @@ export async function updateShowEnrichment(
 
   if (error || !data) return null;
   return transformShow(data);
+}
+
+/**
+ * Fill-empty-only Podscan write-back (audience-fit demographics). Sets
+ * podscan_id only when currently null and demographics only when currently
+ * null/{} — never overwrites an existing value. Fill-empty is coherent
+ * because hydration is DB-first: a Podscan fetch only happened when the row
+ * had nothing, so this can never discard fresher data.
+ *
+ * NOT updateShowEnrichment: that helper's empty-check doesn't treat the
+ * jsonb `{}` default as empty (so demographics would never write through
+ * it), and it uses the cookie client — shows writes need supabaseAdmin
+ * (same RLS posture as createShow).
+ *
+ * Returns true on success or no-op; false only on a write error.
+ */
+export async function backfillShowPodscanData(
+  id: string,
+  input: { podscan_id?: string; demographics?: ShowDemographics }
+): Promise<boolean> {
+  const { data: current, error: fetchError } = await supabaseAdmin
+    .from("shows")
+    .select("podscan_id, demographics")
+    .eq("id", id)
+    .single();
+  if (fetchError || !current) {
+    console.error(
+      "[backfillShowPodscanData] fetch failed:",
+      fetchError?.message ?? "no row"
+    );
+    return false;
+  }
+
+  const hasDemo = (d: unknown): boolean =>
+    !!d && typeof d === "object" && Object.keys(d as object).length > 0;
+
+  const updates: Record<string, unknown> = {};
+  if (input.podscan_id && !current.podscan_id) {
+    updates.podscan_id = input.podscan_id;
+  }
+  if (hasDemo(input.demographics) && !hasDemo(current.demographics)) {
+    updates.demographics = input.demographics;
+  }
+  if (Object.keys(updates).length === 0) return true; // nothing to fill
+
+  updates.updated_at = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("shows")
+    .update(updates)
+    .eq("id", id);
+  if (error) {
+    console.error("[backfillShowPodscanData] update failed:", error.message);
+    return false;
+  }
+  return true;
 }
 
 /**

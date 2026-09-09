@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const {
   mockGetAuthenticatedUser,
   mockGetCampaignById,
+  mockGetBrandProfile,
   mockLogEvent,
   mockCallLLM,
   mockRetrieveAnalogs,
@@ -15,6 +16,7 @@ const {
 } = vi.hoisted(() => ({
   mockGetAuthenticatedUser: vi.fn(),
   mockGetCampaignById: vi.fn(),
+  mockGetBrandProfile: vi.fn(),
   mockLogEvent: vi.fn(),
   mockCallLLM: vi.fn(),
   mockRetrieveAnalogs: vi.fn(),
@@ -29,6 +31,7 @@ const {
 vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: mockGetAuthenticatedUser,
   getCampaignById: mockGetCampaignById,
+  getBrandProfileByUserId: mockGetBrandProfile,
 }));
 
 vi.mock("@/lib/data/events", () => ({
@@ -200,6 +203,9 @@ beforeEach(() => {
   vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
   mockGetAuthenticatedUser.mockResolvedValue(USER);
   mockGetCampaignById.mockResolvedValue(CAMPAIGN);
+  // No brand profile by default — target_audience omitted, the pre-wiring
+  // shape every non-targeting test asserts against.
+  mockGetBrandProfile.mockResolvedValue(null);
   mockLogEvent.mockResolvedValue(null);
   mockRetrieveAnalogs.mockResolvedValue(LIBRARY);
   mockPersistAtomic.mockImplementation(defaultPersist());
@@ -465,6 +471,51 @@ describe("POST /api/campaigns/[id]/interpret", () => {
           exclusions_parsed: ["No competitor sauna brands."],
         }),
       })
+    );
+  });
+
+  it("emits product_attributes.target_audience from a profile with age and gender", async () => {
+    mockGetBrandProfile.mockResolvedValue({
+      target_age_min: 30,
+      target_age_max: 55,
+      target_gender: "mostly_men",
+    });
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    await call();
+
+    expect(mockGetBrandProfile).toHaveBeenCalledWith("user_1");
+    expect(persistInput().productAttributes.target_audience).toStrictEqual({
+      age_min: 30,
+      age_max: 55,
+      gender: "mostly_men",
+    });
+  });
+
+  it("omits gender from target_audience when the profile says no_preference", async () => {
+    mockGetBrandProfile.mockResolvedValue({
+      target_age_min: 25,
+      target_age_max: 44,
+      target_gender: "no_preference",
+    });
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    await call();
+
+    expect(persistInput().productAttributes.target_audience).toStrictEqual({
+      age_min: 25,
+      age_max: 44,
+    });
+  });
+
+  it("emits no target_audience at all when there is no brand profile", async () => {
+    mockGetBrandProfile.mockResolvedValue(null);
+    mockCallLLM.mockResolvedValue(llmMessage(JSON.stringify(interpretation())));
+
+    await call();
+
+    expect(persistInput().productAttributes).not.toHaveProperty(
+      "target_audience"
     );
   });
 

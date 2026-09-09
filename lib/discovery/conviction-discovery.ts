@@ -46,7 +46,16 @@ import {
 import { scoreShowConviction, type ConvictionScore } from "@/lib/scoring/conviction";
 import { generateGroupReasoning } from "./conviction-reasoning";
 import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
-import { getCampaignById, createShow } from "@/lib/data/queries";
+import {
+  getCampaignById,
+  createShow,
+  backfillShowPodscanData,
+} from "@/lib/data/queries";
+import {
+  hydrateCandidateDemographics,
+  hasDemographics,
+  type HydrateDemographicsResult,
+} from "./hydrate-demographics";
 import {
   getLatestCampaignPatternForCampaign,
   getConfirmedRings,
@@ -119,6 +128,18 @@ export interface ConvictionDiscoveryDeps {
    *  Standalone + fail-soft (collects its own errors, never throws); injected
    *  so the orchestrator stays testable without a live DB. */
   tierPortfolio: (campaignPatternId: string) => Promise<TierPortfolioResult>;
+  /** Pre-scoring audience-fit hydration: fill candidate.demographics (+
+   *  podscan_id echo) in place — DB-first by slug, then Podscan demographics
+   *  for the rest. Standalone + fail-soft (collects its own errors, never
+   *  throws), like tierPortfolio. */
+  hydrateDemographics: (candidates: Show[]) => Promise<HydrateDemographicsResult>;
+  /** Fill-empty-only write-back for the createShow slug-collision branch —
+   *  an existing row that predates podscan_id/demographics gets them from the
+   *  hydrated candidate (createShow returns the stale row unmodified). */
+  backfillShowPodscanData: (
+    id: string,
+    input: { podscan_id?: string; demographics?: Show["demographics"] }
+  ) => Promise<boolean>;
 }
 
 const defaultDeps: ConvictionDiscoveryDeps = {
@@ -132,6 +153,8 @@ const defaultDeps: ConvictionDiscoveryDeps = {
   generateReasoning: generateGroupReasoning,
   emit: logEvent,
   tierPortfolio: (patternId) => tierCampaignPortfolio(patternId),
+  hydrateDemographics: (candidates) => hydrateCandidateDemographics(candidates),
+  backfillShowPodscanData,
 };
 
 // ---- Band helpers ----
@@ -274,13 +297,22 @@ export async function runConvictionDiscovery(
   }
   errors.push(...discovery.errors);
 
-  // Hard filters BEFORE scoring → fold simulcasts → fill PP.
-  // §11 Sleep/ASMR genre exclusion + Phase 2C Layer 1b zero-view YouTube
-  // (dead inventory; drop before merge so a dead YT surface can't price a
-  // simulcast). Both run on raw discovered shows, before any scoring.
+  // Hard filters BEFORE scoring → fold simulcasts → hydrate demographics →
+  // fill PP. §11 Sleep/ASMR genre exclusion + Phase 2C Layer 1b zero-view
+  // YouTube (dead inventory; drop before merge so a dead YT surface can't
+  // price a simulcast). Both run on raw discovered shows, before any scoring.
   const candidates = mergeSimulcasts(
     excludeDeadYouTube(excludeExcludedGenres(discovery.discovered))
   );
+  // Audience-fit hydration MUST run pre-scoring: the scorer reads these
+  // in-memory candidates, never the shows table. DB-first (backfilled rows),
+  // then Podscan demographics for the rest. Fail-soft twice over (internal
+  // error collection + callSafe) — unhydrated candidates score neutral-
+  // degraded exactly as before.
+  const hydration = await callSafe("hydrateDemographics", () =>
+    deps.hydrateDemographics(candidates)
+  );
+  if (hydration?.errors.length) errors.push(...hydration.errors);
   fillPurchasePower(candidates);
 
   const groups = scoreCandidatesAgainstRings(candidates, rings, pattern);
@@ -369,6 +401,11 @@ export async function runConvictionDiscovery(
         candidate_count: candidates.length,
         kept_show_count: keptShowCount,
         scored_count: scoredCount,
+        // Audience-fit hydration observability: how many candidates scored
+        // with real demographics, and where they came from.
+        demographics_from_db: hydration?.fromDb ?? 0,
+        demographics_from_api: hydration?.fromApi ?? 0,
+        demographics_skipped: hydration?.skipped ?? 0,
       },
     })
   );
@@ -449,6 +486,7 @@ async function persistCandidate(
       price_type: show.price_type,
       ad_formats: show.ad_formats,
       current_sponsors: show.current_sponsors ?? [],
+      podscan_id: show.podscan_id,
       apple_id: show.apple_id,
       spotify_id: show.spotify_id,
       youtube_channel_id: show.youtube_channel_id,
@@ -458,6 +496,31 @@ async function persistCandidate(
       is_claimed: false,
       is_verified: false,
     });
+    // Slug-collision branch: createShow returns an EXISTING row unmodified.
+    // If that row predates podscan_id/demographics and the hydrated candidate
+    // has them, fill them in (fill-empty-only). A fresh insert already carries
+    // both, so this fires only on collision-with-stale-row. Own try/catch —
+    // a write-back failure must not turn a successful persist into null.
+    if (
+      saved &&
+      ((show.podscan_id && !saved.podscan_id) ||
+        (hasDemographics(show.demographics) &&
+          !hasDemographics(saved.demographics)))
+    ) {
+      try {
+        await deps.backfillShowPodscanData(saved.id, {
+          podscan_id: show.podscan_id,
+          demographics: hasDemographics(show.demographics)
+            ? show.demographics
+            : undefined,
+        });
+      } catch (err) {
+        console.warn(
+          `[conviction-discovery] podscan write-back failed for "${show.name}":`,
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
     return saved?.id ?? null;
   } catch (err) {
     console.warn(

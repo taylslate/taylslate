@@ -112,6 +112,37 @@ export interface PodscanChartEntry {
   movement?: number;
 }
 
+// ---- Demographics (GET /podcasts/{id}/demographics, Premium+) ----
+// Minimal shape: only the sections the ShowDemographics transform consumes.
+// Per the API docs, values are AI-extracted and "might be null or partially
+// available" — every field is optional/nullable.
+
+export interface PodscanAgeDistributionEntry {
+  /** "0-18" | "18-24" | "25-34" | "35-44" | "45-54" | "55-64" | "65+" */
+  age: string;
+  percentage: number;
+}
+
+export interface PodscanAgeGenderEntry {
+  age: string;
+  gender: string; // "male" | "female"
+  percentage: number;
+}
+
+export interface PodscanDemographics {
+  episodes_analyzed?: number;
+  total_episodes?: number;
+  /** Dominant age bracket, e.g. "25-34". */
+  age?: string | null;
+  /** heavily_male | mostly_male | leaning_male | balanced | leaning_female | mostly_female | heavily_female | diverse | mixed */
+  gender_skew?: string | null;
+  /** low | medium | high — not consumed yet (audience_purchase_power stays on the category proxy; see backlog). */
+  purchasing_power?: string | null;
+  education_level?: string | null;
+  age_distribution?: PodscanAgeDistributionEntry[] | null;
+  age_gender_distribution?: PodscanAgeGenderEntry[] | null;
+}
+
 // ---- Error Handling ----
 
 export class PodscanError extends Error {
@@ -478,6 +509,27 @@ export class PodscanClient {
       };
     } catch {
       return { hosts: [], producers: [] };
+    }
+  }
+
+  // ---- Demographics ----
+
+  /**
+   * Aggregated listener demographics for a podcast (Premium+ endpoint).
+   * Returns null when Podscan has no demographics for the show (404) —
+   * a data state, not an error. 429s retry inside request(); any other
+   * failure throws PodscanError for the caller's fail-soft boundary.
+   */
+  async getPodcastDemographics(
+    podcastId: string
+  ): Promise<PodscanDemographics | null> {
+    try {
+      return await this.request<PodscanDemographics>(
+        `/podcasts/${podcastId}/demographics`
+      );
+    } catch (err) {
+      if (err instanceof PodscanError && err.status === 404) return null;
+      throw err;
     }
   }
 
