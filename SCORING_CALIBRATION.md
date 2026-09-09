@@ -115,3 +115,48 @@ Projected volume for `a55b7e2b` under no floor: 63 candidates × 4 rings = **252
 
 Q5 stale-tier invariant (below) is deliberately relaxed and made moot by clearing
 conviction scores on ring re-confirm (`interpret/confirm` route) — see STATUS.md.
+
+---
+
+## Ring-reasoning exclusion from the topical token set — measured, NOT shipped (September 9, 2026)
+
+Proposed change: drop `ring.reasoning` from `scoreTopicalRelevance`'s ring token
+set (leaving label + `product_attributes.category` + `key_attributes`), to kill
+prose-artifact matches — Ottoman History Podcast direct-matched `language`
+because a ring's reasoning contained "the brand's own **language** shift."
+Full-universe recompute run BEFORE shipping; the replication reproduced the
+stored score for **1,080 of 1,080** rows, so the numbers are exact.
+
+> Correction to the June/Sept row counts: earlier audits reported 1,000 rows —
+> that was Supabase's silent default 1,000-row query cap, not the table. True
+> stored distribution: **645 @ 20 / 24 @ 50 / 411 @ 85**. Perfectly trimodal;
+> the recall branch has never produced an intermediate value in production.
+
+**Result: net-negative. Rejected.**
+
+- **370 of the 411 rows at 85 stay; 41 move — all to exactly 20**, all on ONE
+  ring ("HSA/FSA-aware benefits & tax-optimized buyers"), whose only `health`
+  token lived in its reasoning prose ("…a tax-advantaged **health** purchase").
+- **The 41 casualties are the genuine matches** — Huberman Lab, The Peter Attia
+  Drive, Mind Pump, The Human Upgrade, Dr. Gabrielle Lyon, Dr. Hyman, Strength
+  Running, and the rest of the health/wellness core. None retains an 85 on any
+  other ring of the live pattern; composites fall ~27 pts (Huberman 74→48);
+  three shows leave band `high`, most fall `medium`→`low`.
+- **Ottoman is untouched: 85 on all four rings before and after.** Its match is
+  `home` (Podscan "Home & Garden") hitting the **pattern-level** key_attribute
+  "home wellness use case", present in every ring's token set and kept by the
+  change. The `language`/`health` reasoning matches were redundant — **zero
+  artifact scores fixed**. Post-change, Ottoman (composite 77) would outrank
+  every one of the 41 on that ring.
+- **Structural finding: match survival hinges on incidental ring-label
+  wording.** Earlier-run HSA rings labeled "HSA/FSA-conscious **health**
+  spenders" survive via the label; the current run's label happened to omit
+  "health", so the entire ring leaned on reasoning prose. Token provenance
+  (label vs. reasoning) is not a quality signal in either direction.
+
+This extends deferred item #1 and **strengthens the case for the sanctioned
+fix — Podscan vector adjacency (semantic) as a Layer-3 precompute — over any
+lexical patch.** The recompute relocates the real culprits to (a) pattern-level
+`key_attributes` tokens being folded into every ring's token set, and (b) the
+single-generic-token direct-match → 85. Both remain open calibration items;
+neither should be patched lexically.
