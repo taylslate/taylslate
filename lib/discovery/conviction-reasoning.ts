@@ -57,6 +57,14 @@ const REASONING_MAX_TOKENS = 3000;
  */
 export const DESCRIPTION_MAX_CHARS = 500;
 
+/**
+ * Cap on sponsor names in the per-show prompt line. Podscan sponsor history
+ * runs up to 50 entries (episode_count desc, so the head is the most
+ * recurrent); 10 bounds the worst-case ring prompt while keeping the
+ * revealed-preference signal intact.
+ */
+export const SPONSORS_MAX_ITEMS = 10;
+
 // Bound the discover POST: per-ring calls run concurrently, each capped here.
 // Mirrors the interpret endpoint (60s, no retry) so the worst case stays
 // predictable even though there is no lock TTL to respect here.
@@ -269,9 +277,16 @@ function formatShowForPrompt(entry: ScoredShowEntry): string {
     ? "audience fit UNMEASURED (no demographic data)"
     : `audience fit ${score.audienceFit} MEASURED`;
 
+  const sponsors = (show.current_sponsors ?? [])
+    .filter((s) => typeof s === "string" && s.trim())
+    .slice(0, SPONSORS_MAX_ITEMS);
+
   const lines = [`- id: ${show.id}`, `  name: ${show.name}`];
   // Omitted (not "(none)") when empty so the model never remarks on a gap.
   if (description) lines.push(`  description: ${description}`);
+  if (sponsors.length > 0) {
+    lines.push(`  sponsors detected: ${sponsors.join(", ")}`);
+  }
   lines.push(`  categories: ${catStr}`, `  scores: ${topical}; ${pp}; ${audience}`);
   return lines.join("\n");
 }

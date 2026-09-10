@@ -123,10 +123,6 @@ async function enrichPodcast(
           enrichmentData.network = podcast.publisher_name;
         }
       }
-      if (podcast.episode_count && podcast.episode_count > 0) {
-        enrichmentData.tags = [`${podcast.episode_count}+ episodes`];
-      }
-
       enrichmentData.data_sources = ["podscan"];
 
       const enrichedShow = await updateShowEnrichment(showId, enrichmentData);
@@ -238,7 +234,6 @@ async function enrichYouTube(
     description: channelDetails.description || undefined,
     image_url: channelDetails.thumbnailUrl || undefined,
     categories: channelDetails.topicCategories.length > 0 ? channelDetails.topicCategories : undefined,
-    tags: channelDetails.country ? [`Country: ${channelDetails.country}`] : undefined,
     data_sources: ["youtube_api"],
   };
 

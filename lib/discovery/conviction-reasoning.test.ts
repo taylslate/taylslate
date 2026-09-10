@@ -15,6 +15,7 @@ import {
   cleanDescription,
   REASONING_TOP_N,
   DESCRIPTION_MAX_CHARS,
+  SPONSORS_MAX_ITEMS,
   type ReasoningDeps,
 } from "./conviction-reasoning";
 import type { CallLLMInput } from "@/lib/llm/client";
@@ -62,7 +63,7 @@ function makeScore(
   };
 }
 
-// Minimal Show — the module reads only id/name/description/categories/audience_interests.
+// Minimal Show — the module reads only id/name/description/current_sponsors/categories/audience_interests.
 function makeShow(id: string, overrides: Partial<Show> = {}): Show {
   return {
     id,
@@ -312,6 +313,32 @@ describe("buildReasoningUserContent", () => {
     // makeShow sets no description — the line must be absent, not "(none)".
     const content = buildReasoningUserContent(makeRing(), "", [makeEntry("s1")]);
     expect(content).not.toContain("description:");
+  });
+
+  it("includes the sponsors line when the show has sponsor history", () => {
+    const entry = makeEntry("s1", makeScore(), {
+      current_sponsors: ["Shimmer", "LMNT"],
+    });
+    const content = buildReasoningUserContent(makeRing(), "", [entry]);
+    expect(content).toContain("sponsors detected: Shimmer, LMNT");
+  });
+
+  it("omits the sponsors line entirely when the show has none", () => {
+    // makeShow sets no current_sponsors — the line must be absent, not "(none)".
+    const content = buildReasoningUserContent(makeRing(), "", [makeEntry("s1")]);
+    expect(content).not.toContain("sponsors detected:");
+  });
+
+  it("caps the sponsors line at SPONSORS_MAX_ITEMS names", () => {
+    const names = Array.from({ length: 50 }, (_, i) => `Brand${i + 1}`);
+    const entry = makeEntry("s1", makeScore(), { current_sponsors: names });
+    const content = buildReasoningUserContent(makeRing(), "", [entry]);
+    const line = content
+      .split("\n")
+      .find((l) => l.trimStart().startsWith("sponsors detected:"));
+    expect(line).toBeDefined();
+    expect(line).toContain(`Brand${SPONSORS_MAX_ITEMS}`);
+    expect(line).not.toContain(`Brand${SPONSORS_MAX_ITEMS + 1}`);
   });
 
   it("truncates an outlier description so the prompt stays bounded", () => {

@@ -235,7 +235,7 @@ function makeDeps(opts: {
     hydrateDemographics: async (candidates) => {
       hydrateCalls.push([...candidates]);
       if (opts.hydrateDemographics) return opts.hydrateDemographics(candidates);
-      return { fromDb: 0, fromApi: 0, skipped: candidates.length, errors: [] };
+      return { fromDb: 0, fromApi: 0, skipped: candidates.length, sponsorsFromDb: 0, errors: [] };
     },
     backfillShowPodscanData: async (id, input) => {
       backfillCalls.push({ id, input });
@@ -748,7 +748,7 @@ describe("runConvictionDiscovery", () => {
       // Stamp demographics in place, exactly like the real hydrator.
       hydrateDemographics: async (candidates) => {
         for (const c of candidates) c.demographics = demographics;
-        return { fromDb: 0, fromApi: candidates.length, skipped: 0, errors: [] };
+        return { fromDb: 0, fromApi: candidates.length, skipped: 0, sponsorsFromDb: 0, errors: [] };
       },
     });
     await runConvictionDiscovery("camp-1", h.deps);
@@ -785,6 +785,7 @@ describe("runConvictionDiscovery", () => {
         fromDb: 1,
         fromApi: 2,
         skipped: candidates.length,
+        sponsorsFromDb: 0,
         errors: ["Podscan rate limit during demographics hydration — 3 podcast(s) left unhydrated this run."],
       }),
     });

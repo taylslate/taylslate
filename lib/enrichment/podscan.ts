@@ -143,6 +143,50 @@ export interface PodscanDemographics {
   age_gender_distribution?: PodscanAgeGenderEntry[] | null;
 }
 
+// ---- Podcast analysis (GET /podcasts/{id}/analysis) ----
+// Aggregated extraction data. Minimal shape: only the sections we consume
+// (sponsor history). Sponsors are transcript-extracted and may include the
+// show's own products / house ads — callers decide how to weigh them.
+
+export interface PodscanSponsor {
+  name: string;
+  product_mentioned?: string | null;
+  url?: string | null;
+  /** Number of processed episodes this sponsor appeared on. */
+  episode_count?: number;
+}
+
+export interface PodscanPodcastAnalysis {
+  podcast_id: string;
+  podcast_name?: string;
+  /** Episodes with a processed extraction backing this analysis. */
+  episodes_analyzed?: number;
+  /** Most frequent sponsors across episodes (up to 50), episode_count desc. */
+  sponsors?: PodscanSponsor[] | null;
+}
+
+// ---- Latest episode sponsors (GET /podcasts/{id}/latest/sponsor) ----
+// The sponsors of the most recent episode that HAS sponsors — the only
+// recency signal Podscan exposes (analysis sponsor objects carry no dates).
+// sponsor_is_commercial is Podscan's own paid-read vs house-ad/self-promo
+// discriminator, available only here.
+
+export interface PodscanLatestSponsor {
+  sponsor_name: string;
+  sponsor_url?: string | null;
+  sponsor_is_commercial?: boolean;
+  sponsor_product_mentioned?: string | null;
+  speaker_label?: string | null;
+}
+
+export interface PodscanLatestEpisodeSponsors {
+  episode_id: string;
+  episode_title?: string;
+  /** When the latest sponsored episode posted — the freshness of this snapshot. */
+  posted_at?: string;
+  sponsors?: PodscanLatestSponsor[] | null;
+}
+
 // ---- Error Handling ----
 
 export class PodscanError extends Error {
@@ -526,6 +570,49 @@ export class PodscanClient {
     try {
       return await this.request<PodscanDemographics>(
         `/podcasts/${podcastId}/demographics`
+      );
+    } catch (err) {
+      if (err instanceof PodscanError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  // ---- Podcast Analysis ----
+
+  /**
+   * Aggregated analysis for a podcast — one call returns the full sponsor
+   * history across processed episodes (vs. the ~11-request per-episode
+   * entity walk in getSponsorsForPodcast). Returns null when Podscan has
+   * no analysis for the show (404) — a data state, not an error. 429s
+   * retry inside request(); any other failure throws PodscanError for the
+   * caller's fail-soft boundary.
+   */
+  async getPodcastAnalysis(
+    podcastId: string
+  ): Promise<PodscanPodcastAnalysis | null> {
+    try {
+      return await this.request<PodscanPodcastAnalysis>(
+        `/podcasts/${podcastId}/analysis`
+      );
+    } catch (err) {
+      if (err instanceof PodscanError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * Sponsors of the most recent episode that has sponsors — the
+   * "still running as of the last sponsored episode" snapshot. Returns
+   * null when Podscan has none for the show (404) — a data state, not an
+   * error; other failures throw PodscanError for the caller's fail-soft
+   * boundary.
+   */
+  async getLatestEpisodeSponsors(
+    podcastId: string
+  ): Promise<PodscanLatestEpisodeSponsors | null> {
+    try {
+      return await this.request<PodscanLatestEpisodeSponsors>(
+        `/podcasts/${podcastId}/latest/sponsor`
       );
     } catch (err) {
       if (err instanceof PodscanError && err.status === 404) return null;

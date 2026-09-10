@@ -406,6 +406,8 @@ export async function runConvictionDiscovery(
         demographics_from_db: hydration?.fromDb ?? 0,
         demographics_from_api: hydration?.fromApi ?? 0,
         demographics_skipped: hydration?.skipped ?? 0,
+        // Sponsor hydration is DB-only (prompt/display data, never scored).
+        sponsors_from_db: hydration?.sponsorsFromDb ?? 0,
       },
     })
   );

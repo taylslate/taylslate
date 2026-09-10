@@ -7,8 +7,9 @@
 // in place, right before scoring:
 //
 //   1. DB-first: one batched slug lookup (the createShow dedup key) copies
-//      stored demographics + podscan_id onto matching candidates — zero API
-//      spend. This is how backfilled shows reach the scorer.
+//      stored demographics + podscan_id + current_sponsors onto matching
+//      candidates — zero API spend. This is how backfilled shows reach the
+//      scorer (sponsors are prompt/display data only, never scored).
 //   2. Podscan fetch (GET /podcasts/{id}/demographics, Premium+) for podcast
 //      candidates that have a podscan_id and still-empty demographics.
 //
@@ -59,6 +60,10 @@ export interface HydrateDemographicsResult {
   fromApi: number;
   /** Candidates still without demographics after both passes. */
   skipped: number;
+  /** Candidates whose current_sponsors were copied from stored rows
+   *  (DB-only — sponsors have no API pass; the backfill script covers the
+   *  catalog). Display/prompt data, never a scoring input. */
+  sponsorsFromDb: number;
   errors: string[];
 }
 
@@ -83,6 +88,7 @@ export async function hydrateCandidateDemographics(
     fromDb: 0,
     fromApi: 0,
     skipped: 0,
+    sponsorsFromDb: 0,
     errors: [],
   };
   if (candidates.length === 0) return result;
@@ -108,6 +114,15 @@ export async function hydrateCandidateDemographics(
     if (!hasDemographics(c.demographics) && hasDemographics(row.demographics)) {
       c.demographics = row.demographics;
       result.fromDb++;
+    }
+    // Sponsors ride the same DB-first pass (candidates are built with []).
+    // Not a scoring input — this feeds the Layer 4 prompt + outreach only.
+    if (
+      (c.current_sponsors?.length ?? 0) === 0 &&
+      (row.current_sponsors?.length ?? 0) > 0
+    ) {
+      c.current_sponsors = row.current_sponsors;
+      result.sponsorsFromDb++;
     }
   }
 

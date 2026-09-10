@@ -121,6 +121,48 @@ describe("hydrateCandidateDemographics", () => {
     expect(candidate.podscan_id).toBe("pd_stored");
   });
 
+  it("copies stored current_sponsors onto a candidate with an empty list (DB-only, no API pass)", async () => {
+    const candidate = makeShow({ name: "Recovery Lab", podscan_id: "pd_1" });
+    const { deps } = makeDeps({
+      rows: [
+        {
+          ...makeShow({
+            name: "Recovery Lab",
+            demographics: STORED_DEMO,
+            current_sponsors: ["Shimmer", "LMNT"],
+          }),
+          slug: "recovery-lab",
+        },
+      ],
+    });
+    const result = await hydrateCandidateDemographics([candidate], deps);
+    expect(candidate.current_sponsors).toEqual(["Shimmer", "LMNT"]);
+    expect(result.sponsorsFromDb).toBe(1);
+  });
+
+  it("does NOT overwrite a candidate that already has sponsors", async () => {
+    const candidate = makeShow({
+      name: "Recovery Lab",
+      podscan_id: "pd_1",
+      current_sponsors: ["Existing Brand"],
+    });
+    const { deps } = makeDeps({
+      rows: [
+        {
+          ...makeShow({
+            name: "Recovery Lab",
+            demographics: STORED_DEMO,
+            current_sponsors: ["Shimmer"],
+          }),
+          slug: "recovery-lab",
+        },
+      ],
+    });
+    const result = await hydrateCandidateDemographics([candidate], deps);
+    expect(candidate.current_sponsors).toEqual(["Existing Brand"]);
+    expect(result.sponsorsFromDb).toBe(0);
+  });
+
   it("a stored row with {} demographics does NOT count as DB data — falls through to the API", async () => {
     const candidate = makeShow({ name: "Recovery Lab", podscan_id: "pd_1" });
     const { deps, fetchCalls } = makeDeps({
@@ -224,7 +266,13 @@ describe("hydrateCandidateDemographics", () => {
   it("empty candidate pool is a clean no-op", async () => {
     const { deps, fetchCalls } = makeDeps({});
     const result = await hydrateCandidateDemographics([], deps);
-    expect(result).toEqual({ fromDb: 0, fromApi: 0, skipped: 0, errors: [] });
+    expect(result).toEqual({
+      fromDb: 0,
+      fromApi: 0,
+      skipped: 0,
+      sponsorsFromDb: 0,
+      errors: [],
+    });
     expect(fetchCalls).toHaveLength(0);
   });
 });
