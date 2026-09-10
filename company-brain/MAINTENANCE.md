@@ -86,4 +86,4 @@ Before giving an outside tool company context, review the specific files and sou
 
 ## Completion criteria for the next iteration
 
-The next useful iteration should recover the missing validation source, resolve the first-buyer emphasis, and locate actual operating records. Add domain documents only when there is enough source material or real ongoing work to maintain them. Avoid creating empty departments or autonomous roles solely to match an organization chart.
+The July validation content has now been supplied as CB-E-001, clarifying the historical first-buyer emphasis. The next useful iteration should locate actual operating records and capture what happened after that strategy session. Add domain documents only when there is enough source material or real ongoing work to maintain them. Avoid creating empty departments or autonomous roles solely to match an organization chart.

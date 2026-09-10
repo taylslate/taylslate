@@ -31,7 +31,7 @@ Sources: [STATUS](../STATUS.md), [proof](../PILE_A_PROOF.md), [source map code e
 
 ## Customer and GTM
 
-**Broad ICP on record:** founder- or growth-led brands, historically described as new to creator advertising with $30K–$50K monthly campaign budgets. **Later validation ICP:** reachable decision-maker, deliberately chosen host-read shows, repeat buying, enough manual operational pain to switch. These overlap imperfectly; which leads the initial sales effort remains an explicit question. Source: master architecture §1.4.
+**Broad ICP on record:** founder- or growth-led brands, historically described as new to creator advertising with $30K–$50K monthly campaign budgets. **Later validation ICP:** reachable decision-maker, deliberately chosen host-read shows, repeat buying, enough manual operational pain to switch. The supplied [July 22 validation session](evidence/2026-07-22-validation-session.md) establishes that existing direct buyers were the initial validation focus. This clarifies the historical sales priority without permanently replacing the broader market definition. Sources: that session and master architecture §1.4.
 
 **Working job-to-be-done, synthesized from those sources:** “Help me execute a sponsorship buy without weeks of coordination, while retaining control over the shows, terms, and budget.” This is an AI synthesis, not a customer quote.
 

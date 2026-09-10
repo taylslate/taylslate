@@ -8,7 +8,7 @@ Taylslate is building infrastructure for podcast and long-form YouTube sponsorsh
 
 Chris Taylor is the sole founder and decision-maker. His current instruction is to have AI perform research, analysis, monitoring, and execution from shared company knowledge, while he retains important decisions. Claude Code is his primary engineering tool; Codex provides independent review. The architecture of future AI roles is still undecided.
 
-The latest strategy synthesis describes the wedge as **“the deal a brand already chose, executed transparently.”** It emphasizes serving deals sourced anywhere. Older descriptions emphasize AI discovery and brands entirely new to podcast ads. Both remain in the sources; the precise first-customer ICP needs clarification before choosing a prospecting campaign.
+The latest strategy synthesis describes the wedge as **“the deal a brand already chose, executed transparently.”** It emphasizes serving deals sourced anywhere. Older descriptions emphasize AI discovery and brands entirely new to podcast ads. The user-supplied [July 22 validation session](evidence/2026-07-22-validation-session.md) clarifies that the initial validation focus was existing direct buyers with repeat operational pain. This is a dated sales focus within the broader opportunity, not a newly approved outreach campaign.
 
 ## Navigation
 

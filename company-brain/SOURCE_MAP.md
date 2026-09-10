@@ -4,6 +4,8 @@ Audit date: September 9, 2026. Scope: documentation in this repository, a filena
 
 ## Sources by role
 
+User-supplied follow-up: [CB-E-001 — July 22 validation session](evidence/2026-07-22-validation-session.md) now supplies the business substance of the previously missing validation reference. Preserved as a dated business-only synthesis with original-attachment provenance; original filename remains unverified.
+
 | Source | Best use | Date and reliability notes |
 |---|---|---|
 | [STATUS.md](../STATUS.md) | Recorded build state, migration verification, live-proof frontier | Header Sep 3, later Sep 7 entries. Contradictory test totals and older sections remain. Latest code is newer. |
@@ -42,7 +44,7 @@ Pre-existing uncommitted changes were observed in `lib/enrichment/podscan-match.
 
 ## Referenced sources missing locally
 
-- `TAYLSLATE_VALIDATION_WORKING_DOC.md` — master architecture Appendix C describes it as the wedge/ICP/sales-motion/founder-log source. Highest-value recovery candidate.
+- `TAYLSLATE_VALIDATION_WORKING_DOC.md` — original filename still unverified; substantive content supplied by Chris and indexed as [CB-E-001](evidence/2026-07-22-validation-session.md). Recovery is no longer an open dependency.
 - `TAYLSLATE_AGENTIC_ROADMAP.md` — recovered in Downloads during the follow-up below; not yet imported or fully reviewed.
 - Claude Design “Document B” and “Conviction C,” plus current wordmark direction — referenced in master architecture §5.7; source assets not found in the document inventory.
 - Original April scoring observations — calibration log explicitly says they may live in the Claude.ai workspace.

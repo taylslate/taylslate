@@ -14,7 +14,7 @@ Recorded September 9, 2026. This is an audit queue, not a new product roadmap. S
 | C06 | Older context claims full paid flow; newest proof stops at card-on-file | Live charge and settlement are explicitly unproven in the latest records. Do not call the full money movement verified. |
 | C07 | CLAUDE describes DocuSign production as gated; STATUS records production live and brand embedded signing proven | Use the later specific proof. Separate brand embedded signing from any future show-side signing upgrade. |
 | C08 | Initial plan seeds 20–50 analogs from memory; D-34 explicitly reverses it | Decision D-34 controls: real campaigns only. Recollections may be labeled qualitative evidence, never manufactured outcome records. |
-| C09 | Original ICP is brands new to podcast; later ICP requires repeat chosen-show buys and existing pain | Unresolved business emphasis. Chris should choose which customer stage leads initial validation. Do not silently collapse them into one persona. |
+| C09 | Original ICP is brands new to podcast; later ICP requires repeat chosen-show buys and existing pain | Historically clarified by user-supplied CB-E-001: July initial validation targeted existing direct buyers with repeat pain. Keep that dated sales focus distinct from the broader market definition; no new campaign is authorized. |
 | C10 | Older positioning centers discovery; July strategy centers execution of deals sourced anywhere | Preserve the documented evolution. Latest wedge is execution; final public message and the initial offer remain to be confirmed. |
 | C11 | Long-form YouTube called first-class; STATUS calls discovery podcast-only and notes pricing mismatch | Verify actual supported journey before making a launch-availability claim. Scope intent is not shipped capability. |
 | C12 | Backlog calls broad pre-launch work mandatory; later launch sequence limits work to the minimum sellable workflow and relevant polish | Record the later sequencing, but do not automatically reclassify every backlog item. Confirm the short launch checklist before executing it. |
@@ -40,9 +40,9 @@ Sources: [source map](SOURCE_MAP.md). File modification timestamps alone were no
 
 ## Highest-value next inputs
 
-1. **Use the available validation synthesis.** Chris does not recognize the referenced validation filename, and a follow-up local search did not find it. Its existence as a separately saved file is unverified. Continue from the attributed master-architecture synthesis and future real customer evidence; recovery is optional, not a prerequisite. See the source map for additional strategy and brand documents found in Downloads.
-2. **Confirm the first buyer and offer.** Is the next sales effort aimed at first-time podcast buyers, or repeat direct buyers who already have a show in mind? What real commitment should the first sale ask for?
+1. **Validation source gap substantially closed.** Chris supplied the July 22 session summary, now preserved as [CB-E-001](evidence/2026-07-22-validation-session.md). It matches the referenced subject matter; the original filename remains unverified and does not need recovery.
+2. **Capture subsequent outcomes.** The July record identifies existing direct buyers and a founder-assisted first campaign as the validation focus and offer. It does not tell us which calls, commitments, or transactions happened afterward. Record real outcomes when available rather than asking Chris to repeat the historical strategy.
 3. **Locate actual business records.** Current customer/conversation status, revenue/cost records, and any brand/legal assets may already exist outside this repository. Record their location before creating replacements.
 4. **Reconcile technical status during the next engineering wrap-up.** Record deployment, migration 035 introspection, and live verification for September work; refresh stale summaries from evidence.
 
-No answer was assumed, no outside source was accessed, and no new business policy was approved as part of this compilation.
+The initial audit used repository sources; subsequent updates include local source discovery and user-supplied CB-E-001. No new business policy was approved by this compilation.

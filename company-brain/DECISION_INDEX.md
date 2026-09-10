@@ -25,6 +25,10 @@ Primary history: [Architectural Decision Log, D-01–D-45](../docs/architecture-
 | Ship transaction workflow before public MCP | The valuable exposed capability is execution, not another search interface | Master architecture §4.2, §4.8 | Documented sequencing; not reversed by the new Company Brain initiative |
 | Founder writes first-touch outreach | Relationships are a founder responsibility in the documented sales motion | Master architecture §4.4 | Standing preference; AI-role discussion has not explicitly superseded it |
 
+## Recovered validation rationale
+
+[CB-E-001 — July 22 session](evidence/2026-07-22-validation-session.md), supplied by Chris on September 9, provides a direct source for the chosen-deal wedge, the initial existing-direct-buyer focus, the signal ladder, founder-assisted first-campaign offer, and transaction-before-funding sequence. It is a historical session summary, not customer outcome evidence or new approval to execute its recommendations. Its July live-signature claim is superseded by later proof corrections.
+
 ## Recording the next decision
 
 Use the template in [MAINTENANCE.md](MAINTENANCE.md). Assign `CB-D-001` onward for new cross-functional decisions, preserving existing `D-xx` IDs. A proposed decision is not founder-approved merely because an AI writes it here. Link both the prior and superseding records when a choice changes.
