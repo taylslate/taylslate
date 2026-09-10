@@ -7,8 +7,13 @@
 // a durable id write: a wrong podscan_id silently poisons that show's
 // demographics forever.
 //
-// Rule: rss_url equality when both sides have one, else normalized-name
-// equality. Anything weaker is reported for manual review, never written.
+// Two gates:
+// - isRssVerifiedMatch — feed-URL equality ONLY; the auto-write gate for the
+//   demographics backfill. Name similarity is never consulted there: the
+//   first live review queue surfaced first-result mismatches (Huberman → a
+//   Spreaker feed, Rich Roll → Daily Stoic).
+// - isVerifiedPodcastMatch — rss equality when both sides have a feed, else
+//   exact normalized-name equality; the enrich route's persist gate.
 //
 // Pure, no I/O.
 // ============================================================
@@ -33,6 +38,27 @@ function normalizeRssUrl(url: string): string {
     .replace(/\/+$/, "");
 }
 
+/** The podcast's feed-URL comparison keys (rss_url + rss_url_normalized). */
+function podcastRssKeys(podcast: PodscanPodcast): string[] {
+  return [podcast.rss_url, podcast.rss_url_normalized]
+    .filter((u): u is string => !!u && u.trim().length > 0)
+    .map(normalizeRssUrl);
+}
+
+/**
+ * Strict feed-identity check: true ONLY when our stored rss_url equals one
+ * of the podcast's feed URLs (normalized). Name equality is deliberately
+ * never consulted — a show without a stored rss_url can never RSS-verify.
+ */
+export function isRssVerifiedMatch(
+  show: { rss_url?: string | null },
+  podcast: PodscanPodcast
+): boolean {
+  const showRss = show.rss_url?.trim();
+  if (!showRss) return false;
+  return podcastRssKeys(podcast).includes(normalizeRssUrl(showRss));
+}
+
 /**
  * True only when the Podscan podcast is verifiably the same show:
  * - both sides have an RSS URL → they must match (normalized);
@@ -43,11 +69,9 @@ export function isVerifiedPodcastMatch(
   podcast: PodscanPodcast
 ): boolean {
   const showRss = show.rss_url?.trim() ?? "";
-  const podRssCandidates = [podcast.rss_url, podcast.rss_url_normalized]
-    .filter((u): u is string => !!u && u.trim().length > 0)
-    .map(normalizeRssUrl);
-  if (showRss && podRssCandidates.length > 0) {
-    return podRssCandidates.includes(normalizeRssUrl(showRss));
+  const podRssKeys = podcastRssKeys(podcast);
+  if (showRss && podRssKeys.length > 0) {
+    return podRssKeys.includes(normalizeRssUrl(showRss));
   }
   return normalizeShowName(show.name) === normalizeShowName(podcast.podcast_name);
 }

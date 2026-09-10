@@ -2,14 +2,16 @@
 // ============================================================
 // Backfill shows.podscan_id + shows.demographics (audience-fit live)
 //
-// Resolution policy (locked by Chris, Sep 8 2026): a podscan_id is WRITTEN
-// only when it comes from a certain source —
-//   (a) shows.podscan_id already set, or
-//   (b) an exact outreaches.podscan_id join on show_id (single distinct id).
-// Name-search matches are REPORT-ONLY: the script prints each proposed
-// match (with rss/name verification status) for manual review and never
-// writes one — even verified, a fuzzy match is a human decision because a
-// wrong podscan_id silently poisons that show's demographics forever.
+// Resolution policy (locked Sep 8, amended by Chris Sep 9 2026): a
+// podscan_id is WRITTEN only when it comes from a certain source —
+//   (a) shows.podscan_id already set,
+//   (b) an exact outreaches.podscan_id join on show_id (single distinct id), or
+//   (c) an RSS-VERIFIED name-search match: our stored rss_url equals the
+//       Podscan podcast's feed URL (normalized) — feed identity IS the show.
+// Name-ONLY matches stay REPORT-ONLY: the first live review queue surfaced
+// first-result mismatches (Huberman → a Spreaker feed, Rich Roll → Daily
+// Stoic), so name similarity is never a write signal. Shows with no stored
+// rss_url can never auto-verify and stay in review (counted in the summary).
 //
 // Demographics are fetched for every id-resolved show whose demographics
 // are empty, transformed via podscanDemographicsToShowDemographics (age
@@ -18,7 +20,7 @@
 //
 // Usage:
 //   npx tsx scripts/backfill-show-demographics.ts           # DRY RUN: full report, no writes
-//   npx tsx scripts/backfill-show-demographics.ts --apply   # write id-resolved rows
+//   npx tsx scripts/backfill-show-demographics.ts --apply   # write id-resolved + rss-verified rows
 //
 // Scope: platform='podcast', is_discoverable=true. Accept-materialized
 // (otr-) and seeded rows are skipped + counted.
@@ -33,7 +35,10 @@ import {
   type PodscanPodcast,
 } from "../lib/enrichment/podscan";
 import { podscanDemographicsToShowDemographics } from "../lib/discovery/format-discovered-show";
-import { isVerifiedPodcastMatch } from "../lib/enrichment/podscan-match";
+import {
+  isRssVerifiedMatch,
+  isVerifiedPodcastMatch,
+} from "../lib/enrichment/podscan-match";
 import type { ShowDemographics } from "../lib/data/types";
 
 // Load env (same pattern as the other scripts in this dir)
@@ -121,7 +126,11 @@ async function main() {
     }
   }
 
-  type Resolved = { show: ShowRow; podscanId: string; source: "column" | "outreach" };
+  type Resolved = {
+    show: ShowRow;
+    podscanId: string;
+    source: "column" | "outreach" | "rss";
+  };
   const resolved: Resolved[] = [];
   const conflicts: Array<{ show: ShowRow; ids: string[] }> = [];
   const nameMatchQueue: ShowRow[] = [];
@@ -163,7 +172,50 @@ async function main() {
   }
   const podscan = new PodscanClient();
 
-  // ---- Fetch + write demographics for id-resolved shows ----
+  // ---- Name-search pass: promote RSS-verified matches into the write set ----
+  // Feed-URL equality (isRssVerifiedMatch) is the ONLY auto-promotion signal.
+  // Name-only matches — and shows with no stored rss_url, which can never
+  // verify — fall through to the review report below.
+  type ReviewItem = { show: ShowRow; podcast: PodscanPodcast | null; searched: boolean };
+  const review: ReviewItem[] = [];
+  if (nameMatchQueue.length > 0) {
+    console.log(`--- Name-search pass (${nameMatchQueue.length} shows) ---`);
+    for (const [i, show] of nameMatchQueue.entries()) {
+      try {
+        await sleep(REQUEST_DELAY_MS);
+        const podcast = await podscan.findPodcastByName(show.name);
+        if (podcast && isRssVerifiedMatch({ rss_url: show.rss_url }, podcast)) {
+          resolved.push({ show, podscanId: podcast.podcast_id, source: "rss" });
+          console.log(
+            `  RSS-VERIFIED: "${show.name}" → ${podcast.podcast_id} "${podcast.podcast_name}"`
+          );
+        } else {
+          review.push({ show, podcast, searched: true });
+        }
+      } catch (err) {
+        console.log(
+          `  SEARCH ERROR: "${show.name}": ${err instanceof Error ? err.message : err}`
+        );
+        review.push({ show, podcast: null, searched: true });
+        if (err instanceof PodscanError && err.status === 429) {
+          console.log(
+            "  Rate limit exhausted — remaining shows go to review unsearched."
+          );
+          review.push(
+            ...nameMatchQueue
+              .slice(i + 1)
+              .map((s) => ({ show: s, podcast: null, searched: false }))
+          );
+          break;
+        }
+      }
+    }
+    console.log(
+      `  promoted ${resolved.filter((r) => r.source === "rss").length} rss-verified · ${review.length} stay in review\n`
+    );
+  }
+
+  // ---- Fetch + write demographics for resolved shows ----
   let fetched = 0;
   let noData = 0;
   let wrote = 0;
@@ -232,38 +284,33 @@ async function main() {
     }
   }
 
-  // ---- Name-match report (REPORT ONLY — never written) ----
-  if (nameMatchQueue.length > 0) {
-    console.log(
-      `\n--- Name-match candidates (report only; approve manually) ---`
-    );
-    for (const show of nameMatchQueue) {
-      try {
-        await sleep(REQUEST_DELAY_MS);
-        const podcast: PodscanPodcast | null = await podscan.findPodcastByName(
-          show.name
-        );
-        if (!podcast) {
-          console.log(`  NO MATCH: "${show.name}"`);
-          continue;
-        }
-        const verified = isVerifiedPodcastMatch(
-          { name: show.name, rss_url: show.rss_url },
-          podcast
-        );
+  // ---- Review report (REPORT ONLY — never written) ----
+  if (review.length > 0) {
+    console.log(`\n--- Review queue (report only; approve manually) ---`);
+    for (const { show, podcast, searched } of review) {
+      if (!podcast) {
         console.log(
-          `  ${verified ? "VERIFIED" : "unverified"}: "${show.name}" → ${podcast.podcast_id} "${podcast.podcast_name}"` +
-            `\n      show rss: ${show.rss_url ?? "—"}\n      pod  rss: ${podcast.rss_url ?? podcast.rss_url_normalized ?? "—"}`
+          `  ${searched ? "NO MATCH" : "UNSEARCHED (rate-limited)"}: "${show.name}"`
         );
-      } catch (err) {
-        console.log(
-          `  SEARCH ERROR: "${show.name}": ${err instanceof Error ? err.message : err}`
-        );
-        if (err instanceof PodscanError && err.status === 429) {
-          console.log("  Rate limit exhausted — stopping name-match report.");
-          break;
-        }
+        continue;
       }
+      // RSS matches were promoted above, so a both-sided feed here MISmatches
+      // — the strongest "this is the wrong podcast (or a moved feed)" signal.
+      const bothHaveRss =
+        !!show.rss_url?.trim() &&
+        !!(podcast.rss_url ?? podcast.rss_url_normalized);
+      const status = bothHaveRss
+        ? "RSS MISMATCH"
+        : isVerifiedPodcastMatch(
+              { name: show.name, rss_url: show.rss_url },
+              podcast
+            )
+          ? "name-equal (no rss to verify)"
+          : "unverified";
+      console.log(
+        `  ${status}: "${show.name}" → ${podcast.podcast_id} "${podcast.podcast_name}"` +
+          `\n      show rss: ${show.rss_url ?? "—"}\n      pod  rss: ${podcast.rss_url ?? podcast.rss_url_normalized ?? "—"}`
+      );
     }
     console.log(
       `\nTo take a reviewed match manually:` +
@@ -273,15 +320,25 @@ async function main() {
   }
 
   // ---- Summary ----
+  const bySource = (s: Resolved["source"]) =>
+    resolved.filter((r) => r.source === s).length;
+  const reviewNoRss = review.filter(
+    ({ show }) => !show.rss_url?.trim()
+  ).length;
   console.log(`\n=== Summary (${APPLY ? "APPLY" : "DRY RUN"}) ===`);
-  console.log(`  id-resolved shows:       ${resolved.length}`);
+  console.log(
+    `  resolved shows:          ${resolved.length} (column ${bySource("column")}, outreach ${bySource("outreach")}, rss-verified ${bySource("rss")})`
+  );
   console.log(`  demographics fetched:    ${fetched} (no data: ${noData}, errors: ${fetchErrors})`);
   console.log(
     APPLY
       ? `  rows written:            ${wrote}`
       : `  rows that would write:   ${wouldWrite}   (re-run with --apply)`
   );
-  console.log(`  name-match review queue: ${nameMatchQueue.length}`);
+  console.log(`  review queue:            ${review.length}`);
+  console.log(
+    `  review with no rss_url:  ${reviewNoRss} (can never auto-verify)`
+  );
   console.log(`  outreach conflicts:      ${conflicts.length}`);
   console.log(
     `  demographics coverage:   ${withDemoBefore}/${shows.length} before${APPLY ? ` → ${withDemoBefore + wroteDemo} after` : ""}\n`

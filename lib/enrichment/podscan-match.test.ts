@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 
-import { isVerifiedPodcastMatch, normalizeShowName } from "./podscan-match";
+import {
+  isRssVerifiedMatch,
+  isVerifiedPodcastMatch,
+  normalizeShowName,
+} from "./podscan-match";
 import type { PodscanPodcast } from "./podscan";
 
 function makePodcast(overrides: Partial<PodscanPodcast> = {}): PodscanPodcast {
@@ -16,6 +20,41 @@ describe("normalizeShowName", () => {
     expect(normalizeShowName("  Health &amp;  Wellness SHOW ")).toBe(
       "health & wellness show"
     );
+  });
+});
+
+describe("isRssVerifiedMatch", () => {
+  it("verifies on exact normalized feed equality (protocol/slash insensitive)", () => {
+    expect(
+      isRssVerifiedMatch(
+        { rss_url: "https://feeds.x.com/rec/" },
+        makePodcast({ rss_url: "http://feeds.x.com/rec" })
+      )
+    ).toBe(true);
+    expect(
+      isRssVerifiedMatch(
+        { rss_url: "https://feeds.x.com/rec" },
+        makePodcast({ rss_url_normalized: "feeds.x.com/rec" })
+      )
+    ).toBe(true);
+  });
+
+  it("never verifies without our rss_url — identical names are not consulted", () => {
+    expect(isRssVerifiedMatch({ rss_url: null }, makePodcast())).toBe(false);
+    expect(isRssVerifiedMatch({}, makePodcast())).toBe(false);
+    expect(isRssVerifiedMatch({ rss_url: "  " }, makePodcast())).toBe(false);
+  });
+
+  it("never verifies when the podcast has no feed, and rejects mismatched feeds", () => {
+    expect(
+      isRssVerifiedMatch({ rss_url: "https://feeds.x.com/rec" }, makePodcast())
+    ).toBe(false);
+    expect(
+      isRssVerifiedMatch(
+        { rss_url: "https://feeds.x.com/a" },
+        makePodcast({ rss_url: "https://feeds.x.com/b" })
+      )
+    ).toBe(false);
   });
 });
 
