@@ -49,6 +49,14 @@ export const REASONING_TOP_N = 25;
 /** Output cap per ring: up to REASONING_TOP_N short reasoning strings + JSON. */
 const REASONING_MAX_TOKENS = 3000;
 
+/**
+ * Cap on the per-show description line (applied after HTML stripping). Median
+ * stored description is ~530 chars and positioning is front-loaded, so 500
+ * keeps roughly half of them whole while bounding the worst-case ring prompt
+ * at ~REASONING_TOP_N × 500 chars regardless of outliers (max observed 2.7K).
+ */
+export const DESCRIPTION_MAX_CHARS = 500;
+
 // Bound the discover POST: per-ring calls run concurrently, each capped here.
 // Mirrors the interpret endpoint (60s, no retry) so the worst case stays
 // predictable even though there is no lock TTL to respect here.
@@ -249,6 +257,7 @@ function formatShowForPrompt(entry: ScoredShowEntry): string {
     ...(show.audience_interests ?? []),
   ]);
   const catStr = cats.length > 0 ? cats.join(", ") : "(uncategorized)";
+  const description = cleanDescription(show.description);
 
   const topical = score.drivers.topicalRelevance.degraded
     ? "topical relevance UNMEASURED"
@@ -260,12 +269,60 @@ function formatShowForPrompt(entry: ScoredShowEntry): string {
     ? "audience fit UNMEASURED (no demographic data)"
     : `audience fit ${score.audienceFit} MEASURED`;
 
-  return [
-    `- id: ${show.id}`,
-    `  name: ${show.name}`,
-    `  categories: ${catStr}`,
-    `  scores: ${topical}; ${pp}; ${audience}`,
-  ].join("\n");
+  const lines = [`- id: ${show.id}`, `  name: ${show.name}`];
+  // Omitted (not "(none)") when empty so the model never remarks on a gap.
+  if (description) lines.push(`  description: ${description}`);
+  lines.push(`  categories: ${catStr}`, `  scores: ${topical}; ${pp}; ${audience}`);
+  return lines.join("\n");
+}
+
+/**
+ * Reduce a stored show description to prompt-safe plain text. RSS-sourced
+ * descriptions carry raw HTML (<p>, <br>, entities); regex tag-stripping is
+ * prompt hygiene, not sanitization — a malformed tag degrades to stray text
+ * in the prompt, nothing worse. Total: any input yields a (possibly empty)
+ * string, so a bad description can never break the fail-soft reasoning path.
+ * Truncates at a word boundary after stripping, since tags inflate raw
+ * character counts.
+ */
+export function cleanDescription(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const text = raw
+    .replace(/<[^>]*>/g, " ")
+    .replace(
+      /&(amp|lt|gt|quot|apos|nbsp|#\d+|#x[0-9a-fA-F]+);/g,
+      (match, code: string) => {
+        switch (code) {
+          case "amp":
+            return "&";
+          case "lt":
+            return "<";
+          case "gt":
+            return ">";
+          case "quot":
+            return '"';
+          case "apos":
+            return "'";
+          case "nbsp":
+            return " ";
+          default: {
+            const value = code.startsWith("#x")
+              ? parseInt(code.slice(2), 16)
+              : parseInt(code.slice(1), 10);
+            return Number.isInteger(value) && value > 0 && value <= 0x10ffff
+              ? String.fromCodePoint(value)
+              : match;
+          }
+        }
+      }
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= DESCRIPTION_MAX_CHARS) return text;
+  const cut = text.slice(0, DESCRIPTION_MAX_CHARS);
+  const lastSpace = cut.lastIndexOf(" ");
+  const atBoundary = lastSpace > 0 ? cut.slice(0, lastSpace) : cut;
+  return `${atBoundary.replace(/[\s.,;:—–-]+$/, "")}…`;
 }
 
 // ============================================================

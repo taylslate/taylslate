@@ -12,7 +12,9 @@ import {
   generateGroupReasoning,
   buildReasoningUserContent,
   templateReasoning,
+  cleanDescription,
   REASONING_TOP_N,
+  DESCRIPTION_MAX_CHARS,
   type ReasoningDeps,
 } from "./conviction-reasoning";
 import type { CallLLMInput } from "@/lib/llm/client";
@@ -60,7 +62,7 @@ function makeScore(
   };
 }
 
-// Minimal Show — the module reads only id/name/categories/audience_interests.
+// Minimal Show — the module reads only id/name/description/categories/audience_interests.
 function makeShow(id: string, overrides: Partial<Show> = {}): Show {
   return {
     id,
@@ -230,6 +232,50 @@ describe("templateReasoning", () => {
 });
 
 // ============================================================
+// Description cleaner (pure)
+// ============================================================
+
+describe("cleanDescription", () => {
+  it("strips HTML tags and decodes common entities", () => {
+    const out = cleanDescription(
+      "<p>Health &amp; fitness, <b>no subject</b> off limits &#8212; it&#39;s fun.</p>"
+    );
+    expect(out).toBe("Health & fitness, no subject off limits — it's fun.");
+  });
+
+  it("collapses whitespace left behind by block tags", () => {
+    expect(cleanDescription("<p>Line one</p>\n<p>Line two</p>")).toBe(
+      "Line one Line two"
+    );
+  });
+
+  it("returns empty string for null, undefined, and whitespace-only input", () => {
+    expect(cleanDescription(undefined)).toBe("");
+    expect(cleanDescription(null)).toBe("");
+    expect(cleanDescription("   ")).toBe("");
+    expect(cleanDescription("<p></p>")).toBe("");
+  });
+
+  it("truncates long descriptions at a word boundary with an ellipsis", () => {
+    const long = "word ".repeat(200).trim(); // 999 chars of whole words
+    const out = cleanDescription(long);
+    expect(out.length).toBeLessThanOrEqual(DESCRIPTION_MAX_CHARS + 1);
+    expect(out.endsWith("…")).toBe(true);
+    // Word-boundary cut: the text before the ellipsis is a whole word.
+    expect(out).toMatch(/word…$/);
+  });
+
+  it("leaves a description at or under the cap untouched", () => {
+    const short = "a".repeat(DESCRIPTION_MAX_CHARS);
+    expect(cleanDescription(short)).toBe(short);
+  });
+
+  it("survives an invalid numeric entity without throwing", () => {
+    expect(cleanDescription("bad &#99999999; entity")).toContain("bad");
+  });
+});
+
+// ============================================================
 // User-content builder
 // ============================================================
 
@@ -248,6 +294,39 @@ describe("buildReasoningUserContent", () => {
     expect(content).toContain("topical relevance 85 MEASURED");
     expect(content).toContain("audience fit UNMEASURED"); // the degraded flag is passed through
     expect(content).toContain("id: s1");
+  });
+
+  it("includes the description line, HTML-stripped", () => {
+    const entry = makeEntry("s1", makeScore(), {
+      description:
+        "<p>A fun, enlightening look at health &amp; fitness with a world-renown host.</p>",
+    });
+    const content = buildReasoningUserContent(makeRing(), "", [entry]);
+    expect(content).toContain(
+      "description: A fun, enlightening look at health & fitness with a world-renown host."
+    );
+    expect(content).not.toContain("<p>");
+  });
+
+  it("omits the description line entirely when the show has none", () => {
+    // makeShow sets no description — the line must be absent, not "(none)".
+    const content = buildReasoningUserContent(makeRing(), "", [makeEntry("s1")]);
+    expect(content).not.toContain("description:");
+  });
+
+  it("truncates an outlier description so the prompt stays bounded", () => {
+    const entry = makeEntry("s1", makeScore(), {
+      description: "sentence ".repeat(400), // 3.6K chars, past the observed max
+    });
+    const content = buildReasoningUserContent(makeRing(), "", [entry]);
+    const descLine = content
+      .split("\n")
+      .find((l) => l.trimStart().startsWith("description:"));
+    expect(descLine).toBeDefined();
+    expect(descLine!.length).toBeLessThanOrEqual(
+      "  description: ".length + DESCRIPTION_MAX_CHARS + 1
+    );
+    expect(descLine!.endsWith("…")).toBe(true);
   });
 });
 
