@@ -1,8 +1,10 @@
 # Taylslate — STATUS
 
-_Volatile snapshot. Updated Sep 3, 2026. **Frontier: Pile A (A1–A4) code + tests DONE (1070 tests) AND G6 LIVE PROOF DONE (2026-09-03) — the full DocuSign Connect → brand signature → Stripe SetupIntent → card-on-file chain ran end to end against production DocuSign (`na4`) + live Stripe (`acct_1Kejm5Fw`); A1–A6 are all live-proven — **Pile A is COMPLETE**: the Sep 3 G6 run closed A1–A4, and A5 (email deliverability — SPF/DKIM/DMARC all passing to an external Gmail inbox) + A6 (outreach From:-name verified live) closed the same day (see `PILE_A_PROOF.md` → "Live run — 2026-09-03"). Migration 033 (`deals.card_on_file_at`) now applied + introspected. DocuSign production cutover DONE + live-verified against `na4`. Next unproven seam — a live Stripe *charge* / settlement (card-on-file is proven end to end; a live charge has never run).** Production key promoted, all five `DOCUSIGN_*` env vars cut to Production scope, auth + createEnvelope proven against `na4.docusign.net` (envelope `6bd19309`, voided). Region-host bug (`www` hardcode → `base_uri` discovery via `getUserInfo`) fixed + Codex-reviewed, commits `0774bba` + `738b152`, deployed green. NOW live-verified vs prod (2026-09-03 first live G6 run): Connect webhook (real `recipient-completed`, retry 0), embedded brand signing through the real route, and completion→SetupIntent→card-on-file — all against production `na4` + live Stripe `acct_1Kejm5Fw`. Correction (standing): July "end-to-end" runs never fired envelope creation — signature loop first ran Aug 4 (sandbox), Aug 7 (prod). Prior, still true: accept-flow cluster + date/cadence fixes SHIPPED + LIVE-VERIFIED July 16/23 (migrations 031/032); brand auth L1-3, impersonation, seeding, Wave 14 Phase 2D all COMPLETE._
+_Volatile snapshot. Updated Sep 10, 2026. **Since Sep 8, a discovery-data workstream shipped on top of the completed Pile A: conviction floor removed (`07e30cc`), Podscan demographics hydration + brand-level target audience (`8143155`, migration 035), show descriptions (`1898f17`) then sponsor history (`d9c239e`) fed to Layer 4, and both catalog backfills APPLIED — 91/115 discoverable shows now carry a podscan_id, 90 carry demographics, 90 carry current_sponsors (see the Sep 8–10 "Most recent" block).** Prior frontier: Pile A (A1–A4) code + tests DONE (1070 tests) AND G6 LIVE PROOF DONE (2026-09-03) — the full DocuSign Connect → brand signature → Stripe SetupIntent → card-on-file chain ran end to end against production DocuSign (`na4`) + live Stripe (`acct_1Kejm5Fw`); A1–A6 are all live-proven — **Pile A is COMPLETE**: the Sep 3 G6 run closed A1–A4, and A5 (email deliverability — SPF/DKIM/DMARC all passing to an external Gmail inbox) + A6 (outreach From:-name verified live) closed the same day (see `PILE_A_PROOF.md` → "Live run — 2026-09-03"). Migration 033 (`deals.card_on_file_at`) now applied + introspected. DocuSign production cutover DONE + live-verified against `na4`. Next unproven seam — a live Stripe *charge* / settlement (card-on-file is proven end to end; a live charge has never run).** Production key promoted, all five `DOCUSIGN_*` env vars cut to Production scope, auth + createEnvelope proven against `na4.docusign.net` (envelope `6bd19309`, voided). Region-host bug (`www` hardcode → `base_uri` discovery via `getUserInfo`) fixed + Codex-reviewed, commits `0774bba` + `738b152`, deployed green. NOW live-verified vs prod (2026-09-03 first live G6 run): Connect webhook (real `recipient-completed`, retry 0), embedded brand signing through the real route, and completion→SetupIntent→card-on-file — all against production `na4` + live Stripe `acct_1Kejm5Fw`. Correction (standing): July "end-to-end" runs never fired envelope creation — signature loop first ran Aug 4 (sandbox), Aug 7 (prod). Prior, still true: accept-flow cluster + date/cadence fixes SHIPPED + LIVE-VERIFIED July 16/23 (migrations 031/032); brand auth L1-3, impersonation, seeding, Wave 14 Phase 2D all COMPLETE._
 
 ## Podscan data audit (read-only, July 23, 2026) — what we consume vs. what's null in prod
+
+**SUPERSEDED IN PART (Sep 8–10, 2026):** the two headline gaps below are closed — `shows.demographics` is no longer always `{}` (hydration + backfill live; 90/115 discoverable shows covered) and `current_sponsors` is no longer empty-from-discovery (backfill applied to 90 shows; hydration carries it into Layer 4). See the Sep 8–10 "Most recent" block. The rss_url / past_sponsors / two-clients facts still hold.
 
 Inventory of the four Podscan-derived fields; **no code changed** (audit only). Verification script committed `378698a` (`scripts/verify-podscan-email-fill.ts`). Actionable follow-ups in PRODUCT_BACKLOG.md → Foundational Architecture; the two-client fact is now a CLAUDE.md invariant.
 
@@ -12,6 +14,16 @@ Inventory of the four Podscan-derived fields; **no code changed** (audit only). 
 - **`shows.past_sponsors` — dead schema.** Never written by any prod code (test seed only), never read.
 - **`shows.current_sponsors` — written only by the admin enrich route** (`/api/shows/[id]/enrich`, `enrich-batch`), empty from the automated discovery path; surfaced in the outreach-email prompt + campaign UI, **never scored**.
 - **Two separate Podscan clients:** `lib/enrichment/podscan.ts` (live: discovery + enrich) and `lib/podscan/` (Wave 5 scorer only, dead).
+
+## Most recent — discovery data layer: floor removal → demographics → descriptions → sponsors, backfills APPLIED (Sep 8–10, 2026)
+
+Four builds in sequence closed the two July-audit data gaps and reshaped discovery output. All Vercel-green; latest deploy `dpl_HQhv3iUjT5dHDzE5m1RXrVXeNxh5` (`d9c239e`). **1155 tests (106 files)**, tsc clean.
+
+- **Conviction floor REMOVED (`07e30cc`, Sep 8).** Every scored candidate persists and renders — "return more results, not fewer"; curation is sort order, not a cutoff. Warnings instead of exclusion, estimated values marked as estimates, and brand selection captured as a signal (`selection.recorded`). `interpret/confirm` now calls `clearConvictionScores` on every (re-)confirm, closing the stale-scores-on-re-confirm defect; the Q5 stale-tier invariant below is formally relaxed. Calibration history in SCORING_CALIBRATION.md (incl. the measured-and-rejected ring-reasoning exclusion, `82173a7`).
+- **Demographics hydration + brand-level target audience (`8143155`, Sep 9; migration 035).** Pre-scoring hydration (`lib/discovery/hydrate-demographics.ts`): DB-first batched slug lookup, then Podscan `GET /podcasts/{id}/demographics` (Premium) for id-resolved candidates — audience fit now scores MEASURED wherever data exists (the July "always `{}`" gap). Brand-level target audience wired: `interpret` reads the brand profile's age range + gender and emits `product_attributes.target_audience` on the pattern for the audience-fit scorer. Backfill (`scripts/backfill-show-demographics.ts` + `b53962c` RSS-verified matching, Sep 10) APPLIED: **91/115 discoverable shows have a podscan_id, 90/115 have demographics.** Resolution policy: id written only from a certain source (existing column, exact outreach join, or RSS-feed-URL equality) — name-only matches stay report-only after the first review queue caught two first-result mismatches.
+- **Layer 4 reasoning inputs: descriptions (`1898f17`, Sep 9) then sponsors (`d9c239e`, Sep 10).** `formatShowForPrompt` now carries a cleaned description (HTML-stripped, 500-char cap) and a `sponsors detected` line (cap 10) per show; `conviction-reasoning.md` instructs the model: sponsors are revealed-preference evidence, may include house ads, weigh external brands. Both lines omitted when empty.
+- **Sponsor backfill APPLIED (`d9c239e`, Sep 10).** Two Podscan calls per show — `GET /podcasts/{id}/analysis` (all-time list, up to 50, no dates) + `GET /podcasts/{id}/latest/sponsor` (the only recency signal). Stored order: still-running head (latest sponsored episode; median snapshot Sep 8) then all-time frequency, **capped at 10** (the tail is where extraction junk sat — placeholders, email addresses; 2,528 of 3,388 names dropped by cap). **90 of 91 reachable shows written (860 names); 1 zero-sponsor (Ottoman History); 24 unreachable (no podscan_id)**; `data_sources` gained `podscan` on written rows. Report-only flags in the dry run: token-overlap self-promo (24 shows) + Podscan's `sponsor_is_commercial=false`. Sponsors ride the demographics hydration Pass 1 into candidates (DB-only; **never a scoring input**).
+- **Tags poison writes REMOVED (`d9c239e`).** The enrich route wrote `["N+ episodes"]` / `["Country: X"]` display badges into `shows.tags`; nothing renders or reads `shows.tags` anywhere — both writes deleted, column stays clean (`[]` across the catalog).
 
 ## Most recent — Pile A COMPLETE: A5 email deliverability + A6 outreach From:-name verified live (Sep 3, 2026)
 
@@ -232,11 +244,17 @@ frontier is a live Stripe charge / settlement (card-on-file is proven; a charge 
 never run).**
 
 ## Tests
-1029 passing (94 files). tsc clean. eslint: all changed files clean (pre-existing
+1155 passing (106 files). tsc clean. eslint: all changed files clean (pre-existing
 unused-var warnings only). `next build` green.
 
 ## Migration state
-001–034 applied and introspected. **034** (`brand_profiles_brand_name` —
+001–035 applied and introspected. **035** (`shows_podscan_id` —
+`shows.podscan_id TEXT` + partial index, the key for Podscan podcast-level
+endpoints: demographics hydration/backfill and the sponsor backfill. Deliberately
+NOT unique — accept-materialized `otr-` rows may duplicate a catalog podcast.
+Set at discovery ingest and by the backfill; NULL for YouTube-only/unmatched.
+Applied + introspected Sep 2026; 91/115 discoverable shows populated. Idempotent,
+grandfathered grants — no grant block.) **034** (`brand_profiles_brand_name` —
 `brand_profiles.brand_name TEXT`, the durable A6 brand-name field preferred over
 the legacy `brand_identity` paragraph split for the outreach From: name, IO
 advertiser name, and pitch/notification sender) applied + introspected Sep 3,
@@ -290,8 +308,8 @@ inbox.
 - scale-watchlist not tier-validated; plan-handoff non-atomic double-write —
   both degrade safely.
 - Q5 invariant: ~~stale-tier safety relies on "only composite ≥ MEDIUM_FLOOR rows
-  persist."~~ **RELAXED (Sep 7, 2026, uncommitted on `main` — pending deploy +
-  re-run verify).** The medium conviction floor was removed (see
+  persist."~~ **RELAXED (committed `07e30cc` Sep 8, 2026, deployed green).** The
+  medium conviction floor was removed (see
   SCORING_CALIBRATION.md): every scored candidate now persists, so below-floor
   rows DO persist by design. This is safe because (a) tier is now a pure function
   of cost + affordability, not the floor — a stale tier at worst mis-sorts a weak
