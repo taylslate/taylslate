@@ -118,10 +118,15 @@ function makePattern(overrides: Record<string, unknown> = {}): CampaignPatternRo
   };
 }
 
-function llmMessage(text: string, stopReason = "end_turn"): Anthropic.Message {
+function llmMessage(
+  text: string,
+  stopReason = "end_turn",
+  usage?: { input_tokens: number; output_tokens: number }
+): Anthropic.Message {
   return {
     stop_reason: stopReason,
     content: [{ type: "text", text }],
+    ...(usage ? { usage } : {}),
   } as unknown as Anthropic.Message;
 }
 
@@ -523,6 +528,121 @@ describe("generateGroupReasoning", () => {
 
   it("defaults to REASONING_TOP_N when no topN is injected", () => {
     expect(REASONING_TOP_N).toBeGreaterThan(0);
+  });
+
+  // ============================================================
+  // Failure-cause telemetry in event payloads
+  // ============================================================
+
+  it("success payload: failure fields null, stop_reason and token usage recorded", async () => {
+    const group = makeGroup(makeRing(), [makeEntry("a")]);
+    const { deps, events } = makeDeps({
+      llm: async () =>
+        llmMessage(sharpResponse(["a"]), "end_turn", {
+          input_tokens: 9418,
+          output_tokens: 2310,
+        }),
+    });
+
+    await generateGroupReasoning("camp-1", [group], makePattern(), deps);
+
+    const payload = events.find(
+      (e) => e.eventType === "conviction.reasoning_generated"
+    )!.payload;
+    expect(payload.failure_stage).toBeNull();
+    expect(payload.error_type).toBeNull();
+    expect(payload.error_message).toBeNull();
+    expect(payload.stop_reason).toBe("end_turn");
+    expect(payload.input_tokens).toBe(9418);
+    expect(payload.output_tokens).toBe(2310);
+  });
+
+  it("LLM throw payload: stage llm_call_threw with the error type and message", async () => {
+    const group = makeGroup(makeRing(), [makeEntry("a")]);
+    const { deps, events } = makeDeps({
+      llm: async () => {
+        throw new Error("Request timed out.");
+      },
+    });
+
+    await generateGroupReasoning("camp-1", [group], makePattern(), deps);
+
+    const payload = events.find(
+      (e) => e.eventType === "conviction.reasoning_failed"
+    )!.payload;
+    expect(payload.failure_stage).toBe("llm_call_threw");
+    expect(payload.error_type).toBe("Error");
+    expect(payload.error_message).toBe("Request timed out.");
+    expect(payload.stop_reason).toBeNull();
+    expect(payload.input_tokens).toBeNull();
+    expect(payload.output_tokens).toBeNull();
+  });
+
+  it("max_tokens truncation is named distinctly (previously a silent parse failure)", async () => {
+    const group = makeGroup(makeRing(), [makeEntry("a")]);
+    const { deps, events } = makeDeps({
+      llm: async () =>
+        llmMessage('{"a": "cut mid-sent', "max_tokens", {
+          input_tokens: 9418,
+          output_tokens: 3000,
+        }),
+    });
+
+    await generateGroupReasoning("camp-1", [group], makePattern(), deps);
+
+    const payload = events.find(
+      (e) => e.eventType === "conviction.reasoning_failed"
+    )!.payload;
+    expect(payload.failure_stage).toBe("max_tokens_truncated");
+    expect(payload.stop_reason).toBe("max_tokens");
+    expect(payload.output_tokens).toBe(3000);
+    // Still fail-soft: the show templated.
+    expect(group.shows[0].reasoning).toMatch(/topical/i);
+  });
+
+  it("malformed JSON with a normal stop_reason: stage parse_failed", async () => {
+    const group = makeGroup(makeRing(), [makeEntry("a")]);
+    const { deps, events } = makeDeps({
+      llm: async () => llmMessage("not json {{{"),
+    });
+
+    await generateGroupReasoning("camp-1", [group], makePattern(), deps);
+
+    const payload = events.find(
+      (e) => e.eventType === "conviction.reasoning_failed"
+    )!.payload;
+    expect(payload.failure_stage).toBe("parse_failed");
+    expect(payload.stop_reason).toBe("end_turn");
+  });
+
+  it("refusal payload: stage refusal", async () => {
+    const group = makeGroup(makeRing(), [makeEntry("a")]);
+    const { deps, events } = makeDeps({
+      llm: async () => llmMessage("", "refusal"),
+    });
+
+    await generateGroupReasoning("camp-1", [group], makePattern(), deps);
+
+    const payload = events.find(
+      (e) => e.eventType === "conviction.reasoning_failed"
+    )!.payload;
+    expect(payload.failure_stage).toBe("refusal");
+    expect(payload.stop_reason).toBe("refusal");
+  });
+
+  it("missing keys payload: stage missing_keys with the miss count", async () => {
+    const group = makeGroup(makeRing(), [makeEntry("a"), makeEntry("b")]);
+    const { deps, events } = makeDeps({
+      llm: async () => llmMessage(sharpResponse(["a"])), // 'b' missing
+    });
+
+    await generateGroupReasoning("camp-1", [group], makePattern(), deps);
+
+    const payload = events.find(
+      (e) => e.eventType === "conviction.reasoning_failed"
+    )!.payload;
+    expect(payload.failure_stage).toBe("missing_keys");
+    expect(payload.error_message).toContain("1 of 2");
   });
 
   // The contract you must be able to trust: EVERY failure mode routes to a

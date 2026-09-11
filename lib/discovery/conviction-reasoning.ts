@@ -14,6 +14,11 @@
 // the per-ring top-N. Reasoning is best-effort; the scores always render.
 // Nothing here throws to the orchestrator.
 //
+// Failure-cause telemetry: the reasoning events also record WHY a ring
+// templated (failure_stage / error_type / error_message / stop_reason) and the
+// response's input_tokens / output_tokens (per-run cost and output pressure
+// derivable from events) — observability only; fallback behavior unchanged.
+//
 // Honest-degrade at launch: discovered shows have empty demographics and rings
 // carry no structured target, so audience fit scores a neutral 50 flagged
 // `degraded`. The prompt is told which dimensions are UNMEASURED so it never
@@ -43,8 +48,15 @@ import type { ScoredRingGroup, ScoredShowEntry } from "./conviction-discovery";
  * Shows per ring sent to the LLM (groups arrive sorted by composite desc).
  * Shows beyond this in a ring get the templated sentence — bounds token cost
  * and keeps the model focused on the shows the brand looks at first.
+ *
+ * Lowered 25 → 20 (Sep 2026): with sponsor lines in the prompt, per-ring
+ * output ran to ~2.9K tokens at 25 shows — 96% of REASONING_MAX_TOKENS and
+ * ~60s of generation, straddling REASONING_TIMEOUT_MS. At 20 the expected
+ * output is ~2.3K (~77% of cap, ~48s). Measured coverage cost on the SaunaBox
+ * rings: every high-band show sat in ranks 1-15; the demoted ranks 21-25 were
+ * low-band in 3 of 4 rings.
  */
-export const REASONING_TOP_N = 25;
+export const REASONING_TOP_N = 20;
 
 /** Output cap per ring: up to REASONING_TOP_N short reasoning strings + JSON. */
 const REASONING_MAX_TOKENS = 3000;
@@ -66,9 +78,14 @@ export const DESCRIPTION_MAX_CHARS = 500;
 export const SPONSORS_MAX_ITEMS = 10;
 
 // Bound the discover POST: per-ring calls run concurrently, each capped here.
-// Mirrors the interpret endpoint (60s, no retry) so the worst case stays
-// predictable even though there is no lock TTL to respect here.
-const REASONING_TIMEOUT_MS = 60_000;
+// 90s — sized to this call, not to the interpret endpoint's 60s (that bound
+// exists to respect a lock TTL this path doesn't have). Generation at 25 shows
+// with sponsor lines measured ~60s wall clock; at REASONING_TOP_N=20 the
+// expectation is ~48s, so 90s is ~1.9x headroom. The discover route exports no
+// maxDuration, so Vercel's 300s default applies — ~30s of discovery/scoring
+// plus this concurrent fan-out fits comfortably.
+// No retry: LLM_MAX_RETRIES stays 0 by standing invariant.
+const REASONING_TIMEOUT_MS = 90_000;
 const REASONING_MAX_RETRIES = 0;
 
 // ---- Injected dependencies (default to the real implementations) ----
@@ -86,6 +103,36 @@ const defaultDeps: ReasoningDeps = {
   emit: logEvent,
   topN: REASONING_TOP_N,
 };
+
+// ---- Failure-cause telemetry ----
+
+/**
+ * Why a ring fell back to templates. Threaded into the domain-event payload so
+ * the cause is queryable from domain_events instead of living only in
+ * ephemeral console.warn output (the Sep 2026 timeout regression was only
+ * diagnosable from Vercel runtime logs). Observability only — every stage
+ * still routes to templateReasoning.
+ */
+interface ReasoningFailure {
+  stage:
+    | "llm_call_threw"
+    | "refusal"
+    | "no_text_block"
+    | "max_tokens_truncated"
+    | "parse_failed"
+    | "missing_keys";
+  error_type: string | null;
+  error_message: string | null;
+}
+
+/** What came back from the LLM call, plus the telemetry the event records. */
+interface ExtractionResult {
+  prose: Record<string, string> | null;
+  failure: ReasoningFailure | null;
+  stopReason: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+}
 
 // ============================================================
 // Public entry — mutates ScoredShowEntry.reasoning in place
@@ -139,8 +186,8 @@ async function generateRingReasoning(
   }
 
   // Call the model for the head. Any throw is swallowed → prose stays null →
-  // the head templates below.
-  let prose: Record<string, string> | null = null;
+  // the head templates below; the cause is kept for the event payload.
+  let extraction: ExtractionResult;
   try {
     const message = await d.callLLM({
       system: d.loadSystemPrompt(),
@@ -149,24 +196,35 @@ async function generateRingReasoning(
       timeoutMs: REASONING_TIMEOUT_MS,
       maxRetries: REASONING_MAX_RETRIES,
     });
-    prose = extractReasoningMap(message);
+    extraction = extractReasoningMap(message);
   } catch (err) {
     console.warn(
       `[conviction-reasoning] LLM call threw for ring "${group.ring.label}":`,
       err instanceof Error ? err.message : err
     );
-    prose = null;
+    extraction = {
+      prose: null,
+      failure: {
+        stage: "llm_call_threw",
+        error_type: err instanceof Error ? err.constructor.name : "unknown",
+        error_message: err instanceof Error ? err.message : String(err),
+      },
+      stopReason: null,
+      inputTokens: null,
+      outputTokens: null,
+    };
   }
 
   // Map prose back by show id; any missing / non-usable entry templates.
-  let usedTemplate = false;
+  const { prose } = extraction;
+  let missingKeys = 0;
   for (const entry of head) {
     const fromLLM = prose ? prose[entry.show.id] : undefined;
     if (typeof fromLLM === "string" && fromLLM.trim()) {
       entry.reasoning = fromLLM.trim();
     } else {
       entry.reasoning = templateReasoning(entry);
-      usedTemplate = true;
+      if (prose !== null) missingKeys += 1;
     }
   }
 
@@ -174,7 +232,16 @@ async function generateRingReasoning(
   // show; `failed` = we fell back to a template for at least one of them. A
   // long ring whose head succeeded but whose tail templated still counts as
   // generated — the part we called for succeeded.
-  const ringSucceeded = prose !== null && !usedTemplate;
+  const failure: ReasoningFailure | null =
+    extraction.failure ??
+    (missingKeys > 0
+      ? {
+          stage: "missing_keys",
+          error_type: null,
+          error_message: `${missingKeys} of ${head.length} show ids missing or empty in the LLM map`,
+        }
+      : null);
+  const ringSucceeded = failure === null;
   await safeEmit(d, {
     eventType: ringSucceeded
       ? "conviction.reasoning_generated"
@@ -188,6 +255,12 @@ async function generateRingReasoning(
       shows_in_ring: entries.length,
       shows_called: head.length,
       used_template: !ringSucceeded,
+      failure_stage: failure?.stage ?? null,
+      error_type: failure?.error_type ?? null,
+      error_message: failure?.error_message ?? null,
+      stop_reason: extraction.stopReason,
+      input_tokens: extraction.inputTokens,
+      output_tokens: extraction.outputTokens,
     },
   });
 }
@@ -197,21 +270,60 @@ async function generateRingReasoning(
 // ============================================================
 
 /**
- * Pull the show_id → reasoning map out of an LLM message, or null on any
- * non-usable response. A refusal here means callLLMWithFallback already
+ * Pull the show_id → reasoning map out of an LLM message, with null prose on
+ * any non-usable response — plus the failure cause and usage telemetry the
+ * event payload records. A refusal here means callLLMWithFallback already
  * retried with the explicit fallback model and STILL refused (or was already
  * on it) — null → template. No throw on any path.
  */
-function extractReasoningMap(
-  message: Anthropic.Message
-): Record<string, string> | null {
+function extractReasoningMap(message: Anthropic.Message): ExtractionResult {
+  const stopReason = message.stop_reason ?? null;
+  // Defensive `?.`: injected test doubles build partial Message objects.
+  const inputTokens = message.usage?.input_tokens ?? null;
+  const outputTokens = message.usage?.output_tokens ?? null;
+  const base = { stopReason, inputTokens, outputTokens };
+
   if (message.stop_reason === "refusal") {
     console.warn("[conviction-reasoning] refusal stop_reason — falling back to template");
-    return null;
+    return {
+      prose: null,
+      failure: { stage: "refusal", error_type: null, error_message: null },
+      ...base,
+    };
   }
   const textBlock = message.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") return null;
-  return parseReasoningJson(textBlock.text);
+  if (!textBlock || textBlock.type !== "text") {
+    console.warn("[conviction-reasoning] no text block in response — falling back to template");
+    return {
+      prose: null,
+      failure: { stage: "no_text_block", error_type: null, error_message: null },
+      ...base,
+    };
+  }
+  const prose = parseReasoningJson(textBlock.text);
+  if (prose === null) {
+    // stop_reason "max_tokens" + unparseable JSON = the output was cut
+    // mid-string by the cap. Previously indistinguishable from any other
+    // parse failure (and logged nowhere).
+    const truncated = message.stop_reason === "max_tokens";
+    console.warn(
+      truncated
+        ? "[conviction-reasoning] output hit max_tokens mid-JSON — falling back to template"
+        : "[conviction-reasoning] unparseable response JSON — falling back to template"
+    );
+    return {
+      prose: null,
+      failure: {
+        stage: truncated ? "max_tokens_truncated" : "parse_failed",
+        error_type: null,
+        error_message: null,
+      },
+      ...base,
+    };
+  }
+  // A max_tokens stop with parseable JSON can still be missing trailing shows;
+  // the caller's missing-keys pass catches that, and stop_reason is recorded.
+  return { prose, failure: null, ...base };
 }
 
 function parseReasoningJson(raw: string): Record<string, string> | null {
