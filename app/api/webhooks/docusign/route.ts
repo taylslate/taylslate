@@ -20,6 +20,7 @@ import {
 } from "@/lib/data/queries";
 import { logEvent } from "@/lib/data/events";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { dealIoNumber } from "@/lib/io/io-number";
 import {
   renderShowCountersignatureRequest,
 } from "@/lib/email/templates/show-countersignature-request";
@@ -338,20 +339,28 @@ export async function POST(request: NextRequest) {
     // row (envelope predates persistence, backfill not yet applied) is logged,
     // never thrown — the signing pipeline must not stall on IO bookkeeping.
     {
-      const dealIoNumber = `IO-${deal.id.slice(0, 8).toUpperCase()}`;
-      const { error: ioStatusErr } = await supabaseAdmin
+      const ioNumber = dealIoNumber(deal.id);
+      const { data: ioUpdated, error: ioStatusErr } = await supabaseAdmin
         .from("insertion_orders")
         .update({
           status: "signed",
           signed_at: action.signedAt,
           updated_at: new Date().toISOString(),
         })
-        .eq("io_number", dealIoNumber)
-        .eq("deal_id", deal.id);
+        .eq("io_number", ioNumber)
+        .eq("deal_id", deal.id)
+        .select("id");
       if (ioStatusErr) {
         console.error(
-          `[docusign webhook] insertion_orders signed update failed for ${dealIoNumber}:`,
+          `[docusign webhook] insertion_orders signed update failed for ${ioNumber}:`,
           ioStatusErr.message
+        );
+      } else if ((ioUpdated?.length ?? 0) === 0) {
+        // Zero rows matched — the deal has no persisted IO record (pre-backfill
+        // envelope). Loud log, not a throw: mark-delivered will hard-fail later
+        // if this is still true, and the backfill is the fix.
+        console.error(
+          `[docusign webhook] no insertion_orders row matched ${ioNumber} for deal ${deal.id} — IO record missing (backfill needed?)`
         );
       }
     }

@@ -293,6 +293,11 @@ export async function getIOById(id: string): Promise<(InsertionOrder & { line_it
   } as InsertionOrder & { line_items: IOLineItem[] };
 }
 
+// Legacy Wave 3-7 IO creation (manual deal flow + campaign batch). DocuSign-flow
+// deals must go through lib/io/persist-io.ts instead — it is service-role,
+// idempotent on the deal-derived io_number, and hard-fails on partial line-item
+// inserts, none of which hold here (user-scoped client; line-item insert failure
+// is swallowed and returns an IO with empty line_items).
 export async function createIO(
   io: Omit<InsertionOrder, "id" | "line_items" | "created_at" | "updated_at">,
   lineItems: Omit<IOLineItem, "id">[]

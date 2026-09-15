@@ -47,6 +47,7 @@ async function main(): Promise<void> {
   const { supabaseAdmin } = await import("../lib/supabase/admin");
   const { persistIoForDeal } = await import("../lib/io/persist-io");
   const { brandNameFromProfile } = await import("../lib/brand/display-name");
+  const { dealIoNumber } = await import("../lib/io/io-number");
   type Draft = import("../lib/pdf/io-generator").IoLineItemDraft;
 
   console.log(`=== IO-row backfill for DocuSign deals — ${APPLY ? "APPLY" : "DRY-RUN"} ===\n`);
@@ -100,7 +101,7 @@ async function main(): Promise<void> {
       const totalGross = Number(genEvt.payload.total_gross);
       const totalNet = Number(genEvt.payload.total_net);
       const postDates = (genEvt.payload.post_dates ?? []) as string[];
-      const expectedIoNumber = `IO-${deal.id.slice(0, 8).toUpperCase()}`;
+      const expectedIoNumber = dealIoNumber(deal.id);
       if (ioNumber !== expectedIoNumber) {
         throw new Error(
           `event io_number ${ioNumber} != deal-derived ${expectedIoNumber}`

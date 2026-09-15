@@ -17,6 +17,7 @@ import type {
 } from "@/lib/data/types";
 import { formatDateOnly } from "@/lib/format/date-only";
 import { CADENCE_DAYS, DEFAULT_CADENCE_DAYS } from "@/lib/io/cadence-days";
+import { dealIoNumber } from "@/lib/io/io-number";
 import { SIGNATURE_ANCHORS } from "@/lib/docusign/anchors";
 import { brandNameFromProfile } from "@/lib/brand/display-name";
 
@@ -157,7 +158,7 @@ export interface RenderedIo {
 
 export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   const { deal, brandProfile, showProfile, outreach } = input;
-  const ioNumber = input.ioNumber ?? `IO-${deal.id.slice(0, 8).toUpperCase()}`;
+  const ioNumber = input.ioNumber ?? dealIoNumber(deal.id);
   const advertiserName = brandDisplayName(brandProfile);
   const publisherName = showProfile.show_name ?? outreach.show_name ?? "Publisher";
   const audience = showProfile.audience_size ?? 0;
