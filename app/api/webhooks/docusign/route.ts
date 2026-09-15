@@ -331,6 +331,31 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.kind === "show_signed" || action.kind === "completed") {
+    // Mark the persisted IO record signed. Placed BEFORE the idempotency
+    // early-return so a webhook retry heals a previously-failed update.
+    // Matched on the deal-derived io_number (send-to-docusign persistence) so
+    // a legacy IO-{year}-NNNN row on the same deal is never touched. Missing
+    // row (envelope predates persistence, backfill not yet applied) is logged,
+    // never thrown — the signing pipeline must not stall on IO bookkeeping.
+    {
+      const dealIoNumber = `IO-${deal.id.slice(0, 8).toUpperCase()}`;
+      const { error: ioStatusErr } = await supabaseAdmin
+        .from("insertion_orders")
+        .update({
+          status: "signed",
+          signed_at: action.signedAt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("io_number", dealIoNumber)
+        .eq("deal_id", deal.id);
+      if (ioStatusErr) {
+        console.error(
+          `[docusign webhook] insertion_orders signed update failed for ${dealIoNumber}:`,
+          ioStatusErr.message
+        );
+      }
+    }
+
     if (deal.show_signed_at && deal.signed_io_pdf_url) {
       return NextResponse.json({ ok: true, idempotent: true });
     }

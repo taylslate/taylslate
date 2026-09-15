@@ -681,6 +681,12 @@ export type DomainEventType =
   // Log-only backstop: DocuSign accepted the envelope but did not resolve the
   // SignHere anchor tabs for one or more recipients (see send-to-docusign).
   | "io.tabs_unverified"
+  // insertion_orders + io_line_items rows written for a DocuSign-flow deal
+  // (send-to-docusign persistence or the backfill script).
+  | "io.persisted"
+  // Tripwire: persistIoForDeal found an IO row with a wrong line-item count
+  // but could not repair it (payments/invoice references or verified items).
+  | "io.repair_skipped"
   // Diagnostic: a Connect webhook was delivered + HMAC-verified + matched to a
   // deal but classified as no-op (e.g. Connect not subscribed to
   // recipient-completed, or "Include Data" omitting the recipients block).

@@ -13,6 +13,7 @@ import type {
   Outreach,
   ShowEpisodeCadence,
   ShowAdReadType,
+  IOLineItem,
 } from "@/lib/data/types";
 import { formatDateOnly } from "@/lib/format/date-only";
 import { CADENCE_DAYS, DEFAULT_CADENCE_DAYS } from "@/lib/io/cadence-days";
@@ -131,6 +132,16 @@ export interface IoPdfInput {
   ioNumber?: string;
 }
 
+/**
+ * A persistable io_line_items row minus the DB-generated id. post_date is
+ * nullable here because derivePostDates returns [] on unparseable flight
+ * dates (the PDF renders "TBD"); persistence rejects null dates — the DB
+ * column is NOT NULL and a dateless row can't drive delivery verification.
+ */
+export type IoLineItemDraft = Omit<IOLineItem, "id" | "post_date"> & {
+  post_date: string | null;
+};
+
 export interface RenderedIo {
   pdfBuffer: Buffer;
   ioNumber: string;
@@ -138,6 +149,8 @@ export interface RenderedIo {
   totalNet: number;
   totalDownloads: number;
   postDates: string[];
+  /** The exact line items the PDF table was rendered from — persist these. */
+  lineItems: IoLineItemDraft[];
 }
 
 // ---- Main generator ----
@@ -149,16 +162,54 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   const publisherName = showProfile.show_name ?? outreach.show_name ?? "Publisher";
   const audience = showProfile.audience_size ?? 0;
   const cpm = deal.agreed_cpm;
-  const grossPerEp = (audience / 1000) * cpm;
-  const totalGross = grossPerEp * deal.agreed_episode_count;
-  const totalNet = totalGross; // Taylslate absorbs fees in its 8% platform fee
-  const totalDownloads = audience * deal.agreed_episode_count;
+  // Rounded to cents at the per-episode level: gross_rate persists into a
+  // DECIMAL(10,2) column and is the exact amount chargeForEpisode later bills,
+  // so the PDF, the DB row, and the charge must all quote the same figure.
+  const grossPerEp = Math.round((audience / 1000) * cpm * 100) / 100;
 
   const postDates = derivePostDates(
     deal.agreed_flight_start,
     deal.agreed_flight_end,
     deal.agreed_episode_count,
     showProfile.episode_cadence
+  );
+
+  // The single source of truth: the PDF table renders from this array and the
+  // caller persists exactly this array to io_line_items. Reader flags mirror
+  // what the details line prints (readerTypeLabel) so the DB row never
+  // contradicts the signed document.
+  const adReadTypes = showProfile.ad_read_types ?? [];
+  const lineItems: IoLineItemDraft[] = [];
+  for (let i = 0; i < deal.agreed_episode_count; i++) {
+    lineItems.push({
+      format: showProfile.platform === "youtube" ? "youtube" : "podcast",
+      post_date: postDates[i] ?? null,
+      guaranteed_downloads: audience,
+      show_name: publisherName,
+      placement: deal.agreed_placement,
+      is_scripted: adReadTypes.includes("scripted"),
+      is_personal_experience: adReadTypes.includes("personal_experience"),
+      reader_type: "host_read",
+      content_type: "evergreen",
+      pixel_required: false,
+      gross_rate: grossPerEp,
+      gross_cpm: cpm,
+      // Wave12 deals are always CPM-priced (createWave12Deal writes 'cpm');
+      // the Wave12Deal type carries no price_type field to read from.
+      price_type: "cpm",
+      net_due: grossPerEp, // net = gross: the platform fee comes out of the charge, not on top
+      verified: false,
+      make_good_triggered: false,
+    });
+  }
+
+  const totalGross =
+    Math.round(lineItems.reduce((s, li) => s + li.gross_rate, 0) * 100) / 100;
+  const totalNet =
+    Math.round(lineItems.reduce((s, li) => s + li.net_due, 0) * 100) / 100;
+  const totalDownloads = lineItems.reduce(
+    (s, li) => s + li.guaranteed_downloads,
+    0
   );
 
   const doc = new jsPDF({ unit: "pt", format: "letter" });
@@ -296,7 +347,8 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  for (let i = 0; i < deal.agreed_episode_count; i++) {
+  for (let i = 0; i < lineItems.length; i++) {
+    const li = lineItems[i];
     checkPage(20);
     const isEven = i % 2 === 0;
     if (isEven) {
@@ -307,13 +359,13 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     x = MARGIN + 4;
     const rowData = [
       String(i + 1),
-      publisherName.length > 22 ? publisherName.slice(0, 20) + "..." : publisherName,
-      postDates[i] ? formatDateOnly(postDates[i]) : "TBD",
-      placementLabel(deal.agreed_placement),
-      audience.toLocaleString(),
-      `$${money(cpm)}`,
-      `$${money(grossPerEp)}`,
-      `$${money(grossPerEp)}`,
+      li.show_name.length > 22 ? li.show_name.slice(0, 20) + "..." : li.show_name,
+      li.post_date ? formatDateOnly(li.post_date) : "TBD",
+      placementLabel(li.placement),
+      li.guaranteed_downloads.toLocaleString(),
+      `$${money(li.gross_cpm)}`,
+      `$${money(li.gross_rate)}`,
+      `$${money(li.net_due)}`,
     ];
     for (let j = 0; j < cols.length; j++) {
       if (j >= 4) {
@@ -567,5 +619,6 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     totalNet,
     totalDownloads,
     postDates,
+    lineItems,
   };
 }

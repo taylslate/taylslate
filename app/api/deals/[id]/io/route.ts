@@ -46,6 +46,23 @@ export async function PATCH(
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
+    // DocuSign-flow deals: the IO rows mirror the document sent for signature
+    // and line-item gross_rate is exactly what chargeForEpisode bills. Editing
+    // them here would let the DB drift from the signed PDF (or rewrite a
+    // signed deal's charge amounts), so this legacy editor is read-only for
+    // any deal with an envelope.
+    if (
+      (deal as { docusign_envelope_id?: string | null }).docusign_envelope_id
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "This IO was sent for signature via DocuSign and can't be edited here.",
+        },
+        { status: 409 }
+      );
+    }
+
     const io = await getIOByDealId(dealId);
     if (!io) {
       return NextResponse.json({ error: "No IO found for this deal" }, { status: 404 });

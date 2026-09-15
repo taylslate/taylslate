@@ -224,10 +224,10 @@ describe("io-generator date-formatter split", () => {
     // Date-only values → shared UTC helper.
     expect(src).toContain("formatDateOnly(deal.agreed_flight_start)");
     expect(src).toContain("formatDateOnly(deal.agreed_flight_end)");
-    expect(src).toContain("postDates[i] ? formatDateOnly(postDates[i])");
+    expect(src).toContain("li.post_date ? formatDateOnly(li.post_date)");
     // ...never the naive local formatter.
     expect(src).not.toContain("fmtDate(deal.agreed_flight");
-    expect(src).not.toContain("fmtDate(postDates[i])");
+    expect(src).not.toContain("fmtDate(li.post_date)");
 
     // Real timestamps stay on the local-zone formatter.
     expect(src).toContain("fmtDate(deal.created_at)");
@@ -259,5 +259,83 @@ describe("io-generator renders DocuSign signature anchors", () => {
     // date tab and the completed IO has no date stamp (the bug this fixes).
     expect(text).toContain(SIGNATURE_ANCHORS.advertiserDate);
     expect(text).toContain(SIGNATURE_ANCHORS.publisherDate);
+  });
+});
+
+// The lineItems array is what send-to-docusign persists to io_line_items —
+// the DB rows, the PDF table, and the eventual chargeForEpisode amount must
+// all come from these exact values.
+describe("generateIoPdfFromDeal lineItems (persistence source of truth)", () => {
+  const render = (showOverrides: Partial<ShowProfile> = {}) =>
+    generateIoPdfFromDeal({
+      deal: baseDeal,
+      brandProfile: baseBrand,
+      showProfile: { ...baseShow, ...showOverrides } as ShowProfile,
+      outreach: baseOutreach,
+      brandSigningEmail: "x",
+      showSigningEmail: "y",
+    });
+
+  it("emits one draft per episode with cents-rounded economics the PDF also renders", () => {
+    // 12,345 downloads × $28.50 CPM = $351.8325 → must round to $351.83 in
+    // the drafts, and totals must derive from the ROUNDED items (DECIMAL(10,2)
+    // would otherwise round on insert and drift from the PDF).
+    const out = render({ audience_size: 12_345 });
+    expect(out.lineItems).toHaveLength(4);
+    for (const li of out.lineItems) {
+      expect(li.gross_rate).toBe(351.83);
+      expect(li.net_due).toBe(351.83);
+      expect(li.gross_cpm).toBe(28.5);
+      expect(li.guaranteed_downloads).toBe(12_345);
+      expect(li.price_type).toBe("cpm");
+      expect(li.verified).toBe(false);
+      expect(li.make_good_triggered).toBe(false);
+    }
+    expect(out.totalGross).toBe(1407.32); // 351.83 × 4, not 1407.33
+    expect(out.totalNet).toBe(out.totalGross);
+    expect(out.totalDownloads).toBe(49_380);
+    const text = out.pdfBuffer.toString("latin1");
+    expect(text).toContain("351.83");
+    expect(text).toContain("1,407.32");
+  });
+
+  it("carries post dates, placement, and show name into every draft", () => {
+    const out = render();
+    expect(out.lineItems.map((li) => li.post_date)).toEqual(out.postDates);
+    for (const li of out.lineItems) {
+      expect(li.placement).toBe("mid-roll");
+      expect(li.show_name).toBe("The Daily Briefing");
+      expect(li.content_type).toBe("evergreen");
+      expect(li.pixel_required).toBe(false);
+    }
+  });
+
+  it("maps platform to the io_line_items format CHECK ('both' → podcast)", () => {
+    expect(render({ platform: "podcast" }).lineItems[0].format).toBe("podcast");
+    expect(render({ platform: "youtube" }).lineItems[0].format).toBe("youtube");
+    expect(render({ platform: "both" as never }).lineItems[0].format).toBe("podcast");
+    expect(render({ platform: null as never }).lineItems[0].format).toBe("podcast");
+  });
+
+  it("derives reader flags from ad_read_types (row matches the printed details line)", () => {
+    const personal = render(); // baseShow: ["personal_experience"]
+    expect(personal.lineItems[0].is_personal_experience).toBe(true);
+    expect(personal.lineItems[0].is_scripted).toBe(false);
+    expect(personal.lineItems[0].reader_type).toBe("host_read");
+
+    const scripted = render({ ad_read_types: ["scripted"] });
+    expect(scripted.lineItems[0].is_scripted).toBe(true);
+    expect(scripted.lineItems[0].is_personal_experience).toBe(false);
+
+    const none = render({ ad_read_types: undefined as never });
+    expect(none.lineItems[0].is_scripted).toBe(false);
+    expect(none.lineItems[0].is_personal_experience).toBe(false);
+  });
+
+  it("zero audience produces $0 drafts (persistence layer must reject these)", () => {
+    const out = render({ audience_size: null as never });
+    expect(out.lineItems).toHaveLength(4);
+    expect(out.lineItems[0].gross_rate).toBe(0);
+    expect(out.totalGross).toBe(0);
   });
 });

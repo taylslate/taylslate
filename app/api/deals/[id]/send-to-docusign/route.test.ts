@@ -14,6 +14,7 @@ const {
   getWave12DealById,
   updateWave12Deal,
   generateIoPdfFromDeal,
+  persistIoForDeal,
   createEnvelope,
   getBrandSigningUrl,
   verifyEnvelopeTabsPlaced,
@@ -40,6 +41,13 @@ const {
     getWave12DealById: vi.fn(),
     updateWave12Deal: vi.fn().mockResolvedValue(null),
     generateIoPdfFromDeal: vi.fn(),
+    persistIoForDeal: vi.fn().mockResolvedValue({
+      ioId: "io_1",
+      ioNumber: "IO-123",
+      created: true,
+      repaired: false,
+      lineItemCount: 1,
+    }),
     createEnvelope: vi.fn(),
     getBrandSigningUrl: vi.fn(),
     verifyEnvelopeTabsPlaced: vi.fn().mockResolvedValue({ ok: true, missing: [] }),
@@ -63,6 +71,9 @@ vi.mock("@/lib/data/queries", () => ({
 }));
 vi.mock("@/lib/pdf/io-generator", () => ({
   generateIoPdfFromDeal: (...a: unknown[]) => generateIoPdfFromDeal(...a),
+}));
+vi.mock("@/lib/io/persist-io", () => ({
+  persistIoForDeal: (...a: unknown[]) => persistIoForDeal(...a),
 }));
 vi.mock("@/lib/docusign/envelope", () => ({
   createEnvelope: (...a: unknown[]) => createEnvelope(...a),
@@ -123,7 +134,9 @@ function stageHappyPath() {
     ioNumber: "IO-123",
     totalGross: 1000,
     totalNet: 900,
-    postDates: [],
+    totalDownloads: 40_000,
+    postDates: ["2026-05-01"],
+    lineItems: [{ post_date: "2026-05-01", gross_rate: 1000 }],
   });
   getBrandSigningUrl.mockResolvedValue({ url: "https://demo.docusign.net/signing/xyz" });
 }
@@ -205,5 +218,58 @@ describe("POST /api/deals/[id]/send-to-docusign", () => {
     expect(getBrandSigningUrl).toHaveBeenCalledWith(
       expect.objectContaining({ envelopeId: "env_existing" })
     );
+  });
+
+  // ---- IO persistence (the "no envelope without a DB record" invariant) ----
+
+  it("persists the IO record BEFORE creating the envelope", async () => {
+    stageHappyPath();
+    getWave12DealById.mockResolvedValueOnce(planningDeal());
+    createEnvelope.mockResolvedValueOnce({ envelopeId: "env_new" });
+
+    const res = await POST(req() as never, { params });
+    expect(res.status).toBe(200);
+
+    expect(persistIoForDeal).toHaveBeenCalledTimes(1);
+    expect(persistIoForDeal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dealId: "deal_1",
+        source: "send_to_docusign",
+        rendered: expect.objectContaining({ ioNumber: "IO-123" }),
+        contacts: expect.objectContaining({
+          publisherContactName: "Show Owner",
+          publisherContactEmail: "show@x.com",
+        }),
+      })
+    );
+    // Strict ordering: rows exist before any envelope does.
+    expect(persistIoForDeal.mock.invocationCallOrder[0]).toBeLessThan(
+      createEnvelope.mock.invocationCallOrder[0]
+    );
+  });
+
+  it("500 with NO envelope and NO signing URL when IO persistence fails", async () => {
+    stageHappyPath();
+    getWave12DealById.mockResolvedValueOnce(planningDeal());
+    persistIoForDeal.mockRejectedValueOnce(new Error("db down"));
+
+    const res = await POST(req() as never, { params });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain("Couldn't record the insertion order");
+    expect(createEnvelope).not.toHaveBeenCalled();
+    expect(getBrandSigningUrl).not.toHaveBeenCalled();
+  });
+
+  it("RESUME still persists the IO record (heals deals whose envelope predates persistence)", async () => {
+    stageHappyPath();
+    getWave12DealById.mockResolvedValueOnce(
+      planningDeal({ docusign_envelope_id: "env_existing" })
+    );
+
+    const res = await POST(req() as never, { params });
+    expect(res.status).toBe(200);
+    expect(persistIoForDeal).toHaveBeenCalledTimes(1);
+    expect(createEnvelope).not.toHaveBeenCalled();
   });
 });

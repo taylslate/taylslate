@@ -15,6 +15,7 @@ import {
   updateWave12Deal,
 } from "@/lib/data/queries";
 import { generateIoPdfFromDeal } from "@/lib/pdf/io-generator";
+import { persistIoForDeal } from "@/lib/io/persist-io";
 import {
   createEnvelope,
   getBrandSigningUrl,
@@ -128,6 +129,34 @@ export async function POST(
       post_dates: rendered.postDates,
     },
   });
+
+  // Persist the IO record BEFORE any envelope work — you cannot sign a
+  // document that has no database record. Runs on the resume path too, so a
+  // re-send heals deals whose envelope predates this persistence (idempotent
+  // for healthy deals: existing row with matching count is a no-op). A
+  // failure here aborts the send: no envelope, no signing URL.
+  try {
+    await persistIoForDeal({
+      dealId: deal.id,
+      rendered,
+      contacts: {
+        advertiserName: brandName,
+        advertiserContactEmail: brandSigningEmail || null,
+        publisherName: showName,
+        publisherContactName: (showUser?.full_name as string) ?? showName,
+        publisherContactEmail: showSigningEmail,
+      },
+      actorId: user.id,
+      source: "send_to_docusign",
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "persistence error";
+    console.error("[send-to-docusign] IO persistence failed:", message);
+    return NextResponse.json(
+      { error: `Couldn't record the insertion order — ${message}` },
+      { status: 500 }
+    );
+  }
 
   let envelopeId = deal.docusign_envelope_id ?? null;
   if (!envelopeId) {

@@ -205,6 +205,70 @@ describe("POST /api/webhooks/docusign", () => {
     expect(types).toContain("io.completed");
   });
 
+  it("marks the persisted IO record signed on show signature", async () => {
+    const res = await POST(
+      signedRequest({
+        event: "envelope-completed",
+        data: {
+          envelopeId: "env-1",
+          envelopeSummary: {
+            status: "completed",
+            recipients: {
+              signers: [
+                { recipientId: "1", signedDateTime: "2026-04-23T12:00:00Z" },
+                { recipientId: "2", signedDateTime: "2026-04-24T08:00:00Z" },
+              ],
+            },
+          },
+        },
+      }) as never
+    );
+    expect(res.status).toBe(200);
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("insertion_orders");
+    expect(adminBuilder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "signed", signed_at: "2026-04-24T08:00:00Z" })
+    );
+    // Matched on the deal-derived io_number so a legacy IO-{year}-NNNN row on
+    // the same deal is never touched.
+    expect(adminBuilder.eq).toHaveBeenCalledWith("io_number", "IO-DEAL-1");
+    expect(adminBuilder.eq).toHaveBeenCalledWith("deal_id", "deal-1");
+  });
+
+  it("still updates the IO record on an idempotent replay (retry heals a failed update)", async () => {
+    getWave12DealByEnvelopeId.mockResolvedValueOnce({
+      ...baseDeal,
+      brand_signed_at: "2026-04-23T12:00:00Z",
+      show_signed_at: "2026-04-24T08:00:00Z",
+      signed_io_pdf_url: "deals/deal-1/signed-io.pdf",
+    });
+    const res = await POST(
+      signedRequest({
+        event: "envelope-completed",
+        data: {
+          envelopeId: "env-1",
+          envelopeSummary: {
+            status: "completed",
+            recipients: {
+              signers: [
+                { recipientId: "1", signedDateTime: "2026-04-23T12:00:00Z" },
+                { recipientId: "2", signedDateTime: "2026-04-24T08:00:00Z" },
+              ],
+            },
+          },
+        },
+      }) as never
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.idempotent).toBe(true);
+    // The IO-status update sits BEFORE the early-return, so replays heal it.
+    expect(adminBuilder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "signed" })
+    );
+    // ...but the heavy work stays skipped.
+    expect(storageBuilder.upload).not.toHaveBeenCalled();
+  });
+
   it("back-fills brand_signed + provisions SetupIntent on a one-shot envelope-completed", async () => {
     // Production case (envelope a6bc2e98…): this account's Connect emits
     // envelope-level events only, so a fully executed brand→show envelope arrives
