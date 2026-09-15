@@ -299,6 +299,20 @@ From the read-only Podscan consumption audit (see STATUS.md → "Podscan data au
 - Document event schema versioning conventions
 - **Effort:** 1 day audit + ongoing as new endpoints ship
 
+### Duplicate `payment.charged` writers (surfaced Sep 15, 2026 live rehearsal)
+- Two writers log `payment.charged` per charge: `chargeForEpisode` (rich payload — amounts, fee snapshot) and the `payment_intent.succeeded` webhook handler (`lib/stripe/webhook.ts:267`, thin status-flip payload)
+- No financial behavior reads domain events; harm is analytics-level double-counting per charge
+- Fix is an event-semantics decision: rename the webhook's write (e.g. `payment.confirmed`) or drop it — deliberately, not as a rider on a payout commit
+- Until fixed: any event-derived analytics must dedupe by `(event_type, entity_id)`
+- **Effort:** ~1 hour
+
+### Durable retry for stranded payouts (surfaced Sep 15, 2026 live rehearsal)
+- Failure class: `transferPayoutForPayment` throws (Stripe error, outage), the `charge.succeeded` webhook acks 200 by design (fail-soft — a transfer failure must never break the webhook ack), and the payout strands silently — the webhook is the ONLY caller, nothing retries
+- Sep 15 instance (balance_insufficient) fixed at the root by `source_transaction`; the class survives for any other transfer error
+- Options: admin retry route (`POST /api/admin/retry-payout`), or a cron sweep for settled-payments-without-payouts (tripwire + retry)
+- Transfer idempotency (`transfer:v2:{paymentId}` + UNIQUE(payment_id)) makes any retry path safe
+- **Effort:** half day (route) or 1 day (cron sweep + alerting)
+
 ### Multi-medium creator inventory abstraction
 - `shows.platform` already has `'podcast' | 'youtube'` enum ✓
 - Add `surfaces` JSONB to capture simulcast (one show, podcast + YouTube)

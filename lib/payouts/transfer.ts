@@ -17,9 +17,21 @@
 //   (the show's net after Taylslate's platform fee, snapshotted at
 //   charge time on the payments row).
 //
+// Funding (zero-float, part 2):
+//   Every transfer passes `source_transaction` = the charge that funds
+//   it, so Stripe draws the money from that specific charge — never the
+//   platform's available balance — and settles the transfer when the
+//   charge settles. Without it, a transfer against pending card funds
+//   fails `balance_insufficient` (card charges take ~2 business days to
+//   clear to available), or worse, silently spends platform capital.
+//   This is Stripe's designed mechanism for separate charges & transfers.
+//
 // Idempotency:
-//   - Stripe transfer idempotency key: `transfer:{paymentId}` so retries
-//     collapse to the same Transfer object.
+//   - Stripe transfer idempotency key: `transfer:v2:{paymentId}` so
+//     retries collapse to the same Transfer object. The version segment
+//     MUST be bumped on any change to the create-params shape (Stripe
+//     binds a key to its exact params for ~24h; a same-key retry with
+//     different params returns idempotency_error).
 //   - DB-level: payouts table has UNIQUE(payment_id), so a second insert
 //     attempt fails fast.
 //   - We pre-check the payouts table; if a row already exists, return it.
@@ -39,6 +51,7 @@ interface PaymentRow {
   id: string;
   deal_id: string | null;
   io_line_item_id: string | null;
+  stripe_payment_intent_id: string | null;
   amount_charged_cents: number | null;
   application_fee_amount_cents: number | null;
   settled_at: string | null;
@@ -70,7 +83,7 @@ async function loadPayment(paymentId: string): Promise<PaymentRow> {
   const { data, error } = await supabaseAdmin
     .from("payments")
     .select(
-      "id,deal_id,io_line_item_id,amount_charged_cents,application_fee_amount_cents,settled_at"
+      "id,deal_id,io_line_item_id,stripe_payment_intent_id,amount_charged_cents,application_fee_amount_cents,settled_at"
     )
     .eq("id", paymentId)
     .single<PaymentRow>();
@@ -125,6 +138,30 @@ async function loadShowConnectAccount(dealId: string): Promise<string> {
 }
 
 /**
+ * Resolves the charge id funding a settled payment, for
+ * `source_transaction`. The settle gate guarantees a charge exists
+ * whenever it is open (settled_at is only written by charge.succeeded),
+ * so a missing latest_charge here is a data anomaly — fail loud.
+ */
+async function resolveSourceChargeId(
+  stripePaymentIntentId: string
+): Promise<string> {
+  const pi = (await stripe.paymentIntents.retrieve(
+    stripePaymentIntentId
+  )) as Stripe.PaymentIntent;
+  const chargeId =
+    typeof pi.latest_charge === "string"
+      ? pi.latest_charge
+      : pi.latest_charge?.id ?? null;
+  if (!chargeId) {
+    throw new Error(
+      `PaymentIntent ${stripePaymentIntentId} has no latest_charge — cannot fund transfer with source_transaction`
+    );
+  }
+  return chargeId;
+}
+
+/**
  * Fire a Stripe Connect Transfer for the given payment, if and only if
  * the brand charge has settled. Returns the existing payout if one is
  * already on file (idempotent re-entry), or null when the gate is closed.
@@ -154,6 +191,13 @@ export async function transferPayoutForPayment(
       `Payment ${paymentId} has no deal_id; cannot route payout to a show`
     );
   }
+  if (!payment.stripe_payment_intent_id) {
+    // A transfer without source_transaction would draw on the platform's
+    // available balance — the float this module exists to prevent.
+    throw new Error(
+      `Payment ${paymentId} is settled but has no stripe_payment_intent_id — cannot fund transfer with source_transaction`
+    );
+  }
 
   const showNetCents =
     payment.amount_charged_cents - payment.application_fee_amount_cents;
@@ -177,15 +221,22 @@ export async function transferPayoutForPayment(
     };
   }
 
-  // ---- Resolve destination ----
+  // ---- Resolve destination + funding charge ----
   const destination = await loadShowConnectAccount(payment.deal_id);
+  const sourceChargeId = await resolveSourceChargeId(
+    payment.stripe_payment_intent_id
+  );
 
   // ---- Create the Stripe Transfer ----
+  //
+  // Key versioning: v1 params lacked source_transaction. ANY change to
+  // the create-params shape below MUST bump the version segment (v2 → v3).
   const transfer = (await stripe.transfers.create(
     {
       amount: showNetCents,
       currency: "usd",
       destination,
+      source_transaction: sourceChargeId,
       transfer_group: payment.deal_id,
       metadata: {
         payment_id: payment.id,
@@ -193,7 +244,7 @@ export async function transferPayoutForPayment(
         deal_id: payment.deal_id,
       },
     },
-    { idempotencyKey: `transfer:${paymentId}` }
+    { idempotencyKey: `transfer:v2:${paymentId}` }
   )) as Stripe.Transfer;
 
   // ---- Persist the payouts row (or update an existing pending row) ----
@@ -283,7 +334,8 @@ export async function transferEarlyPayoutForPayment(
   if (
     payment.amount_charged_cents == null ||
     payment.application_fee_amount_cents == null ||
-    !payment.deal_id
+    !payment.deal_id ||
+    !payment.stripe_payment_intent_id
   ) {
     throw new Error(
       `Payment ${paymentId} is missing fields required for early payout`
@@ -315,12 +367,18 @@ export async function transferEarlyPayoutForPayment(
   }
 
   const destination = await loadShowConnectAccount(payment.deal_id);
+  const sourceChargeId = await resolveSourceChargeId(
+    payment.stripe_payment_intent_id
+  );
 
+  // Key versioning: v1 params lacked source_transaction. ANY change to
+  // the create-params shape below MUST bump the version segment (v2 → v3).
   const transfer = (await stripe.transfers.create(
     {
       amount: transferCents,
       currency: "usd",
       destination,
+      source_transaction: sourceChargeId,
       transfer_group: payment.deal_id,
       metadata: {
         payment_id: payment.id,
@@ -330,7 +388,7 @@ export async function transferEarlyPayoutForPayment(
         early_payout_fee_cents: String(earlyFeeCents),
       },
     },
-    { idempotencyKey: `transfer-early:${paymentId}` }
+    { idempotencyKey: `transfer-early:v2:${paymentId}` }
   )) as Stripe.Transfer;
 
   const payoutValues = {
