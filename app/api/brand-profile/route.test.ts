@@ -132,14 +132,20 @@ describe("GET /api/brand-profile", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns the current user's brand profile", async () => {
+  it("returns the current user's brand profile including brand_name", async () => {
     getAuthenticatedUser.mockResolvedValue({ id: "u1", email: "u@x.co" });
     ensureProfile.mockResolvedValue({});
-    getBrandProfileByUserId.mockResolvedValue({ id: "bp1", user_id: "u1", brand_identity: "hi" });
+    getBrandProfileByUserId.mockResolvedValue({
+      id: "bp1",
+      user_id: "u1",
+      brand_name: "SaunaBox",
+      brand_identity: "hi",
+    });
     const res = await GET();
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.brand_profile.id).toBe("bp1");
+    expect(body.brand_profile.brand_name).toBe("SaunaBox");
     expect(getBrandProfileByUserId).toHaveBeenCalledWith("u1");
   });
 });
@@ -168,6 +174,45 @@ describe("PUT /api/brand-profile", () => {
     const call = upsertBrandProfile.mock.calls[0];
     expect(call[0]).toBe("u1");
     expect(call[1]).toEqual({ brand_identity: "Saunas" });
+  });
+
+  it("persists a trimmed brand_name", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u1", email: "u@x.co" });
+    ensureProfile.mockResolvedValue({});
+    upsertBrandProfile.mockResolvedValue({
+      id: "bp1",
+      user_id: "u1",
+      brand_name: "SaunaBox",
+    });
+
+    const res = await PUT(jsonRequest("http://x/api/brand-profile", {
+      brand_name: "  SaunaBox  ",
+    }));
+
+    expect(res.status).toBe(200);
+    expect(upsertBrandProfile).toHaveBeenCalledWith("u1", { brand_name: "SaunaBox" });
+    const body = await res.json();
+    expect(body.brand_profile.brand_name).toBe("SaunaBox");
+  });
+
+  it("rejects an empty brand_name", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u1", email: "u@x.co" });
+    ensureProfile.mockResolvedValue({});
+
+    const res = await PUT(jsonRequest("http://x/api/brand-profile", { brand_name: "" }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/brand name is required/i);
+    expect(upsertBrandProfile).not.toHaveBeenCalled();
+  });
+
+  it("rejects a whitespace-only brand_name", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u1", email: "u@x.co" });
+    ensureProfile.mockResolvedValue({});
+
+    const res = await PUT(jsonRequest("http://x/api/brand-profile", { brand_name: "   \n  " }));
+    expect(res.status).toBe(400);
+    expect(upsertBrandProfile).not.toHaveBeenCalled();
   });
 
   it("returns 500 when upsert fails", async () => {

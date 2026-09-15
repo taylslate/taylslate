@@ -9,6 +9,7 @@ import { notFound } from "next/navigation";
 import { verifyOutreachToken } from "@/lib/io/tokens";
 import { getOutreachById } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { brandNameFromProfile } from "@/lib/brand/display-name";
 import type { BrandProfile, Outreach } from "@/lib/data/types";
 import PitchClient from "./pitch-client";
 
@@ -29,23 +30,22 @@ interface ShowContext {
 async function loadBrandSummary(brandProfileId: string): Promise<BrandSummary> {
   const { data } = await supabaseAdmin
     .from("brand_profiles")
-    .select("brand_identity, brand_website, user_id")
+    .select("brand_name, brand_identity, brand_website, user_id")
     .eq("id", brandProfileId)
     .single();
   const bp = data as Partial<BrandProfile> | null;
   if (!bp) return { brand_name: "A brand", brand_url: null };
 
-  let brandName =
-    bp.brand_identity?.split(/[.,—–-]/)[0]?.trim() ||
-    bp.brand_website?.replace(/^https?:\/\/(www\.)?/, "").split("/")[0] ||
-    "";
+  // Same helper as the A6 From-name consumers. Prefers durable brand_name;
+  // identity is a bounded clause fallback, never the raw paragraph.
+  let brandName = brandNameFromProfile(bp as BrandProfile) ?? "";
   if (!brandName && bp.user_id) {
     const { data: user } = await supabaseAdmin
       .from("profiles")
       .select("company_name, full_name")
       .eq("id", bp.user_id)
       .single();
-    brandName = user?.company_name || user?.full_name || "A brand";
+    brandName = user?.company_name || user?.full_name || "";
   }
   return { brand_name: brandName || "A brand", brand_url: bp.brand_website ?? null };
 }

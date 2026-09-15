@@ -18,10 +18,15 @@ export default function IdentityForm({
       slug="identity"
       title="What's your brand and what do you sell?"
       subtitle="A sentence or two is plenty. The more specific, the better the match."
-      onContinue={async () => ({
-        brand_name: brandName.trim(),
-        brand_identity: value.trim(),
-      })}
+      onContinue={async () => {
+        // Omit blank brand_name so PUT doesn't 400 (name is optional here;
+        // Settings → Brand profile requires it on later edits).
+        const name = brandName.trim();
+        return {
+          ...(name ? { brand_name: name } : {}),
+          brand_identity: value.trim(),
+        };
+      }}
       // Only the description is required; the brand name is optional (the
       // outreach pipeline falls back gracefully when it's blank).
       continueDisabled={value.trim().length < 10}

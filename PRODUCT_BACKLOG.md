@@ -191,11 +191,9 @@ Surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). *
 - Proposed Terms section should show total deal value calculation: CPM × episodes × audience/1000
 - **Effort:** 2-3 hours
 
-### Pitch page headline shows the `brand_identity` paragraph where `brand_name` belongs
-- The public pitch page headline renders the full `brand_identity` paragraph in the brand-*name* slot — producing "we are a nutrition company that sells…wants to work with X" instead of the name reading naturally.
-- **Same root cause as the A6 fix** — the durable `brand_name` field on the brand profile (migration 034, commit `2e7809d`) that rerouted the outreach From: name, IO advertiser name, and pitch/notification sender through a shared helper. This pitch-page headline site was **missed** in that reroute.
-- Route the headline through the same `brand_name` helper (with its existing fallback).
-- **Effort:** ~1 hour. **Why:** Prospect-facing — the offer page is the first thing a show sees, and a paragraph where the brand name should be reads broken. Belongs in the pre-launch credibility pass.
+### ~~Pitch page headline shows the `brand_identity` paragraph where `brand_name` belongs~~ — SHIPPED
+- Was: the public pitch page headline rendered the full `brand_identity` paragraph in the brand-*name* slot.
+- **Fixed:** `loadBrandSummary` now selects `brand_name` and routes through `brandNameFromProfile` (same A6 helper as the outreach From: name), with the existing profiles/company fallback. Settings → Brand profile can edit `brand_name` after onboarding so the headline picks up the durable value.
 
 ### ~~Flight-date off-by-one across surfaces~~ — SHIPPED July 16, 2026 (accept-flow cluster #3)
 - Was: the Agreed Terms panel showed Jul 20–Aug 17 where the IO document showed Jul 21–Aug 18 (same deal, both roles) — date-only string parsed as UTC then rendered in local TZ on one surface but not the other.

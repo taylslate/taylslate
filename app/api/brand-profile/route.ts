@@ -100,6 +100,13 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Failed to initialize profile" }, { status: 500 });
   }
 
+  // Settings (and any other caller that sends brand_name) may not persist an
+  // empty/whitespace name — it becomes the outreach From: line. Onboarding
+  // omits the key when the optional field is blank so this doesn't fire there.
+  if (typeof body.brand_name === "string" && body.brand_name.trim().length === 0) {
+    return NextResponse.json({ error: "Brand name is required" }, { status: 400 });
+  }
+
   const patch = sanitizeBrandProfilePatch(body);
   const result = await upsertBrandProfile(user.id, patch);
   if (!result) {

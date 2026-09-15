@@ -41,12 +41,15 @@ const AGE_MIN = 18;
 const AGE_MAX = 65;
 const MAX_CATEGORIES = 5;
 const MAX_GOALS = 3;
+/** Matches sanitizeBrandProfilePatch in /api/brand-profile — outreach From: cap. */
+const MAX_BRAND_NAME = 80;
 
 function formatMax(v: number): string {
   return v >= AGE_MAX ? `${AGE_MAX}+` : String(v);
 }
 
 export default function BrandProfileForm({ profile }: { profile: BrandProfile | null }) {
+  const [brandName, setBrandName] = useState(profile?.brand_name ?? "");
   const [identity, setIdentity] = useState(profile?.brand_identity ?? "");
   const [website, setWebsite] = useState(profile?.brand_website ?? "");
   const [customer, setCustomer] = useState(profile?.target_customer ?? "");
@@ -92,6 +95,12 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
   };
 
   const handleSave = async () => {
+    const trimmedName = brandName.trim();
+    if (!trimmedName) {
+      setError("Brand name is required.");
+      return;
+    }
+
     setError(null);
     setSaving(true);
     try {
@@ -99,6 +108,7 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          brand_name: trimmedName.slice(0, MAX_BRAND_NAME),
           brand_identity: identity,
           brand_website: website,
           target_customer: customer,
@@ -116,6 +126,7 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
         setSaving(false);
         return;
       }
+      setBrandName(trimmedName.slice(0, MAX_BRAND_NAME));
       setSavedAt(new Date().toLocaleTimeString());
       setSaving(false);
     } catch {
@@ -143,6 +154,22 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
       </p>
 
       <div className="space-y-6">
+        <Section title="Brand name" htmlFor="brand-name">
+          <input
+            id="brand-name"
+            type="text"
+            value={brandName}
+            onChange={(e) => setBrandName(e.target.value)}
+            maxLength={MAX_BRAND_NAME}
+            required
+            placeholder="e.g. Aurora Sleep"
+            className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+          />
+          <Hint>
+            Used as the From name on outreach emails and the headline on the public pitch page.
+          </Hint>
+        </Section>
+
         <Section title="Brand identity">
           <textarea
             value={identity}
@@ -332,16 +359,23 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
 function Section({
   title,
   hint,
+  htmlFor,
   children,
 }: {
   title: string;
   hint?: string;
+  htmlFor?: string;
   children: React.ReactNode;
 }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <label className="block text-sm font-medium text-[var(--brand-text)]">{title}</label>
+        <label
+          htmlFor={htmlFor}
+          className="block text-sm font-medium text-[var(--brand-text)]"
+        >
+          {title}
+        </label>
         {hint && <span className="text-xs text-[var(--brand-text-muted)]">{hint}</span>}
       </div>
       {children}
