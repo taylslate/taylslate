@@ -5,29 +5,60 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 interface MockQueryBuilder {
   select: ReturnType<typeof vi.fn>;
   eq: ReturnType<typeof vi.fn>;
+  neq: ReturnType<typeof vi.fn>;
+  not: ReturnType<typeof vi.fn>;
+  order: ReturnType<typeof vi.fn>;
+  limit: ReturnType<typeof vi.fn>;
   insert: ReturnType<typeof vi.fn>;
   single: ReturnType<typeof vi.fn>;
+  maybeSingle: ReturnType<typeof vi.fn>;
   _inserted: () => unknown;
 }
 
 const { stripe, supabaseAdmin, logEvent, supabaseTables } = vi.hoisted(() => {
   // Per-table query-builder factory. Each `from(table)` returns a fresh
   // builder so the tests can stage rows independently.
+  //
+  // The payments table has three distinct access shapes, staged under
+  // separate keys:
+  //   tables["payments:precheck"] — the existing-payment pre-check
+  //     (…maybeSingle at the top of chargeForEpisode)
+  //   tables["payments_insert"]   — the insert result (stage an error
+  //     with code "23505" to simulate the unique-index collision)
+  //   tables["payments:lookup"]   — the select-by-stripe_payment_intent_id
+  //     replay lookup after a 23505
   const tables: Record<string, { row?: unknown; error?: unknown }> = {};
   function makeBuilder(table: string): MockQueryBuilder {
     let inserted: unknown = null;
     const builder: MockQueryBuilder = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
+      neq: vi.fn().mockReturnThis(),
+      not: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
       insert: vi.fn((payload: unknown) => {
         inserted = payload;
         return builder;
       }),
+      maybeSingle: vi.fn().mockImplementation(async () => {
+        const key = table === "payments_insert" ? "payments:precheck" : `${table}:maybe`;
+        return {
+          data: tables[key]?.row ?? null,
+          error: tables[key]?.error ?? null,
+        };
+      }),
       single: vi.fn().mockImplementation(async () => {
         if (table === "payments_insert") {
+          if (inserted !== null) {
+            const staged = tables["payments_insert"];
+            if (staged?.error) return { data: null, error: staged.error };
+            return { data: staged?.row ?? { id: "pay_row_1" }, error: null };
+          }
+          // No insert on this builder → it's the 23505 replay lookup.
           return {
-            data: { id: "pay_row_1" },
-            error: null,
+            data: tables["payments:lookup"]?.row ?? null,
+            error: tables["payments:lookup"]?.error ?? null,
           };
         }
         return {
@@ -154,7 +185,7 @@ describe("chargeForEpisode", () => {
     });
   });
 
-  it("computes application_fee_amount from the brand's CURRENT platform_fee_percentage and snapshots it onto the payments row", async () => {
+  it("computes the platform fee from the brand's CURRENT platform_fee_percentage and snapshots it onto the payments row — never onto the Stripe PI", async () => {
     const result = await chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" });
 
     // Stripe was called with the right shape — the load-bearing assertion.
@@ -167,15 +198,20 @@ describe("chargeForEpisode", () => {
       payment_method: "pm_deal_card",
       off_session: true,
       confirm: true,
-      application_fee_amount: 2500,
     });
+    // SEPARATE CHARGES & TRANSFERS: application_fee_amount is only legal
+    // on direct/destination charges — Stripe rejects it on a
+    // platform-account PI. The fee must NOT be in the create params.
+    expect(createArg.application_fee_amount).toBeUndefined();
     expect(createArg.metadata).toMatchObject({
       deal_id: "deal_1",
       io_line_item_id: "li_1",
       platform_fee_percentage_at_charge: "0.1",
+      application_fee_amount_cents: "2500",
     });
     // Idempotency key collapses retries on (deal_id, io_line_item_id).
-    expect(createOpts).toMatchObject({ idempotencyKey: "pi:deal_1:li_1" });
+    // v2: the v1 key shape carried application_fee_amount in its params.
+    expect(createOpts).toMatchObject({ idempotencyKey: "pi:v2:deal_1:li_1" });
 
     // payments row carries the snapshot.
     const paymentsBuilder = supabaseAdmin._builders.payments_insert;
@@ -215,7 +251,8 @@ describe("chargeForEpisode", () => {
     await chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" });
 
     const [createArg] = stripe.paymentIntents.create.mock.calls[0];
-    expect(createArg.application_fee_amount).toBe(1500);
+    expect(createArg.application_fee_amount).toBeUndefined();
+    expect(createArg.metadata.application_fee_amount_cents).toBe("1500");
     const paymentsBuilder = supabaseAdmin._builders.payments_insert;
     expect(paymentsBuilder._inserted()).toMatchObject({
       application_fee_amount_cents: 1500,
@@ -268,5 +305,77 @@ describe("chargeForEpisode", () => {
       chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" })
     ).rejects.toThrow(/no stripe_customer_id/);
     expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+  });
+
+  it("short-circuits on an existing non-failed payment without touching Stripe", async () => {
+    supabaseTables["payments:precheck"] = {
+      row: {
+        id: "pay_prior",
+        stripe_payment_intent_id: "pi_prior",
+        amount_charged_cents: 25000,
+        application_fee_amount_cents: 2500,
+        platform_fee_percentage_at_charge: "0.10",
+        status: "succeeded",
+      },
+    };
+
+    const result = await chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" });
+
+    expect(result).toEqual({
+      paymentId: "pay_prior",
+      stripePaymentIntentId: "pi_prior",
+      amountChargedCents: 25000,
+      applicationFeeAmountCents: 2500,
+      platformFeePercentageAtCharge: 0.10,
+      status: "succeeded",
+    });
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    // No state changed — no duplicate payment.charged event.
+    expect(logEvent).not.toHaveBeenCalled();
+  });
+
+  it("fails closed (no Stripe call) when the existing-payment pre-check errors", async () => {
+    supabaseTables["payments:precheck"] = { error: { message: "db down" } };
+
+    await expect(
+      chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" })
+    ).rejects.toThrow(/Failed to check for an existing payment/);
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+  });
+
+  it("treats a stripe_payment_intent_id unique-index collision (23505) as an idempotent replay", async () => {
+    supabaseTables.payments_insert = {
+      error: { code: "23505", message: "duplicate key value violates unique constraint" },
+    };
+    supabaseTables["payments:lookup"] = {
+      row: {
+        id: "pay_existing",
+        stripe_payment_intent_id: "pi_test_1",
+        amount_charged_cents: 25000,
+        application_fee_amount_cents: 2500,
+        platform_fee_percentage_at_charge: 0.10,
+        status: "succeeded",
+      },
+    };
+
+    const result = await chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" });
+
+    expect(result).toMatchObject({
+      paymentId: "pay_existing",
+      stripePaymentIntentId: "pi_test_1",
+      status: "succeeded",
+    });
+    // Replay path: the original call already logged payment.charged.
+    expect(logEvent).not.toHaveBeenCalled();
+  });
+
+  it("still throws on a non-23505 persistence error", async () => {
+    supabaseTables.payments_insert = {
+      error: { code: "XX000", message: "boom" },
+    };
+
+    await expect(
+      chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" })
+    ).rejects.toThrow(/Failed to persist payments row/);
   });
 });

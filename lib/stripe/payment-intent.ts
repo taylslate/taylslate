@@ -1,14 +1,27 @@
 // Per-episode PaymentIntent for the pay-as-delivers flow.
 //
 // CRITICAL FINANCIAL INVARIANT:
-//   `application_fee_amount` is computed at charge time from
+//   The platform fee is computed at charge time from
 //   `profiles.platform_fee_percentage` for the brand making the charge.
-//   The percentage is ALSO snapshotted onto the resulting `payments` row
-//   (`platform_fee_percentage_at_charge`) so a later plan change cannot
+//   The percentage AND the computed fee are snapshotted onto the
+//   resulting `payments` row (`platform_fee_percentage_at_charge`,
+//   `application_fee_amount_cents`) so a later plan change cannot
 //   retroactively rewrite the historical fee. Never hardcode any rate.
+//
+// SEPARATE CHARGES AND TRANSFERS — the fee is NEVER sent to Stripe:
+//   The PaymentIntent is created on the PLATFORM account (no
+//   Stripe-Account header, no transfer_data), so Stripe rejects
+//   `application_fee_amount` on it. The fee is collected implicitly:
+//   lib/payouts/transfer.ts transfers only the show net
+//   (amount_charged_cents − application_fee_amount_cents) to the show's
+//   Connect account and the remainder stays on the platform balance.
+//   The computed fee rides the PI metadata for Stripe-dashboard
+//   reconciliation only — no code reads it back from Stripe.
 //
 // The flow:
 //   1. Caller passes `{ dealId, ioLineItemId }` after verifying delivery.
+//      An existing non-failed payments row for that pair short-circuits
+//      (idempotent re-entry — retries converge instead of erroring).
 //   2. We load the deal → brand profile → platform_fee_percentage.
 //   3. We load the io_line_item → gross_rate (the dollar amount the
 //      brand owes for this episode).
@@ -16,7 +29,7 @@
 //      platform_fee_percentage` and create the PaymentIntent against the
 //      brand's saved payment method (off-session, confirmed automatically).
 //   5. We persist a `payments` row keyed by `stripe_payment_intent_id`
-//      with the snapshotted percentage.
+//      with the snapshotted percentage and fee.
 //
 // Settlement and payout: the `succeeded` status flips to `settled_at` on
 // the `charge.succeeded` webhook. Show payouts (Teammate 3) MUST gate on
@@ -30,7 +43,11 @@ import { logEvent } from "@/lib/data/events";
 export interface ChargeForEpisodeInput {
   dealId: string;
   ioLineItemId: string;
-  /** Optional Stripe idempotency key. Defaults to `pi:{dealId}:{ioLineItemId}` so retries collapse. */
+  /**
+   * Optional Stripe idempotency key. Defaults to
+   * `pi:v2:{dealId}:{ioLineItemId}` so retries collapse. Pass a fresh key
+   * only to deliberately re-attempt a genuinely failed/declined charge.
+   */
   idempotencyKey?: string;
 }
 
@@ -90,6 +107,57 @@ interface IoLineItemRow {
   gross_rate: number | string;
 }
 
+interface ExistingPaymentRow {
+  id: string;
+  stripe_payment_intent_id: string | null;
+  amount_charged_cents: number | string | null;
+  application_fee_amount_cents: number | string | null;
+  platform_fee_percentage_at_charge: number | string | null;
+  status: string | null;
+}
+
+const EXISTING_PAYMENT_COLUMNS =
+  "id,stripe_payment_intent_id,amount_charged_cents,application_fee_amount_cents,platform_fee_percentage_at_charge,status";
+
+function resultFromPaymentRow(row: ExistingPaymentRow): ChargeForEpisodeResult {
+  return {
+    paymentId: row.id,
+    stripePaymentIntentId: row.stripe_payment_intent_id ?? "",
+    amountChargedCents: Number(row.amount_charged_cents ?? 0),
+    applicationFeeAmountCents: Number(row.application_fee_amount_cents ?? 0),
+    platformFeePercentageAtCharge: Number(row.platform_fee_percentage_at_charge ?? 0),
+    status: row.status ?? "pending",
+  };
+}
+
+/**
+ * Returns the existing Stripe-backed payment for (dealId, ioLineItemId),
+ * if one is on file and not failed. Disputed/pending rows count — never
+ * re-charge those. Throws on a read error: this guards a financial
+ * write, so we fail closed rather than risk a duplicate charge.
+ */
+async function findExistingPayment(
+  dealId: string,
+  ioLineItemId: string
+): Promise<ChargeForEpisodeResult | null> {
+  const { data, error } = await supabaseAdmin
+    .from("payments")
+    .select(EXISTING_PAYMENT_COLUMNS)
+    .eq("deal_id", dealId)
+    .eq("io_line_item_id", ioLineItemId)
+    .neq("status", "failed")
+    .not("stripe_payment_intent_id", "is", null)
+    .order("charged_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<ExistingPaymentRow>();
+  if (error) {
+    throw new Error(
+      `Failed to check for an existing payment on deal ${dealId} line ${ioLineItemId}: ${error.message}`
+    );
+  }
+  return data ? resultFromPaymentRow(data) : null;
+}
+
 async function loadBrandProfile(deal: DealRow): Promise<ProfileRow> {
   // Wave 12 deals carry brand_profile_id; pre-Wave-12 deals carry brand_id
   // directly. Either path resolves to a profiles row that owns the
@@ -129,8 +197,11 @@ async function loadBrandProfile(deal: DealRow): Promise<ProfileRow> {
 
 /**
  * Charges the brand for one episode delivery. Idempotent on
- * `(deal_id, io_line_item_id)` via Stripe's idempotency key + the
- * `payments.stripe_payment_intent_id` unique index.
+ * `(deal_id, io_line_item_id)` three ways: the payments pre-check
+ * (existing non-failed row returns without touching Stripe), Stripe's
+ * idempotency key (a ~24h replay returns the same PaymentIntent), and
+ * the `payments.stripe_payment_intent_id` unique index (a 23505 on
+ * insert resolves to the existing row instead of throwing).
  *
  * Throws on missing data, Stripe error, or persistence error. Callers
  * should wrap in try/catch and surface the error to operations — we do
@@ -139,6 +210,16 @@ async function loadBrandProfile(deal: DealRow): Promise<ProfileRow> {
 export async function chargeForEpisode(
   input: ChargeForEpisodeInput
 ): Promise<ChargeForEpisodeResult> {
+  // ---- Idempotent re-entry: already charged? ----
+  // A prior charge for this (deal, line item) short-circuits here so
+  // route-level retries converge to a success response instead of
+  // replaying Stripe and tripping the stripe_payment_intent_id unique
+  // index on the payments insert.
+  const existing = await findExistingPayment(input.dealId, input.ioLineItemId);
+  if (existing) {
+    return existing;
+  }
+
   // ---- Load the deal ----
   const { data: deal, error: dealErr } = await supabaseAdmin
     .from("deals")
@@ -206,8 +287,19 @@ export async function chargeForEpisode(
   }
 
   // ---- Create the PaymentIntent (off-session, confirmed automatically) ----
+  //
+  // NO `application_fee_amount` here: this PI lives on the platform
+  // account (separate charges & transfers) and Stripe rejects the param
+  // outside direct/destination charges. The fee is snapshotted on the
+  // payments row and collected via the show-net transfer; metadata
+  // carries it for dashboard reconciliation only.
+  //
+  // Key versioning: Stripe binds an idempotency key to its exact params
+  // for ~24h — a retry with the same key and different params returns
+  // idempotency_error. ANY change to the create-params shape below MUST
+  // bump the version segment (v2 → v3).
   const idempotencyKey =
-    input.idempotencyKey ?? `pi:${input.dealId}:${input.ioLineItemId}`;
+    input.idempotencyKey ?? `pi:v2:${input.dealId}:${input.ioLineItemId}`;
   const paymentIntent = (await stripe.paymentIntents.create(
     {
       amount: amountCents,
@@ -216,11 +308,11 @@ export async function chargeForEpisode(
       payment_method: paymentMethodId,
       off_session: true,
       confirm: true,
-      application_fee_amount: applicationFeeCents,
       metadata: {
         deal_id: input.dealId,
         io_line_item_id: input.ioLineItemId,
         platform_fee_percentage_at_charge: String(feePercentage),
+        application_fee_amount_cents: String(applicationFeeCents),
       },
     },
     { idempotencyKey }
@@ -246,6 +338,20 @@ export async function chargeForEpisode(
     .select("id")
     .single<{ id: string }>();
   if (persistErr || !row) {
+    // Unique-index collision on stripe_payment_intent_id: a concurrent
+    // or replayed call already persisted this exact PaymentIntent.
+    // Treat as an idempotent replay and return the existing row (the
+    // original call already logged the payment.charged event).
+    if (persistErr?.code === "23505") {
+      const { data: dupe, error: dupeErr } = await supabaseAdmin
+        .from("payments")
+        .select(EXISTING_PAYMENT_COLUMNS)
+        .eq("stripe_payment_intent_id", paymentIntent.id)
+        .single<ExistingPaymentRow>();
+      if (!dupeErr && dupe) {
+        return resultFromPaymentRow(dupe);
+      }
+    }
     throw new Error(
       `Failed to persist payments row for PaymentIntent ${paymentIntent.id}: ${persistErr?.message ?? "missing"}`
     );

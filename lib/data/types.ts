@@ -703,6 +703,11 @@ export type DomainEventType =
   | "payment.failed"
   | "payment.settled"
   | "payment.disputed"
+  // Pay-as-delivers delivery verification (mark-delivered): the verified
+  // flip, and its rollback when the paired charge fails — a failed charge
+  // must not leave a delivered-but-unbilled line item.
+  | "io_line_item.delivered"
+  | "io_line_item.delivery_rolled_back"
   // Wave 13 — Stripe subscription webhook state
   | "subscription.updated"
   | "subscription.deleted"
@@ -781,6 +786,8 @@ export type DomainEntityType =
   | "profile"
   // Wave 13 — pay-as-delivers payouts to show connected accounts
   | "payout"
+  // Pay-as-delivers delivery verification events hang off io_line_items
+  | "io_line_item"
   // Wave 14 Phase 2A — brief derivation/interpretation events hang off campaigns
   | "campaign";
 
