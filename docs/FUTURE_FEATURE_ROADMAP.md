@@ -237,3 +237,7 @@ Do not message Taylslate as a free podcast directory, generic marketplace, or ge
 Message Taylslate as:
 
 **An AI media buyer that plans, executes, pays, tracks, and learns from creator sponsorships.**
+
+## Sponsorship agent harness — direction added September 15, 2026
+
+Chris requested preserving the ambition for Taylslate to become a domain-specific harness for an AI media buyer: a system of record plus execution tools, durable task state, permissions, and verification. **Deferred for future build; does not change current priorities.** See [Sponsorship harness direction](SPONSORSHIP_HARNESS_DIRECTION.md) for the illustrative experience, future scoping questions, and suggested revisit trigger. This is product infrastructure, separate from internal company AI workers.

@@ -31,4 +31,17 @@ Primary history: [Architectural Decision Log, D-01–D-45](../docs/architecture-
 
 ## Recording the next decision
 
-Use the template in [MAINTENANCE.md](MAINTENANCE.md). Assign `CB-D-001` onward for new cross-functional decisions, preserving existing `D-xx` IDs. A proposed decision is not founder-approved merely because an AI writes it here. Link both the prior and superseding records when a choice changes.
+Use the template in [MAINTENANCE.md](MAINTENANCE.md). Assign `CB-D-002` onward for new cross-functional decisions, preserving existing `D-xx` IDs. A proposed decision is not founder-approved merely because an AI writes it here. Link both the prior and superseding records when a choice changes.
+
+## CB-D-001 — Preserve sponsorship harness as a future product direction
+
+- **Recorded / effective:** September 15, 2026.
+- **Decision-maker and source:** Chris, in this Company Brain task: “can we add someting discussing the desire to become a harness? hold that for future build?”
+- **Status:** Approved to record and defer the direction; implementation is not approved or scheduled.
+- **Choice:** Preserve the ambition for Taylslate to combine its system of record with the tools, state, controls, and verification an AI sponsorship operator needs.
+- **Rationale from the discussion:** Domain knowledge can guide execution as well as record transactions. Reliable sponsorship work requires explicit authority and observable outcomes.
+- **Alternatives discussed, not selected:** Existing runtime plus domain-specific controls versus a custom underlying runtime. No vendor or model strategy chosen.
+- **Consequence:** Added to future backlog and roadmap; current build priorities remain unchanged. Separate from internal Company Brain work.
+- **Suggested revisit trigger:** Proven core transaction workflow plus repeated customer demand for a bounded multi-step job. This trigger is a planning suggestion.
+- **Detailed direction:** [Sponsorship harness note](../docs/SPONSORSHIP_HARNESS_DIRECTION.md).
+- **Supersession:** None; extends existing agent-native direction and preserves transaction-before-MCP sequencing.

@@ -456,6 +456,13 @@ These are real product capabilities, but building them before customers ask is s
 
 Build when transaction volume justifies.
 
+### Sponsorship agent harness — future direction (recorded September 15, 2026)
+- **Founder-requested direction:** Taylslate becomes the domain-specific environment in which an AI media buyer can execute sponsorship work, combining the system of record with tools, durable workflow state, permissions, and outcome verification.
+- **Status:** Held for future build. No change to current priorities or launch requirements; no runtime/vendor selected.
+- **Scope to evaluate:** resumable campaign execution, bounded domain tools, approval checkpoints, exception recovery, and evidence-backed completion. Assess existing runtimes for generic infrastructure while retaining control over sponsorship rules and data.
+- **Suggested revisit trigger:** Core transaction workflow proven and repeated customer work identifies a bounded job worth delegating. Scope and evaluate that job before expanding autonomy.
+- **Reference:** [Sponsorship harness direction](docs/SPONSORSHIP_HARNESS_DIRECTION.md). Complements future MCP work; distinct from the internal Company Brain.
+
 ### MCP server for agent-mediated commerce
 - Public MCP server so Claude Code, Cowork, OpenClaw, etc. can run campaigns programmatically
 - Per-call + per-deal pricing structure already designed (see `PRICING_DECISIONS.md`)
