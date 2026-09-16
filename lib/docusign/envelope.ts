@@ -238,15 +238,16 @@ export async function verifyEnvelopeTabsPlaced(
   return outcome;
 }
 
-export async function getBrandSigningUrl(input: SigningUrlInput): Promise<SigningUrl> {
-  const { api, accountId, sdk: sdkRaw } = await getDocuSignClient();
-  const sdk = sdkRaw as SdkAny;
-  const envelopesApi = new sdk.EnvelopesApi(api);
-
+async function createRecipientViewUrl(
+  envelopesApi: SdkAny,
+  sdk: SdkAny,
+  accountId: string,
+  input: SigningUrlInput & { recipientId: string }
+): Promise<SigningUrl> {
   const viewRequest = sdk.RecipientViewRequest.constructFromObject({
     authenticationMethod: "none",
     clientUserId: input.signer.clientUserId,
-    recipientId: RECIPIENT_BRAND,
+    recipientId: input.recipientId,
     returnUrl: input.returnUrl,
     userName: input.signer.name,
     email: input.signer.email,
@@ -257,6 +258,67 @@ export async function getBrandSigningUrl(input: SigningUrlInput): Promise<Signin
   });
   if (!view.url) throw new Error("DocuSign createRecipientView returned no url");
   return { url: view.url };
+}
+
+export async function getBrandSigningUrl(input: SigningUrlInput): Promise<SigningUrl> {
+  const { api, accountId, sdk: sdkRaw } = await getDocuSignClient();
+  const sdk = sdkRaw as SdkAny;
+  const envelopesApi = new sdk.EnvelopesApi(api);
+  return createRecipientViewUrl(envelopesApi, sdk, accountId, {
+    ...input,
+    recipientId: RECIPIENT_BRAND,
+  });
+}
+
+/**
+ * Mint an embedded-signing URL for the publisher (routing order 2).
+ *
+ * Envelopes are created with the show as an email signer (no clientUserId) so
+ * DocuSign still emails them. Recipient-view requires a clientUserId — if the
+ * listed recipient doesn't have one, we add it in place, then create the view.
+ * Uses the envelope's stored name/email so the view request matches the
+ * recipient DocuSign already has (the live envelope's identity, not a guess).
+ */
+export async function getShowSigningUrl(input: SigningUrlInput): Promise<SigningUrl> {
+  const { api, accountId, sdk: sdkRaw } = await getDocuSignClient();
+  const sdk = sdkRaw as SdkAny;
+  const envelopesApi = new sdk.EnvelopesApi(api);
+
+  const listed = await envelopesApi.listRecipients(accountId, input.envelopeId);
+  const showSigner = (
+    (listed?.signers ?? []) as Array<{
+      recipientId?: string;
+      email?: string;
+      name?: string;
+      clientUserId?: string;
+    }>
+  ).find((s) => s.recipientId === RECIPIENT_SHOW);
+  if (!showSigner) {
+    throw new Error("DocuSign envelope has no show recipient");
+  }
+
+  const email = showSigner.email ?? input.signer.email;
+  const name = showSigner.name ?? input.signer.name;
+  const clientUserId = showSigner.clientUserId || input.signer.clientUserId;
+
+  if (!showSigner.clientUserId) {
+    const updated = sdk.Signer.constructFromObject({
+      recipientId: RECIPIENT_SHOW,
+      email,
+      name,
+      clientUserId,
+    });
+    await envelopesApi.updateRecipients(accountId, input.envelopeId, {
+      recipients: sdk.Recipients.constructFromObject({ signers: [updated] }),
+    });
+  }
+
+  return createRecipientViewUrl(envelopesApi, sdk, accountId, {
+    envelopeId: input.envelopeId,
+    signer: { name, email, clientUserId },
+    returnUrl: input.returnUrl,
+    recipientId: RECIPIENT_SHOW,
+  });
 }
 
 /** Void an envelope. Idempotent: voiding an already-completed envelope

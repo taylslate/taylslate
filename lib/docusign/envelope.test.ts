@@ -8,7 +8,7 @@ vi.mock("./client", () => ({
   _resetDocuSignTokenCache: vi.fn(),
 }));
 
-import { verifyEnvelopeTabsPlaced } from "./envelope";
+import { getShowSigningUrl, verifyEnvelopeTabsPlaced } from "./envelope";
 
 type ListTabsFn = (
   accountId: string,
@@ -102,5 +102,114 @@ describe("verifyEnvelopeTabsPlaced", () => {
     const res = await verifyEnvelopeTabsPlaced("env-1", 20);
     expect(res.ok).toBe(false);
     expect(res.error).toMatch(/timed out/);
+  });
+});
+
+type ShowViewFns = {
+  listRecipients: ReturnType<typeof vi.fn>;
+  updateRecipients: ReturnType<typeof vi.fn>;
+  createRecipientView: ReturnType<typeof vi.fn>;
+};
+
+function clientWithShowView(overrides: Partial<ShowViewFns> = {}) {
+  const fns: ShowViewFns = {
+    listRecipients: vi.fn().mockResolvedValue({
+      signers: [
+        { recipientId: "1", email: "brand@x.com", name: "Brand", clientUserId: "brand" },
+        { recipientId: "2", email: "show@x.com", name: "Show Owner" },
+      ],
+    }),
+    updateRecipients: vi.fn().mockResolvedValue({}),
+    createRecipientView: vi.fn().mockResolvedValue({
+      url: "https://demo.docusign.net/signing/show",
+    }),
+    ...overrides,
+  };
+  return {
+    fns,
+    client: {
+      api: {},
+      accountId: "acct-1",
+      sdk: {
+        EnvelopesApi: class {
+          listRecipients = fns.listRecipients;
+          updateRecipients = fns.updateRecipients;
+          createRecipientView = fns.createRecipientView;
+        },
+        RecipientViewRequest: { constructFromObject: (o: unknown) => o },
+        Signer: { constructFromObject: (o: unknown) => o },
+        Recipients: { constructFromObject: (o: unknown) => o },
+      },
+    },
+  };
+}
+
+const showSigningInput = {
+  envelopeId: "env-1",
+  signer: { name: "Show Owner", email: "show@x.com", clientUserId: "show" },
+  returnUrl: "https://www.taylslate.com/api/deals/deal_1/docusign-return",
+};
+
+describe("getShowSigningUrl", () => {
+  it("creates a recipient view for the show (recipient 2), not the brand", async () => {
+    const { client, fns } = clientWithShowView();
+    getDocuSignClient.mockResolvedValue(client);
+
+    const res = await getShowSigningUrl(showSigningInput);
+    expect(res.url).toBe("https://demo.docusign.net/signing/show");
+    expect(fns.createRecipientView).toHaveBeenCalledWith(
+      "acct-1",
+      "env-1",
+      expect.objectContaining({
+        recipientViewRequest: expect.objectContaining({
+          recipientId: "2",
+          clientUserId: "show",
+          email: "show@x.com",
+        }),
+      })
+    );
+  });
+
+  it("adds clientUserId on the show recipient when the envelope was an email signer", async () => {
+    const { client, fns } = clientWithShowView();
+    getDocuSignClient.mockResolvedValue(client);
+
+    await getShowSigningUrl(showSigningInput);
+    expect(fns.updateRecipients).toHaveBeenCalledTimes(1);
+    expect(fns.updateRecipients).toHaveBeenCalledWith(
+      "acct-1",
+      "env-1",
+      expect.objectContaining({
+        recipients: expect.objectContaining({
+          signers: [
+            expect.objectContaining({
+              recipientId: "2",
+              clientUserId: "show",
+              email: "show@x.com",
+            }),
+          ],
+        }),
+      })
+    );
+  });
+
+  it("skips updateRecipients when the show recipient is already embedded", async () => {
+    const { client, fns } = clientWithShowView({
+      listRecipients: vi.fn().mockResolvedValue({
+        signers: [
+          {
+            recipientId: "2",
+            email: "show@x.com",
+            name: "Show Owner",
+            clientUserId: "show",
+          },
+        ],
+      }),
+    });
+    getDocuSignClient.mockResolvedValue(client);
+
+    await getShowSigningUrl(showSigningInput);
+    expect(fns.updateRecipients).not.toHaveBeenCalled();
+    expect(fns.createRecipientView).toHaveBeenCalledTimes(1);
   });
 });

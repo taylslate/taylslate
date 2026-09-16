@@ -135,15 +135,17 @@ export default function Wave12DealClient({
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // DocuSign's hosted-signing return bounces the brand back to this page with
+  // DocuSign's hosted-signing return bounces the signer back to this page with
   // ?signing=<event> (see /api/deals/[id]/docusign-return). We read it live from
   // the URL — not a server prop — so clearing it below re-renders reactively.
   const signingParam = searchParams.get("signing");
-  // "signing_complete" only means the brand *finished in DocuSign*; the
-  // authoritative brand_signed_at is written asynchronously by the Connect
-  // webhook. Until that lands we're still waiting on confirmation.
+  // "signing_complete" only means this viewer *finished in DocuSign*; the
+  // authoritative *_signed_at is written asynchronously by the Connect webhook.
+  // Until that lands we're still waiting on confirmation.
+  const viewerSignedAt =
+    viewerRole === "show" ? deal.show_signed_at : deal.brand_signed_at;
   const awaitingSignatureConfirmation =
-    signingParam === "signing_complete" && !deal.brand_signed_at;
+    signingParam === "signing_complete" && !viewerSignedAt;
   const [signing, setSigning] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [showCancelForm, setShowCancelForm] = useState(false);
@@ -167,19 +169,18 @@ export default function Wave12DealClient({
   const [savingPromo, setSavingPromo] = useState(false);
   const [promoSaved, setPromoSaved] = useState(false);
 
-  // Auto-revalidate after returning from DocuSign so the brand never has to
-  // manually refresh to see the signature confirmed (and the card form unlock).
-  // The return URL is NOT authoritative — brand_signed_at is set by the Connect
-  // webhook a beat later. While we're awaiting that write, poll the server
-  // (router.refresh re-runs the deal page's server component, which re-reads the
-  // deal) every 2s, capped at 15s so a webhook that never lands doesn't spin
-  // forever. Once brand_signed_at appears, drop the transient ?signing param so a
-  // reload/back-nav doesn't restart the loop; needsPaymentMethod then renders the
-  // SetupIntent card section on its own.
+  // Auto-revalidate after returning from DocuSign so the signer never has to
+  // manually refresh to see the signature confirmed (and, for the brand, the
+  // card form unlock). The return URL is NOT authoritative — *_signed_at is set
+  // by the Connect webhook a beat later. While we're awaiting that write, poll
+  // the server (router.refresh re-runs the deal page's server component, which
+  // re-reads the deal) every 2s, capped at 15s so a webhook that never lands
+  // doesn't spin forever. Once this viewer's signed_at appears, drop the
+  // transient ?signing param so a reload/back-nav doesn't restart the loop.
   useEffect(() => {
     if (signingParam !== "signing_complete") return;
 
-    if (deal.brand_signed_at) {
+    if (viewerSignedAt) {
       // Webhook confirmed. Strip the one-shot param without a server round-trip
       // or full re-render — replaceState (App-Router-synced), not router.replace.
       const url = new URL(window.location.href);
@@ -197,7 +198,7 @@ export default function Wave12DealClient({
       router.refresh();
     }, 2000);
     return () => window.clearInterval(interval);
-  }, [signingParam, deal.brand_signed_at, router]);
+  }, [signingParam, viewerSignedAt, router]);
 
   const sendToDocuSign = async () => {
     setSigning(true);
@@ -341,6 +342,9 @@ export default function Wave12DealClient({
   const isCancellable =
     viewerRole === "brand" && (deal.status === "planning" || deal.status === "brand_signed");
   const canSign = viewerRole === "brand" && deal.status === "planning";
+  // Show countersigns in-app once the brand has signed. Status is the gate
+  // (webhook flips it to show_signed); the brand viewer never sees this CTA.
+  const canShowSign = viewerRole === "show" && deal.status === "brand_signed";
   // Brand can set the promo code at IO time (before signature). Otherwise the
   // stored code renders read-only — and only if one was actually saved.
   const canEditPromo = viewerRole === "brand" && deal.status === "planning";
@@ -566,6 +570,15 @@ export default function Wave12DealClient({
               <div className="mt-3 text-xs">
                 <span className="text-[var(--brand-success)] font-medium">Signed PDF stored ✓</span>
               </div>
+            )}
+            {canShowSign && (
+              <button
+                onClick={sendToDocuSign}
+                disabled={signing}
+                className="mt-4 w-full px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold disabled:opacity-50"
+              >
+                {signing ? "Opening DocuSign…" : "Sign IO"}
+              </button>
             )}
           </div>
 

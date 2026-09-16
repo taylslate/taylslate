@@ -10,6 +10,7 @@ interface SingleBuilder {
 const {
   getAuthenticatedUser,
   getBrandProfileByUserId,
+  getShowProfileByUserId,
   getOutreachById,
   getWave12DealById,
   updateWave12Deal,
@@ -17,6 +18,7 @@ const {
   persistIoForDeal,
   createEnvelope,
   getBrandSigningUrl,
+  getShowSigningUrl,
   verifyEnvelopeTabsPlaced,
   logEvent,
   supabaseAdmin,
@@ -37,6 +39,7 @@ const {
   return {
     getAuthenticatedUser: vi.fn(),
     getBrandProfileByUserId: vi.fn(),
+    getShowProfileByUserId: vi.fn().mockResolvedValue(null),
     getOutreachById: vi.fn(),
     getWave12DealById: vi.fn(),
     updateWave12Deal: vi.fn().mockResolvedValue(null),
@@ -50,6 +53,7 @@ const {
     }),
     createEnvelope: vi.fn(),
     getBrandSigningUrl: vi.fn(),
+    getShowSigningUrl: vi.fn(),
     verifyEnvelopeTabsPlaced: vi.fn().mockResolvedValue({ ok: true, missing: [] }),
     logEvent: vi.fn().mockResolvedValue(null),
     supabaseAdmin: {
@@ -65,6 +69,7 @@ const {
 vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: (...a: unknown[]) => getAuthenticatedUser(...a),
   getBrandProfileByUserId: (...a: unknown[]) => getBrandProfileByUserId(...a),
+  getShowProfileByUserId: (...a: unknown[]) => getShowProfileByUserId(...a),
   getOutreachById: (...a: unknown[]) => getOutreachById(...a),
   getWave12DealById: (...a: unknown[]) => getWave12DealById(...a),
   updateWave12Deal: (...a: unknown[]) => updateWave12Deal(...a),
@@ -78,6 +83,7 @@ vi.mock("@/lib/io/persist-io", () => ({
 vi.mock("@/lib/docusign/envelope", () => ({
   createEnvelope: (...a: unknown[]) => createEnvelope(...a),
   getBrandSigningUrl: (...a: unknown[]) => getBrandSigningUrl(...a),
+  getShowSigningUrl: (...a: unknown[]) => getShowSigningUrl(...a),
   verifyEnvelopeTabsPlaced: (...a: unknown[]) => verifyEnvelopeTabsPlaced(...a),
 }));
 vi.mock("@/lib/data/events", () => ({ logEvent: (...a: unknown[]) => logEvent(...a) }));
@@ -271,5 +277,87 @@ describe("POST /api/deals/[id]/send-to-docusign", () => {
     expect(res.status).toBe(200);
     expect(persistIoForDeal).toHaveBeenCalledTimes(1);
     expect(createEnvelope).not.toHaveBeenCalled();
+  });
+
+  // ---- Show countersignature (brand_signed → publisher recipient view) ----
+
+  it("SHOW: returns a publisher recipient-view URL on brand_signed, without creating an envelope", async () => {
+    getAuthenticatedUser.mockResolvedValueOnce({
+      id: "u_show",
+      email: "show@x.com",
+      user_metadata: { full_name: "Show Owner" },
+    });
+    getWave12DealById.mockResolvedValueOnce(
+      planningDeal({
+        status: "brand_signed",
+        docusign_envelope_id: "env_existing",
+      })
+    );
+    getShowProfileByUserId.mockResolvedValue({
+      id: "sp_1",
+      show_name: "The Daily Build",
+    });
+    getShowSigningUrl.mockResolvedValue({
+      url: "https://demo.docusign.net/signing/show",
+    });
+
+    const res = await POST(req() as never, { params });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      signing_url: "https://demo.docusign.net/signing/show",
+      envelope_id: "env_existing",
+    });
+
+    expect(getShowSigningUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        envelopeId: "env_existing",
+        signer: expect.objectContaining({ email: "show@x.com", clientUserId: "show" }),
+      })
+    );
+    expect(createEnvelope).not.toHaveBeenCalled();
+    expect(getBrandSigningUrl).not.toHaveBeenCalled();
+    expect(updateWave12Deal).not.toHaveBeenCalled();
+    expect(persistIoForDeal).not.toHaveBeenCalled();
+  });
+
+  it("SHOW: 409 once the deal is already show_signed", async () => {
+    getAuthenticatedUser.mockResolvedValueOnce({
+      id: "u_show",
+      email: "show@x.com",
+    });
+    getWave12DealById.mockResolvedValueOnce(
+      planningDeal({
+        status: "show_signed",
+        docusign_envelope_id: "env_existing",
+      })
+    );
+    getBrandProfileByUserId.mockResolvedValue(null);
+    getShowProfileByUserId.mockResolvedValue({ id: "sp_1" });
+
+    const res = await POST(req() as never, { params });
+    expect(res.status).toBe(409);
+    expect(getShowSigningUrl).not.toHaveBeenCalled();
+    expect(createEnvelope).not.toHaveBeenCalled();
+  });
+
+  it("BRAND on brand_signed does not get the show recipient-view URL", async () => {
+    getAuthenticatedUser.mockResolvedValueOnce({
+      id: "u_brand",
+      email: "brand@x.com",
+    });
+    getWave12DealById.mockResolvedValueOnce(
+      planningDeal({
+        status: "brand_signed",
+        docusign_envelope_id: "env_existing",
+      })
+    );
+    getBrandProfileByUserId.mockResolvedValue({ id: "bp_1" });
+    getShowProfileByUserId.mockResolvedValue(null);
+
+    const res = await POST(req() as never, { params });
+    expect(res.status).toBe(409);
+    expect(getShowSigningUrl).not.toHaveBeenCalled();
+    expect(getBrandSigningUrl).not.toHaveBeenCalled();
   });
 });

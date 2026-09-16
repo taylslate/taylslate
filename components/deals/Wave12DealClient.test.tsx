@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Wave12Deal } from "@/lib/data/types";
@@ -196,5 +196,52 @@ describe("Wave12DealClient signing auto-revalidation", () => {
     expect(nav.refreshMock).not.toHaveBeenCalled();
 
     vi.useRealTimers();
+  });
+});
+
+describe("Wave12DealClient show Sign IO", () => {
+  it("shows Sign IO for the show viewer on a brand_signed deal", () => {
+    renderDeal({}, "show");
+
+    expect(screen.getByRole("button", { name: /^sign io$/i })).toBeInTheDocument();
+  });
+
+  it("does not show Sign IO to the brand viewer on a brand_signed deal", () => {
+    renderDeal({}, "brand");
+
+    expect(screen.queryByRole("button", { name: /^sign io$/i })).not.toBeInTheDocument();
+  });
+
+  it("does not show Sign IO once the show has signed", () => {
+    renderDeal(
+      { status: "show_signed", show_signed_at: "2026-08-13T12:00:00Z" },
+      "show"
+    );
+
+    expect(screen.queryByRole("button", { name: /^sign io$/i })).not.toBeInTheDocument();
+  });
+
+  it("hits send-to-docusign when the show clicks Sign IO", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        signing_url: "https://docusign.example/view",
+        envelope_id: "env_1",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const location = { href: "http://localhost/deals/deal_12345678" };
+    vi.stubGlobal("location", location);
+
+    renderDeal({}, "show");
+    fireEvent.click(screen.getByRole("button", { name: /^sign io$/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/deals/deal_12345678/send-to-docusign", {
+        method: "POST",
+      });
+    });
+
+    vi.unstubAllGlobals();
   });
 });

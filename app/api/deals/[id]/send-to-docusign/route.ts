@@ -1,16 +1,18 @@
 // POST /api/deals/[id]/send-to-docusign
-// Brand-only. Generates the IO PDF, creates a DocuSign envelope with the
+// Brand (planning): generates the IO PDF, creates a DocuSign envelope with the
 // brand as routingOrder=1 and the show as routingOrder=2, then returns a
-// recipient-view URL the client redirects to.
+// recipient-view URL the client redirects to. Idempotent on the envelope side
+// — if the deal already has an envelope, we reuse it and just refresh the URL.
 //
-// Idempotent on the envelope side — if the deal already has an envelope,
-// we reuse it and just refresh the signing URL.
+// Show (brand_signed): envelope already exists. Returns a recipient-view URL
+// for the publisher (routingOrder=2). No PDF, no new envelope, no deal writes.
 
 import { NextRequest, NextResponse, after } from "next/server";
 import {
   getAuthenticatedUser,
   getBrandProfileByUserId,
   getOutreachById,
+  getShowProfileByUserId,
   getWave12DealById,
   updateWave12Deal,
 } from "@/lib/data/queries";
@@ -19,6 +21,7 @@ import { persistIoForDeal } from "@/lib/io/persist-io";
 import {
   createEnvelope,
   getBrandSigningUrl,
+  getShowSigningUrl,
   verifyEnvelopeTabsPlaced,
 } from "@/lib/docusign/envelope";
 import { logEvent } from "@/lib/data/events";
@@ -58,8 +61,59 @@ export async function POST(
   const deal = await getWave12DealById(id);
   if (!deal) return NextResponse.json({ error: "Deal not found" }, { status: 404 });
 
+  // Show countersignature: envelope already exists (brand signed first). Mint a
+  // recipient-view URL for the publisher — same helper pattern as the brand
+  // path, targeted at routing-order 2. No PDF, no new envelope, no deal writes;
+  // the Connect webhook remains the only writer for show_signed_at / PDFs.
+  if (deal.status === "brand_signed") {
+    const showProfile = await getShowProfileByUserId(user.id);
+    if (showProfile && showProfile.id === deal.show_profile_id) {
+      if (!deal.docusign_envelope_id) {
+        return NextResponse.json(
+          { error: "No DocuSign envelope on this deal" },
+          { status: 409 }
+        );
+      }
+      try {
+        const signing = await getShowSigningUrl({
+          envelopeId: deal.docusign_envelope_id,
+          signer: {
+            name:
+              user.user_metadata?.full_name ??
+              showProfile.show_name ??
+              user.email ??
+              "Publisher",
+            email: user.email ?? "",
+            clientUserId: "show",
+          },
+          returnUrl: `${siteOrigin(request)}/api/deals/${deal.id}/docusign-return`,
+        });
+        return NextResponse.json({
+          signing_url: signing.url,
+          envelope_id: deal.docusign_envelope_id,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "DocuSign error";
+        console.error("[send-to-docusign] show signing url failed:", message);
+        return NextResponse.json(
+          { error: `Couldn't generate signing URL — ${message}` },
+          { status: 502 }
+        );
+      }
+    }
+  }
+
   const brandProfile = await getBrandProfileByUserId(user.id);
   if (!brandProfile || brandProfile.id !== deal.brand_profile_id) {
+    // Show owners hitting a non-countersign status own the deal but can't
+    // start brand signing — 409 (wrong state), not 403 (stranger).
+    const showProfile = await getShowProfileByUserId(user.id);
+    if (showProfile && showProfile.id === deal.show_profile_id) {
+      return NextResponse.json(
+        { error: `Cannot send for signature in status ${deal.status}` },
+        { status: 409 }
+      );
+    }
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (deal.status !== "planning") {
