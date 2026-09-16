@@ -1,113 +1,137 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+import { tokens } from "@/lib/brand/tokens";
+
+export const metadata: Metadata = {
+  title: "Taylslate — Run creator sponsorships without an agency",
+  description:
+    "Tell us the product and who buys it. We interpret the brief, build a test portfolio, write the insertion order, and pay the show when the read runs.",
+};
+
+const steps = [
+  {
+    n: "01",
+    title: "Interpret the brief",
+    body: "You describe the product, the customer, and the budget. We send back a read of where a host-read should work, and you confirm it before we look for shows.",
+  },
+  {
+    n: "02",
+    title: "Build the test portfolio",
+    body: "A short list of podcasts and long-form YouTube shows you can actually test. Three spots is the usual first buy, not a forty-show plan.",
+  },
+  {
+    n: "03",
+    title: "Close and pay",
+    body: "You pick the shows. Outreach, the insertion order, and signatures live in one thread. Card on file. The show is paid when the episode delivers.",
+  },
+] as const;
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-[var(--brand-navy)] text-white overflow-hidden">
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-[var(--brand-blue)] opacity-[0.07] blur-[120px]" />
-        <div className="absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] rounded-full bg-[var(--brand-teal)] opacity-[0.05] blur-[100px]" />
-      </div>
-
-      <nav className="relative z-10 flex items-center justify-between px-8 py-6 max-w-7xl mx-auto">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--brand-blue)] to-[var(--brand-teal)] flex items-center justify-center">
-            <span className="text-white font-bold text-sm">T</span>
-          </div>
-          <span className="text-xl font-bold tracking-tight">taylslate</span>
-        </div>
-        <div className="flex items-center gap-6">
-          <Link href="/login" className="text-sm text-white/70 hover:text-white transition-colors">
-            Log in
-          </Link>
-          <Link href="/signup" className="text-sm bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] px-5 py-2.5 rounded-lg font-medium transition-colors">
-            Get started free
-          </Link>
-        </div>
-      </nav>
-
-      <main className="relative z-10 max-w-7xl mx-auto px-8 pt-24 pb-32">
-        <div className="max-w-3xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/[0.08] mb-8">
-            <div className="w-1.5 h-1.5 rounded-full bg-[var(--brand-teal)] animate-pulse" />
-            <span className="text-xs text-white/60 font-medium tracking-wide uppercase">
-              Creator Sponsorship OS
+    <div className="marketing-page min-h-screen bg-[var(--ts-field)] text-[var(--ts-ink)]">
+      <header className="border-b border-[var(--ts-hairline)]">
+        <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
+          <Link href="/" className="flex items-center gap-2.5">
+            <span
+              className="flex h-7 w-7 items-center justify-center border border-[var(--ts-hairline)] text-[13px] font-semibold tracking-tight"
+              style={{ borderRadius: tokens.radius }}
+            >
+              T
             </span>
-          </div>
-
-          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-[1.05] tracking-tight mb-6">
-            Run creator sponsorships{" "}
-            <span className="bg-gradient-to-r from-[var(--brand-blue-light)] to-[var(--brand-teal-light)] bg-clip-text text-transparent">
-              without an agency
+            <span className="text-[15px] font-semibold tracking-tight">
+              taylslate
             </span>
-          </h1>
+          </Link>
+          <div className="flex items-center gap-6">
+            <Link
+              href="/login"
+              className="text-sm text-[var(--ts-ink-muted)] hover:text-[var(--ts-ink)]"
+            >
+              Log in
+            </Link>
+            <Link
+              href="/signup"
+              className="bg-[var(--ts-paper)] px-3.5 py-1.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:opacity-90"
+              style={{ borderRadius: tokens.radius }}
+            >
+              Get started
+            </Link>
+          </div>
+        </nav>
+      </header>
 
-          <p className="text-lg sm:text-xl text-white/50 leading-relaxed max-w-xl mb-10">
-            Taylslate turns your brand, budget, and customer profile into a conviction-scored podcast and YouTube sponsorship campaign, then handles outreach, IOs, signing, delivery tracking, and payments.
+      <main className="mx-auto max-w-5xl px-6 pt-20 pb-24 sm:pt-28 sm:pb-32">
+        <div className="max-w-2xl">
+          <p className="mb-6 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-ink-muted)]">
+            <span
+              className="inline-block h-3 w-0.5 bg-[var(--ts-accent)]"
+              aria-hidden
+            />
+            Podcast and YouTube host-reads
           </p>
 
-          <div className="flex flex-wrap items-center gap-4">
-            <Link href="/campaigns" className="inline-flex items-center gap-2 bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white px-7 py-3.5 rounded-xl font-semibold text-base transition-all hover:translate-y-[-1px] hover:shadow-lg hover:shadow-blue-500/20">
-              Enter Dashboard
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="ml-1">
-                <path d="M3 8h10m0 0L9 4m4 4L9 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </Link>
-            <span className="text-sm text-white/30">Development preview</span>
-          </div>
+          <h1 className="text-[2.35rem] font-semibold leading-[1.12] tracking-tight sm:text-5xl">
+            Run creator sponsorships without an agency.
+          </h1>
+
+          <p className="mt-6 max-w-xl text-base leading-relaxed text-[var(--ts-ink-muted)] sm:text-lg">
+            Tell us the product and who buys it. We interpret the brief, build a
+            test portfolio, write the insertion order, and pay the show when the
+            read runs.
+          </p>
+
+          <Link
+            href="/signup"
+            className="mt-10 inline-flex bg-[var(--ts-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:opacity-90"
+            style={{ borderRadius: tokens.radius }}
+          >
+            Get started
+          </Link>
         </div>
 
-        <div className="grid grid-cols-3 gap-8 max-w-2xl mt-24 pt-12 border-t border-white/[0.06]">
-          <div>
-            <div className="text-3xl font-bold text-white mb-1">2</div>
-            <div className="text-sm text-white/40">Creator channels</div>
-          </div>
-          <div>
-            <div className="text-3xl font-bold text-white mb-1">1</div>
-            <div className="text-sm text-white/40">Deal workflow</div>
-          </div>
-          <div>
-            <div className="text-3xl font-bold text-white mb-1">10x</div>
-            <div className="text-sm text-white/40">Faster than manual</div>
-          </div>
-        </div>
-
-        <div className="grid sm:grid-cols-3 gap-5 mt-24">
-          <div className="group p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.1] transition-all">
-            <div className="w-10 h-10 rounded-xl bg-[var(--brand-blue)]/10 flex items-center justify-center mb-4">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue-light)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-              </svg>
-            </div>
-            <h3 className="font-semibold mb-2">Interpret the brief</h3>
-            <p className="text-sm text-white/40 leading-relaxed">AI maps the audience rings most likely to convert before it recommends a single show.</p>
-          </div>
-          <div className="group p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.1] transition-all">
-            <div className="w-10 h-10 rounded-xl bg-[var(--brand-teal)]/10 flex items-center justify-center mb-4">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-teal-light)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-              </svg>
-            </div>
-            <h3 className="font-semibold mb-2">Build the portfolio</h3>
-            <p className="text-sm text-white/40 leading-relaxed">Compare test-ready shows and scale-tier opportunities across podcast and long-form YouTube.</p>
-          </div>
-          <div className="group p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.1] transition-all">
-            <div className="w-10 h-10 rounded-xl bg-[var(--brand-orange)]/10 flex items-center justify-center mb-4">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-orange)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Z" /><path d="m22 6-10 7L2 6" />
-              </svg>
-            </div>
-            <h3 className="font-semibold mb-2">Close the deal</h3>
-            <p className="text-sm text-white/40 leading-relaxed">Outreach, counters, IOs, signing, card-on-file, and creator payouts live in one workflow.</p>
-          </div>
-        </div>
+        <ol
+          className="mt-20 w-full max-w-2xl bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)] sm:mt-24"
+          style={{ borderRadius: tokens.radius }}
+        >
+          {steps.map((step, i) => (
+            <li
+              key={step.n}
+              className={`px-6 py-7 sm:px-8 sm:py-8 ${
+                i > 0 ? "border-t border-[var(--ts-ink-on-paper)]/10" : ""
+              }`}
+            >
+              <p className="text-[11px] font-medium tracking-[0.16em] text-[var(--ts-ink-muted-on-paper)]">
+                {step.n}
+              </p>
+              <h2 className="mt-2 text-lg font-semibold tracking-tight">
+                {step.title}
+              </h2>
+              <p className="mt-2 max-w-prose text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
+                {step.body}
+              </p>
+            </li>
+          ))}
+        </ol>
       </main>
 
-      <footer className="relative z-10 border-t border-white/[0.06] py-8 px-8">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <span className="text-sm text-white/30">&copy; 2026 Taylslate. All rights reserved.</span>
+      <footer className="border-t border-[var(--ts-hairline)]">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
+          <span className="text-sm text-[var(--ts-ink-muted)]">
+            &copy; 2026 Taylslate
+          </span>
           <div className="flex items-center gap-6">
-            <Link href="#" className="text-sm text-white/30 hover:text-white/60">Terms</Link>
-            <Link href="#" className="text-sm text-white/30 hover:text-white/60">Privacy</Link>
+            <Link
+              href="#"
+              className="text-sm text-[var(--ts-ink-muted)] hover:text-[var(--ts-ink)]"
+            >
+              Terms
+            </Link>
+            <Link
+              href="#"
+              className="text-sm text-[var(--ts-ink-muted)] hover:text-[var(--ts-ink)]"
+            >
+              Privacy
+            </Link>
           </div>
         </div>
       </footer>

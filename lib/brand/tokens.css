@@ -1,0 +1,27 @@
+/*
+  Shared visual tokens.
+
+  Homepage uses these now. Dashboard and auth still use --brand-* in
+  app/globals.css. Import this file (already loaded from the root layout)
+  and switch a surface to var(--ts-*) when that restyle happens.
+
+  Accent is copper only. Do not add a second accent.
+*/
+
+:root {
+  --ts-field: #080c14;
+  --ts-ink: #f3efe8;
+  --ts-ink-muted: #9a9388;
+  --ts-paper: #f2ebe1;
+  --ts-ink-on-paper: #1c1915;
+  --ts-ink-muted-on-paper: #5c564c;
+  --ts-accent: #c17a45;
+  --ts-hairline: rgb(243 239 232 / 0.12);
+  --ts-radius: 4px;
+}
+
+.marketing-page *:focus-visible {
+  outline: 2px solid var(--ts-accent);
+  outline-offset: 2px;
+  border-radius: var(--ts-radius);
+}
