@@ -2,8 +2,10 @@
 
 import { Suspense, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { tokens } from "@/lib/brand/tokens";
 import {
   TurnstileWidget,
   type TurnstileHandle,
@@ -13,6 +15,33 @@ import {
   isCaptchaError,
   CAPTCHA_RETRY_MESSAGE,
 } from "@/lib/auth/turnstile";
+import {
+  isValidLoginEmail,
+  normalizeLoginEmail,
+} from "@/lib/auth/login-magic";
+
+const inputClass =
+  "w-full border border-[var(--ts-ink-on-paper)]/15 bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:outline-none";
+const labelClass =
+  "mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper)]";
+const primaryBtnClass =
+  "w-full bg-[var(--ts-ink-on-paper)] py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+
+function BrandMark() {
+  return (
+    <Link href="/" className="inline-flex items-center gap-2.5">
+      <Image
+        src="/mark.png"
+        alt=""
+        width={28}
+        height={28}
+        className="h-7 w-7"
+        priority
+      />
+      <span className="text-[15px] font-semibold tracking-tight">taylslate</span>
+    </Link>
+  );
+}
 
 function LoginForm() {
   const router = useRouter();
@@ -20,33 +49,78 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  // Turnstile token (undefined until solved / in local dev). Threaded into
-  // signInWithPassword when present.
+  const [submitting, setSubmitting] = useState<"magic" | "password" | null>(
+    null,
+  );
+  const [sent, setSent] = useState(false);
+  const [usePassword, setUsePassword] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
   const turnstileRef = useRef<TurnstileHandle>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleMagicSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setLoading(true);
+
+    const normalized = normalizeLoginEmail(email);
+    if (!normalized || !isValidLoginEmail(normalized)) {
+      setError("Enter your email.");
+      return;
+    }
+
+    setSubmitting("magic");
+    try {
+      const res = await fetch("/api/auth/login/magic", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: normalized,
+          next: searchParams.get("next"),
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        turnstileRef.current?.reset();
+        setCaptchaToken(undefined);
+        setError(
+          data?.error === "email required" || data?.error === "invalid email"
+            ? "Enter your email."
+            : "Could not send the link. Try again.",
+        );
+        return;
+      }
+      setSent(true);
+    } catch {
+      turnstileRef.current?.reset();
+      setCaptchaToken(undefined);
+      setError("Could not send the link. Try again.");
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting("password");
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
       options: withCaptchaToken({}, captchaToken),
     });
 
-    if (error) {
-      // Reset the single-use token so a retry gets a fresh one; show friendly
-      // copy on a captcha rejection instead of the raw error.
+    if (signInError) {
       turnstileRef.current?.reset();
       setCaptchaToken(undefined);
       setError(
-        isCaptchaError(error.message) ? CAPTCHA_RETRY_MESSAGE : error.message,
+        isCaptchaError(signInError.message)
+          ? CAPTCHA_RETRY_MESSAGE
+          : signInError.message,
       );
-      setLoading(false);
+      setSubmitting(null);
       return;
     }
 
@@ -55,110 +129,164 @@ function LoginForm() {
     router.refresh();
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--brand-surface)] px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-[var(--brand-text)]">
-            Log in to Taylslate
-          </h1>
-          <p className="text-sm text-[var(--brand-text-secondary)] mt-2">
-            Welcome back. Enter your credentials to continue.
-          </p>
-        </div>
-
-        <form
-          onSubmit={handleSubmit}
-          className="bg-[var(--brand-surface-elevated)] border border-[var(--brand-border)] rounded-2xl p-6 space-y-4"
+  if (sent) {
+    return (
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">Check your email</h1>
+        <p className="mt-3 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
+          If that address has an account, the link is on its way.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setSent(false);
+            setError(null);
+          }}
+          className="mt-8 text-sm text-[var(--ts-accent)] hover:underline"
         >
-          {error && (
-            <div className="p-3 rounded-lg bg-[var(--brand-error)]/10 text-[var(--brand-error)] text-sm">
-              {error}
-            </div>
-          )}
+          Use a different email
+        </button>
+      </div>
+    );
+  }
 
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-[var(--brand-text)] mb-1.5"
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/40 focus:border-[var(--brand-blue)]"
-              placeholder="you@example.com"
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-[var(--brand-text)]"
-              >
-                Password
-              </label>
-              <Link
-                href="/forgot-password"
-                className="text-xs text-[var(--brand-blue)] font-medium hover:underline"
-              >
-                Forgot password?
-              </Link>
-            </div>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/40 focus:border-[var(--brand-blue)]"
-              placeholder="Your password"
-            />
-          </div>
-
-          <TurnstileWidget
-            ref={turnstileRef}
-            onVerify={setCaptchaToken}
-            onExpire={() => setCaptchaToken(undefined)}
-            onError={() => setCaptchaToken(undefined)}
-          />
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 bg-[var(--brand-blue)] text-white rounded-xl font-semibold hover:bg-[var(--brand-blue-light)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? "Logging in..." : "Log in"}
-          </button>
-        </form>
-
-        <p className="text-center text-sm text-[var(--brand-text-secondary)] mt-6">
-          Don&apos;t have an account?{" "}
-          <Link
-            href="/signup"
-            className="text-[var(--brand-blue)] font-medium hover:underline"
-          >
-            Sign up
-          </Link>
+  return (
+    <>
+      <div className="mb-8 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">Log in</h1>
+        <p className="mt-2 text-sm text-[var(--ts-ink-muted-on-paper)]">
+          We&apos;ll email you a link.
         </p>
       </div>
+
+      {error && (
+        <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
+          {error}
+        </p>
+      )}
+
+      <form onSubmit={handleMagicSubmit} className="space-y-4">
+        <div>
+          <label htmlFor="email" className={labelClass}>
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            className={inputClass}
+            style={{ borderRadius: tokens.radius }}
+            placeholder="you@example.com"
+          />
+        </div>
+
+        <TurnstileWidget
+          ref={turnstileRef}
+          onVerify={setCaptchaToken}
+          onExpire={() => setCaptchaToken(undefined)}
+          onError={() => setCaptchaToken(undefined)}
+        />
+
+        <button
+          type="submit"
+          disabled={submitting !== null}
+          className={primaryBtnClass}
+          style={{ borderRadius: tokens.radius }}
+        >
+          {submitting === "magic" ? "Sending…" : "Send link"}
+        </button>
+      </form>
+
+      <div className="mt-6">
+        <button
+          type="button"
+          aria-expanded={usePassword}
+          onClick={() => {
+            setUsePassword((open) => !open);
+            setError(null);
+          }}
+          className="text-sm text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
+        >
+          Use a password instead
+        </button>
+
+        {usePassword ? (
+          <form onSubmit={handlePasswordSubmit} className="mt-4 space-y-4">
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label htmlFor="password" className="text-sm font-medium">
+                  Password
+                </label>
+                <Link
+                  href="/forgot-password"
+                  className="text-xs text-[var(--ts-accent)] hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+                className={inputClass}
+                style={{ borderRadius: tokens.radius }}
+                placeholder="Your password"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={submitting !== null}
+              className="w-full border border-[var(--ts-ink-on-paper)]/20 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-ink-on-paper)]/5 disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ borderRadius: tokens.radius }}
+            >
+              {submitting === "password" ? "Logging in..." : "Log in"}
+            </button>
+          </form>
+        ) : null}
+      </div>
+
+      <p className="mt-8 text-center text-sm text-[var(--ts-ink-muted-on-paper)]">
+        Don&apos;t have an account?{" "}
+        <Link href="/signup" className="text-[var(--ts-accent)] hover:underline">
+          Sign up
+        </Link>
+      </p>
+    </>
+  );
+}
+
+function LoginShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="marketing-page flex min-h-screen flex-col bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
+      <header className="border-b border-[var(--ts-ink-on-paper)]/10">
+        <nav className="mx-auto flex max-w-5xl items-center px-6 py-3">
+          <BrandMark />
+        </nav>
+      </header>
+      <main className="flex flex-1 items-center justify-center px-6 py-16">
+        <div className="w-full max-w-sm">{children}</div>
+      </main>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-[var(--brand-surface)]">
-        <div className="text-[var(--brand-text-secondary)]">Loading...</div>
-      </div>
-    }>
-      <LoginForm />
-    </Suspense>
+    <LoginShell>
+      <Suspense
+        fallback={
+          <p className="text-center text-sm text-[var(--ts-ink-muted-on-paper)]">
+            Loading...
+          </p>
+        }
+      >
+        <LoginForm />
+      </Suspense>
+    </LoginShell>
   );
 }

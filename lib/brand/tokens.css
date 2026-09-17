@@ -1,9 +1,10 @@
 /*
   Shared visual tokens.
 
-  Homepage uses these now. Dashboard and auth still use --brand-* in
-  app/globals.css. Import this file (already loaded from the root layout)
-  and switch a surface to var(--ts-*) when that restyle happens.
+  Homepage and /login use these now. Dashboard, signup, and other auth
+  still use --brand-* in app/globals.css. Import this file (already loaded
+  from the root layout) and switch a surface to var(--ts-*) when that
+  restyle happens.
 
   Accent is copper only. Do not add a second accent.
 */
