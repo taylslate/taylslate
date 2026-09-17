@@ -116,11 +116,16 @@ describe("LoginPage", () => {
       "href",
       "/",
     );
+    expect(screen.getByRole("link", { name: "Get started" })).toHaveAttribute(
+      "href",
+      "/signup",
+    );
     expect(
       screen.getByRole("heading", { level: 1, name: "Log in" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("We'll email you a link.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Send link" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Send magic link" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Use a password instead" }),
     ).toBeInTheDocument();
@@ -133,7 +138,7 @@ describe("LoginPage", () => {
   it("sends a magic link for a valid email and shows check-your-email", async () => {
     render(<LoginPage />);
     fillEmail("jane@example.com");
-    fireEvent.click(screen.getByRole("button", { name: "Send link" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/auth/login/magic",
@@ -159,7 +164,7 @@ describe("LoginPage", () => {
     });
     render(<LoginPage />);
     fillEmail("nobody@example.com");
-    fireEvent.click(screen.getByRole("button", { name: "Send link" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "No account for that email. Sign up instead.",
     );
@@ -176,7 +181,7 @@ describe("LoginPage", () => {
 
   it("rejects an empty email without requesting a magic link", async () => {
     render(<LoginPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Send link" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Enter your email.");
     expect(fetchMock).not.toHaveBeenCalled();
   });

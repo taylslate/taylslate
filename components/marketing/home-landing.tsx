@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { tokens } from "@/lib/brand/tokens";
@@ -11,6 +10,7 @@ import {
   parseGuest,
   type MarketingGuest,
 } from "@/lib/marketing/guest";
+import { MarketingChrome } from "@/components/marketing/marketing-chrome";
 import { SlateClap } from "@/components/marketing/slate-clap";
 
 const CLAP_MS = 300;
@@ -157,40 +157,25 @@ export function HomeLanding({
   }
 
   return (
-    <div className="marketing-page flex min-h-screen flex-col bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
-      <header className="border-b border-[var(--ts-ink-on-paper)]/10">
-        <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
-          <Link href="/" className="flex items-center gap-2.5">
-            <Image
-              src="/mark.png"
-              alt=""
-              width={28}
-              height={28}
-              className="h-7 w-7"
-              priority
-            />
-            <span className="text-[15px] font-semibold tracking-tight">
-              taylslate
-            </span>
+    <MarketingChrome
+      actions={
+        <>
+          <Link
+            href="/login"
+            className="text-sm text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
+          >
+            Log in
           </Link>
-          <div className="flex items-center gap-6">
-            <Link
-              href="/login"
-              className="text-sm text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
-            >
-              Log in
-            </Link>
-            <Link
-              href={copy.ctaHref}
-              className="hidden bg-[var(--ts-ink-on-paper)] px-3.5 py-1.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 sm:inline-flex"
-              style={{ borderRadius: tokens.radius }}
-            >
-              Get started
-            </Link>
-          </div>
-        </nav>
-      </header>
-
+          <Link
+            href={copy.ctaHref}
+            className="hidden bg-[var(--ts-ink-on-paper)] px-3.5 py-1.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 sm:inline-flex"
+            style={{ borderRadius: tokens.radius }}
+          >
+            Get started
+          </Link>
+        </>
+      }
+    >
       <main className="flex-1">
         <section className="mx-auto max-w-3xl px-6 pt-16 pb-14 text-center sm:pt-20 sm:pb-16">
           <div className="mb-6 flex flex-col items-center">
@@ -281,28 +266,6 @@ export function HomeLanding({
           </ol>
         </section>
       </main>
-
-      <footer className="border-t border-[var(--ts-ink-on-paper)]/10">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
-          <span className="text-sm text-[var(--ts-ink-muted-on-paper)]">
-            &copy; 2026 Taylslate
-          </span>
-          <div className="flex items-center gap-6">
-            <Link
-              href="#"
-              className="text-sm text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
-            >
-              Terms
-            </Link>
-            <Link
-              href="#"
-              className="text-sm text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
-            >
-              Privacy
-            </Link>
-          </div>
-        </div>
-      </footer>
-    </div>
+    </MarketingChrome>
   );
 }

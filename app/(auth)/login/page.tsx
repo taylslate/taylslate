@@ -2,10 +2,10 @@
 
 import { Suspense, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { tokens } from "@/lib/brand/tokens";
+import { MarketingChrome } from "@/components/marketing/marketing-chrome";
 import {
   TurnstileWidget,
   type TurnstileHandle,
@@ -27,22 +27,6 @@ const labelClass =
   "mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper)]";
 const primaryBtnClass =
   "w-full bg-[var(--ts-ink-on-paper)] py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
-
-function BrandMark() {
-  return (
-    <Link href="/" className="inline-flex items-center gap-2.5">
-      <Image
-        src="/mark.png"
-        alt=""
-        width={28}
-        height={28}
-        className="h-7 w-7"
-        priority
-      />
-      <span className="text-[15px] font-semibold tracking-tight">taylslate</span>
-    </Link>
-  );
-}
 
 function LoginForm() {
   const router = useRouter();
@@ -157,11 +141,8 @@ function LoginForm() {
 
   return (
     <>
-      <div className="mb-8 text-center">
+      <div className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Log in</h1>
-        <p className="mt-2 text-sm text-[var(--ts-ink-muted-on-paper)]">
-          We&apos;ll email you a link.
-        </p>
       </div>
 
       {error === LOGIN_MAGIC_NO_ACCOUNT ? (
@@ -207,7 +188,7 @@ function LoginForm() {
           className={primaryBtnClass}
           style={{ borderRadius: tokens.radius }}
         >
-          {submitting === "magic" ? "Sending…" : "Send link"}
+          {submitting === "magic" ? "Sending…" : "Send magic link"}
         </button>
       </form>
 
@@ -262,7 +243,7 @@ function LoginForm() {
         ) : null}
       </div>
 
-      <p className="mt-8 text-center text-sm text-[var(--ts-ink-muted-on-paper)]">
+      <p className="mt-8 text-sm text-[var(--ts-ink-muted-on-paper)]">
         Don&apos;t have an account?{" "}
         <Link href="/signup" className="text-[var(--ts-accent)] hover:underline">
           Sign up
@@ -274,16 +255,21 @@ function LoginForm() {
 
 function LoginShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="marketing-page flex min-h-screen flex-col bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
-      <header className="border-b border-[var(--ts-ink-on-paper)]/10">
-        <nav className="mx-auto flex max-w-5xl items-center px-6 py-3">
-          <BrandMark />
-        </nav>
-      </header>
+    <MarketingChrome
+      actions={
+        <Link
+          href="/signup"
+          className="hidden bg-[var(--ts-ink-on-paper)] px-3.5 py-1.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 sm:inline-flex"
+          style={{ borderRadius: tokens.radius }}
+        >
+          Get started
+        </Link>
+      }
+    >
       <main className="flex flex-1 items-center justify-center px-6 py-16">
         <div className="w-full max-w-sm">{children}</div>
       </main>
-    </div>
+    </MarketingChrome>
   );
 }
 
