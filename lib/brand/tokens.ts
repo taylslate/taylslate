@@ -15,4 +15,6 @@ export const tokens = {
   accent: "var(--ts-accent)",
   hairline: "var(--ts-hairline)",
   radius: "var(--ts-radius)",
+  bandBrands: "var(--ts-band-brands)",
+  bandShows: "var(--ts-band-shows)",
 } as const;
