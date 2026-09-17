@@ -72,7 +72,7 @@ export default async function DashboardLayout({
   const canReturnToAdmin = Boolean(cookieStore.get(RETURN_TOKEN_COOKIE)?.value);
 
   return (
-    <div className="min-h-screen bg-[var(--brand-surface)]">
+    <div className="brand-app min-h-screen bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
       <Sidebar
         role={effectiveRole}
         canSwitchTo={canSwitchTo}
@@ -81,7 +81,7 @@ export default async function DashboardLayout({
       />
       <main className="ml-[240px] min-h-screen">
         {impersonating && (
-          <div className="sticky top-0 z-40 flex items-center justify-center bg-[var(--brand-orange)] text-white text-sm font-medium px-6 py-2 text-center">
+          <div className="sticky top-0 z-40 flex items-center justify-center bg-[var(--ts-field)] px-6 py-2 text-center text-sm font-medium text-[var(--ts-ink)]">
             <span>Impersonating {impersonating.label}</span>
             {canReturnToAdmin && <ReturnToAdminButton />}
           </div>

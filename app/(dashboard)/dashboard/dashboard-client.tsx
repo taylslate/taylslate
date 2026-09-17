@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import type { Deal, Show, UserRole } from "@/lib/data/types";
 import { isBrandSide } from "@/lib/nav/items";
+import { tokens } from "@/lib/brand/tokens";
 
 interface DashboardData {
   totalShows: number;
@@ -32,24 +33,41 @@ function fmtCurrency(amount: number): string {
   return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
-const statusBadge: Record<string, { bg: string; text: string; label: string }> = {
-  planning: { bg: "var(--brand-blue)", text: "#fff", label: "Planning" },
-  proposed: { bg: "var(--brand-blue)", text: "#fff", label: "Proposed" },
-  negotiating: { bg: "var(--brand-warning)", text: "#fff", label: "Negotiating" },
-  approved: { bg: "var(--brand-success)", text: "#fff", label: "Approved" },
-  io_sent: { bg: "var(--brand-success)", text: "#fff", label: "IO Sent" },
-  brand_signed: { bg: "var(--brand-warning)", text: "#fff", label: "Brand Signed" },
-  show_signed: { bg: "var(--brand-success)", text: "#fff", label: "Show Signed" },
-  signed: { bg: "var(--brand-success)", text: "#fff", label: "Signed" },
-  live: { bg: "var(--brand-success)", text: "#fff", label: "Live" },
-  delivering: { bg: "var(--brand-success)", text: "#fff", label: "Delivering" },
-  completed: { bg: "var(--brand-text-muted)", text: "#fff", label: "Completed" },
-  draft: { bg: "var(--brand-text-muted)", text: "#fff", label: "Draft" },
-  sent: { bg: "var(--brand-warning)", text: "#fff", label: "Sent" },
-  paid: { bg: "var(--brand-success)", text: "#fff", label: "Paid" },
-  overdue: { bg: "var(--brand-error)", text: "#fff", label: "Overdue" },
-  cancelled: { bg: "var(--brand-text-muted)", text: "#fff", label: "Cancelled" },
+type BadgeTone = "ink" | "muted" | "accent";
+
+const statusBadge: Record<string, { tone: BadgeTone; label: string }> = {
+  planning: { tone: "ink", label: "Planning" },
+  proposed: { tone: "ink", label: "Proposed" },
+  negotiating: { tone: "accent", label: "Negotiating" },
+  approved: { tone: "ink", label: "Approved" },
+  io_sent: { tone: "ink", label: "IO Sent" },
+  brand_signed: { tone: "accent", label: "Brand Signed" },
+  show_signed: { tone: "ink", label: "Show Signed" },
+  signed: { tone: "ink", label: "Signed" },
+  live: { tone: "ink", label: "Live" },
+  delivering: { tone: "ink", label: "Delivering" },
+  completed: { tone: "muted", label: "Completed" },
+  draft: { tone: "muted", label: "Draft" },
+  sent: { tone: "accent", label: "Sent" },
+  paid: { tone: "ink", label: "Paid" },
+  overdue: { tone: "ink", label: "Overdue" },
+  cancelled: { tone: "muted", label: "Cancelled" },
 };
+
+const badgeColor: Record<BadgeTone, string> = {
+  ink: "var(--ts-ink-on-paper)",
+  muted: "var(--ts-ink-muted-on-paper)",
+  accent: "var(--ts-accent)",
+};
+
+const cardClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const inkBtnClass =
+  "inline-flex items-center gap-2 bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90";
+const ghostBtnClass =
+  "inline-flex items-center gap-2 border border-[var(--ts-hairline-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-ink-on-paper)]/5";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
 
 export default function DashboardClient({ role }: { role: UserRole }) {
   const isBrand = isBrandSide(role);
@@ -126,20 +144,20 @@ export default function DashboardClient({ role }: { role: UserRole }) {
     return (
       <div className="p-8">
         <div className="mb-8">
-          <div className="h-7 w-40 bg-[var(--brand-border)] rounded animate-pulse mb-2" />
-          <div className="h-4 w-64 bg-[var(--brand-border)] rounded animate-pulse" />
+          <div className={`mb-2 h-7 w-40 ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
+          <div className={`h-4 w-64 ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+        <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] animate-pulse">
-              <div className="h-3 w-16 bg-[var(--brand-border)] rounded mb-2" />
-              <div className="h-6 w-12 bg-[var(--brand-border)] rounded" />
+            <div key={i} className={`p-4 ${cardClass} ${pulseClass}`} style={{ borderRadius: tokens.radius }}>
+              <div className={`mb-2 h-3 w-16 ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
+              <div className={`h-6 w-12 ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
             </div>
           ))}
         </div>
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] animate-pulse" />
+            <div key={i} className={`h-16 ${cardClass} ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
           ))}
         </div>
       </div>
@@ -160,25 +178,29 @@ export default function DashboardClient({ role }: { role: UserRole }) {
     <div className="p-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Dashboard</h1>
-        <p className="text-sm text-[var(--brand-text-secondary)] mt-1">{headerSubtitle}</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+          {isBrand ? "For brands" : "For shows"}
+        </p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <p className={`mt-1 text-sm ${mutedText}`}>{headerSubtitle}</p>
       </div>
 
       {/* Empty-state CTA */}
       {showBrandEmptyCta && (
         <Link
           href="/campaigns/new"
-          className="group block mb-8 rounded-2xl border border-[var(--brand-blue)]/20 bg-gradient-to-br from-[var(--brand-blue)]/[0.06] to-[var(--brand-teal)]/[0.04] p-6 hover:border-[var(--brand-blue)]/40 transition-colors"
+          className={`group mb-8 block p-6 ${cardClass}`}
+          style={{ borderRadius: tokens.radius, backgroundColor: tokens.bandBrands }}
         >
           <div className="flex items-start justify-between gap-6">
             <div>
-              <div className="text-xs uppercase tracking-wider font-semibold text-[var(--brand-blue)] mb-1.5">Welcome to Taylslate</div>
-              <h2 className="text-xl font-bold text-[var(--brand-text)]">Create your first campaign</h2>
-              <p className="text-sm text-[var(--brand-text-secondary)] mt-1.5 max-w-xl">
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">Welcome to Taylslate</div>
+              <h2 className="text-xl font-semibold tracking-tight">Create your first campaign</h2>
+              <p className={`mt-1.5 max-w-xl text-sm ${mutedText}`}>
                 We&apos;ve saved your brand profile. When you start a campaign, we&apos;ll score 50–100 shows against your audience and surface the best matches. Most brands take 2–5 minutes from brief to IO.
               </p>
             </div>
-            <span className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--brand-blue)] text-white text-sm font-semibold whitespace-nowrap group-hover:bg-[var(--brand-blue-light)] transition-colors">
+            <span className={`${inkBtnClass} whitespace-nowrap`} style={{ borderRadius: tokens.radius }}>
               Start a campaign
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M5 12h14M12 5l7 7-7 7" />
@@ -191,19 +213,20 @@ export default function DashboardClient({ role }: { role: UserRole }) {
       {showShowEmptyCta && (
         <Link
           href="/shows"
-          className="group block mb-8 rounded-2xl border border-[var(--brand-blue)]/20 bg-gradient-to-br from-[var(--brand-blue)]/[0.06] to-[var(--brand-teal)]/[0.04] p-6 hover:border-[var(--brand-blue)]/40 transition-colors"
+          className={`group mb-8 block p-6 ${cardClass}`}
+          style={{ borderRadius: tokens.radius, backgroundColor: tokens.bandShows }}
         >
           <div className="flex items-start justify-between gap-6">
             <div>
-              <div className="text-xs uppercase tracking-wider font-semibold text-[var(--brand-blue)] mb-1.5">Welcome to Taylslate</div>
-              <h2 className="text-xl font-bold text-[var(--brand-text)]">Add your first show</h2>
-              <p className="text-sm text-[var(--brand-text-secondary)] mt-1.5 max-w-xl">
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">Welcome to Taylslate</div>
+              <h2 className="text-xl font-semibold tracking-tight">Add your first show</h2>
+              <p className={`mt-1.5 max-w-xl text-sm ${mutedText}`}>
                 {role === "agent"
                   ? "Import your roster or add shows individually. Once a show is on Taylslate, brands can discover it and send sponsorship outreach."
                   : "Add your podcast or YouTube channel so brands can discover it and send sponsorship outreach."}
               </p>
             </div>
-            <span className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--brand-blue)] text-white text-sm font-semibold whitespace-nowrap group-hover:bg-[var(--brand-blue-light)] transition-colors">
+            <span className={`${inkBtnClass} whitespace-nowrap`} style={{ borderRadius: tokens.radius }}>
               {role === "agent" ? "Import shows" : "Add a show"}
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M5 12h14M12 5l7 7-7 7" />
@@ -214,7 +237,7 @@ export default function DashboardClient({ role }: { role: UserRole }) {
       )}
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Active Deals" value={d.activeDeals} href="/deals" />
         {isBrand ? (
           <StatCard label="Pipeline Value" value={fmtCurrency(d.pipelineValue)} href="/deals" />
@@ -260,12 +283,13 @@ export default function DashboardClient({ role }: { role: UserRole }) {
       </div>
 
       {/* Quick Actions */}
-      <div className="flex items-center gap-3 mb-8">
+      <div className="mb-8 flex items-center gap-3">
         {isBrand ? (
           <>
             <Link
               href="/campaigns/new"
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors"
+              className={inkBtnClass}
+              style={{ borderRadius: tokens.radius }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 5v14M5 12h14" />
@@ -274,7 +298,8 @@ export default function DashboardClient({ role }: { role: UserRole }) {
             </Link>
             <Link
               href="/deals"
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] text-sm font-medium transition-colors"
+              className={ghostBtnClass}
+              style={{ borderRadius: tokens.radius }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z" />
@@ -285,7 +310,8 @@ export default function DashboardClient({ role }: { role: UserRole }) {
         ) : (
           <Link
             href="/shows"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors"
+            className={inkBtnClass}
+            style={{ borderRadius: tokens.radius }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               {role === "agent" ? (
@@ -307,15 +333,18 @@ export default function DashboardClient({ role }: { role: UserRole }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Deals */}
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider">
               Recent Deals
             </h2>
-            <Link href="/deals" className="text-xs text-[var(--brand-blue)] hover:underline">View all</Link>
+            <Link href="/deals" className="text-xs text-[var(--ts-accent)] hover:underline">View all</Link>
           </div>
-          <div className="bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] divide-y divide-[var(--brand-border)]">
+          <div
+            className={`${cardClass} divide-y divide-[var(--ts-hairline-on-paper)]`}
+            style={{ borderRadius: tokens.radius }}
+          >
             {d.recentDeals.length === 0 ? (
-              <div className="p-8 text-center text-sm text-[var(--brand-text-muted)]">
+              <div className={`p-8 text-center text-sm ${mutedText}`}>
                 {isBrand
                   ? "No deals yet. Send outreach from a campaign to get started."
                   : "No deals yet. Brands will reach out as they discover your show."}
@@ -327,27 +356,39 @@ export default function DashboardClient({ role }: { role: UserRole }) {
                   <Link
                     key={deal.id}
                     href={`/deals/${deal.id}`}
-                    className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--brand-surface)] transition-colors"
+                    className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--ts-band-shows)]"
                   >
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--brand-blue) 10%, transparent)", color: "var(--brand-blue)" }}>
+                    <div
+                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center text-[var(--ts-ink-muted-on-paper)]"
+                      style={{
+                        borderRadius: tokens.radius,
+                        backgroundColor: "color-mix(in srgb, var(--ts-ink-on-paper) 8%, transparent)",
+                      }}
+                    >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z" />
                       </svg>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-[var(--brand-text)] truncate">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">
                         {deal.show_name ?? "Unknown Show"}
                       </div>
-                      <div className="text-xs text-[var(--brand-text-muted)]">
+                      <div className={`text-xs ${mutedText}`}>
                         {deal.num_episodes} ep &middot; {fmtCurrency(deal.total_net)}
                       </div>
                     </div>
                     {badge && (
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: badge.bg, color: badge.text }}>
+                      <span
+                        className="flex-shrink-0 border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold"
+                        style={{
+                          borderRadius: tokens.radius,
+                          color: badgeColor[badge.tone],
+                        }}
+                      >
                         {badge.label}
                       </span>
                     )}
-                    <span className="text-xs text-[var(--brand-text-muted)] flex-shrink-0 ml-2">
+                    <span className={`ml-2 flex-shrink-0 text-xs ${mutedText}`}>
                       {fmtDate(deal.updated_at ?? deal.created_at)}
                     </span>
                   </Link>
@@ -359,15 +400,18 @@ export default function DashboardClient({ role }: { role: UserRole }) {
 
         {/* Recent Invoices */}
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider">
               Recent Invoices
             </h2>
-            <Link href="/invoices" className="text-xs text-[var(--brand-blue)] hover:underline">View all</Link>
+            <Link href="/invoices" className="text-xs text-[var(--ts-accent)] hover:underline">View all</Link>
           </div>
-          <div className="bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] divide-y divide-[var(--brand-border)]">
+          <div
+            className={`${cardClass} divide-y divide-[var(--ts-hairline-on-paper)]`}
+            style={{ borderRadius: tokens.radius }}
+          >
             {d.recentInvoices.length === 0 ? (
-              <div className="p-8 text-center text-sm text-[var(--brand-text-muted)]">
+              <div className={`p-8 text-center text-sm ${mutedText}`}>
                 No invoices yet.
               </div>
             ) : (
@@ -377,24 +421,36 @@ export default function DashboardClient({ role }: { role: UserRole }) {
                   <Link
                     key={inv.id}
                     href="/invoices"
-                    className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--brand-surface)] transition-colors"
+                    className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--ts-band-shows)]"
                   >
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "color-mix(in srgb, var(--brand-orange) 10%, transparent)", color: "var(--brand-orange)" }}>
+                    <div
+                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center text-[var(--ts-ink-muted-on-paper)]"
+                      style={{
+                        borderRadius: tokens.radius,
+                        backgroundColor: "color-mix(in srgb, var(--ts-ink-on-paper) 8%, transparent)",
+                      }}
+                    >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                         <polyline points="14 2 14 8 20 8" />
                       </svg>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-[var(--brand-text)] truncate">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">
                         {inv.invoice_number} &mdash; {inv.advertiser_name}
                       </div>
-                      <div className="text-xs text-[var(--brand-text-muted)]">
+                      <div className={`text-xs ${mutedText}`}>
                         Due {fmtDate(inv.due_date)} &middot; {fmtCurrency(inv.total_due)}
                       </div>
                     </div>
                     {badge && (
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: badge.bg, color: badge.text }}>
+                      <span
+                        className="flex-shrink-0 border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold"
+                        style={{
+                          borderRadius: tokens.radius,
+                          color: badgeColor[badge.tone],
+                        }}
+                      >
                         {badge.label}
                       </span>
                     )}
@@ -425,16 +481,17 @@ function StatCard({
   return (
     <Link
       href={href}
-      className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] hover:border-[var(--brand-blue)]/30 hover:shadow-sm transition-all"
+      className={`p-4 ${cardClass} hover:bg-[var(--ts-band-shows)]`}
+      style={{ borderRadius: tokens.radius }}
     >
-      <div className="text-xs text-[var(--brand-text-muted)] mb-1">{label}</div>
+      <div className={`mb-1 text-xs ${mutedText}`}>{label}</div>
       <div
-        className="text-xl font-bold"
-        style={{ color: highlight ? "var(--brand-error)" : "var(--brand-text)" }}
+        className="text-xl font-semibold"
+        style={{ color: highlight ? "var(--ts-ink-on-paper)" : undefined }}
       >
         {value}
       </div>
-      {sub && <div className="text-xs text-[var(--brand-text-muted)] mt-0.5">{sub}</div>}
+      {sub && <div className={`mt-0.5 text-xs ${mutedText}`}>{sub}</div>}
     </Link>
   );
 }

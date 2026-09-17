@@ -1,10 +1,9 @@
 /*
   Shared visual tokens.
 
-  Homepage and /login use these now. Dashboard, signup, and other auth
-  still use --brand-* in app/globals.css. Import this file (already loaded
-  from the root layout) and switch a surface to var(--ts-*) when that
-  restyle happens.
+  Homepage, /login, and the authenticated dashboard chrome (layout +
+  sidebar + /dashboard) use these. Signup, onboarding, campaigns, deals,
+  invoices, and settings page bodies still use --brand-* in globals.css.
 
   Accent is copper only. Do not add a second accent.
 */
@@ -18,13 +17,15 @@
   --ts-ink-muted-on-paper: #5c564c;
   --ts-accent: #c17a45;
   --ts-hairline: rgb(243 239 232 / 0.12);
+  --ts-hairline-on-paper: rgb(28 25 21 / 0.12);
   --ts-radius: 4px;
   /* Step-band washes. Derived from paper + existing tokens, not a second accent. */
   --ts-band-brands: color-mix(in srgb, var(--ts-accent) 12%, var(--ts-paper));
   --ts-band-shows: color-mix(in srgb, var(--ts-ink-on-paper) 7%, var(--ts-paper));
 }
 
-.marketing-page *:focus-visible {
+.marketing-page *:focus-visible,
+.brand-app *:focus-visible {
   outline: 2px solid var(--ts-accent);
   outline-offset: 2px;
   border-radius: var(--ts-radius);

@@ -6,6 +6,7 @@
 // admin before the dashboard re-renders (router.push wouldn't run the callback).
 
 import { useState } from "react";
+import { tokens } from "@/lib/brand/tokens";
 
 export default function ReturnToAdminButton() {
   const [returning, setReturning] = useState(false);
@@ -31,7 +32,8 @@ export default function ReturnToAdminButton() {
       type="button"
       onClick={handleReturn}
       disabled={returning}
-      className="ml-3 inline-flex items-center gap-1.5 rounded-md bg-white/20 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/30 disabled:opacity-60 transition-colors"
+      className="ml-3 inline-flex items-center gap-1.5 border border-[var(--ts-hairline)] px-2.5 py-1 text-xs font-medium text-[var(--ts-ink)] hover:bg-[var(--ts-ink)]/10 disabled:opacity-60"
+      style={{ borderRadius: tokens.radius }}
     >
       <svg
         width="13"

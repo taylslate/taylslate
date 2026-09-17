@@ -1,9 +1,10 @@
 /**
- * Shared visual tokens for Taylslate marketing, and later the app.
+ * Shared visual tokens for Taylslate marketing and dashboard chrome.
  *
- * Values live in tokens.css as CSS variables. This module is the JS import
- * surface so a future dashboard restyle can `import { tokens } from "@/lib/brand/tokens"`
- * without copying hex. Do not apply these to authenticated pages yet.
+ * Values live in tokens.css as CSS variables. Import this module instead of
+ * copying hex. Applied on homepage, /login, and the authenticated dashboard
+ * shell (layout + sidebar + /dashboard). Other authenticated page bodies
+ * still use --brand-* until those restyles land.
  */
 export const tokens = {
   field: "var(--ts-field)",
@@ -14,6 +15,7 @@ export const tokens = {
   inkMutedOnPaper: "var(--ts-ink-muted-on-paper)",
   accent: "var(--ts-accent)",
   hairline: "var(--ts-hairline)",
+  hairlineOnPaper: "var(--ts-hairline-on-paper)",
   radius: "var(--ts-radius)",
   bandBrands: "var(--ts-band-brands)",
   bandShows: "var(--ts-band-shows)",

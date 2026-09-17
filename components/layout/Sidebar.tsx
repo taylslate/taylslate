@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 import SignOutButton from "@/components/auth/SignOutButton";
@@ -10,6 +11,7 @@ import {
   type IconKey,
 } from "@/lib/nav/items";
 import type { UserRole } from "@/lib/data/types";
+import { tokens } from "@/lib/brand/tokens";
 
 function Icon({ name }: { name: IconKey }) {
   const common = {
@@ -149,17 +151,35 @@ export default function Sidebar({
     }
   };
 
+  const navRow =
+    "flex items-center gap-3 px-3 py-2.5 text-sm font-medium mb-0.5";
+  const quietRow =
+    "text-[var(--ts-ink-muted-on-paper)] hover:bg-[var(--ts-band-shows)] hover:text-[var(--ts-ink-on-paper)]";
+
   return (
-    <aside className="w-[240px] h-screen bg-[var(--brand-surface-elevated)] border-r border-[var(--brand-border)] flex flex-col fixed left-0 top-0">
-      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-[var(--brand-border)]">
-        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[var(--brand-blue)] to-[var(--brand-teal)] flex items-center justify-center">
-          <span className="text-white font-bold text-xs">T</span>
-        </div>
-        <span className="text-base font-bold tracking-tight text-[var(--brand-text)]">taylslate</span>
+    <aside className="fixed left-0 top-0 flex h-screen w-[240px] flex-col border-r border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
+      <div className="flex items-center gap-2.5 border-b border-[var(--ts-hairline-on-paper)] px-5 py-5">
+        <Link href="/dashboard" className="flex items-center gap-2.5">
+          <Image
+            src="/mark.png"
+            alt=""
+            width={28}
+            height={28}
+            className="h-7 w-7"
+            priority
+          />
+          <span className="text-[15px] font-semibold tracking-tight">
+            taylslate
+          </span>
+        </Link>
       </div>
 
       <div className="px-3 pt-4 pb-2">
-        <Link href={primary.href} className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors">
+        <Link
+          href={primary.href}
+          className="flex w-full items-center justify-center gap-2 bg-[var(--ts-ink-on-paper)] py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90"
+          style={{ borderRadius: tokens.radius }}
+        >
           <Icon name={primary.iconKey} />
           {primary.label}
         </Link>
@@ -172,18 +192,21 @@ export default function Sidebar({
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-0.5 ${
+              className={`${navRow} ${
                 isActive
-                  ? "bg-[var(--brand-blue)]/[0.08] text-[var(--brand-blue)]"
-                  : "text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] hover:text-[var(--brand-text)]"
+                  ? "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]"
+                  : quietRow
               }`}
+              style={{ borderRadius: tokens.radius }}
             >
               <Icon name={item.iconKey} />
               {item.label}
             </Link>
           );
         })}
-        <SignOutButton className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-0.5 text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] hover:text-[var(--brand-text)] disabled:opacity-50 text-left">
+        <SignOutButton
+          className={`w-full rounded text-left disabled:opacity-50 ${navRow} ${quietRow}`}
+        >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
             <polyline points="16 17 21 12 16 7" />
@@ -193,10 +216,10 @@ export default function Sidebar({
         </SignOutButton>
       </nav>
 
-      <div className="px-3 py-4 border-t border-[var(--brand-border)]">
+      <div className="border-t border-[var(--ts-hairline-on-paper)] px-3 py-4">
         {isAdmin && testAccounts && testAccounts.length > 0 && (
           <div className="mb-3">
-            <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--brand-text-muted)]">
+            <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">
               Internal
             </div>
             {testAccounts.map((acct) => (
@@ -205,7 +228,8 @@ export default function Sidebar({
                 type="button"
                 onClick={() => handleTestLogin(acct.key)}
                 disabled={loggingInAs !== null}
-                className="w-full text-left flex items-center gap-3 px-3 py-2 mb-1 rounded-lg text-xs font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] hover:text-[var(--brand-text)] disabled:opacity-50 transition-colors"
+                className={`mb-1 w-full text-left text-xs font-medium disabled:opacity-50 ${navRow} ${quietRow}`}
+                style={{ borderRadius: tokens.radius }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -222,7 +246,8 @@ export default function Sidebar({
             type="button"
             onClick={handleSwitch}
             disabled={switching}
-            className="w-full text-left flex items-center gap-3 px-3 py-2 mb-2 rounded-lg text-xs font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] hover:text-[var(--brand-text)] disabled:opacity-50 transition-colors"
+            className={`mb-2 w-full text-left text-xs font-medium disabled:opacity-50 ${navRow} ${quietRow}`}
+            style={{ borderRadius: tokens.radius }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 1l4 4-4 4" />
@@ -234,12 +259,12 @@ export default function Sidebar({
           </button>
         )}
         <div className="flex items-center gap-3 px-3 py-2">
-          <div className="w-8 h-8 rounded-full bg-[var(--brand-blue)]/10 flex items-center justify-center">
-            <span className="text-xs font-semibold text-[var(--brand-blue)]">U</span>
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--ts-ink-on-paper)]/10">
+            <span className="text-xs font-semibold text-[var(--ts-ink-on-paper)]">U</span>
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-[var(--brand-text)] truncate">Free Plan</div>
-            <Link href="/settings" className="text-xs text-[var(--brand-blue)] hover:underline">Upgrade</Link>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">Free Plan</div>
+            <Link href="/settings" className="text-xs text-[var(--ts-accent)] hover:underline">Upgrade</Link>
           </div>
         </div>
       </div>
