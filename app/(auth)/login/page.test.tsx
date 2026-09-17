@@ -152,6 +152,28 @@ describe("LoginPage", () => {
     expect(signInWithPassword).not.toHaveBeenCalled();
   });
 
+  it("stays on login and points unknown emails to signup", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: "no_account" }),
+    });
+    render(<LoginPage />);
+    fillEmail("nobody@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Send link" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "No account for that email. Sign up instead.",
+    );
+    expect(
+      screen.getByRole("link", { name: /sign up instead/i }),
+    ).toHaveAttribute("href", "/signup");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Log in" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Check your email" }),
+    ).toBeNull();
+  });
+
   it("rejects an empty email without requesting a magic link", async () => {
     render(<LoginPage />);
     fireEvent.click(screen.getByRole("button", { name: "Send link" }));

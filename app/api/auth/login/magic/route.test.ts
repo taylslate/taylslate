@@ -2,13 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { _resetRateLimits } from "@/lib/utils/rate-limit";
 
-const { generateLink, sendEmail } = vi.hoisted(() => ({
+const { generateLink, deleteUser, sendEmail } = vi.hoisted(() => ({
   generateLink: vi.fn(),
+  deleteUser: vi.fn(),
   sendEmail: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
-  supabaseAdmin: { auth: { admin: { generateLink } } },
+  supabaseAdmin: { auth: { admin: { generateLink, deleteUser } } },
 }));
 vi.mock("@/lib/email/send", () => ({
   sendEmail: (...args: unknown[]) => sendEmail(...args),
@@ -26,12 +27,17 @@ function req(body: unknown, origin = "https://www.taylslate.com"): NextRequest {
 
 beforeEach(() => {
   generateLink.mockReset();
+  deleteUser.mockReset();
   sendEmail.mockReset();
   _resetRateLimits();
   generateLink.mockResolvedValue({
-    data: { properties: { hashed_token: "tok-hash" } },
+    data: {
+      user: { id: "user-1" },
+      properties: { hashed_token: "tok-hash", verification_type: "magiclink" },
+    },
     error: null,
   });
+  deleteUser.mockResolvedValue({ data: {}, error: null });
   sendEmail.mockResolvedValue({ ok: true, id: "msg_1" });
 });
 
@@ -45,8 +51,10 @@ describe("POST /api/auth/login/magic", () => {
       email: "jane@example.com",
       options: {
         redirectTo: "https://www.taylslate.com/callback?next=%2Fdashboard",
+        shouldCreateUser: false,
       },
     });
+    expect(deleteUser).not.toHaveBeenCalled();
     expect(sendEmail).toHaveBeenCalledTimes(1);
     const sent = sendEmail.mock.calls[0][0];
     expect(sent.to).toBe("jane@example.com");
@@ -72,14 +80,36 @@ describe("POST /api/auth/login/magic", () => {
     expect(generateLink).not.toHaveBeenCalled();
   });
 
-  it("returns 200 without sending when the address has no account", async () => {
+  it("calls login OTP with shouldCreateUser: false", async () => {
+    await POST(req({ email: "jane@example.com" }));
+    expect(generateLink).toHaveBeenCalledTimes(1);
+    expect(generateLink.mock.calls[0][0].options.shouldCreateUser).toBe(false);
+  });
+
+  it("returns 404 without sending when the address has no account", async () => {
     generateLink.mockResolvedValue({
       data: { properties: {} },
       error: { message: "User not found" },
     });
     const res = await POST(req({ email: "nobody@example.com" }));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "no_account" });
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("rolls back a GoTrue signup conversion instead of creating a user", async () => {
+    generateLink.mockResolvedValue({
+      data: {
+        user: { id: "created-user" },
+        properties: { hashed_token: "tok-hash", verification_type: "signup" },
+      },
+      error: null,
+    });
+    const res = await POST(req({ email: "nobody@example.com" }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "no_account" });
+    expect(deleteUser).toHaveBeenCalledWith("created-user");
     expect(sendEmail).not.toHaveBeenCalled();
   });
 

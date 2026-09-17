@@ -18,6 +18,7 @@ import {
 import {
   isValidLoginEmail,
   normalizeLoginEmail,
+  LOGIN_MAGIC_NO_ACCOUNT,
 } from "@/lib/auth/login-magic";
 
 const inputClass =
@@ -83,6 +84,10 @@ function LoginForm() {
         } | null;
         turnstileRef.current?.reset();
         setCaptchaToken(undefined);
+        if (data?.error === LOGIN_MAGIC_NO_ACCOUNT) {
+          setError(LOGIN_MAGIC_NO_ACCOUNT);
+          return;
+        }
         setError(
           data?.error === "email required" || data?.error === "invalid email"
             ? "Enter your email."
@@ -159,11 +164,18 @@ function LoginForm() {
         </p>
       </div>
 
-      {error && (
+      {error === LOGIN_MAGIC_NO_ACCOUNT ? (
+        <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
+          No account for that email.{" "}
+          <Link href="/signup" className="text-[var(--ts-accent)] hover:underline">
+            Sign up instead.
+          </Link>
+        </p>
+      ) : error ? (
         <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
           {error}
         </p>
-      )}
+      ) : null}
 
       <form onSubmit={handleMagicSubmit} className="space-y-4">
         <div>

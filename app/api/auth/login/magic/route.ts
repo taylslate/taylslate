@@ -1,6 +1,6 @@
 // POST /api/auth/login/magic — email a sign-in link for an existing account.
 // Same path for brands and shows; role is already on the profile.
-// Does not create users. Unknown emails still return 200 (no enumeration).
+// Does not create users. Unknown emails return 404 no_account.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -12,6 +12,10 @@ import {
   normalizeLoginEmail,
   safeLoginNext,
   siteOriginFromRequest,
+  loginMagicOtpOptions,
+  isLoginMagicSignupLink,
+  isLoginMagicUnknownUserError,
+  LOGIN_MAGIC_NO_ACCOUNT,
 } from "@/lib/auth/login-magic";
 
 export const runtime = "nodejs";
@@ -37,7 +41,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid email" }, { status: 400 });
   }
 
-  // Valid shape from here: always 200 so existence never leaks.
   const origin = siteOriginFromRequest(request.url);
   const nextPath = safeLoginNext(body.next, origin);
   const limit = checkRateLimit(`login-magic:${email}`, 5, 60_000);
@@ -46,19 +49,43 @@ export async function POST(request: NextRequest) {
   }
 
   const redirectTo = `${origin}/callback?next=${encodeURIComponent(nextPath)}`;
+  // generateLink is the server equivalent of signInWithOtp. GoTrue has no
+  // shouldCreateUser on this endpoint and converts unknown emails to signup,
+  // so we pass the flag for the contract and roll back verification_type=signup.
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type: "magiclink",
     email,
-    options: { redirectTo },
+    options: loginMagicOtpOptions(redirectTo),
   });
   const tokenHash = data?.properties?.hashed_token;
+  if (isLoginMagicSignupLink(data?.properties?.verification_type)) {
+    const createdId = data?.user?.id;
+    if (createdId) {
+      const { error: deleteError } =
+        await supabaseAdmin.auth.admin.deleteUser(createdId);
+      if (deleteError) {
+        console.error(
+          "[login.magic] failed to roll back auto-created user:",
+          deleteError.message,
+        );
+      }
+    }
+    return NextResponse.json(
+      { error: LOGIN_MAGIC_NO_ACCOUNT },
+      { status: 404 },
+    );
+  }
+  if (isLoginMagicUnknownUserError(error)) {
+    return NextResponse.json(
+      { error: LOGIN_MAGIC_NO_ACCOUNT },
+      { status: 404 },
+    );
+  }
   if (error || !tokenHash) {
-    // Unknown user, or generateLink rejected the redirect URL. Log the
-    // latter — Redirect URLs in Supabase Auth must include localhost and
-    // https://www.taylslate.com (see commit message). Do not change the
-    // response; the client always shows "check your email".
+    // generateLink rejected the redirect URL. Redirect URLs in Supabase Auth
+    // must include localhost and https://www.taylslate.com.
     console.warn("[login.magic] generateLink:", error?.message ?? "no token");
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ error: "send_failed" }, { status: 500 });
   }
 
   const loginUrl = `${origin}/callback?token_hash=${encodeURIComponent(

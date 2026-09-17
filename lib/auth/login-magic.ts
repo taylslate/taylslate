@@ -1,9 +1,16 @@
 // Shared helpers for the /login magic-link path.
 //
-// Login does not create accounts (signup does). generateLink for an unknown
-// email fails; the API still returns 200 so account existence never leaks.
+// Login does not create accounts (signup does). The login OTP/generateLink
+// call always sets shouldCreateUser: false. Unknown emails return no_account
+// so /login can point the user at /signup.
 
 export const LOGIN_NEXT_FALLBACK = "/dashboard";
+
+/** API error body when generateLink/OTP finds no existing auth user. */
+export const LOGIN_MAGIC_NO_ACCOUNT = "no_account";
+
+/** Must be false — login must not mint an auth user. Signup does that. */
+export const LOGIN_MAGIC_SHOULD_CREATE_USER = false;
 
 const LOGIN_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -39,4 +46,38 @@ export function siteOriginFromRequest(url: string): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
   if (envOrigin) return envOrigin.replace(/\/$/, "");
   return new URL(url).origin;
+}
+
+/**
+ * Options for the login magic-link OTP (admin generateLink, the server
+ * equivalent of signInWithOtp). shouldCreateUser is always false.
+ */
+export function loginMagicOtpOptions(redirectTo: string): {
+  redirectTo: string;
+  shouldCreateUser: false;
+} {
+  return {
+    redirectTo,
+    shouldCreateUser: LOGIN_MAGIC_SHOULD_CREATE_USER,
+  };
+}
+
+/** GoTrue converts unknown-email magiclink generateLink into a signup. */
+export function isLoginMagicSignupLink(
+  verificationType: string | null | undefined,
+): boolean {
+  return verificationType === "signup";
+}
+
+export function isLoginMagicUnknownUserError(
+  error: { message?: string; code?: string } | null | undefined,
+): boolean {
+  if (!error) return false;
+  const code = (error.code ?? "").toLowerCase();
+  const message = (error.message ?? "").toLowerCase();
+  return (
+    code === "user_not_found" ||
+    message.includes("user not found") ||
+    message.includes("user with this email not found")
+  );
 }
