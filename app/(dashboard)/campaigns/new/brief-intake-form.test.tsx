@@ -496,6 +496,129 @@ describe("BriefIntakeForm — returning-brand check-in", () => {
   });
 });
 
+const BANNED = /--brand-/;
+const ROUNDED = /rounded-xl|rounded-2xl|rounded-full|rounded-lg/;
+
+function expectPaperInk(container: HTMLElement) {
+  expect(container.innerHTML).not.toMatch(BANNED);
+  expect(container.innerHTML).not.toMatch(ROUNDED);
+  expect(container.innerHTML).not.toMatch(/focus:ring-/);
+}
+
+describe("BriefIntakeForm — paper/ink", () => {
+  const RETURNING = {
+    patternId: "pat_1",
+    previousSummary: "affluent recovery-focused men 30-55",
+    prior: {
+      productUrl: "https://saunabox.com",
+      customerText: "Affluent men 30-55 into recovery.",
+      exclusionsText: "No competitor sauna brands.",
+    },
+  };
+
+  it("styles the first-time brief with paper fields, an ink submit, and the existing subtitle", async () => {
+    stubFetchRoutes();
+    const user = userEvent.setup();
+    const { container } = renderForm();
+
+    expect(screen.getByText("For brands")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "New Campaign" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Thirty seconds of truth from you; we'll do the reading.")
+    ).toBeInTheDocument();
+
+    const url = screen.getByLabelText("Product URL");
+    expect(url.className).toContain("bg-[var(--ts-paper)]");
+    expect(url.className).toContain("border-[var(--ts-hairline-on-paper)]");
+    expect(url.className).toContain("text-[var(--ts-ink-on-paper)]");
+    expect(url.className).toContain("focus:border-[var(--ts-accent)]");
+    expect(url).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+
+    await user.click(screen.getByRole("button", { name: "Test the channel" }));
+    const goal = screen.getByRole("button", { name: "Test the channel" });
+    expect(goal.className).toContain("bg-[var(--ts-band-brands)]");
+    expect(goal).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+
+    const submit = screen.getByRole("button", { name: /See how I/ });
+    expect(submit.className).toContain("bg-[var(--ts-ink-on-paper)]");
+    expect(submit.className).toContain("text-[var(--ts-paper)]");
+    expect(submit).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+
+    await deriveViaUrl(user);
+    const readBack = screen.getByTestId("read-back-card");
+    expect(readBack.className).toContain("bg-[var(--ts-paper)]");
+    expect(readBack.className).toContain("border-[var(--ts-hairline-on-paper)]");
+
+    expectPaperInk(container);
+  });
+
+  it("styles the check-in card in paper and the primary continue in ink", () => {
+    stubFetchRoutes();
+    const { container } = renderForm({ returning: RETURNING });
+
+    expect(screen.getByText("For brands")).toBeInTheDocument();
+    expect(screen.getByText(/Welcome back/)).toBeInTheDocument();
+    expect(screen.getByText("affluent recovery-focused men 30-55")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Thirty seconds of truth from you; we'll do the reading.")
+    ).not.toBeInTheDocument();
+
+    const welcome = screen.getByText(/Welcome back/).closest("div");
+    expect(welcome?.className).toContain("bg-[var(--ts-paper)]");
+    expect(welcome?.className).toContain("border-[var(--ts-hairline-on-paper)]");
+    expect(welcome).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+
+    const nothing = screen.getByRole("button", { name: /Nothing has changed/ });
+    expect(nothing.className).toContain("bg-[var(--ts-ink-on-paper)]");
+    expect(nothing.className).toContain("text-[var(--ts-paper)]");
+    expect(nothing.className).not.toContain("border-2");
+    expect(nothing).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+
+    const fresh = screen.getByRole("button", { name: /treat this as a new brief/ });
+    expect(fresh.className).toContain("text-[var(--ts-accent)]");
+
+    expectPaperInk(container);
+  });
+
+  it("keeps paper/ink on the fast lane, the delta panel, and a fresh brief", async () => {
+    stubFetchRoutes();
+    const user = userEvent.setup();
+
+    const nothing = renderForm({ returning: RETURNING });
+    await user.click(screen.getByRole("button", { name: /Nothing has changed/ }));
+    expect(
+      screen.getByText(
+        "Just the campaign decisions — we'll reuse what we know about your product and customer."
+      )
+    ).toBeInTheDocument();
+    const fastSubmit = screen.getByRole("button", { name: /See how I/ });
+    expect(fastSubmit.className).toContain("bg-[var(--ts-ink-on-paper)]");
+    expect(fastSubmit.className).toContain("text-[var(--ts-paper)]");
+    expectPaperInk(nothing.container);
+    nothing.unmount();
+
+    const delta = renderForm({ returning: RETURNING });
+    await user.click(screen.getByRole("button", { name: /what.s changed/i }));
+    const productUrl = screen.getByLabelText("Product URL");
+    expect(productUrl.className).toContain("bg-[var(--ts-paper)]");
+    expect(productUrl.className).toContain("focus:border-[var(--ts-accent)]");
+    const continueBtn = screen.getByRole("button", { name: /Continue with this update/ });
+    expect(continueBtn.className).toContain("bg-[var(--ts-ink-on-paper)]");
+    expect(continueBtn.className).toContain("text-[var(--ts-paper)]");
+    expect(continueBtn).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+    expectPaperInk(delta.container);
+    delta.unmount();
+
+    const fresh = renderForm({ returning: RETURNING });
+    await user.click(screen.getByRole("button", { name: /treat this as a new brief/ }));
+    expect(
+      screen.getByText("Thirty seconds of truth from you; we'll do the reading.")
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Product URL").className).toContain("bg-[var(--ts-paper)]");
+    expectPaperInk(fresh.container);
+  });
+});
+
 describe("nextQuarterLabel", () => {
   it("labels the quarter after the current one, rolling the year at Q4", () => {
     expect(nextQuarterLabel(new Date("2026-06-10"))).toBe("Q3 2026");

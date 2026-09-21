@@ -5,6 +5,7 @@
 // can't be fetched (paywall, 404, timeout) or derivation fails.
 
 import type { AovBucket, ProductDerivation } from "@/lib/data/types";
+import { tokens } from "@/lib/brand/tokens";
 
 export interface ProductState {
   url: string;
@@ -29,7 +30,17 @@ const AOV_LABELS: Record<AovBucket, string> = {
 };
 
 const FIELD_CLASS =
-  "w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all";
+  "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
+
+const controlClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
+
+const radiusStyle = { borderRadius: tokens.radius };
+
+const labelClass = "mb-1.5 block text-sm font-medium";
+
+const secondaryBtnClass =
+  "border border-[var(--ts-hairline-on-paper)] text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:cursor-not-allowed disabled:opacity-40";
 
 export default function ProductSection({ state, onChange, onDerive }: Props) {
   const { url, paragraph, fallbackMode, derivation, deriving, deriveError } =
@@ -49,10 +60,7 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
     <div className="space-y-4">
       {!fallbackMode && (
         <div>
-          <label
-            htmlFor="product-url"
-            className="block text-sm font-medium text-[var(--brand-text)] mb-1.5"
-          >
+          <label htmlFor="product-url" className={labelClass}>
             Product URL
           </label>
           <div className="flex gap-2">
@@ -67,13 +75,15 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
                 if (canDeriveUrl && !derivation) onDerive({ url: url.trim() });
               }}
               placeholder="https://yourbrand.com"
-              className="flex-1 px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+              className={`min-w-0 flex-1 ${controlClass}`}
+              style={radiusStyle}
             />
             <button
               type="button"
               disabled={!canDeriveUrl}
               onClick={() => onDerive({ url: url.trim() })}
-              className="px-4 py-2.5 rounded-lg border border-[var(--brand-blue)] text-[var(--brand-blue)] text-sm font-semibold hover:bg-[var(--brand-blue)]/[0.06] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className={`px-4 py-2.5 ${secondaryBtnClass}`}
+              style={radiusStyle}
             >
               {derivation ? "Re-read" : "Read it"}
             </button>
@@ -83,10 +93,7 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
 
       {fallbackMode && (
         <div>
-          <label
-            htmlFor="product-paragraph"
-            className="block text-sm font-medium text-[var(--brand-text)] mb-1.5"
-          >
+          <label htmlFor="product-paragraph" className={labelClass}>
             Can&rsquo;t fetch that URL — describe the product instead
           </label>
           <textarea
@@ -97,15 +104,16 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
             }
             rows={4}
             placeholder="What you sell, what it costs, who it's for."
-            className="w-full px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none"
+            className={`w-full resize-none ${controlClass}`}
+            style={radiusStyle}
           />
-          <div className="flex items-center justify-between mt-2">
+          <div className="mt-2 flex items-center justify-between">
             <button
               type="button"
               onClick={() =>
                 onChange((prev) => ({ ...prev, fallbackMode: false }))
               }
-              className="text-xs font-medium text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+              className="text-xs font-medium text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
             >
               ← Try a URL instead
             </button>
@@ -113,7 +121,8 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
               type="button"
               disabled={paragraph.trim().length === 0 || deriving}
               onClick={() => onDerive({ paragraph: paragraph.trim() })}
-              className="px-4 py-2 rounded-lg border border-[var(--brand-blue)] text-[var(--brand-blue)] text-sm font-semibold hover:bg-[var(--brand-blue)]/[0.06] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className={`px-4 py-2 ${secondaryBtnClass}`}
+              style={radiusStyle}
             >
               Read it
             </button>
@@ -122,7 +131,7 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
       )}
 
       {deriving && (
-        <div className="flex items-center gap-2 text-sm text-[var(--brand-text-muted)]">
+        <div className="flex items-center gap-2 text-sm text-[var(--ts-ink-muted-on-paper)]">
           <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -134,7 +143,8 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
       {deriveError && (
         <div
           role="alert"
-          className="p-3 rounded-lg border border-[var(--brand-warning)]/30 bg-[var(--brand-warning)]/[0.05] text-sm text-[var(--brand-text-secondary)]"
+          className="border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-3 text-sm"
+          style={radiusStyle}
         >
           {deriveError}
         </div>
@@ -143,9 +153,10 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
       {derivation && !deriving && (
         <div
           data-testid="read-back-card"
-          className="rounded-xl border border-[var(--brand-teal)]/40 bg-[var(--brand-teal)]/[0.03] p-5 space-y-4"
+          className="space-y-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5"
+          style={radiusStyle}
         >
-          <div className="text-xs uppercase tracking-wider text-[var(--brand-teal)] font-semibold">
+          <div className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--ts-ink-muted-on-paper)]">
             Here&rsquo;s what we read — correct anything that&rsquo;s off
           </div>
 
@@ -153,7 +164,7 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
             <div>
               <label
                 htmlFor="derived-brand-name"
-                className="block text-xs font-medium text-[var(--brand-text-muted)] mb-1"
+                className="mb-1 block text-xs font-medium text-[var(--ts-ink-muted-on-paper)]"
               >
                 Brand name
               </label>
@@ -163,12 +174,13 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
                 value={derivation.brand_name}
                 onChange={(e) => updateDerivation({ brand_name: e.target.value })}
                 className={FIELD_CLASS}
+                style={radiusStyle}
               />
             </div>
             <div>
               <label
                 htmlFor="derived-category"
-                className="block text-xs font-medium text-[var(--brand-text-muted)] mb-1"
+                className="mb-1 block text-xs font-medium text-[var(--ts-ink-muted-on-paper)]"
               >
                 Category
               </label>
@@ -178,6 +190,7 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
                 value={derivation.category}
                 onChange={(e) => updateDerivation({ category: e.target.value })}
                 className={FIELD_CLASS}
+                style={radiusStyle}
               />
             </div>
           </div>
@@ -185,7 +198,7 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
           <div>
             <label
               htmlFor="derived-description"
-              className="block text-xs font-medium text-[var(--brand-text-muted)] mb-1"
+              className="mb-1 block text-xs font-medium text-[var(--ts-ink-muted-on-paper)]"
             >
               Product description
             </label>
@@ -197,6 +210,7 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
               }
               rows={2}
               className={`${FIELD_CLASS} resize-none`}
+              style={radiusStyle}
             />
           </div>
 
@@ -204,7 +218,7 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
             <div>
               <label
                 htmlFor="derived-aov"
-                className="block text-xs font-medium text-[var(--brand-text-muted)] mb-1"
+                className="mb-1 block text-xs font-medium text-[var(--ts-ink-muted-on-paper)]"
               >
                 Average order value
               </label>
@@ -215,6 +229,7 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
                   updateDerivation({ aov_bucket: e.target.value as AovBucket })
                 }
                 className={FIELD_CLASS}
+                style={radiusStyle}
               >
                 {(Object.keys(AOV_LABELS) as AovBucket[]).map((bucket) => (
                   <option key={bucket} value={bucket}>
@@ -224,10 +239,10 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
               </select>
               {derivation.aov_reasoning && (
                 <details className="mt-1.5">
-                  <summary className="text-xs text-[var(--brand-text-muted)] cursor-pointer hover:text-[var(--brand-text)]">
+                  <summary className="cursor-pointer text-xs text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]">
                     Why this bucket?
                   </summary>
-                  <p className="text-xs text-[var(--brand-text-secondary)] mt-1">
+                  <p className="mt-1 text-xs text-[var(--ts-ink-muted-on-paper)]">
                     {derivation.aov_reasoning}
                   </p>
                 </details>
@@ -236,7 +251,7 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
             <div>
               <label
                 htmlFor="derived-attributes"
-                className="block text-xs font-medium text-[var(--brand-text-muted)] mb-1"
+                className="mb-1 block text-xs font-medium text-[var(--ts-ink-muted-on-paper)]"
               >
                 Key attributes (comma-separated)
               </label>
@@ -253,6 +268,7 @@ export default function ProductSection({ state, onChange, onDerive }: Props) {
                   })
                 }
                 className={FIELD_CLASS}
+                style={radiusStyle}
               />
             </div>
           </div>

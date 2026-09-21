@@ -3,8 +3,9 @@
  *
  * Values live in tokens.css as CSS variables. Import this module instead of
  * copying hex. Applied on homepage, /login, the authenticated dashboard
- * shell (layout + sidebar + /dashboard), and the /campaigns list.
- * Signup, onboarding, campaign detail, /campaigns/new, deals, invoices,
+ * shell (layout + sidebar + /dashboard), the /campaigns list, and
+ * /campaigns/new (returning check-in + brief).
+ * Signup, onboarding, campaign detail, deals, invoices,
  * and settings page bodies still use --brand-* until those restyles land.
  */
 export const tokens = {

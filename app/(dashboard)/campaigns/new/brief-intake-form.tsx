@@ -13,6 +13,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { tokens } from "@/lib/brand/tokens";
 import type {
   BriefChangedField,
   BriefChangedFieldKey,
@@ -41,6 +42,23 @@ interface Props {
 }
 
 const MAX_GOALS = 3;
+
+const radiusStyle = { borderRadius: tokens.radius };
+
+const controlClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
+
+const fieldClass = `w-full px-4 py-2.5 ${controlClass}`;
+
+const labelClass = "mb-2 block text-sm font-medium";
+
+const chipBase = "border px-3.5 py-2 text-sm font-medium";
+const chipSelected =
+  "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]";
+const chipIdle =
+  "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)]";
+const chipDisabled =
+  "cursor-not-allowed border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] opacity-40";
 
 const CHANGED_FIELD_LABELS: Record<BriefChangedFieldKey, string> = {
   product_url: "product URL",
@@ -429,21 +447,24 @@ export default function BriefIntakeForm({
     : [];
 
   return (
-    <div className="p-8 max-w-2xl">
+    <div className="max-w-2xl p-4 sm:p-8">
       <div className="mb-8">
         <button
           onClick={() => (reusing ? setMode("checkin") : router.back())}
-          className="flex items-center gap-1.5 text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors mb-4"
+          className="mb-4 flex items-center gap-1.5 text-sm text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="m15 18-6-6 6-6" />
           </svg>
           Back
         </button>
-        <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+          For brands
+        </p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">
           New Campaign
         </h1>
-        <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+        <p className="mt-1 text-sm text-[var(--ts-ink-muted-on-paper)]">
           {reusing
             ? "Just the campaign decisions — we'll reuse what we know about your product and customer."
             : "Thirty seconds of truth from you; we'll do the reading."}
@@ -483,7 +504,8 @@ export default function BriefIntakeForm({
                 onChange={(e) => setCustomerText(e.target.value)}
                 rows={4}
                 placeholder="Who buys this? What do they care about? What's worked before?"
-                className="w-full px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none"
+                className={`${fieldClass} resize-none`}
+                style={radiusStyle}
               />
             </section>
           </>
@@ -506,10 +528,11 @@ export default function BriefIntakeForm({
         )}
 
         {reusing && checkInDelta && changedFieldKeys.length > 0 && (
-          <div className="p-4 rounded-xl border border-[var(--brand-teal)]/40 bg-[var(--brand-teal)]/[0.05] text-sm text-[var(--brand-text-secondary)]">
-            <span className="font-semibold text-[var(--brand-text)]">
-              Updated:
-            </span>{" "}
+          <div
+            className="border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm"
+            style={radiusStyle}
+          >
+            <span className="font-medium">Updated:</span>{" "}
             {changedFieldKeys.map((k) => CHANGED_FIELD_LABELS[k]).join(", ")}
           </div>
         )}
@@ -525,9 +548,7 @@ export default function BriefIntakeForm({
 
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-[var(--brand-text)] mb-2">
-                Goals
-              </label>
+              <label className={labelClass}>Goals</label>
               <div className="flex flex-wrap gap-2">
                 {GOAL_OPTIONS.map((opt) => {
                   const selected = goals.has(opt.value);
@@ -539,20 +560,17 @@ export default function BriefIntakeForm({
                       disabled={disabled}
                       aria-pressed={selected}
                       onClick={() => toggleGoal(opt.value)}
-                      className={`px-3.5 py-2 rounded-lg border text-sm font-semibold transition-all ${
-                        selected
-                          ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]"
-                          : disabled
-                            ? "border-[var(--brand-border)] bg-[var(--brand-surface)] opacity-40 cursor-not-allowed text-[var(--brand-text-muted)]"
-                            : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)]/30"
+                      className={`${chipBase} ${
+                        selected ? chipSelected : disabled ? chipDisabled : chipIdle
                       }`}
+                      style={radiusStyle}
                     >
                       {opt.label}
                     </button>
                   );
                 })}
               </div>
-              <p className="text-xs text-[var(--brand-text-muted)] mt-2">
+              <p className="mt-2 text-xs text-[var(--ts-ink-muted-on-paper)]">
                 {goals.size} of {MAX_GOALS} selected
               </p>
               <input
@@ -560,19 +578,20 @@ export default function BriefIntakeForm({
                 value={goalsContext}
                 onChange={(e) => setGoalsContext(e.target.value)}
                 placeholder="Anything we should know about these goals?"
-                className="mt-2 w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+                className={`mt-2 ${fieldClass}`}
+                style={radiusStyle}
               />
             </div>
 
             <div>
               <label
                 htmlFor="budget-input"
-                className="block text-sm font-medium text-[var(--brand-text)] mb-1.5"
+                className={labelClass}
               >
                 Budget (USD)
               </label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-[var(--brand-text-muted)]">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-[var(--ts-ink-muted-on-paper)]">
                   $
                 </span>
                 <input
@@ -584,19 +603,18 @@ export default function BriefIntakeForm({
                   min="5000"
                   step="1000"
                   placeholder="25000"
-                  className="w-full pl-8 pr-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+                  className={`w-full py-2.5 pl-8 pr-4 ${controlClass}`}
+                  style={radiusStyle}
                 />
               </div>
-              <p className="text-xs text-[var(--brand-text-muted)] mt-1.5">
+              <p className="mt-1.5 text-xs text-[var(--ts-ink-muted-on-paper)]">
                 Minimum $5,000 — enough for a meaningful 3-spot test across a
                 few shows.
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-[var(--brand-text)] mb-2">
-                Flight window
-              </label>
+              <label className={labelClass}>Flight window</label>
               <div className="flex flex-wrap gap-2">
                 {(
                   [
@@ -612,11 +630,10 @@ export default function BriefIntakeForm({
                     type="button"
                     aria-pressed={flightChoice === opt.value}
                     onClick={() => setFlightChoice(opt.value)}
-                    className={`px-3.5 py-2 rounded-lg border text-sm font-semibold transition-all ${
-                      flightChoice === opt.value
-                        ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]"
-                        : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)]/30"
+                    className={`${chipBase} ${
+                      flightChoice === opt.value ? chipSelected : chipIdle
                     }`}
+                    style={radiusStyle}
                   >
                     {opt.label}
                   </button>
@@ -629,40 +646,42 @@ export default function BriefIntakeForm({
                     aria-label="Flight start date"
                     value={flightStart}
                     onChange={(e) => setFlightStart(e.target.value)}
-                    className="px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+                    className={`px-4 py-2.5 ${controlClass}`}
+                    style={radiusStyle}
                   />
-                  <span className="text-sm text-[var(--brand-text-muted)]">to</span>
+                  <span className="text-sm text-[var(--ts-ink-muted-on-paper)]">to</span>
                   <input
                     type="date"
                     aria-label="Flight end date"
                     value={flightEnd}
                     onChange={(e) => setFlightEnd(e.target.value)}
-                    className="px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+                    className={`px-4 py-2.5 ${controlClass}`}
+                    style={radiusStyle}
                   />
                 </div>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">
-                Exclusions
-              </label>
+              <label className={labelClass}>Exclusions</label>
               <textarea
                 value={exclusions}
                 onChange={(e) => setExclusions(e.target.value)}
                 rows={2}
                 placeholder="Competitors we shouldn't appear next to, topics we want to avoid."
-                className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none"
+                className={`${fieldClass} resize-none`}
+                style={radiusStyle}
               />
             </div>
           </div>
         </section>
 
-        <div className="border-t border-[var(--brand-border)] pt-6">
+        <div className="border-t border-[var(--ts-hairline-on-paper)] pt-6">
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full flex items-center justify-center gap-2 bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl text-sm font-semibold transition-all"
+            className="flex w-full items-center justify-center gap-2 bg-[var(--ts-ink-on-paper)] py-3 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            style={radiusStyle}
           >
             {isSubmitting ? (
               <>
@@ -679,7 +698,7 @@ export default function BriefIntakeForm({
           {error && (
             <div
               role="alert"
-              className="mt-4 p-3 rounded-lg border border-[var(--brand-error)]/30 bg-[var(--brand-error)]/[0.04] text-sm text-[var(--brand-error)]"
+              className="mt-4 text-sm text-[var(--ts-ink-on-paper)]"
             >
               {error}
             </div>
@@ -705,14 +724,14 @@ function SectionHeading({
     <div className="mb-4">
       <h2
         id={id}
-        className="flex items-center gap-2 text-base font-bold text-[var(--brand-text)]"
+        className="text-base font-semibold"
       >
-        <span className="w-6 h-6 rounded-full bg-[var(--brand-blue)]/[0.08] text-[var(--brand-blue)] text-xs font-bold flex items-center justify-center">
+        <span className="mr-2 text-xs font-medium text-[var(--ts-ink-muted-on-paper)]">
           {index}
         </span>
         {title}
       </h2>
-      <p className="text-xs text-[var(--brand-text-muted)] mt-1 ml-8">{hint}</p>
+      <p className="mt-1 text-xs text-[var(--ts-ink-muted-on-paper)]">{hint}</p>
     </div>
   );
 }
