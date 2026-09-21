@@ -64,10 +64,9 @@ const cardClass =
   "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const inkBtnClass =
   "inline-flex items-center gap-2 bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90";
-const ghostBtnClass =
-  "inline-flex items-center gap-2 border border-[var(--ts-hairline-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-ink-on-paper)]/5";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
 const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
+const SEED_SHOW_PREFIX = "[SEED]";
 
 export default function DashboardClient({ role }: { role: UserRole }) {
   const isBrand = isBrandSide(role);
@@ -110,6 +109,11 @@ export default function DashboardClient({ role }: { role: UserRole }) {
           ? campaignsRes.campaigns
           : Array.isArray(campaignsRes) ? campaignsRes : [];
 
+        const recentDeals = (isBrand
+          ? deals.filter((deal) => !(deal.show_name ?? "").startsWith(SEED_SHOW_PREFIX))
+          : deals
+        ).slice(0, 5);
+
         setData({
           totalShows: shows.length,
           podcastCount: shows.filter((s) => s.platform === "podcast").length,
@@ -121,7 +125,7 @@ export default function DashboardClient({ role }: { role: UserRole }) {
           pipelineValue,
           overdueCount: overdueInvs.length,
           campaignCount: campaignList.length,
-          recentDeals: deals.slice(0, 5),
+          recentDeals,
           recentInvoices: invoices.slice(0, 5),
         });
       } catch (err) {
@@ -138,17 +142,21 @@ export default function DashboardClient({ role }: { role: UserRole }) {
       }
     }
     fetchDashboard();
-  }, []);
+  }, [isBrand]);
 
   if (loading) {
+    const skeletonStatCount = isBrand ? 2 : 6;
+    const skeletonGridClass = isBrand
+      ? "mb-8 grid grid-cols-2 gap-4 md:grid-cols-3"
+      : "mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6";
     return (
       <div className="p-8">
         <div className="mb-8">
           <div className={`mb-2 h-7 w-40 ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
           <div className={`h-4 w-64 ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
         </div>
-        <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
+        <div className={skeletonGridClass}>
+          {Array.from({ length: skeletonStatCount }, (_, i) => (
             <div key={i} className={`p-4 ${cardClass} ${pulseClass}`} style={{ borderRadius: tokens.radius }}>
               <div className={`mb-2 h-3 w-16 ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
               <div className={`h-6 w-12 ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
@@ -167,8 +175,10 @@ export default function DashboardClient({ role }: { role: UserRole }) {
   const d = data!;
 
   const headerSubtitle = isBrand
-    ? "Overview of your campaigns, deals, and invoices."
+    ? "Campaigns in motion and deals waiting on a signature."
     : "Overview of your shows, deals, and invoices.";
+  const showPipeline = isBrand && d.pipelineValue > 0;
+  const showBrandInvoices = isBrand && d.recentInvoices.length > 0;
 
   // Empty-state CTA
   const showBrandEmptyCta = isBrand && d.campaignCount === 0;
@@ -237,77 +247,55 @@ export default function DashboardClient({ role }: { role: UserRole }) {
       )}
 
       {/* Stats Grid */}
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="Active Deals" value={d.activeDeals} href="/deals" />
-        {isBrand ? (
-          <StatCard label="Pipeline Value" value={fmtCurrency(d.pipelineValue)} href="/deals" />
-        ) : (
+      {isBrand ? (
+        <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
+          <StatCard
+            label="Campaigns"
+            value={d.campaignCount}
+            href="/campaigns"
+          />
+          <StatCard label="Active Deals" value={d.activeDeals} href="/deals" />
+          {showPipeline && (
+            <StatCard label="Pipeline" value={fmtCurrency(d.pipelineValue)} href="/deals" />
+          )}
+        </div>
+      ) : (
+        <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <StatCard label="Active Deals" value={d.activeDeals} href="/deals" />
           <StatCard
             label="Outstanding"
             value={fmtCurrency(d.revenueOutstanding)}
             href="/invoices"
           />
-        )}
-        {!isBrand && (
           <StatCard
             label="Shows"
             value={d.totalShows}
             sub={d.totalShows > 0 ? `${d.podcastCount} podcasts, ${d.youtubeCount} YT` : undefined}
             href="/shows"
           />
-        )}
-        <StatCard
-          label="Pending Invoices"
-          value={d.pendingInvoices}
-          sub={d.revenueOutstanding > 0 ? fmtCurrency(d.revenueOutstanding) : undefined}
-          href="/invoices"
-        />
-        <StatCard
-          label="Overdue"
-          value={d.overdueCount}
-          highlight={d.overdueCount > 0}
-          href="/invoices"
-        />
-        <StatCard
-          label="Revenue (This Mo.)"
-          value={fmtCurrency(d.revenueThisMonth)}
-          href="/invoices"
-        />
-        {isBrand && (
           <StatCard
-            label="Campaigns"
-            value={d.campaignCount}
-            href="/campaigns"
+            label="Pending Invoices"
+            value={d.pendingInvoices}
+            sub={d.revenueOutstanding > 0 ? fmtCurrency(d.revenueOutstanding) : undefined}
+            href="/invoices"
           />
-        )}
-      </div>
+          <StatCard
+            label="Overdue"
+            value={d.overdueCount}
+            highlight={d.overdueCount > 0}
+            href="/invoices"
+          />
+          <StatCard
+            label="Revenue (This Mo.)"
+            value={fmtCurrency(d.revenueThisMonth)}
+            href="/invoices"
+          />
+        </div>
+      )}
 
-      {/* Quick Actions */}
-      <div className="mb-8 flex items-center gap-3">
-        {isBrand ? (
-          <>
-            <Link
-              href="/campaigns/new"
-              className={inkBtnClass}
-              style={{ borderRadius: tokens.radius }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              New Campaign
-            </Link>
-            <Link
-              href="/deals"
-              className={ghostBtnClass}
-              style={{ borderRadius: tokens.radius }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z" />
-              </svg>
-              View Deals
-            </Link>
-          </>
-        ) : (
+      {/* Quick Actions — show-role only. Brand New Campaign lives in the sidebar. */}
+      {!isBrand && (
+        <div className="mb-8 flex items-center gap-3">
           <Link
             href="/shows"
             className={inkBtnClass}
@@ -326,8 +314,8 @@ export default function DashboardClient({ role }: { role: UserRole }) {
             </svg>
             {role === "agent" ? "Import Shows" : "Add Show"}
           </Link>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -358,17 +346,6 @@ export default function DashboardClient({ role }: { role: UserRole }) {
                     href={`/deals/${deal.id}`}
                     className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--ts-band-shows)]"
                   >
-                    <div
-                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center text-[var(--ts-ink-muted-on-paper)]"
-                      style={{
-                        borderRadius: tokens.radius,
-                        backgroundColor: "color-mix(in srgb, var(--ts-ink-on-paper) 8%, transparent)",
-                      }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z" />
-                      </svg>
-                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">
                         {deal.show_name ?? "Unknown Show"}
@@ -398,68 +375,70 @@ export default function DashboardClient({ role }: { role: UserRole }) {
           </div>
         </div>
 
-        {/* Recent Invoices */}
-        <div>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider">
-              Recent Invoices
-            </h2>
-            <Link href="/invoices" className="text-xs text-[var(--ts-accent)] hover:underline">View all</Link>
-          </div>
-          <div
-            className={`${cardClass} divide-y divide-[var(--ts-hairline-on-paper)]`}
-            style={{ borderRadius: tokens.radius }}
-          >
-            {d.recentInvoices.length === 0 ? (
-              <div className={`p-8 text-center text-sm ${mutedText}`}>
-                No invoices yet.
-              </div>
-            ) : (
-              d.recentInvoices.map((inv) => {
-                const badge = statusBadge[inv.status];
-                return (
-                  <Link
-                    key={inv.id}
-                    href="/invoices"
-                    className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--ts-band-shows)]"
-                  >
-                    <div
-                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center text-[var(--ts-ink-muted-on-paper)]"
-                      style={{
-                        borderRadius: tokens.radius,
-                        backgroundColor: "color-mix(in srgb, var(--ts-ink-on-paper) 8%, transparent)",
-                      }}
+        {/* Recent Invoices — brand hides the panel when empty; show-role keeps it. */}
+        {(!isBrand || showBrandInvoices) && (
+          <div>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wider">
+                Recent Invoices
+              </h2>
+              <Link href="/invoices" className="text-xs text-[var(--ts-accent)] hover:underline">View all</Link>
+            </div>
+            <div
+              className={`${cardClass} divide-y divide-[var(--ts-hairline-on-paper)]`}
+              style={{ borderRadius: tokens.radius }}
+            >
+              {d.recentInvoices.length === 0 ? (
+                <div className={`p-8 text-center text-sm ${mutedText}`}>
+                  No invoices yet.
+                </div>
+              ) : (
+                d.recentInvoices.map((inv) => {
+                  const badge = statusBadge[inv.status];
+                  return (
+                    <Link
+                      key={inv.id}
+                      href="/invoices"
+                      className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--ts-band-shows)]"
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                        <polyline points="14 2 14 8 20 8" />
-                      </svg>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">
-                        {inv.invoice_number} &mdash; {inv.advertiser_name}
-                      </div>
-                      <div className={`text-xs ${mutedText}`}>
-                        Due {fmtDate(inv.due_date)} &middot; {fmtCurrency(inv.total_due)}
-                      </div>
-                    </div>
-                    {badge && (
-                      <span
-                        className="flex-shrink-0 border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold"
+                      <div
+                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center text-[var(--ts-ink-muted-on-paper)]"
                         style={{
                           borderRadius: tokens.radius,
-                          color: badgeColor[badge.tone],
+                          backgroundColor: "color-mix(in srgb, var(--ts-ink-on-paper) 8%, transparent)",
                         }}
                       >
-                        {badge.label}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })
-            )}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">
+                          {inv.invoice_number} &mdash; {inv.advertiser_name}
+                        </div>
+                        <div className={`text-xs ${mutedText}`}>
+                          Due {fmtDate(inv.due_date)} &middot; {fmtCurrency(inv.total_due)}
+                        </div>
+                      </div>
+                      {badge && (
+                        <span
+                          className="flex-shrink-0 border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold"
+                          style={{
+                            borderRadius: tokens.radius,
+                            color: badgeColor[badge.tone],
+                          }}
+                        >
+                          {badge.label}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
