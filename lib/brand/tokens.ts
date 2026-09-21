@@ -2,9 +2,10 @@
  * Shared visual tokens for Taylslate marketing and dashboard chrome.
  *
  * Values live in tokens.css as CSS variables. Import this module instead of
- * copying hex. Applied on homepage, /login, and the authenticated dashboard
- * shell (layout + sidebar + /dashboard). Other authenticated page bodies
- * still use --brand-* until those restyles land.
+ * copying hex. Applied on homepage, /login, the authenticated dashboard
+ * shell (layout + sidebar + /dashboard), and the /campaigns list.
+ * Signup, onboarding, campaign detail, /campaigns/new, deals, invoices,
+ * and settings page bodies still use --brand-* until those restyles land.
  */
 export const tokens = {
   field: "var(--ts-field)",

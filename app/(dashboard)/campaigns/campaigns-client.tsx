@@ -3,14 +3,43 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { Campaign, CampaignStatus } from "@/lib/data/types";
+import { tokens } from "@/lib/brand/tokens";
 
-const statusStyles: Record<CampaignStatus, string> = {
-  draft: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
-  planned: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
-  active: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-  completed: "bg-[var(--brand-teal)]/10 text-[var(--brand-teal)]",
-  archived: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
+type BadgeTone = "ink" | "muted" | "accent";
+
+const statusBadge: Record<CampaignStatus, { tone: BadgeTone; label: string }> = {
+  draft: { tone: "muted", label: "Draft" },
+  planned: { tone: "ink", label: "Planned" },
+  active: { tone: "accent", label: "Active" },
+  completed: { tone: "muted", label: "Completed" },
+  archived: { tone: "muted", label: "Archived" },
 };
+
+const badgeColor: Record<BadgeTone, string> = {
+  ink: "var(--ts-ink-on-paper)",
+  muted: "var(--ts-ink-muted-on-paper)",
+  accent: "var(--ts-accent)",
+};
+
+const cardClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const inkBtnClass =
+  "inline-flex items-center gap-2 bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
+
+function fmtDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function statusFor(status: string): { tone: BadgeTone; label: string } {
+  if (status in statusBadge) return statusBadge[status as CampaignStatus];
+  return { tone: "muted", label: status };
+}
 
 export default function CampaignsClient() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -26,30 +55,42 @@ export default function CampaignsClient() {
 
   if (loading) {
     return (
-      <div className="p-8 max-w-5xl">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Campaigns</h1>
-            <p className="text-sm text-[var(--brand-text-secondary)] mt-1">Plan and manage your podcast and YouTube sponsorship campaigns.</p>
-          </div>
+      <div className="p-4 sm:p-8">
+        <div className="mb-8">
+          <div className={`mb-2 h-3 w-20 ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
+          <div className={`mb-2 h-7 w-40 ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
+          <div className={`h-4 w-72 ${pulseClass}`} style={{ borderRadius: tokens.radius }} />
         </div>
-        <div className="flex items-center justify-center py-24">
-          <div className="w-8 h-8 border-3 border-[var(--brand-blue)]/20 border-t-[var(--brand-blue)] rounded-full animate-spin" />
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className={`h-16 ${cardClass} ${pulseClass}`}
+              style={{ borderRadius: tokens.radius }}
+            />
+          ))}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-8 max-w-5xl">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Campaigns</h1>
-          <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
-            Plan and manage your podcast and YouTube sponsorship campaigns.
+    <div className="p-4 sm:p-8">
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0 w-full sm:w-auto">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+            For brands
+          </p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight">Campaigns</h1>
+          <p className={`mt-1 text-sm ${mutedText}`}>
+            Briefs you&apos;ve opened and the shows you&apos;re testing.
           </p>
         </div>
-        <Link href="/campaigns/new" className="inline-flex items-center gap-2 bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors">
+        <Link
+          href="/campaigns/new"
+          className={`${inkBtnClass} sm:shrink-0`}
+          style={{ borderRadius: tokens.radius }}
+        >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
@@ -58,71 +99,68 @@ export default function CampaignsClient() {
       </div>
 
       {campaigns.length > 0 ? (
-        <div className="space-y-3">
+        <div
+          className={`${cardClass} divide-y divide-[var(--ts-hairline-on-paper)]`}
+          style={{ borderRadius: tokens.radius }}
+        >
           {campaigns.map((campaign) => {
             const recs = Array.isArray(campaign.recommendations) ? campaign.recommendations : [];
             const ytRecs = Array.isArray(campaign.youtube_recommendations) ? campaign.youtube_recommendations : [];
             const totalShows = recs.length + ytRecs.length;
+            const platforms = (campaign.platforms ?? []).join(" + ");
+            const meta = [
+              fmtDate(campaign.created_at),
+              platforms,
+              `${totalShows} shows`,
+            ].filter(Boolean).join(" · ");
+            const badge = statusFor(campaign.status);
 
             return (
               <Link
                 key={campaign.id}
                 href={`/campaigns/${campaign.id}`}
-                className="flex items-center justify-between p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] hover:border-[var(--brand-blue)]/30 hover:shadow-sm transition-all group"
+                className="flex flex-col gap-2 px-4 py-4 hover:bg-[var(--ts-band-shows)] sm:flex-row sm:items-center sm:gap-4 sm:px-5"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--brand-blue)]/10 to-[var(--brand-teal)]/10 flex items-center justify-center">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-                      <line x1="4" x2="4" y1="22" y2="15" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-[var(--brand-text)] group-hover:text-[var(--brand-blue)] transition-colors">
-                      {campaign.name}
-                    </h3>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs text-[var(--brand-text-muted)]">
-                        {new Date(campaign.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                      </span>
-                      <span className="text-xs text-[var(--brand-text-muted)]">{(campaign.platforms ?? []).join(" + ")}</span>
-                      <span className="text-xs text-[var(--brand-text-muted)]">{totalShows} shows</span>
-                    </div>
-                  </div>
+                <div className="min-w-0 sm:flex-1">
+                  <div className="truncate text-sm font-medium">{campaign.name}</div>
+                  <div className={`text-xs break-words ${mutedText}`}>{meta}</div>
                 </div>
-                <div className="flex items-center gap-5">
-                  <div className="text-right">
-                    <div className="text-sm font-semibold text-[var(--brand-text)]">${(campaign.budget_total ?? 0).toLocaleString()}</div>
-                    <div className="text-xs text-[var(--brand-text-muted)]">budget</div>
+                <div className="flex flex-wrap items-center justify-between gap-3 sm:contents">
+                  <div className="sm:text-right">
+                    <div className="text-sm font-medium">
+                      ${(campaign.budget_total ?? 0).toLocaleString()}
+                    </div>
+                    <div className={`text-xs ${mutedText}`}>budget</div>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${statusStyles[campaign.status] ?? statusStyles.draft}`}>
-                    {campaign.status}
+                  <span
+                    className="flex-shrink-0 border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold"
+                    style={{
+                      borderRadius: tokens.radius,
+                      color: badgeColor[badge.tone],
+                    }}
+                  >
+                    {badge.label}
                   </span>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brand-text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <path d="m9 18 6-6-6-6" />
-                  </svg>
                 </div>
               </Link>
             );
           })}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-24 bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)] border-dashed">
-          <div className="w-16 h-16 rounded-2xl bg-[var(--brand-blue)]/[0.06] flex items-center justify-center mb-5">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-              <line x1="4" x2="4" y1="22" y2="15" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-2">No campaigns yet</h3>
-          <p className="text-sm text-[var(--brand-text-muted)] mb-6 max-w-sm text-center">
-            Create your first campaign to discover the best podcast and YouTube sponsorship opportunities for your brand.
+        <div
+          className={`${cardClass} px-6 py-16 text-center`}
+          style={{ borderRadius: tokens.radius }}
+        >
+          <h2 className="text-lg font-semibold">No campaigns yet</h2>
+          <p className={`mx-auto mt-2 max-w-sm text-sm ${mutedText}`}>
+            Tell us what you sell. We come back with a short list of shows worth testing.
           </p>
-          <Link href="/campaigns/new" className="inline-flex items-center gap-2 bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            Create your first campaign
+          <Link
+            href="/campaigns/new"
+            className={`${inkBtnClass} mt-6`}
+            style={{ borderRadius: tokens.radius }}
+          >
+            New campaign
           </Link>
         </div>
       )}
