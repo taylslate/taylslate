@@ -2,10 +2,10 @@
   Shared visual tokens.
 
   Homepage, /login, the authenticated dashboard chrome (layout +
-  sidebar + /dashboard), the /campaigns list, and /campaigns/new
-  (returning check-in + brief) use these. Signup, onboarding, campaign
-  detail, deals, invoices, and settings page bodies still use --brand-*
-  in globals.css.
+  sidebar + /dashboard), the /campaigns list, /campaigns/new
+  (returning check-in + brief), and /campaigns/[id]/interpretation use
+  these. Signup, onboarding, campaign detail, deals, invoices, and
+  settings page bodies still use --brand-* in globals.css.
 
   Accent is copper only. Do not add a second accent.
 */

@@ -424,3 +424,145 @@ describe("InterpretationClient", () => {
     expect(screen.queryByText("protocol recovery")).not.toBeInTheDocument();
   });
 });
+
+const BANNED =
+  /--brand-blue|--brand-orange|--brand-navy|--brand-teal|--brand-blue-light|--brand-success|--brand-text|--brand-surface|--brand-border|--brand-warning|--brand-error/;
+const ROUNDED = /rounded-xl|rounded-2xl|rounded-full|rounded-lg|rounded-md/;
+
+function expectPaperInk(container: HTMLElement) {
+  expect(container.innerHTML).not.toMatch(BANNED);
+  expect(container.innerHTML).not.toMatch(ROUNDED);
+  expect(container.innerHTML).not.toMatch(/focus:ring-/);
+  expect(container.querySelector(".animate-spin")).toBeNull();
+}
+
+describe("InterpretationClient — paper/ink", () => {
+  it("styles the loaded page with a copper kicker, paper rings, and an ink confirm", async () => {
+    stubFetch();
+    const user = userEvent.setup();
+    const { container } = renderClient();
+
+    expect(screen.getByText("For brands")).toBeInTheDocument();
+    expect(screen.getByText(/Here.s how I.m reading this/)).toBeInTheDocument();
+    expect(screen.getByText("Other rings worth a look")).toBeInTheDocument();
+    expect(screen.getByTestId("customer-summary")).toHaveTextContent(
+      "Affluent men 30-55"
+    );
+
+    const primary = screen.getByTestId("primary-ring-card");
+    expect(primary.className).toContain("bg-[var(--ts-band-brands)]");
+    expect(primary.className).toContain("border-[var(--ts-hairline-on-paper)]");
+    expect(primary).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+
+    const laterals = screen.getAllByTestId("lateral-ring-card");
+    expect(laterals[0].className).toContain("bg-[var(--ts-band-brands)]");
+    expect(laterals[1].className).toContain("bg-[var(--ts-paper)]");
+    expect(laterals[1].className).toContain("opacity-60");
+
+    const include = within(laterals[1]).getByRole("button", { name: "Include" });
+    expect(include.className).not.toContain("bg-[var(--ts-band-brands)]");
+    await user.click(include);
+    expect(include).toHaveAttribute("aria-pressed", "true");
+    expect(include.className).toContain("bg-[var(--ts-band-brands)]");
+    expect(include.className).toContain("text-[var(--ts-ink-on-paper)]");
+    expect(include).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+    expect(laterals[1].className).toContain("bg-[var(--ts-band-brands)]");
+
+    const confirm = screen.getByRole("button", {
+      name: /confirm interpretation and discover shows/i,
+    });
+    expect(confirm.className).toContain("bg-[var(--ts-ink-on-paper)]");
+    expect(confirm.className).toContain("text-[var(--ts-paper)]");
+    expect(confirm).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+
+    await user.click(screen.getByRole("button", { name: /not quite right/i }));
+    const refine = screen.getByLabelText(/refine protocol recovery/i);
+    expect(refine.className).toContain("bg-[var(--ts-paper)]");
+    expect(refine.className).toContain("border-[var(--ts-hairline-on-paper)]");
+    expect(refine.className).toContain("text-[var(--ts-ink-on-paper)]");
+    expect(refine.className).toContain("focus:border-[var(--ts-accent)]");
+    expect(refine).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+
+    const submit = screen.getByRole("button", { name: "Submit refinement" });
+    expect(submit.className).toContain("bg-[var(--ts-ink-on-paper)]");
+    expect(submit.className).toContain("text-[var(--ts-paper)]");
+
+    await user.click(screen.getByRole("button", { name: /add a ring i missed/i }));
+    const add = screen.getByLabelText("Add a ring I missed");
+    expect(add.className).toContain("bg-[var(--ts-paper)]");
+    expect(add.className).toContain("focus:border-[var(--ts-accent)]");
+    expect(add).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+
+    expectPaperInk(container);
+  });
+
+  it("uses a muted pulse while a first visit is reading the brief", () => {
+    stubFetch();
+    const { container } = renderClient({
+      initialInterpretation: null,
+      initialDecisions: null,
+    });
+
+    const line = screen.getByText(/Reading your brief/);
+    expect(line.className).toContain("animate-pulse");
+    expect(line.className).toContain("text-[var(--ts-ink-muted-on-paper)]");
+    expect(screen.getByText("For brands")).toBeInTheDocument();
+    expectPaperInk(container);
+  });
+
+  it("pulses Confirming… on the ink button without a spinner", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: unknown) => {
+        if (String(url).endsWith("/confirm")) return new Promise(() => {});
+        return jsonRes(interp());
+      })
+    );
+    const user = userEvent.setup();
+    const { container } = renderClient();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /confirm interpretation and discover shows/i,
+      })
+    );
+
+    const confirming = screen.getByText("Confirming…");
+    expect(confirming.className).toContain("animate-pulse");
+    expect(confirming.closest("button")?.className).toContain(
+      "bg-[var(--ts-ink-on-paper)]"
+    );
+    expectPaperInk(container);
+  });
+
+  it("styles save-failed and load-error alerts with hairline and ink", async () => {
+    const empty = renderClient({
+      initialInterpretation: null,
+      initialDecisions: null,
+      patternEmpty: true,
+    });
+    const emptyAlert = screen.getByRole("alert");
+    expect(emptyAlert.className).toContain("border-[var(--ts-hairline-on-paper)]");
+    expect(emptyAlert.className).toContain("bg-[var(--ts-paper)]");
+    expect(emptyAlert.className).toContain("text-[var(--ts-ink-on-paper)]");
+    expect(emptyAlert).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+    const disabledConfirm = screen.getByRole("button", {
+      name: /confirm interpretation and discover shows/i,
+    });
+    expect(disabledConfirm.className).toContain("bg-[var(--ts-ink-on-paper)]");
+    expect(disabledConfirm).toBeDisabled();
+    expectPaperInk(empty.container);
+    empty.unmount();
+
+    stubFetch({ interpret: () => ({ error: true }) });
+    const failed = renderClient({
+      initialInterpretation: null,
+      initialDecisions: null,
+    });
+    const loadAlert = await screen.findByRole("alert");
+    expect(loadAlert.className).toContain("border-[var(--ts-hairline-on-paper)]");
+    expect(loadAlert.className).toContain("text-[var(--ts-ink-on-paper)]");
+    expect(loadAlert.className).not.toMatch(/--brand-/);
+    expectPaperInk(failed.container);
+  });
+});

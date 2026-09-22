@@ -16,6 +16,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { tokens } from "@/lib/brand/tokens";
 import type {
   BrandDecision,
   BriefGoal,
@@ -25,6 +26,22 @@ import type {
 } from "@/lib/data/types";
 
 const MAX_REFINEMENTS = 3;
+
+const radiusStyle = { borderRadius: tokens.radius };
+
+const fieldClass =
+  "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none resize-none";
+
+const inkBtnClass =
+  "inline-flex items-center justify-center gap-2 bg-[var(--ts-ink-on-paper)] text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+
+const alertClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-sm text-[var(--ts-ink-on-paper)]";
+
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+
+const accentLinkClass =
+  "font-medium text-[var(--ts-accent)] hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-40";
 
 const GOAL_LABELS: Record<BriefGoal, string> = {
   test_channel: "test-the-channel",
@@ -194,10 +211,9 @@ export default function InterpretationClient({
   if (loading) {
     return (
       <Shell>
-        <div className="flex items-center gap-3 text-sm text-[var(--brand-text-secondary)]">
-          <Spinner />
+        <p className={`animate-pulse text-sm ${mutedText}`}>
           Reading your brief…
-        </div>
+        </p>
       </Shell>
     );
   }
@@ -209,17 +225,15 @@ export default function InterpretationClient({
   if (emptyRings) {
     return (
       <Shell>
-        <div
-          role="alert"
-          className="mb-6 p-4 rounded-xl border border-[var(--brand-warning)]/40 bg-[var(--brand-warning)]/[0.06] text-sm text-[var(--brand-text)]"
-        >
+        <div role="alert" className={`mb-6 p-4 ${alertClass}`} style={radiusStyle}>
           We read your brief but couldn&rsquo;t save the interpretation. Refresh
           to try again.
         </div>
         <button
           type="button"
           disabled
-          className="w-full flex items-center justify-center gap-2 bg-[var(--brand-blue)] disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl text-sm font-semibold"
+          className={`w-full py-3 text-sm font-medium ${inkBtnClass}`}
+          style={radiusStyle}
         >
           Confirm interpretation and discover shows
         </button>
@@ -230,10 +244,7 @@ export default function InterpretationClient({
   if (loadError || !interpretation || !primary) {
     return (
       <Shell>
-        <div
-          role="alert"
-          className="p-4 rounded-xl border border-[var(--brand-error)]/30 bg-[var(--brand-error)]/[0.04] text-sm text-[var(--brand-error)]"
-        >
+        <div role="alert" className={`p-4 ${alertClass}`} style={radiusStyle}>
           {loadError ?? "We couldn't load this interpretation. Refresh to try again."}
         </div>
       </Shell>
@@ -328,10 +339,7 @@ export default function InterpretationClient({
   return (
     <Shell>
       {persistenceFailed && (
-        <div
-          role="alert"
-          className="mb-6 p-4 rounded-xl border border-[var(--brand-warning)]/40 bg-[var(--brand-warning)]/[0.06] text-sm text-[var(--brand-text)]"
-        >
+        <div role="alert" className={`mb-6 p-4 ${alertClass}`} style={radiusStyle}>
           We read your brief but couldn&rsquo;t save the interpretation. You can
           review it below — refresh to save and continue.
         </div>
@@ -342,12 +350,12 @@ export default function InterpretationClient({
         <h2 id="zone-primary" className="sr-only">
           How we&rsquo;re reading your brief
         </h2>
-        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--brand-text-muted)] mb-2">
+        <p className={`mb-2 text-xs font-medium uppercase tracking-wide ${mutedText}`}>
           Here&rsquo;s how I&rsquo;m reading this
         </p>
         <p
           data-testid="customer-summary"
-          className="text-lg leading-relaxed text-[var(--brand-text)]"
+          className="text-lg leading-relaxed"
         >
           {speculativeAll
             ? "I'm reasoning from first principles here — no strong analogs in the library yet. "
@@ -370,11 +378,11 @@ export default function InterpretationClient({
       <section aria-labelledby="zone-laterals" className="mb-8">
         <h2
           id="zone-laterals"
-          className="text-base font-bold text-[var(--brand-text)] mb-1"
+          className="mb-1 text-base font-semibold"
         >
           Other rings worth a look
         </h2>
-        <p className="text-xs text-[var(--brand-text-muted)] mb-4">
+        <p className={`mb-4 text-xs ${mutedText}`}>
           Include the frames you want to discover against. Skip the ones that
           don&rsquo;t fit. Refine any read that&rsquo;s off.
         </p>
@@ -393,7 +401,7 @@ export default function InterpretationClient({
             />
           ))}
           {laterals.length === 0 && (
-            <p className="text-sm text-[var(--brand-text-muted)] italic">
+            <p className={`text-sm italic ${mutedText}`}>
               No lateral rings — the primary read stands on its own.
             </p>
           )}
@@ -410,27 +418,27 @@ export default function InterpretationClient({
       {/* ---- Zone C: confirm ---- */}
       <section
         aria-labelledby="zone-confirm"
-        className="border-t border-[var(--brand-border)] pt-6"
+        className="border-t border-[var(--ts-hairline-on-paper)] pt-6"
       >
         <h2 id="zone-confirm" className="sr-only">
           Confirm and discover
         </h2>
         <p
           data-testid="confirm-summary"
-          className="text-sm text-[var(--brand-text-secondary)] mb-4"
+          className={`mb-4 text-sm ${mutedText}`}
         >
           {speculativeAll
             ? "Low confidence on this brief. Worth treating as a small test before scaling. "
             : ""}
           Discovering shows across{" "}
-          <span className="font-semibold text-[var(--brand-text)]">
+          <span className="font-semibold text-[var(--ts-ink-on-paper)]">
             {confirmedCount} confirmed ring{confirmedCount === 1 ? "" : "s"}
           </span>
           {budgetTotal !== null && (
             <>
               {" "}
               within your{" "}
-              <span className="font-semibold text-[var(--brand-text)]">
+              <span className="font-semibold text-[var(--ts-ink-on-paper)]">
                 ${budgetTotal.toLocaleString("en-US")}
               </span>
               {goalLabel ? ` ${goalLabel}` : ""} budget
@@ -442,22 +450,17 @@ export default function InterpretationClient({
           type="button"
           onClick={handleConfirm}
           disabled={confirming || persistenceFailed || refinesInFlight > 0}
-          className="w-full flex items-center justify-center gap-2 bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl text-sm font-semibold transition-all"
+          className={`w-full py-3 text-sm font-medium ${inkBtnClass}`}
+          style={radiusStyle}
         >
           {confirming ? (
-            <>
-              <Spinner />
-              Confirming…
-            </>
+            <span className="animate-pulse">Confirming…</span>
           ) : (
             "Confirm interpretation and discover shows"
           )}
         </button>
         {confirmError && (
-          <div
-            role="alert"
-            className="mt-3 p-3 rounded-lg border border-[var(--brand-error)]/30 bg-[var(--brand-error)]/[0.04] text-sm text-[var(--brand-error)]"
-          >
+          <div role="alert" className={`mt-3 p-3 ${alertClass}`} style={radiusStyle}>
             {confirmError}
           </div>
         )}
@@ -545,39 +548,41 @@ function RingCard({
   return (
     <div
       data-testid={isPrimary ? "primary-ring-card" : "lateral-ring-card"}
-      className={`mt-4 rounded-xl border p-5 ${
-        isPrimary
-          ? "border-[var(--brand-blue)]/30 bg-[var(--brand-blue)]/[0.03]"
-          : slot.include
-            ? "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)]"
-            : "border-[var(--brand-border)] bg-[var(--brand-surface)] opacity-60"
+      className={`mt-4 border p-5 ${
+        isPrimary || slot.include
+          ? "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)]"
+          : "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] opacity-60"
       }`}
+      style={radiusStyle}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-base font-bold text-[var(--brand-text)]">
+          <span className="text-base font-semibold">
             {slot.ring.ring_label}
           </span>
           <ConfidenceBadge confidence={slot.ring.confidence} />
           {slot.addedByBrand && (
-            <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[var(--brand-teal)]/15 text-[var(--brand-teal)]">
+            <span
+              className="border border-[var(--ts-hairline-on-paper)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ts-accent)]"
+              style={radiusStyle}
+            >
               You added this
             </span>
           )}
         </div>
       </div>
 
-      <p className="mt-2 text-sm leading-relaxed text-[var(--brand-text-secondary)]">
+      <p className={`mt-2 text-sm leading-relaxed ${mutedText}`}>
         {slot.ring.reasoning}
       </p>
 
       {slot.ring.analog_campaigns.length > 0 && (
-        <p className="mt-2 text-xs text-[var(--brand-text-muted)]">
+        <p className={`mt-2 text-xs ${mutedText}`}>
           Drawing on{" "}
           {slot.ring.analog_campaigns.map((a, i) => (
             <span key={a}>
               {i > 0 && ", "}
-              <span className="font-semibold text-[var(--brand-text-secondary)]">
+              <span className="font-semibold text-[var(--ts-ink-on-paper)]">
                 {a}
               </span>
             </span>
@@ -608,7 +613,7 @@ function RingCard({
           type="button"
           disabled={disabled || noId || maxedOut}
           onClick={() => setRefineOpen((v) => !v)}
-          className="ml-auto text-xs font-semibold text-[var(--brand-blue)] hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+          className={`ml-auto text-xs ${accentLinkClass}`}
         >
           {isPrimary ? "That’s not quite right — refine" : "Refine"}
         </button>
@@ -622,23 +627,25 @@ function RingCard({
             onChange={(e) => setText(e.target.value)}
             rows={2}
             placeholder="Tell me what's off — who's the customer really?"
-            className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none"
+            className={fieldClass}
+            style={radiusStyle}
           />
           <div className="mt-2 flex items-center gap-2">
             <button
               type="button"
               onClick={submitRefine}
               disabled={submitting || !text.trim()}
-              className="px-3 py-1.5 rounded-lg bg-[var(--brand-blue)] text-white text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`px-3 py-1.5 text-xs font-medium ${inkBtnClass}`}
+              style={radiusStyle}
             >
               {submitting ? "Re-reading…" : "Submit refinement"}
             </button>
-            <span className="text-xs text-[var(--brand-text-muted)]">
+            <span className={`text-xs ${mutedText}`}>
               {slot.refineCount} of {MAX_REFINEMENTS} refinements
             </span>
           </div>
           {error && (
-            <p role="alert" className="mt-2 text-xs text-[var(--brand-error)]">
+            <p role="alert" className="mt-2 text-xs text-[var(--ts-ink-on-paper)]">
               {error}
             </p>
           )}
@@ -646,9 +653,9 @@ function RingCard({
       )}
 
       {maxedOut && (
-        <p className="mt-3 text-xs text-[var(--brand-text-muted)]">
+        <p className={`mt-3 text-xs ${mutedText}`}>
           Still not landing?{" "}
-          <a href={startOverHref} className="font-semibold text-[var(--brand-blue)] hover:underline">
+          <a href={startOverHref} className={accentLinkClass}>
             Want to start over?
           </a>
         </p>
@@ -721,7 +728,7 @@ function AddRing({
         type="button"
         disabled={disabled}
         onClick={() => setOpen(true)}
-        className="mt-4 text-sm font-semibold text-[var(--brand-blue)] hover:underline disabled:opacity-40"
+        className={`mt-4 text-sm ${accentLinkClass}`}
       >
         + Add a ring I missed
       </button>
@@ -729,34 +736,39 @@ function AddRing({
   }
 
   return (
-    <div className="mt-4 rounded-xl border border-dashed border-[var(--brand-border)] p-4">
+    <div
+      className="mt-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4"
+      style={radiusStyle}
+    >
       <textarea
         aria-label="Add a ring I missed"
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={2}
         placeholder="What audience are we missing? Frame it however you'd describe it."
-        className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none"
+        className={fieldClass}
+        style={radiusStyle}
       />
       <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
           onClick={submit}
           disabled={submitting || !text.trim()}
-          className="px-3 py-1.5 rounded-lg bg-[var(--brand-blue)] text-white text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          className={`px-3 py-1.5 text-xs font-medium ${inkBtnClass}`}
+          style={radiusStyle}
         >
           {submitting ? "Reading…" : "Add this ring"}
         </button>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="text-xs text-[var(--brand-text-muted)] hover:text-[var(--brand-text)]"
+          className={`text-xs ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
         >
           Cancel
         </button>
       </div>
       {error && (
-        <p role="alert" className="mt-2 text-xs text-[var(--brand-error)]">
+        <p role="alert" className="mt-2 text-xs text-[var(--ts-ink-on-paper)]">
           {error}
         </p>
       )}
@@ -769,16 +781,15 @@ function AddRing({
 // ============================================================
 
 function ConfidenceBadge({ confidence }: { confidence: ConvictionBand }) {
-  const styles: Record<ConvictionBand, string> = {
-    high: "bg-[var(--brand-success)]/15 text-[var(--brand-success)]",
-    medium: "bg-[var(--brand-blue)]/15 text-[var(--brand-blue)]",
-    low: "bg-[var(--brand-warning)]/15 text-[var(--brand-warning)]",
-    speculative: "bg-[var(--brand-text-muted)]/15 text-[var(--brand-text-muted)]",
-  };
+  const tone =
+    confidence === "low" || confidence === "speculative"
+      ? mutedText
+      : "text-[var(--ts-ink-on-paper)]";
   return (
     <span
       data-testid="confidence-badge"
-      className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${styles[confidence]}`}
+      className={`border border-[var(--ts-hairline-on-paper)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tone}`}
+      style={radiusStyle}
     >
       {confidence}
     </span>
@@ -802,11 +813,12 @@ function ToggleButton({
       aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all disabled:opacity-40 ${
+      className={`border px-3 py-1.5 text-xs font-medium disabled:opacity-40 ${
         active
-          ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]"
-          : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)]/30"
+          ? "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]"
+          : "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:bg-[var(--ts-band-shows)]"
       }`}
+      style={radiusStyle}
     >
       {label}
     </button>
@@ -814,14 +826,12 @@ function ToggleButton({
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return <div className="p-8 max-w-2xl">{children}</div>;
-}
-
-function Spinner() {
   return (
-    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-    </svg>
+    <div className="max-w-2xl p-4 sm:p-8">
+      <p className="mb-6 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+        For brands
+      </p>
+      {children}
+    </div>
   );
 }
