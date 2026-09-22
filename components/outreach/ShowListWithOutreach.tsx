@@ -5,6 +5,7 @@
 
 import { useMemo, useState } from "react";
 import type { Outreach, OutreachResponseStatus, ScoredShowRecord, MediaPlanLineItem, Placement } from "@/lib/data/types";
+import { tokens } from "@/lib/brand/tokens";
 import ComposerModal, { type ComposerShow } from "./ComposerModal";
 
 interface SelectedShowEntry {
@@ -20,6 +21,16 @@ interface Props {
   defaultEpisodes?: number;
 }
 
+const radiusStyle = { borderRadius: tokens.radius };
+
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
+const panelClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const inkBtnClass =
+  "inline-flex items-center justify-center bg-[var(--ts-ink-on-paper)] px-4 py-2 text-xs font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
+
 const STATUS_LABEL: Record<OutreachResponseStatus, string> = {
   pending: "Awaiting reply",
   accepted: "Accepted",
@@ -29,11 +40,11 @@ const STATUS_LABEL: Record<OutreachResponseStatus, string> = {
 };
 
 const STATUS_COLOR: Record<OutreachResponseStatus, string> = {
-  pending: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
-  accepted: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-  countered: "bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]",
-  declined: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
-  no_response: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
+  pending: "bg-[var(--ts-band-shows)] text-[var(--ts-ink-muted-on-paper)]",
+  accepted: "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]",
+  countered: "bg-[var(--ts-band-shows)] text-[var(--ts-ink-on-paper)]",
+  declined: `bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] border ${hairlineRule}`,
+  no_response: `bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] border ${hairlineRule}`,
 };
 
 export default function ShowListWithOutreach({
@@ -84,21 +95,25 @@ export default function ShowListWithOutreach({
           return (
             <div
               key={key}
-              className="flex items-center gap-4 px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)]"
+              className={`flex items-center gap-4 px-4 py-3 ${panelClass}`}
+              style={radiusStyle}
             >
-              <div className="w-10 h-10 rounded-lg flex-shrink-0 overflow-hidden bg-gradient-to-br from-[var(--brand-blue)]/20 to-[var(--brand-teal)]/20 flex items-center justify-center">
+              <div
+                className={`flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden border bg-[var(--ts-band-shows)] ${hairlineRule}`}
+                style={radiusStyle}
+              >
                 {show.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={show.imageUrl} alt="" className="w-full h-full object-cover" />
+                  <img src={show.imageUrl} alt="" className="h-full w-full object-cover" />
                 ) : (
-                  <span className="text-xs font-bold text-[var(--brand-blue)]">
+                  <span className={`text-xs font-medium ${mutedText}`}>
                     {show.name.slice(0, 2).toUpperCase()}
                   </span>
                 )}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-[var(--brand-text)] truncate">{show.name}</div>
-                <div className="text-xs text-[var(--brand-text-muted)] truncate">
+              <div className="min-w-0 flex-1">
+                <div className={`truncate text-sm font-medium ${inkText}`}>{show.name}</div>
+                <div className={`truncate text-xs ${mutedText}`}>
                   {show.audienceSize.toLocaleString()} downloads · ${show.estimatedCpm.toFixed(2)} CPM
                   {show.contactEmail ? ` · ${show.contactEmail}` : ""}
                 </div>
@@ -107,12 +122,13 @@ export default function ShowListWithOutreach({
               {existing ? (
                 <div className="flex items-center gap-3">
                   <span
-                    className={`text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_COLOR[existing.response_status]}`}
+                    className={`px-2.5 py-1 text-xs font-medium ${STATUS_COLOR[existing.response_status]}`}
+                    style={radiusStyle}
                   >
                     {STATUS_LABEL[existing.response_status]}
                   </span>
                   {existing.response_status === "countered" && existing.counter_cpm != null && (
-                    <span className="text-xs text-[var(--brand-text-secondary)]">
+                    <span className={`text-xs tabular-nums ${mutedText}`}>
                       ${existing.counter_cpm.toFixed(2)}
                     </span>
                   )}
@@ -122,7 +138,8 @@ export default function ShowListWithOutreach({
                   onClick={() => setComposerShow(composerShow)}
                   disabled={!composerShow.contact_email}
                   title={!composerShow.contact_email ? "No contact email on file" : "Send outreach"}
-                  className="px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold"
+                  className={inkBtnClass}
+                  style={radiusStyle}
                 >
                   Reach out
                 </button>

@@ -4,11 +4,14 @@
   Homepage, /login, the authenticated dashboard chrome (layout +
   sidebar + /dashboard), the /campaigns list, /campaigns/new
   (returning check-in + brief), /campaigns/[id]/interpretation,
-  the v2 conviction discovery view at /campaigns/[id], and the media
-  plan at /campaigns/[id]/plan use these.
+  the v2 conviction discovery view at /campaigns/[id], the media
+  plan at /campaigns/[id]/plan, brand outreach at
+  /campaigns/[id]/outreach, the deals list at /deals, and deal
+  detail at /deals/[id] (Wave 12 sign flow and the legacy edit)
+  use these.
   Signup, onboarding, legacy campaign detail and discovery list,
-  outreach, deals, invoices, and settings page bodies still use
-  --brand-* in globals.css.
+  the public pitch page, /deals/new, /deals/import, /deals/[id]/io,
+  invoices, and settings page bodies still use --brand-* in globals.css.
 
   Accent is copper only. Do not add a second accent.
 */

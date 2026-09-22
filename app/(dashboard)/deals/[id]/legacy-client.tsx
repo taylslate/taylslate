@@ -5,6 +5,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Deal, DealStatus, Placement, PriceType } from "@/lib/data/types";
 import { formatDateOnly } from "@/lib/format/date-only";
+import { tokens } from "@/lib/brand/tokens";
+
+const radiusStyle = { borderRadius: tokens.radius };
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
+const kickerClass =
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+const inkBtnClass =
+  "inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+const ghostBtnClass =
+  "inline-flex items-center gap-2 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)]";
+const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
 
 const statusOptions: { value: DealStatus; label: string }[] = [
   { value: "planning", label: "Planning" },
@@ -14,16 +27,16 @@ const statusOptions: { value: DealStatus; label: string }[] = [
 ];
 
 const statusStyles: Record<string, string> = {
-  planning: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
-  io_sent: "bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]",
-  live: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-  completed: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
+  planning: "bg-[var(--ts-band-shows)] text-[var(--ts-ink-muted-on-paper)]",
+  io_sent: "bg-[var(--ts-band-shows)] text-[var(--ts-ink-on-paper)]",
+  live: "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]",
+  completed: "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)]",
 };
 
 const inputClass =
-  "w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all";
+  "w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
 const readOnlyClass =
-  "w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)]/60 text-sm text-[var(--brand-text-secondary)]";
+  "w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] px-4 py-2.5 text-sm text-[var(--ts-ink-muted-on-paper)]";
 
 type DealWithRelations = Deal & { show_name?: string; brand_name?: string; insertion_order?: unknown };
 
@@ -90,22 +103,22 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
 
   if (isLoading) {
     return (
-      <div className="p-8 max-w-3xl">
-        <div className="flex items-center justify-center py-24">
-          <div className="w-8 h-8 border-3 border-[var(--brand-blue)]/20 border-t-[var(--brand-blue)] rounded-full animate-spin" />
-        </div>
+      <div className="p-4 sm:p-8">
+        <div className={`mb-3 h-3 w-16 ${pulseClass}`} style={radiusStyle} />
+        <div className={`mb-2 h-7 w-48 ${pulseClass}`} style={radiusStyle} />
+        <div className={`h-4 w-64 ${pulseClass}`} style={radiusStyle} />
       </div>
     );
   }
 
   if (error || !deal) {
     return (
-      <div className="p-8 max-w-3xl">
-        <Link href="/deals" className="flex items-center gap-1.5 text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors mb-4">
+      <div className={`min-h-screen bg-[var(--ts-paper)] p-4 sm:p-8 ${inkText}`}>
+        <Link href="/deals" className={`mb-4 flex items-center gap-1.5 text-xs ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-          All Deals
+          Deals
         </Link>
-        <h1 className="text-2xl font-bold text-[var(--brand-text)]">{error || "Deal not found"}</h1>
+        <h1 className={`text-xl font-semibold ${inkText}`}>{error || "Deal not found"}</h1>
       </div>
     );
   }
@@ -215,35 +228,41 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
   const editTotalNet = editNetPerEp * (Number(editNumEpisodes) || 0);
 
   return (
-    <div className="p-8 max-w-3xl">
-      {/* Back + Header */}
-      <div className="mb-8">
-        <Link
-          href="/deals"
-          className="flex items-center gap-1.5 text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors mb-4"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-          All Deals
-        </Link>
-        <div className="flex items-center justify-between">
+    <div className={`min-h-screen bg-[var(--ts-paper)] p-4 sm:p-8 ${inkText}`}>
+      <div className="mb-8 max-w-3xl">
+        <div className="mb-3 flex items-center gap-3">
+          <Link
+            href="/deals"
+            className={`flex items-center gap-1.5 text-xs ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            Deals
+          </Link>
+          <p className={kickerClass}>For brands</p>
+        </div>
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">
+            <h1 className={`text-xl font-semibold tracking-tight ${inkText}`}>
               {showName}
             </h1>
-            <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+            <p className={`mt-1 text-sm ${mutedText}`}>
               {brandName} &middot; {deal.num_episodes} episode{deal.num_episodes !== 1 ? "s" : ""} &middot; {deal.placement}
             </p>
           </div>
           {!isEditing && (
             <div className="flex items-center gap-3">
-              <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusStyles[deal.status] ?? ""}`}>
+              <span
+                className={`px-2.5 py-1 text-xs font-medium ${statusStyles[deal.status] ?? `border ${hairlineRule} ${mutedText}`}`}
+                style={radiusStyle}
+              >
                 {deal.status.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
               </span>
               <button
                 onClick={startEdit}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)] hover:text-[var(--brand-blue)] transition-all"
+                className={ghostBtnClass}
+                style={radiusStyle}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -258,10 +277,10 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
 
       {isEditing ? (
         /* ======================== EDIT MODE ======================== */
-        <div className="space-y-6">
+        <div className="max-w-3xl space-y-6">
           {/* Status */}
           <div>
-            <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Status</label>
+            <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Status</label>
             <select value={editStatus} onChange={(e) => setEditStatus(e.target.value as DealStatus)} className={inputClass}>
               {statusOptions.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
@@ -271,29 +290,29 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
 
           {/* Show (read-only in edit mode) */}
           <div>
-            <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Show</label>
+            <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Show</label>
             <div className={readOnlyClass}>{showName}</div>
           </div>
 
           {/* Brand (read-only in edit mode) */}
           <div>
-            <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Brand / Advertiser</label>
+            <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Brand / Advertiser</label>
             <div className={readOnlyClass}>{brandName}</div>
           </div>
 
           {/* Placement */}
           <div>
-            <label className="block text-sm font-medium text-[var(--brand-text)] mb-2">Placement</label>
+            <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-2">Placement</label>
             <div className="flex gap-3">
               {(["pre-roll", "mid-roll", "post-roll"] as Placement[]).map((p) => (
                 <button
                   key={p}
                   type="button"
                   onClick={() => setEditPlacement(p)}
-                  className={`flex-1 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                  className={`flex-1 rounded-[var(--ts-radius)] border px-4 py-2.5 text-sm font-medium ${
                     editPlacement === p
-                      ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]"
-                      : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-text-muted)]"
+                      ? "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]"
+                      : "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:bg-[var(--ts-band-shows)]"
                   }`}
                 >
                   {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -304,17 +323,17 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
 
           {/* Price Type */}
           <div>
-            <label className="block text-sm font-medium text-[var(--brand-text)] mb-2">Price Type</label>
+            <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-2">Price Type</label>
             <div className="flex gap-3">
               {(["cpm", "flat_rate"] as PriceType[]).map((pt) => (
                 <button
                   key={pt}
                   type="button"
                   onClick={() => setEditPriceType(pt)}
-                  className={`flex-1 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                  className={`flex-1 rounded-[var(--ts-radius)] border px-4 py-2.5 text-sm font-medium ${
                     editPriceType === pt
-                      ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]"
-                      : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-text-muted)]"
+                      ? "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]"
+                      : "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:bg-[var(--ts-band-shows)]"
                   }`}
                 >
                   {pt === "cpm" ? "CPM" : "Flat Rate"}
@@ -327,9 +346,9 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
           <div className="grid grid-cols-2 gap-4">
             {editPriceType === "cpm" ? (
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">CPM Rate</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">CPM Rate</label>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-[var(--brand-text-muted)]">$</span>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-[var(--ts-ink-muted-on-paper)]">$</span>
                   <input
                     type="number"
                     value={editCpmRate}
@@ -342,9 +361,9 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
               </div>
             ) : (
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Flat Rate per Episode</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Flat Rate per Episode</label>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-[var(--brand-text-muted)]">$</span>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-[var(--ts-ink-muted-on-paper)]">$</span>
                   <input
                     type="number"
                     value={editFlatRate}
@@ -357,7 +376,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Guaranteed Downloads</label>
+              <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Guaranteed Downloads</label>
               <input
                 type="number"
                 value={editGuaranteedDownloads}
@@ -366,14 +385,14 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
                 step="100"
                 className={inputClass}
               />
-              <p className="text-xs text-[var(--brand-text-muted)] mt-1">Per episode</p>
+              <p className="text-xs text-[var(--ts-ink-muted-on-paper)] mt-1">Per episode</p>
             </div>
           </div>
 
           {/* Episodes + Dates */}
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Episodes</label>
+              <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Episodes</label>
               <input
                 type="number"
                 value={editNumEpisodes}
@@ -383,19 +402,19 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Flight Start</label>
+              <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Flight Start</label>
               <input type="date" value={editFlightStart} onChange={(e) => setEditFlightStart(e.target.value)} className={inputClass} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Flight End</label>
+              <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Flight End</label>
               <input type="date" value={editFlightEnd} onChange={(e) => setEditFlightEnd(e.target.value)} className={inputClass} />
             </div>
           </div>
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">
-              Notes <span className="text-[var(--brand-text-muted)] font-normal ml-1">(optional)</span>
+            <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">
+              Notes <span className="text-[var(--ts-ink-muted-on-paper)] font-normal ml-1">(optional)</span>
             </label>
             <textarea
               value={editNotes}
@@ -408,18 +427,18 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
 
           {/* Edit Summary */}
           {editNetPerEp > 0 && (
-            <div className="rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
-              <h3 className="text-sm font-semibold text-[var(--brand-text)] mb-3">Updated Summary</h3>
+            <div className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] p-5">
+              <h3 className="text-sm font-semibold text-[var(--ts-ink-on-paper)] mb-3">Updated Summary</h3>
               <div className="grid grid-cols-2 gap-y-2 text-sm">
                 <div className="flex justify-between col-span-2">
-                  <span className="text-[var(--brand-text-muted)]">Rate per episode</span>
-                  <span className="font-medium text-[var(--brand-text)]">
+                  <span className="text-[var(--ts-ink-muted-on-paper)]">Rate per episode</span>
+                  <span className="font-medium text-[var(--ts-ink-on-paper)]">
                     ${editNetPerEp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
-                <div className="flex justify-between col-span-2 pt-2 border-t border-[var(--brand-border)]">
-                  <span className="font-semibold text-[var(--brand-text)]">Total net</span>
-                  <span className="font-bold text-[var(--brand-blue)]">
+                <div className="flex justify-between col-span-2 pt-2 border-t border-[var(--ts-hairline-on-paper)]">
+                  <span className="font-semibold text-[var(--ts-ink-on-paper)]">Total net</span>
+                  <span className="font-bold text-[var(--ts-ink-on-paper)]">
                     ${editTotalNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
@@ -428,17 +447,18 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
           )}
 
           {/* Save / Cancel */}
-          <div className="flex items-center gap-3 pt-4 border-t border-[var(--brand-border)]">
+          <div className="flex items-center gap-3 pt-4 border-t border-[var(--ts-hairline-on-paper)]">
             <button
               onClick={handleCancel}
-              className="px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+              className={ghostBtnClass}
+              style={radiusStyle}
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+              className={inkBtnClass}
             >
               {isSaving ? (
                 <>
@@ -456,46 +476,46 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
         </div>
       ) : (
         /* ======================== VIEW MODE ======================== */
-        <div className="space-y-6">
+        <div className="max-w-3xl space-y-6">
           {/* Deal Info */}
-          <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
-            <h2 className="text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-4">Deal Details</h2>
+          <section className="p-5 bg-[var(--ts-paper)] rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)]">
+            <h2 className="text-xs font-semibold text-[var(--ts-ink-muted-on-paper)] uppercase tracking-wider mb-4">Deal Details</h2>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Show</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Show</label>
                 <div className={readOnlyClass}>{showName}</div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Brand</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Brand</label>
                 <div className={readOnlyClass}>{brandName}</div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Placement</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Placement</label>
                 <div className={readOnlyClass}>{deal.placement.charAt(0).toUpperCase() + deal.placement.slice(1)}</div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Price Type</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Price Type</label>
                 <div className={readOnlyClass}>{deal.price_type === "cpm" ? `CPM — $${deal.cpm_rate}` : `Flat Rate — $${deal.net_per_episode.toLocaleString()}`}</div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Guaranteed Downloads</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Guaranteed Downloads</label>
                 <div className={readOnlyClass}>{deal.guaranteed_downloads.toLocaleString()} / episode</div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Episodes</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Episodes</label>
                 <div className={readOnlyClass}>{deal.num_episodes}</div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Flight Start</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Flight Start</label>
                 <div className={readOnlyClass}>{formatDateOnly(deal.flight_start)}</div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Flight End</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Flight End</label>
                 <div className={readOnlyClass}>{formatDateOnly(deal.flight_end)}</div>
               </div>
               {deal.notes && (
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Notes</label>
+                  <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Notes</label>
                   <div className={readOnlyClass}>{deal.notes}</div>
                 </div>
               )}
@@ -503,22 +523,22 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
           </section>
 
           {/* Financials */}
-          <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
-            <h2 className="text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-4">Financials</h2>
+          <section className="p-5 bg-[var(--ts-paper)] rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)]">
+            <h2 className="text-xs font-semibold text-[var(--ts-ink-muted-on-paper)] uppercase tracking-wider mb-4">Financials</h2>
             <div className="grid grid-cols-3 gap-4">
-              <div className="text-center p-3 rounded-lg bg-[var(--brand-surface)]">
-                <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Per Episode</div>
-                <div className="text-lg font-bold text-[var(--brand-text)]">
+              <div className="text-center p-3 rounded-[var(--ts-radius)] bg-[var(--ts-band-shows)]">
+                <div className="text-xs text-[var(--ts-ink-muted-on-paper)] font-medium uppercase tracking-wider mb-1">Per Episode</div>
+                <div className="text-lg font-bold text-[var(--ts-ink-on-paper)]">
                   ${deal.net_per_episode.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
-              <div className="text-center p-3 rounded-lg bg-[var(--brand-surface)]">
-                <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Episodes</div>
-                <div className="text-lg font-bold text-[var(--brand-text)]">{deal.num_episodes}</div>
+              <div className="text-center p-3 rounded-[var(--ts-radius)] bg-[var(--ts-band-shows)]">
+                <div className="text-xs text-[var(--ts-ink-muted-on-paper)] font-medium uppercase tracking-wider mb-1">Episodes</div>
+                <div className="text-lg font-bold text-[var(--ts-ink-on-paper)]">{deal.num_episodes}</div>
               </div>
-              <div className="text-center p-3 rounded-lg bg-[var(--brand-surface)]">
-                <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Total Net</div>
-                <div className="text-lg font-bold text-[var(--brand-blue)]">
+              <div className="text-center p-3 rounded-[var(--ts-radius)] bg-[var(--ts-band-shows)]">
+                <div className="text-xs text-[var(--ts-ink-muted-on-paper)] font-medium uppercase tracking-wider mb-1">Total Net</div>
+                <div className="text-lg font-bold text-[var(--ts-ink-on-paper)]">
                   ${deal.total_net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
@@ -527,16 +547,16 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
 
           {/* Exclusivity */}
           {deal.competitor_exclusion.length > 0 && (
-            <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
-              <h2 className="text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-3">Competitor Exclusion</h2>
+            <section className="p-5 bg-[var(--ts-paper)] rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)]">
+              <h2 className="text-xs font-semibold text-[var(--ts-ink-muted-on-paper)] uppercase tracking-wider mb-3">Competitor Exclusion</h2>
               <div className="flex items-center gap-2 flex-wrap">
                 {deal.competitor_exclusion.map((comp) => (
-                  <span key={comp} className="text-xs bg-[var(--brand-orange)]/[0.08] text-[var(--brand-orange)] px-2.5 py-1 rounded-full font-medium">
+                  <span key={comp} className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] px-2.5 py-1 text-xs font-medium text-[var(--ts-ink-on-paper)]">
                     {comp}
                   </span>
                 ))}
               </div>
-              <div className="flex items-center gap-4 mt-3 text-xs text-[var(--brand-text-muted)]">
+              <div className="flex items-center gap-4 mt-3 text-xs text-[var(--ts-ink-muted-on-paper)]">
                 <span>{deal.exclusivity_days} days exclusivity</span>
                 <span>{deal.rofr_days} days ROFR</span>
               </div>
@@ -544,11 +564,11 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
           )}
 
           {/* Actions */}
-          <div className="flex items-center gap-3 pt-4 border-t border-[var(--brand-border)]">
+          <div className="flex items-center gap-3 pt-4 border-t border-[var(--ts-hairline-on-paper)]">
             {hasIO ? (
               <Link
                 href={`/deals/${deal.id}/io`}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors"
+                className={inkBtnClass}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -560,7 +580,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
               <button
                 onClick={handleGenerateIO}
                 disabled={isGeneratingIO}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+                className={inkBtnClass}
               >
                 {isGeneratingIO ? (
                   <>
@@ -583,7 +603,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
             ) : null}
             <button
               onClick={startEdit}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)] hover:text-[var(--brand-blue)] transition-all"
+              className={ghostBtnClass}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />

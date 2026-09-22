@@ -6,10 +6,14 @@
  * shell (layout + sidebar + /dashboard), the /campaigns list,
  * /campaigns/new (returning check-in + brief),
  * /campaigns/[id]/interpretation, the v2 conviction discovery
- * view at /campaigns/[id], and the media plan at /campaigns/[id]/plan.
+ * view at /campaigns/[id], the media plan at /campaigns/[id]/plan,
+ * brand outreach at /campaigns/[id]/outreach, the deals list at
+ * /deals, and deal detail at /deals/[id] (Wave 12 sign flow and
+ * the legacy edit).
  * Signup, onboarding, legacy campaign detail and discovery list,
- * outreach, deals, invoices, and settings page bodies still use --brand-*
- * until those restyles land.
+ * the public pitch page, /deals/new, /deals/import, /deals/[id]/io,
+ * invoices, and settings page bodies still use --brand-* until
+ * those restyles land.
  */
 export const tokens = {
   field: "var(--ts-field)",

@@ -5,7 +5,10 @@ import {
 } from "@/lib/data/queries";
 import type { ScoredShowRecord, MediaPlanLineItem } from "@/lib/data/types";
 import ShowListWithOutreach from "@/components/outreach/ShowListWithOutreach";
+import { tokens } from "@/lib/brand/tokens";
 import Link from "next/link";
+
+const radiusStyle = { borderRadius: tokens.radius };
 
 export default async function CampaignOutreachPage({
   params,
@@ -25,49 +28,60 @@ export default async function CampaignOutreachPage({
   const outreaches = await getOutreachesForCampaign(id);
 
   return (
-    <div className="px-8 py-6">
-      <div className="flex items-center gap-3 mb-1">
-        <Link
-          href={`/campaigns/${id}/plan`}
-          className="text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-        </Link>
-        <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">
+    <div className="min-h-screen bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
+      <div className="border-b border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-8 pt-6 pb-5">
+        <div className="mb-3 flex items-center gap-3">
+          <Link
+            href={`/campaigns/${id}/plan`}
+            className="flex items-center gap-1.5 text-xs text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            Back to plan
+          </Link>
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+            For brands
+          </p>
+        </div>
+        <h1 className="text-xl font-semibold tracking-tight text-[var(--ts-ink-on-paper)]">
           {campaign.name} — Outreach
         </h1>
+        <p className="mt-1 text-sm text-[var(--ts-ink-muted-on-paper)]">
+          Send a personalized pitch to each show. They&apos;ll see your offer and can
+          accept, counter, or decline.
+        </p>
       </div>
-      <p className="text-sm text-[var(--brand-text-secondary)] mb-6 ml-8">
-        Send a personalized pitch to each show. They&apos;ll see your offer and can
-        accept, counter, or decline.
-      </p>
 
-      {selectedShows.length === 0 ? (
-        <div className="rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-8 text-center">
-          <p className="text-sm text-[var(--brand-text-secondary)] mb-3">
-            No shows selected yet.
-          </p>
-          <Link
-            href={`/campaigns/${id}`}
-            className="text-sm text-[var(--brand-blue)] hover:underline font-medium"
+      <div className="px-8 py-6">
+        {selectedShows.length === 0 ? (
+          <div
+            className="border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-8 text-center"
+            style={radiusStyle}
           >
-            Pick shows →
-          </Link>
-        </div>
-      ) : (
-        <ShowListWithOutreach
-          campaignId={id}
-          initialOutreaches={outreaches}
-          selectedShows={selectedShows.map((s) => ({
-            show: s,
-            line_item: lineItemByShow.get(s.podcastId),
-          }))}
-          defaultPlacement={campaign.media_plan?.default_placement}
-          defaultEpisodes={campaign.media_plan?.default_episodes}
-        />
-      )}
+            <p className="mb-3 text-sm text-[var(--ts-ink-muted-on-paper)]">
+              No shows selected yet.
+            </p>
+            <Link
+              href={`/campaigns/${id}`}
+              className="text-sm font-medium text-[var(--ts-accent)] hover:underline"
+            >
+              Pick shows →
+            </Link>
+          </div>
+        ) : (
+          <ShowListWithOutreach
+            campaignId={id}
+            initialOutreaches={outreaches}
+            selectedShows={selectedShows.map((s) => ({
+              show: s,
+              line_item: lineItemByShow.get(s.podcastId),
+            }))}
+            defaultPlacement={campaign.media_plan?.default_placement}
+            defaultEpisodes={campaign.media_plan?.default_episodes}
+          />
+        )}
+      </div>
     </div>
   );
 }

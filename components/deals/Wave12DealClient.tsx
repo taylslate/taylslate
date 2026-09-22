@@ -11,6 +11,7 @@ import { Elements, CardElement, useElements, useStripe } from "@stripe/react-str
 import type { Wave12Deal, Wave12DealStatus } from "@/lib/data/types";
 import { derivePromoCode } from "@/lib/io/promo-code";
 import { formatDateOnly } from "@/lib/format/date-only";
+import { tokens } from "@/lib/brand/tokens";
 
 interface Props {
   deal: Wave12Deal;
@@ -42,14 +43,32 @@ const STATUS_LABEL: Record<Wave12DealStatus, string> = {
   cancelled: "Cancelled",
 };
 
+const radiusStyle = { borderRadius: tokens.radius };
+
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const accentText = "text-[var(--ts-accent)]";
+const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
+const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const sectionHead = `mb-3 text-xs font-medium uppercase tracking-wider ${mutedText}`;
+const kickerClass =
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+const inkBtnClass =
+  "inline-flex w-full items-center justify-center bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+const ghostBtnClass =
+  "inline-flex items-center justify-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:cursor-not-allowed disabled:opacity-50";
+const fieldClass =
+  "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
+
+// Quiet paper washes. Same vocabulary as outreach status chips.
 const STATUS_COLOR: Record<Wave12DealStatus, string> = {
-  planning: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
-  brand_signed: "bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]",
-  show_signed: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-  live: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-  delivering: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-  completed: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
-  cancelled: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
+  planning: "bg-[var(--ts-band-shows)] text-[var(--ts-ink-muted-on-paper)]",
+  brand_signed: "bg-[var(--ts-band-shows)] text-[var(--ts-ink-on-paper)]",
+  show_signed: "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]",
+  live: "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]",
+  delivering: "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]",
+  completed: "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)]",
+  cancelled: "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)]",
 };
 
 function fmt(d?: string | null): string {
@@ -100,14 +119,17 @@ function DealCardSetupForm({
 
   return (
     <form onSubmit={handleSubmit} className="mt-3 space-y-3">
-      <div className="rounded-lg border border-[var(--brand-border)] bg-white px-3 py-3">
+      <div className={`px-3 py-3 ${panelClass}`} style={radiusStyle}>
         <CardElement
           options={{
             style: {
               base: {
                 fontSize: "14px",
-                color: "#1a1a2e",
-                "::placeholder": { color: "#9ca3af" },
+                // Stripe paints this field in a cross-origin iframe, so it
+                // cannot read --ts-* variables. Matches --ts-ink-on-paper
+                // and --ts-ink-muted-on-paper.
+                color: "#1c1915",
+                "::placeholder": { color: "#5c564c" },
               },
             },
           }}
@@ -116,11 +138,12 @@ function DealCardSetupForm({
       <button
         type="submit"
         disabled={!stripe || saving}
-        className="w-full px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold disabled:opacity-50"
+        className={inkBtnClass}
+        style={radiusStyle}
       >
         {saving ? "Saving card..." : "Save card on file"}
       </button>
-      {error && <p className="text-sm text-[var(--brand-error)]">{error}</p>}
+      {error && <p className={`text-sm ${accentText}`}>{error}</p>}
     </form>
   );
 }
@@ -366,30 +389,40 @@ export default function Wave12DealClient({
   const activeCardSecret = resolvedSecret ?? deal.setup_intent_client_secret ?? null;
 
   return (
-    <div className="px-8 py-6 max-w-6xl">
-      <div className="flex items-center gap-3 mb-1">
-        <Link
-          href="/deals"
-          className="text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-        </Link>
-        <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">
-          {brandName} × {showName}
-        </h1>
-        <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_COLOR[deal.status]}`}>
-          {STATUS_LABEL[deal.status]}
-        </span>
+    <div className={`min-h-screen bg-[var(--ts-paper)] ${inkText}`}>
+      <div className={`border-b ${hairlineRule} bg-[var(--ts-paper)] px-4 pt-6 pb-5 sm:px-8`}>
+        <div className="mb-3 flex items-center gap-3">
+          <Link
+            href="/deals"
+            className={`flex items-center gap-1.5 text-xs ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            Deals
+          </Link>
+          <p className={kickerClass}>{viewerRole === "show" ? "For shows" : "For brands"}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className={`text-xl font-semibold tracking-tight ${inkText}`}>
+            {brandName} × {showName}
+          </h1>
+          <span
+            className={`px-2.5 py-1 text-xs font-medium ${STATUS_COLOR[deal.status]}`}
+            style={radiusStyle}
+          >
+            {STATUS_LABEL[deal.status]}
+          </span>
+        </div>
+        <p className={`mt-1 text-sm ${mutedText}`}>
+          Deal ID: {deal.id.slice(0, 8)}
+          {deal.docusign_envelope_id ? ` · DocuSign Envelope: ${deal.docusign_envelope_id.slice(0, 8)}` : ""}
+        </p>
       </div>
-      <p className="text-sm text-[var(--brand-text-secondary)] mb-6 ml-7">
-        Deal ID: {deal.id.slice(0, 8)}
-        {deal.docusign_envelope_id ? ` · DocuSign Envelope: ${deal.docusign_envelope_id.slice(0, 8)}` : ""}
-      </p>
 
+      <div className="px-4 py-6 sm:px-8">
       {signingParam && (
-        <div className="mb-4 p-3 rounded-lg border border-[var(--brand-blue)]/30 bg-[var(--brand-blue)]/[0.06] text-sm text-[var(--brand-text)]">
+        <div className={`mb-4 p-3 text-sm ${panelClass} ${inkText}`} style={radiusStyle}>
           {awaitingSignatureConfirmation ? (
             <>Confirming your signature with DocuSign — this page updates automatically once the webhook lands…</>
           ) : (
@@ -400,22 +433,22 @@ export default function Wave12DealClient({
         </div>
       )}
       {error && (
-        <div className="mb-4 p-3 rounded-lg border border-[var(--brand-error)]/30 bg-[var(--brand-error)]/[0.04] text-sm text-[var(--brand-error)]">
+        <div className={`mb-4 p-3 text-sm ${panelClass} ${accentText}`} style={radiusStyle}>
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* IO preview */}
         <div className="lg:col-span-2">
-          <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] overflow-hidden">
-            <div className="px-4 py-3 border-b border-[var(--brand-border)] flex items-center justify-between">
-              <div className="text-sm font-semibold text-[var(--brand-text)]">Insertion Order preview</div>
+          <div className={`overflow-hidden ${panelClass}`} style={radiusStyle}>
+            <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b px-4 py-3 ${hairlineRule}`}>
+              <div className={`text-sm font-medium ${inkText}`}>Insertion Order preview</div>
               <a
                 href={`/api/deals/${deal.id}/preview`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-[var(--brand-blue)] hover:underline"
+                className={`text-xs font-medium ${accentText} hover:underline`}
               >
                 Open in new tab
               </a>
@@ -423,15 +456,15 @@ export default function Wave12DealClient({
             <iframe
               src={`/api/deals/${deal.id}/preview`}
               title="IO preview"
-              className="w-full h-[700px] bg-white"
+              className="h-[700px] w-full bg-white"
             />
           </div>
         </div>
 
         {/* Sidebar */}
         <div className="space-y-4">
-          <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
-            <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+          <div className={`p-5 ${panelClass}`} style={radiusStyle}>
+            <h2 className={sectionHead}>
               Agreed terms
             </h2>
             <dl className="grid grid-cols-2 gap-y-2 text-sm">
@@ -447,8 +480,8 @@ export default function Wave12DealClient({
 
           {/* Promo code — brand-editable at IO time (planning), else read-only. */}
           {canEditPromo ? (
-            <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
-              <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+            <div className={`p-5 ${panelClass}`} style={radiusStyle}>
+              <h2 className={sectionHead}>
                 Promo code
               </h2>
               <input
@@ -458,9 +491,10 @@ export default function Wave12DealClient({
                   setPromoSaved(false);
                 }}
                 placeholder="e.g. HUBERMAN"
-                className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm font-mono uppercase tracking-wide text-[var(--brand-text)]"
+                className={`${fieldClass} font-mono uppercase tracking-wide`}
+                style={radiusStyle}
               />
-              <p className="mt-2 text-xs text-[var(--brand-text-muted)]">
+              <p className={`mt-2 text-xs ${mutedText}`}>
                 Optional — the show reads this on air for attribution. Prefilled
                 from the show name; edit or clear it.
               </p>
@@ -468,12 +502,13 @@ export default function Wave12DealClient({
                 <button
                   onClick={savePromoCode}
                   disabled={savingPromo}
-                  className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text)] hover:bg-[var(--brand-surface)] disabled:opacity-50"
+                  className={ghostBtnClass}
+                  style={radiusStyle}
                 >
                   {savingPromo ? "Saving…" : "Save promo code"}
                 </button>
                 {promoSaved && (
-                  <span className="text-xs text-[var(--brand-success)] font-medium">
+                  <span className={`text-xs font-medium ${mutedText}`}>
                     Saved ✓
                   </span>
                 )}
@@ -481,11 +516,11 @@ export default function Wave12DealClient({
             </div>
           ) : (
             deal.promo_code && (
-              <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
-                <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+              <div className={`p-5 ${panelClass}`} style={radiusStyle}>
+                <h2 className={sectionHead}>
                   Promo code
                 </h2>
-                <p className="text-sm font-mono tracking-wide text-[var(--brand-text)]">
+                <p className={`font-mono text-sm tracking-wide ${inkText}`}>
                   {deal.promo_code}
                 </p>
               </div>
@@ -495,26 +530,27 @@ export default function Wave12DealClient({
           {/* Tracking link — generated on read, read-only for both roles.
               Omitted cleanly when the brand has no website on file. */}
           {trackingLink && (
-            <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
-              <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+            <div className={`p-5 ${panelClass}`} style={radiusStyle}>
+              <h2 className={sectionHead}>
                 Tracking link
               </h2>
-              <p className="text-xs break-all font-mono text-[var(--brand-text)] bg-[var(--brand-surface)] border border-[var(--brand-border)] rounded-lg px-3 py-2">
+              <p className={`break-all border px-3 py-2 font-mono text-xs ${hairlineRule} bg-[var(--ts-band-shows)] ${inkText}`} style={radiusStyle}>
                 {trackingLink}
               </p>
-              <p className="mt-2 text-xs text-[var(--brand-text-muted)]">
+              <p className={`mt-2 text-xs ${mutedText}`}>
                 UTM-tagged link for the show’s show notes — traffic attributes
                 back to this deal in the brand’s analytics.
               </p>
               <div className="mt-3 flex items-center gap-3">
                 <button
                   onClick={copyTrackingLink}
-                  className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text)] hover:bg-[var(--brand-surface)]"
+                  className={ghostBtnClass}
+                  style={radiusStyle}
                 >
                   Copy link
                 </button>
                 {linkCopied && (
-                  <span className="text-xs text-[var(--brand-success)] font-medium">
+                  <span className={`text-xs font-medium ${mutedText}`}>
                     Copied ✓
                   </span>
                 )}
@@ -526,25 +562,26 @@ export default function Wave12DealClient({
               link), generated on read, read-only for both roles. The show is
               who pastes it. Omitted cleanly when there's nothing actionable. */}
           {showNotesBlurb && (
-            <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
-              <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+            <div className={`p-5 ${panelClass}`} style={radiusStyle}>
+              <h2 className={sectionHead}>
                 Show notes
               </h2>
-              <p className="text-sm text-[var(--brand-text)] bg-[var(--brand-surface)] border border-[var(--brand-border)] rounded-lg px-3 py-2">
+              <p className={`border px-3 py-2 text-sm ${hairlineRule} bg-[var(--ts-band-shows)] ${inkText}`} style={radiusStyle}>
                 {showNotesBlurb}
               </p>
-              <p className="mt-2 text-xs text-[var(--brand-text-muted)]">
+              <p className={`mt-2 text-xs ${mutedText}`}>
                 Ready-to-paste sponsor line for the episode description.
               </p>
               <div className="mt-3 flex items-center gap-3">
                 <button
                   onClick={copyBlurb}
-                  className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text)] hover:bg-[var(--brand-surface)]"
+                  className={ghostBtnClass}
+                  style={radiusStyle}
                 >
                   Copy blurb
                 </button>
                 {blurbCopied && (
-                  <span className="text-xs text-[var(--brand-success)] font-medium">
+                  <span className={`text-xs font-medium ${mutedText}`}>
                     Copied ✓
                   </span>
                 )}
@@ -552,8 +589,8 @@ export default function Wave12DealClient({
             </div>
           )}
 
-          <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
-            <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+          <div className={`p-5 ${panelClass}`} style={radiusStyle}>
+            <h2 className={sectionHead}>
               Signature status
             </h2>
             <dl className="grid grid-cols-1 gap-y-2 text-sm">
@@ -568,14 +605,15 @@ export default function Wave12DealClient({
             </dl>
             {deal.signed_io_pdf_url && (
               <div className="mt-3 text-xs">
-                <span className="text-[var(--brand-success)] font-medium">Signed PDF stored ✓</span>
+                <span className={`font-medium ${inkText}`}>Signed PDF stored ✓</span>
               </div>
             )}
             {canShowSign && (
               <button
                 onClick={sendToDocuSign}
                 disabled={signing}
-                className="mt-4 w-full px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold disabled:opacity-50"
+                className={`mt-4 ${inkBtnClass}`}
+                style={radiusStyle}
               >
                 {signing ? "Opening DocuSign…" : "Sign IO"}
               </button>
@@ -583,22 +621,22 @@ export default function Wave12DealClient({
           </div>
 
           {(needsPaymentMethod || hasPaymentMethod) && (
-            <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
-              <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-3">
+            <div className={`p-5 ${panelClass}`} style={radiusStyle}>
+              <h2 className={sectionHead}>
                 Payment method
               </h2>
               {hasPaymentMethod ? (
-                <p className="text-sm text-[var(--brand-success)] font-medium">
+                <p className={`text-sm font-medium ${inkText}`}>
                   Card on file saved
                 </p>
               ) : (
                 <>
                   {activeCardSecret ? (
-                    <p className="text-sm text-[var(--brand-text-secondary)]">
+                    <p className={`text-sm ${mutedText}`}>
                       Add the card Taylslate should charge as each episode is verified.
                     </p>
                   ) : (
-                    <p className="text-sm text-[var(--brand-text-secondary)]">
+                    <p className={`text-sm ${mutedText}`}>
                       Card setup will appear after DocuSign confirms your signature. You
                       can also add it now.
                     </p>
@@ -617,18 +655,19 @@ export default function Wave12DealClient({
                     <button
                       onClick={loadPaymentForm}
                       disabled={loadingStripe}
-                      className="mt-3 w-full px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold disabled:opacity-50"
+                      className={`mt-3 ${inkBtnClass}`}
+                      style={radiusStyle}
                     >
                       {loadingStripe ? "Loading Stripe..." : "Add card on file"}
                     </button>
                   )}
                   {cardSaved && (
-                    <p className="mt-2 text-xs text-[var(--brand-success)] font-medium">
+                    <p className={`mt-2 text-xs font-medium ${mutedText}`}>
                       Card saved. Stripe will confirm it on this deal shortly.
                     </p>
                   )}
                   {cardError && (
-                    <p className="mt-2 text-sm text-[var(--brand-error)]">{cardError}</p>
+                    <p className={`mt-2 text-sm ${accentText}`}>{cardError}</p>
                   )}
                 </>
               )}
@@ -637,12 +676,13 @@ export default function Wave12DealClient({
 
           {/* Actions */}
           {(canSign || isCancellable) && (
-            <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5 space-y-3">
+            <div className={`space-y-3 p-5 ${panelClass}`} style={radiusStyle}>
               {canSign && (
                 <button
                   onClick={sendToDocuSign}
                   disabled={signing || cancelling}
-                  className="w-full px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold disabled:opacity-50"
+                  className={inkBtnClass}
+                  style={radiusStyle}
                 >
                   {signing ? "Opening DocuSign…" : "Sign IO"}
                 </button>
@@ -651,7 +691,8 @@ export default function Wave12DealClient({
                 <button
                   onClick={() => setShowCancelForm(true)}
                   disabled={signing || cancelling}
-                  className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:text-[var(--brand-error)]"
+                  className={`w-full ${ghostBtnClass}`}
+                  style={radiusStyle}
                 >
                   Cancel deal
                 </button>
@@ -663,20 +704,22 @@ export default function Wave12DealClient({
                     onChange={(e) => setCancelReason(e.target.value)}
                     placeholder="Reason (optional)"
                     rows={3}
-                    className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)]"
+                    className={fieldClass}
+                    style={radiusStyle}
                   />
                   <div className="flex justify-end gap-2">
                     <button
                       onClick={() => setShowCancelForm(false)}
                       disabled={cancelling}
-                      className="px-3 py-1.5 text-sm text-[var(--brand-text-secondary)]"
+                      className={`px-3 py-1.5 text-sm ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
                     >
                       Back
                     </button>
                     <button
                       onClick={cancelDeal}
                       disabled={cancelling}
-                      className="px-4 py-1.5 rounded-lg bg-[var(--brand-error)] text-white text-sm font-medium disabled:opacity-50"
+                      className={`${ghostBtnClass} ${accentText}`}
+                      style={radiusStyle}
                     >
                       {cancelling ? "Cancelling…" : "Confirm cancel"}
                     </button>
@@ -686,11 +729,12 @@ export default function Wave12DealClient({
             </div>
           )}
           {grossPerEp != null && (
-            <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5 text-sm">
+            <div className={`p-5 text-sm ${panelClass}`} style={radiusStyle}>
               ${grossPerEp}
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
@@ -699,8 +743,8 @@ export default function Wave12DealClient({
 function Term({ label, value }: { label: string; value: string }) {
   return (
     <>
-      <dt className="text-[var(--brand-text-muted)]">{label}</dt>
-      <dd className="text-[var(--brand-text)] font-medium tabular-nums">{value}</dd>
+      <dt className={mutedText}>{label}</dt>
+      <dd className={`font-medium tabular-nums ${inkText}`}>{value}</dd>
     </>
   );
 }

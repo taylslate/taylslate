@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import type { OutreachPlacement } from "@/lib/data/types";
+import { tokens } from "@/lib/brand/tokens";
 
 export interface ComposerShow {
   show_id?: string | null;
@@ -28,6 +29,20 @@ interface Props {
   onClose: () => void;
   onSent: (outreachId: string) => void;
 }
+
+const radiusStyle = { borderRadius: tokens.radius };
+
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
+const panelClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const fieldClass =
+  "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
+const inkBtnClass =
+  "inline-flex items-center justify-center bg-[var(--ts-ink-on-paper)] px-5 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
+const ghostBtnClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:opacity-50";
 
 const PLACEMENTS: { value: OutreachPlacement; label: string }[] = [
   { value: "pre-roll", label: "Pre-roll" },
@@ -161,21 +176,24 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail);
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-[var(--brand-surface-elevated)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-[var(--brand-border)]">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--brand-border)] sticky top-0 bg-[var(--brand-surface-elevated)] z-10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ts-field)]/45 p-4">
+      <div
+        className={`max-h-[90vh] w-full max-w-2xl overflow-y-auto border bg-[var(--ts-paper)] ${hairlineRule}`}
+        style={radiusStyle}
+      >
+        <div className={`sticky top-0 z-10 flex items-center justify-between border-b bg-[var(--ts-paper)] px-6 py-4 ${hairlineRule}`}>
           <div>
-            <h2 className="text-lg font-bold text-[var(--brand-text)]">
+            <h2 className={`text-lg font-semibold ${inkText}`}>
               Reach out to {show.show_name}
             </h2>
-            <p className="text-xs text-[var(--brand-text-muted)] mt-0.5">
+            <p className={`mt-0.5 text-xs ${mutedText}`}>
               They&apos;ll see your pitch and proposed terms; they can accept, counter, or decline.
             </p>
           </div>
           <button
             onClick={onClose}
             disabled={sending}
-            className="text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] p-1 disabled:opacity-50"
+            className={`p-1 ${mutedText} hover:text-[var(--ts-ink-on-paper)] disabled:opacity-50`}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -183,9 +201,9 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="space-y-5 p-6">
           {/* Show summary */}
-          <div className="rounded-xl bg-[var(--brand-surface)] border border-[var(--brand-border)] p-4 grid grid-cols-3 gap-3 text-sm">
+          <div className={`${panelClass} grid grid-cols-3 gap-3 p-4 text-sm`} style={radiusStyle}>
             <Stat label="Audience" value={show.audience_size ? `${(show.audience_size / 1000).toFixed(0)}K` : "—"} />
             <Stat
               label="Show standard CPM"
@@ -207,7 +225,8 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
               type="email"
               value={contactEmail}
               onChange={(e) => setContactEmail(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30"
+              className={fieldClass}
+              style={radiusStyle}
             />
           </Field>
 
@@ -220,7 +239,8 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
                 step={0.5}
                 value={cpm}
                 onChange={(e) => setCpm(Number(e.target.value))}
-                className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30"
+                className={fieldClass}
+                style={radiusStyle}
               />
             </Field>
             <Field label="Episodes">
@@ -230,14 +250,16 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
                 step={1}
                 value={episodes}
                 onChange={(e) => setEpisodes(Number(e.target.value))}
-                className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30"
+                className={fieldClass}
+                style={radiusStyle}
               />
             </Field>
             <Field label="Placement">
               <select
                 value={placement}
                 onChange={(e) => setPlacement(e.target.value as OutreachPlacement)}
-                className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30"
+                className={fieldClass}
+                style={radiusStyle}
               >
                 {PLACEMENTS.map((p) => (
                   <option key={p.value} value={p.value}>{p.label}</option>
@@ -250,14 +272,16 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
                   type="date"
                   value={flightStart}
                   onChange={(e) => setFlightStart(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30"
+                  className={fieldClass}
+                  style={radiusStyle}
                 />
-                <span className="text-xs text-[var(--brand-text-muted)]">to</span>
+                <span className={`text-xs ${mutedText}`}>to</span>
                 <input
                   type="date"
                   value={flightEnd}
                   onChange={(e) => setFlightEnd(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30"
+                  className={fieldClass}
+                  style={radiusStyle}
                 />
               </div>
             </Field>
@@ -270,33 +294,39 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
               onChange={(e) => setPitchBody(e.target.value)}
               disabled={drafting}
               rows={9}
-              placeholder={drafting ? "Claude is writing your pitch…" : "Write your pitch…"}
-              className="w-full px-3 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 leading-relaxed"
+              placeholder={drafting ? "Drafting your pitch…" : "Write your pitch…"}
+              className={`${fieldClass} py-2.5 leading-relaxed`}
+              style={radiusStyle}
             />
-            <p className="text-[11px] text-[var(--brand-text-muted)] mt-1.5">
+            <p className={`mt-1.5 text-[11px] ${mutedText}`}>
               The proposed terms above appear separately as a structured block — you don&apos;t need to repeat them in the body.
             </p>
           </Field>
 
           {error && (
-            <div className="p-3 rounded-lg border border-[var(--brand-error)]/30 bg-[var(--brand-error)]/[0.04] text-sm text-[var(--brand-error)]">
+            <div
+              className={`border p-3 text-sm ${hairlineRule} bg-[var(--ts-band-brands)] ${inkText}`}
+              style={radiusStyle}
+            >
               {error}
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-[var(--brand-border)] sticky bottom-0 bg-[var(--brand-surface-elevated)]">
+        <div className={`sticky bottom-0 flex items-center justify-end gap-2 border-t bg-[var(--ts-paper)] px-6 py-4 ${hairlineRule}`}>
           <button
             onClick={onClose}
             disabled={sending}
-            className="px-4 py-2 text-sm text-[var(--brand-text-secondary)] hover:text-[var(--brand-text)] disabled:opacity-50"
+            className={ghostBtnClass}
+            style={radiusStyle}
           >
             Cancel
           </button>
           <button
             onClick={send}
             disabled={!canSend || sending || drafting}
-            className="px-5 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+            className={inkBtnClass}
+            style={radiusStyle}
           >
             {sending ? "Sending…" : "Send outreach"}
           </button>
@@ -309,8 +339,8 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-xs text-[var(--brand-text-muted)] uppercase tracking-wider">{label}</div>
-      <div className="text-sm font-semibold text-[var(--brand-text)] mt-0.5">{value}</div>
+      <div className={`text-xs uppercase tracking-wider ${mutedText}`}>{label}</div>
+      <div className={`mt-0.5 text-sm font-semibold tabular-nums ${inkText}`}>{value}</div>
     </div>
   );
 }
@@ -318,7 +348,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-[var(--brand-text-muted)] uppercase tracking-wider mb-1.5">
+      <label className={`mb-1.5 block text-xs font-medium uppercase tracking-wider ${mutedText}`}>
         {label}
       </label>
       {children}
