@@ -15,7 +15,10 @@
 
 import { createContext, useContext, useState } from "react";
 import { useRouter } from "next/navigation";
+import { tokens } from "@/lib/brand/tokens";
 import type { FounderAnnotationRow } from "@/lib/data/types";
+
+const radiusStyle = { borderRadius: tokens.radius };
 
 interface FounderAnnotationsContextValue {
   isAdmin: boolean;
@@ -135,14 +138,14 @@ export function ShowAnnotations({ showId }: { showId: string }) {
         e.preventDefault();
         e.stopPropagation();
       }}
-      className="mt-3 pt-3 border-t border-dashed border-[var(--brand-warning)]/40"
+      className="mt-3 border-t border-[var(--ts-hairline-on-paper)] pt-3"
     >
-      <div className="flex items-center gap-2 mb-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--brand-warning)]">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ts-accent)]">
           Founder notes
         </span>
         {annotations.length > 0 && (
-          <span className="text-[10px] text-[var(--brand-text-muted)]">
+          <span className="text-[10px] text-[var(--ts-ink-muted-on-paper)]">
             {annotations.length}
           </span>
         )}
@@ -153,16 +156,17 @@ export function ShowAnnotations({ showId }: { showId: string }) {
           {annotations.map((a) => (
             <li
               key={a.id}
-              className="text-xs text-[var(--brand-text-secondary)] flex items-start gap-2"
+              className="flex items-start gap-2 text-xs text-[var(--ts-ink-muted-on-paper)]"
             >
               <div className="flex-1 min-w-0">
-                <span className="leading-snug">{a.note}</span>
+                <span className="leading-snug text-[var(--ts-ink-on-paper)]">{a.note}</span>
                 {a.tags && a.tags.length > 0 && (
                   <span className="ml-1.5 inline-flex flex-wrap gap-1 align-middle">
                     {a.tags.map((t) => (
                       <span
                         key={t}
-                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--brand-warning)]/10 text-[var(--brand-text-muted)]"
+                        className="border border-[var(--ts-hairline-on-paper)] px-1.5 py-0.5 text-[10px] text-[var(--ts-ink-muted-on-paper)]"
+                        style={radiusStyle}
                       >
                         {t}
                       </span>
@@ -170,7 +174,7 @@ export function ShowAnnotations({ showId }: { showId: string }) {
                   </span>
                 )}
                 {fmtDate(a.created_at) && (
-                  <span className="ml-1.5 text-[10px] text-[var(--brand-text-muted)]">
+                  <span className="ml-1.5 text-[10px] text-[var(--ts-ink-muted-on-paper)]">
                     {fmtDate(a.created_at)}
                   </span>
                 )}
@@ -180,7 +184,7 @@ export function ShowAnnotations({ showId }: { showId: string }) {
                 onClick={() => remove(a.id)}
                 disabled={deletingId === a.id}
                 aria-label="Delete note"
-                className="text-[var(--brand-text-muted)] hover:text-[var(--brand-error)] disabled:opacity-40 shrink-0"
+                className="shrink-0 text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)] disabled:opacity-40"
               >
                 ×
               </button>
@@ -196,20 +200,23 @@ export function ShowAnnotations({ showId }: { showId: string }) {
             onChange={(e) => setNote(e.target.value)}
             placeholder="Why this show is right (or wrong-ring)…"
             rows={2}
-            className="w-full text-xs rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] px-2.5 py-1.5 focus:outline-none focus:border-[var(--brand-blue)]/50"
+            className="w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-2.5 py-1.5 text-xs text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none"
+            style={radiusStyle}
           />
           <input
             value={tagsInput}
             onChange={(e) => setTagsInput(e.target.value)}
             placeholder="tags, comma, separated (optional)"
-            className="w-full text-xs rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] px-2.5 py-1.5 focus:outline-none focus:border-[var(--brand-blue)]/50"
+            className="w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-2.5 py-1.5 text-xs text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none"
+            style={radiusStyle}
           />
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={save}
               disabled={!note.trim() || busy}
-              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--brand-blue)] text-white hover:bg-[var(--brand-blue-light)] disabled:opacity-40 transition-all"
+              className="bg-[var(--ts-ink-on-paper)] px-3 py-1.5 text-xs font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:opacity-40"
+              style={radiusStyle}
             >
               {busy ? "Saving…" : "Save note"}
             </button>
@@ -221,7 +228,7 @@ export function ShowAnnotations({ showId }: { showId: string }) {
                 setTagsInput("");
                 setError(null);
               }}
-              className="text-xs text-[var(--brand-text-muted)] hover:text-[var(--brand-text)]"
+              className="text-xs text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
             >
               Cancel
             </button>
@@ -231,14 +238,14 @@ export function ShowAnnotations({ showId }: { showId: string }) {
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="text-xs font-medium text-[var(--brand-warning)] hover:underline"
+          className="text-xs font-medium text-[var(--ts-accent)] hover:underline"
         >
           + Add note
         </button>
       )}
 
       {error && (
-        <div className="mt-1 text-[10px] text-[var(--brand-error)]">{error}</div>
+        <div className="mt-1 text-[10px] text-[var(--ts-ink-on-paper)]">{error}</div>
       )}
     </div>
   );

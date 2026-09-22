@@ -3,9 +3,11 @@
 
   Homepage, /login, the authenticated dashboard chrome (layout +
   sidebar + /dashboard), the /campaigns list, /campaigns/new
-  (returning check-in + brief), and /campaigns/[id]/interpretation use
-  these. Signup, onboarding, campaign detail, deals, invoices, and
-  settings page bodies still use --brand-* in globals.css.
+  (returning check-in + brief), /campaigns/[id]/interpretation, and
+  the v2 conviction discovery view at /campaigns/[id] use these.
+  Signup, onboarding, legacy campaign detail and discovery list,
+  deals, invoices, and settings page bodies still use --brand-* in
+  globals.css.
 
   Accent is copper only. Do not add a second accent.
 */

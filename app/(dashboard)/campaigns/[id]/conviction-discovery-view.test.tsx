@@ -11,7 +11,12 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
-import type { RingHypothesisRow, ConvictionScoreRow, Show } from "@/lib/data/types";
+import type {
+  RingHypothesisRow,
+  ConvictionScoreRow,
+  FounderAnnotationRow,
+  Show,
+} from "@/lib/data/types";
 import type {
   ConvictionUniverse,
   ConvictionUniverseGroup,
@@ -666,5 +671,140 @@ describe("ConvictionDiscoveryView — Layer 5 override controls", () => {
     // No selection persist fired (only the override path will, after commit).
     const calls = m.mock.calls as unknown[][];
     expect(calls.some((c) => String(c[0]).includes("/selections"))).toBe(false);
+  });
+});
+
+describe("ConvictionDiscoveryView — paper/ink chrome", () => {
+  it("renders scored test, scale, and bench in paper and ink", async () => {
+    renderTiered(
+      {
+        test: [tieredShow({ showId: "t1", show: show({ id: "t1", name: "Test Show" }) })],
+        scale: [
+          tieredShow({
+            showId: "s1",
+            tier: "scale",
+            show: show({ id: "s1", name: "Scale Show" }),
+          }),
+        ],
+        bench: [
+          tieredShow({
+            showId: "b1",
+            tier: "dropped",
+            band: "speculative",
+            show: show({ id: "b1", name: "Bench Show" }),
+          }),
+        ],
+      },
+      { selectedShowIds: ["t1"] }
+    );
+
+    expect(screen.getByText("For brands")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Sauna Box Q3" })).toBeInTheDocument();
+    const budgetLine = screen.getByText("$30K test budget").parentElement;
+    expect(budgetLine?.className).toContain("text-[var(--ts-ink-muted-on-paper)]");
+
+    for (const id of ["tier-test", "tier-scale", "tier-bench"]) {
+      const section = screen.getByTestId(id);
+      expect(section.className).toContain("border-[var(--ts-hairline-on-paper)]");
+      expect(section.className).toContain("bg-[var(--ts-paper)]");
+      expect(section).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+      expect(section.className).not.toMatch(/--brand-/);
+    }
+
+    const selected = screen.getByTestId("test-show-card");
+    expect(selected.className).toContain("bg-[var(--ts-band-brands)]");
+    expect(selected.className).not.toMatch(/--brand-blue/);
+
+    const checkbox = screen.getByRole("checkbox", { name: /Add Test Show to the test/i });
+    expect(checkbox.className).toContain("accent-[var(--ts-accent)]");
+
+    const cta = screen.getByRole("button", { name: /media plan/i });
+    expect(cta.className).toContain("bg-[var(--ts-ink-on-paper)]");
+    expect(cta.className).toContain("text-[var(--ts-paper)]");
+    expect(cta).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+    expect(cta.className).not.toMatch(/--brand-/);
+
+    await userEvent.click(screen.getByRole("button", { name: /Other matches \(1\)/ }));
+    expect(screen.getByTestId("bench-show-card").className).not.toMatch(/--brand-/);
+    expect(document.body.innerHTML).not.toMatch(/--brand-/);
+  });
+
+  it("pulses muted ink for an empty run and for discovery that has not run", async () => {
+    const { unmount } = renderView({
+      universe: legacyUniverse([{ ring: ring(), shows: [] }], false),
+      discoveryRan: true,
+    });
+
+    expect(screen.getByText("For brands")).toBeInTheDocument();
+    const emptyBody = screen.getByText(/found no shows at medium conviction/i);
+    expect(emptyBody.className).toContain("animate-pulse");
+    expect(emptyBody.className).toContain("text-[var(--ts-ink-muted-on-paper)]");
+    const retry = screen.getByRole("button", { name: /Re-run discovery/i });
+    expect(retry.className).toContain("bg-[var(--ts-ink-on-paper)]");
+    expect(retry.className).toContain("text-[var(--ts-paper)]");
+    expect(retry).toHaveStyle({ borderRadius: "var(--ts-radius)" });
+    expect(global.fetch).not.toHaveBeenCalled();
+    unmount();
+
+    renderView({
+      universe: legacyUniverse([{ ring: ring(), shows: [] }], false),
+      discoveryRan: false,
+    });
+    const state = screen.getByTestId("discovering-state");
+    expect(state.innerHTML).not.toMatch(/animate-spin/);
+    expect(state.innerHTML).not.toMatch(/--brand-/);
+    const copy = screen.getByText(/Reasoning across 1 ring/);
+    expect(copy.className).toContain("animate-pulse");
+    expect(copy.className).toContain("text-[var(--ts-ink-muted-on-paper)]");
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+  });
+
+  it("keeps founder notes admin-only and restyles that chrome", () => {
+    const note: FounderAnnotationRow = {
+      id: "note-1",
+      show_id: "t1",
+      author_id: "admin-1",
+      created_at: "2026-06-01T00:00:00Z",
+      note: "Host actually uses the product.",
+      tags: ["host-fit"],
+    };
+    const tiered = tieredUniverse({
+      test: [tieredShow({ showId: "t1", show: show({ id: "t1", name: "Test Show" }) })],
+    });
+
+    const { unmount } = render(
+      <ConvictionDiscoveryView
+        campaignId="camp-1"
+        campaignName="Sauna Box Q3"
+        budgetTotal={30000}
+        universe={scoredConvictionUniverse()}
+        tiered={tiered}
+        discoveryRan={true}
+        isAdmin={false}
+        annotationsByShow={{ t1: [note] }}
+      />
+    );
+    expect(screen.queryByTestId("founder-annotations")).not.toBeInTheDocument();
+    unmount();
+
+    render(
+      <ConvictionDiscoveryView
+        campaignId="camp-1"
+        campaignName="Sauna Box Q3"
+        budgetTotal={30000}
+        universe={scoredConvictionUniverse()}
+        tiered={tiered}
+        discoveryRan={true}
+        isAdmin={true}
+        annotationsByShow={{ t1: [note] }}
+      />
+    );
+    const block = screen.getByTestId("founder-annotations");
+    expect(block.className).toContain("border-[var(--ts-hairline-on-paper)]");
+    expect(block.className).not.toMatch(/--brand-/);
+    expect(screen.getByText("Founder notes").className).toContain("text-[var(--ts-accent)]");
+    expect(screen.getByRole("button", { name: "+ Add note" }).className).toContain(
+      "text-[var(--ts-accent)]"
+    );
   });
 });

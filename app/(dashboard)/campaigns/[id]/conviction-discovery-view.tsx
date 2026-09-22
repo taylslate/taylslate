@@ -68,6 +68,33 @@ import {
   FounderAnnotationsProvider,
   ShowAnnotations,
 } from "@/components/discovery/FounderAnnotations";
+import { tokens } from "@/lib/brand/tokens";
+
+const radiusStyle = { borderRadius: tokens.radius };
+
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const accentText = "text-[var(--ts-accent)]";
+const kickerClass =
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+const panelClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const inkBtnClass =
+  "inline-flex items-center justify-center gap-2 bg-[var(--ts-ink-on-paper)] px-5 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+const fieldClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none disabled:opacity-50";
+const accentLinkClass =
+  "font-medium text-[var(--ts-accent)] hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-40";
+const mutedLinkClass =
+  "text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]";
+const pulseBarClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
+const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
+
+function showRowClass(selected: boolean): string {
+  return selected
+    ? "bg-[var(--ts-band-brands)]"
+    : "bg-[var(--ts-paper)] hover:bg-[var(--ts-band-shows)]";
+}
 
 // ---- Layer 5 override controls ----
 
@@ -115,30 +142,11 @@ const EMPTY_TIERED: TieredUniverse = {
 
 // ---- Band display ----
 
-const BAND_META: Record<
-  ConvictionBand,
-  { label: string; badge: string; dot: string }
-> = {
-  high: {
-    label: "High conviction",
-    badge: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-    dot: "bg-[var(--brand-success)]",
-  },
-  medium: {
-    label: "Medium conviction",
-    badge: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
-    dot: "bg-[var(--brand-blue)]",
-  },
-  low: {
-    label: "Worth a test slot",
-    badge: "bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]",
-    dot: "bg-[var(--brand-warning)]",
-  },
-  speculative: {
-    label: "Speculative",
-    badge: "bg-[var(--brand-text-muted)]/12 text-[var(--brand-text-muted)]",
-    dot: "bg-[var(--brand-text-muted)]",
-  },
+const BAND_META: Record<ConvictionBand, { label: string }> = {
+  high: { label: "High conviction" },
+  medium: { label: "Medium conviction" },
+  low: { label: "Worth a test slot" },
+  speculative: { label: "Speculative" },
 };
 
 const BAND_ORDER: ConvictionBand[] = ["high", "medium", "low", "speculative"];
@@ -340,6 +348,7 @@ export default function ConvictionDiscoveryView({
             title="No shows cleared the bar for these rings"
             body="Discovery ran but found no shows at medium conviction or above for your confirmed rings. Refine the interpretation to widen the rings, or re-run discovery."
             action={{ label: "Re-run discovery", onClick: runDiscovery }}
+            pulse
           />
         );
       }
@@ -769,33 +778,33 @@ function TieredScoredUniverse({
   const totalShows = allShows.length;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)]">
+    <div className={`flex h-[calc(100vh-64px)] flex-col bg-[var(--ts-paper)] ${inkText}`}>
       {/* ---- Header ---- */}
-      <div className="px-8 pt-6 pb-4 border-b border-[var(--brand-border)] bg-[var(--brand-surface-elevated)]">
-        <div className="flex items-center gap-3 mb-1">
+      <div className={`border-b ${hairlineRule} bg-[var(--ts-paper)] px-8 pt-6 pb-4`}>
+        <div className="mb-3 flex items-center gap-3">
           <BackButton router={router} />
-          <h1 className="text-xl font-bold text-[var(--brand-text)] tracking-tight">
-            {campaignName}
-          </h1>
+          <p className={kickerClass}>For brands</p>
           <button
             onClick={onRerun}
             disabled={rerunning}
-            className="ml-auto text-xs px-3 py-1.5 rounded-lg border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)]/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className={`ml-auto px-3 py-1.5 text-xs ${fieldClass} disabled:cursor-not-allowed`}
+            style={radiusStyle}
           >
             {rerunning ? "Re-running…" : "Re-run discovery"}
           </button>
         </div>
-        <div className="flex items-center gap-4 text-sm text-[var(--brand-text-secondary)]">
+        <h1 className={`text-xl font-semibold tracking-tight ${inkText}`}>
+          {campaignName}
+        </h1>
+        <div className={`mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm ${mutedText}`}>
           {budgetTotal != null && (
             <span>{formatCurrency(budgetTotal)} test budget</span>
           )}
-          <span className="text-[var(--brand-text-muted)]">
+          <span>
             {tiered.test.length} to test · {tiered.scale.length} to scale ·{" "}
             {tiered.bench.length} benched
           </span>
-          <span className="text-[var(--brand-text-muted)]">
-            Pick what to test now — save the rest for later.
-          </span>
+          <span>Pick what to test now — save the rest for later.</span>
         </div>
       </div>
 
@@ -813,10 +822,10 @@ function TieredScoredUniverse({
 
       {/* ---- Filters ---- */}
       {(presentRings.length > 0 || presentBands.length > 0) && (
-        <div className="px-8 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--brand-border)] bg-[var(--brand-surface)]">
+        <div className={`flex flex-wrap items-center gap-x-6 gap-y-2 border-b ${hairlineRule} bg-[var(--ts-paper)] px-8 py-3`}>
           {presentRings.length > 0 && (
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-              <span className="text-xs text-[var(--brand-text-muted)] shrink-0">
+              <span className={`shrink-0 text-xs ${mutedText}`}>
                 Ring
               </span>
               <FilterChip
@@ -838,7 +847,7 @@ function TieredScoredUniverse({
           )}
           {presentBands.length > 0 && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-[var(--brand-text-muted)] shrink-0">
+              <span className={`shrink-0 text-xs ${mutedText}`}>
                 Conviction
               </span>
               <FilterChip
@@ -852,7 +861,6 @@ function TieredScoredUniverse({
                   active={bandFilter === b}
                   onClick={() => setBandFilter(bandFilter === b ? "all" : b)}
                   label={BAND_META[b].label}
-                  dot={BAND_META[b].dot}
                 />
               ))}
             </div>
@@ -866,6 +874,7 @@ function TieredScoredUniverse({
           <CenteredState
             title="No shows scored yet"
             body="Re-run discovery to score the universe against your confirmed rings."
+            pulse
           />
         ) : (
           <>
@@ -906,7 +915,7 @@ function TieredScoredUniverse({
       </div>
 
       {/* ---- Footer: budget meter + CTA ---- */}
-      <div className="px-8 py-4 border-t border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] flex items-center gap-6">
+      <div className={`flex items-center gap-6 border-t ${hairlineRule} bg-[var(--ts-paper)] px-8 py-4`}>
         <BudgetMeter
           spentCents={selectedCostCents}
           budgetCents={tiered.testBudgetCents}
@@ -915,14 +924,15 @@ function TieredScoredUniverse({
         />
         <div className="ml-auto flex items-center gap-3">
           {ctaError && (
-            <span className="text-xs text-[var(--brand-error)]">{ctaError}</span>
+            <span className={`text-xs ${inkText}`}>{ctaError}</span>
           )}
           <button
             type="button"
             onClick={goToPlan}
             disabled={!canBuild || handingOff}
             aria-label="Media plan — next"
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 disabled:cursor-not-allowed disabled:bg-[var(--brand-border)]/40 disabled:text-[var(--brand-text-muted)] bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white"
+            className={`px-6 py-2.5 text-sm font-semibold ${inkBtnClass}`}
+            style={radiusStyle}
           >
             {handingOff ? "Opening…" : "Media plan — next"}
             <svg
@@ -972,18 +982,20 @@ function TestSection({
   const remaining = shows.length - shown.length;
 
   return (
-    <section data-testid="tier-test">
-      <SectionHeading
-        title="Test portfolio"
-        sub="Buy now — affordable at the 3-spot test cadence."
-        count={shows.length}
-      />
+    <section data-testid="tier-test" className={panelClass} style={radiusStyle}>
+      <div className={`border-b ${hairlineRule} px-4 py-3`}>
+        <SectionHeading
+          title="Test portfolio"
+          sub="Buy now — affordable at the 3-spot test cadence."
+          count={shows.length}
+        />
+      </div>
       {underfilled ? (
         <div
           data-testid="test-underfilled"
-          className="mt-3 px-4 py-3.5 rounded-xl border border-[var(--brand-warning)]/30 bg-[var(--brand-warning)]/[0.06] text-sm text-[var(--brand-text-secondary)]"
+          className={`border-b ${hairlineRule} px-4 py-3.5 text-sm ${mutedText}`}
         >
-          <span className="font-medium text-[var(--brand-text)]">
+          <span className={`font-medium ${inkText}`}>
             Your budget is tight for a full 3-spot test.
           </span>{" "}
           Fewer than three shows fit three spots each within this budget. You can
@@ -994,7 +1006,7 @@ function TestSection({
       {shows.length === 0 && !underfilled ? (
         <EmptySection note="No shows cleared the test bar for the current filters." />
       ) : (
-        <div className="space-y-2 mt-3">
+        <div className={`divide-y divide-[var(--ts-hairline-on-paper)]`}>
           {shown.map((s) => (
             <TestShowCard
               key={s.showId}
@@ -1057,14 +1069,16 @@ function ScaleSection({
   const remaining = shows.length - shown.length;
 
   return (
-    <section data-testid="tier-scale">
-      <SectionHeading
-        title="Scale tier"
-        sub="Above the 25% per-show test guideline — selectable, but they push your test spend up."
-        count={shows.length}
-        muted
-      />
-      <div className="space-y-2 mt-3">
+    <section data-testid="tier-scale" className={panelClass} style={radiusStyle}>
+      <div className={`border-b ${hairlineRule} px-4 py-3`}>
+        <SectionHeading
+          title="Scale tier"
+          sub="Above the 25% per-show test guideline — selectable, but they push your test spend up."
+          count={shows.length}
+          muted
+        />
+      </div>
+      <div className="divide-y divide-[var(--ts-hairline-on-paper)]">
         {shown.map((s) => (
           <ScaleShowCard
             key={s.showId}
@@ -1089,26 +1103,26 @@ function ScaleSection({
         <ShowMore remaining={remaining} onClick={() => setPage((p) => p + 1)} />
       )}
       {dismissed.length > 0 && (
-        <div className="mt-3">
+        <div className={`border-t ${hairlineRule} px-4 py-3`}>
           <button
             onClick={onToggleShowDismissed}
-            className="text-xs text-[var(--brand-text-muted)] hover:text-[var(--brand-text)]"
+            className={`text-xs ${mutedLinkClass}`}
           >
             {showDismissed ? "Hide" : "Show"} {dismissed.length} dismissed
           </button>
           {showDismissed && (
-            <div className="space-y-2 mt-2 opacity-70">
+            <div className="mt-2 divide-y divide-[var(--ts-hairline-on-paper)] opacity-70">
               {dismissed.map((s) => (
                 <div
                   key={s.showId}
-                  className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-dashed border-[var(--brand-border)] bg-[var(--brand-surface)]"
+                  className="flex items-center gap-3 py-2.5"
                 >
-                  <span className="text-sm text-[var(--brand-text-secondary)] truncate flex-1">
+                  <span className={`flex-1 truncate text-sm ${mutedText}`}>
                     {s.show?.name ?? "Show unavailable"}
                   </span>
                   <button
                     onClick={() => onRestore(s.showId)}
-                    className="text-xs text-[var(--brand-blue)] hover:underline"
+                    className={`text-xs ${accentLinkClass}`}
                   >
                     Restore
                   </button>
@@ -1136,10 +1150,10 @@ function BenchSection({
   const remaining = shows.length - shown.length;
 
   return (
-    <section data-testid="tier-bench">
+    <section data-testid="tier-bench" className={panelClass} style={radiusStyle}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 text-sm font-semibold text-[var(--brand-text-secondary)]"
+        className={`flex w-full items-center gap-2 px-4 py-3 text-sm font-semibold ${mutedText}`}
         aria-expanded={open}
       >
         <svg
@@ -1159,7 +1173,7 @@ function BenchSection({
       </button>
       {open && (
         <>
-          <div className="space-y-2 mt-3">
+          <div className={`divide-y divide-[var(--ts-hairline-on-paper)] border-t ${hairlineRule}`}>
             {shown.map((s) => (
               <BenchShowCard
                 key={s.showId}
@@ -1215,36 +1229,27 @@ function TestShowCard({
   return (
     <label
       data-testid="test-show-card"
-      className={`block px-4 py-3.5 rounded-xl border cursor-pointer transition-all ${
-        selected
-          ? "border-[var(--brand-blue)]/60 bg-[var(--brand-blue)]/[0.04]"
-          : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] hover:border-[var(--brand-blue)]/30"
-      }`}
+      className={`block cursor-pointer px-4 py-3.5 ${showRowClass(selected)}`}
     >
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
           checked={selected}
           onChange={onToggle}
-          className="mt-1 h-4 w-4 rounded accent-[var(--brand-blue)] cursor-pointer"
+          className="mt-1 h-4 w-4 cursor-pointer accent-[var(--ts-accent)]"
           aria-label={`Add ${name} to the test`}
         />
         <ShowAvatar show={show} name={name} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-[var(--brand-text)] truncate">
+            <span className={`truncate text-sm font-semibold ${inkText}`}>
               {name}
             </span>
-            <span
-              data-testid="band-badge"
-              className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${meta.badge}`}
-            >
-              {meta.label}
-            </span>
+            <BandBadge label={meta.label} />
             {ringLabel && <RingTag label={ringLabel} />}
           </div>
           {categories.length > 0 && (
-            <div className="text-xs text-[var(--brand-text-muted)] truncate mt-0.5">
+            <div className={`mt-0.5 truncate text-xs ${mutedText}`}>
               {categories.join(" · ")}
             </div>
           )}
@@ -1252,11 +1257,11 @@ function TestShowCard({
         <div className="text-right flex-shrink-0">
           <div
             data-testid="composite-score"
-            className="text-2xl font-bold text-[var(--brand-text)] leading-none"
+            className={`text-2xl font-bold leading-none ${inkText}`}
           >
             {entry.composite ?? "—"}
           </div>
-          <div className="text-[10px] text-[var(--brand-text-muted)] mt-1">
+          <div className={`mt-1 text-[10px] ${mutedText}`}>
             composite
           </div>
         </div>
@@ -1267,22 +1272,19 @@ function TestShowCard({
           label="Audience fit"
           value={AUDIENCE_MEASURED ? entry.audienceFit : null}
           unmeasured={!AUDIENCE_MEASURED}
-          accent="bg-[var(--brand-text-muted)]"
         />
         <SubScore
           label="Topical relevance"
           value={entry.topicalRelevance}
-          accent="bg-[var(--brand-blue)]"
         />
         <SubScore
           label="Purchase power"
           value={entry.purchasePower}
-          accent="bg-[var(--brand-teal)]"
         />
       </div>
 
       {entry.reasoning && (
-        <p className="text-sm text-[var(--brand-text-secondary)] mt-3 leading-snug">
+        <p className={`mt-3 text-sm leading-snug ${mutedText}`}>
           {entry.reasoning}
         </p>
       )}
@@ -1337,48 +1339,39 @@ function ScaleShowCard({
   return (
     <label
       data-testid="scale-show-card"
-      className={`block px-4 py-3.5 rounded-xl border cursor-pointer transition-all ${
-        selected
-          ? "border-[var(--brand-blue)]/60 bg-[var(--brand-blue)]/[0.04]"
-          : "border-[var(--brand-border)] bg-[var(--brand-surface)] hover:border-[var(--brand-blue)]/30"
-      }`}
+      className={`block cursor-pointer px-4 py-3.5 ${showRowClass(selected)}`}
     >
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
           checked={selected}
           onChange={onToggle}
-          className="mt-1 h-4 w-4 rounded accent-[var(--brand-blue)] cursor-pointer"
+          className="mt-1 h-4 w-4 cursor-pointer accent-[var(--ts-accent)]"
           aria-label={`Add ${name} to the test`}
         />
         <ShowAvatar show={show} name={name} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-[var(--brand-text)] truncate">
+            <span className={`truncate text-sm font-semibold ${inkText}`}>
               {name}
             </span>
-            <span
-              data-testid="band-badge"
-              className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${meta.badge}`}
-            >
-              {meta.label}
-            </span>
+            <BandBadge label={meta.label} />
             {ringLabel && <RingTag label={ringLabel} />}
           </div>
           {entry.reasoning && (
-            <p className="text-sm text-[var(--brand-text-secondary)] mt-1.5 leading-snug">
+            <p className={`mt-1.5 text-sm leading-snug ${mutedText}`}>
               {entry.reasoning}
             </p>
           )}
         </div>
         <div className="text-right flex-shrink-0">
           <div className="flex items-center justify-end gap-1.5">
-            <span className="text-sm font-semibold text-[var(--brand-text)]">
+            <span className={`text-sm font-semibold ${inkText}`}>
               {formatMoneyCents(entry.threeSpotCents)}
             </span>
             {entry.isEstimate && <EstimateTag />}
           </div>
-          <div className="text-[10px] text-[var(--brand-text-muted)]">
+          <div className={`text-[10px] ${mutedText}`}>
             3 spots
           </div>
         </div>
@@ -1387,7 +1380,7 @@ function ScaleShowCard({
       {entry.budgetDeltaCents != null && entry.budgetDeltaCents > 0 && (
         <div
           data-testid="budget-delta"
-          className="mt-2 px-2.5 py-1.5 rounded-lg bg-[var(--brand-warning)]/[0.08] text-xs text-[var(--brand-warning)] leading-snug"
+          className={`mt-2 text-xs leading-snug ${inkText}`}
         >
           <span className="font-semibold">Budget impact:</span> its 3-spot cost is
           ~{formatMoneyCents(entry.budgetDeltaCents)} over the 25% per-show test
@@ -1402,14 +1395,14 @@ function ScaleShowCard({
         <button
           type="button"
           onClick={onToggleSave}
-          className="text-xs text-[var(--brand-text-secondary)] hover:text-[var(--brand-text)]"
+          className={`text-xs ${mutedLinkClass}`}
         >
           {saved ? "★ Saved" : "☆ Save for later"}
         </button>
         <button
           type="button"
           onClick={onDismiss}
-          className="text-xs text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] ml-auto"
+          className={`ml-auto text-xs ${mutedLinkClass}`}
         >
           Dismiss
         </button>
@@ -1442,25 +1435,20 @@ function BenchShowCard({
   return (
     <div
       data-testid="bench-show-card"
-      className="px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)]"
+      className="bg-[var(--ts-paper)] px-4 py-3"
     >
       <div className="flex items-center gap-3">
         <ShowAvatar show={show} name={name} small />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-[var(--brand-text)] truncate">
+            <span className={`truncate text-sm font-medium ${inkText}`}>
               {name}
             </span>
-            <span
-              data-testid="band-badge"
-              className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${meta.badge}`}
-            >
-              {meta.label}
-            </span>
+            <BandBadge label={meta.label} />
             {ringLabel && <RingTag label={ringLabel} />}
           </div>
           {entry.reasoning && (
-            <p className="text-xs text-[var(--brand-text-muted)] truncate mt-0.5">
+            <p className={`mt-0.5 truncate text-xs ${mutedText}`}>
               {entry.reasoning}
             </p>
           )}
@@ -1469,12 +1457,12 @@ function BenchShowCard({
           {entry.needsQuote ? (
             <span
               data-testid="needs-quote"
-              className="text-[11px] text-[var(--brand-text-muted)] italic"
+              className={`text-[11px] italic ${mutedText}`}
             >
               cost unknown — quote at outreach
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--brand-text-muted)]">
+            <span className={`inline-flex items-center gap-1.5 text-xs ${mutedText}`}>
               {formatMoneyCents(entry.threeSpotCents)}
               {entry.isEstimate && <EstimateTag />}
             </span>
@@ -1499,7 +1487,8 @@ function EstimateTag({ label = "estimated" }: { label?: string }) {
   return (
     <span
       data-testid="cost-estimate"
-      className="px-1.5 py-0.5 rounded bg-[var(--brand-border)]/50 text-[var(--brand-text-muted)] font-medium whitespace-nowrap"
+      className={`whitespace-nowrap border px-1.5 py-0.5 text-[10px] font-medium ${hairlineRule} ${mutedText}`}
+      style={radiusStyle}
     >
       {label}
     </span>
@@ -1515,7 +1504,7 @@ function CostLine({ entry }: { entry: TieredShow }) {
     return (
       <div
         data-testid="needs-quote"
-        className="mt-3 text-xs text-[var(--brand-text-muted)] italic"
+        className={`mt-3 text-xs italic ${mutedText}`}
       >
         cost unknown — quote at outreach
       </div>
@@ -1526,12 +1515,13 @@ function CostLine({ entry }: { entry: TieredShow }) {
   if (entry.costBasis === "flat_fee") {
     return (
       <div className="mt-3 flex items-center gap-2 text-xs">
-        <span className="text-[var(--brand-text-secondary)]">
+        <span className={mutedText}>
           {flatFeeRange(entry.perSpotCents)} per integration
         </span>
         <span
           data-testid="cost-estimate"
-          className="px-1.5 py-0.5 rounded bg-[var(--brand-warning)]/10 text-[var(--brand-warning)] font-medium"
+          className={`border px-1.5 py-0.5 text-[10px] font-medium ${hairlineRule} ${mutedText}`}
+          style={radiusStyle}
         >
           quote to confirm
         </span>
@@ -1540,15 +1530,15 @@ function CostLine({ entry }: { entry: TieredShow }) {
   }
 
   return (
-    <div className="mt-3 flex items-center gap-2 text-xs text-[var(--brand-text-secondary)]">
-      <span className="font-medium text-[var(--brand-text)]">
+    <div className={`mt-3 flex items-center gap-2 text-xs ${mutedText}`}>
+      <span className={`font-medium ${inkText}`}>
         {formatMoneyCents(entry.perSpotCents)}
       </span>
-      <span className="text-[var(--brand-text-muted)]">/ spot ·</span>
-      <span className="font-medium text-[var(--brand-text)]">
+      <span>/ spot ·</span>
+      <span className={`font-medium ${inkText}`}>
         {formatMoneyCents(entry.threeSpotCents)}
       </span>
-      <span className="text-[var(--brand-text-muted)]">for 3 spots</span>
+      <span>for 3 spots</span>
       {entry.isEstimate && <EstimateTag />}
     </div>
   );
@@ -1580,9 +1570,9 @@ function TestSettingsBar({
   error: string | null;
 }) {
   return (
-    <div className="px-8 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--brand-border)] bg-[var(--brand-surface)]">
+    <div className={`flex flex-wrap items-center gap-x-6 gap-y-2 border-b ${hairlineRule} bg-[var(--ts-paper)] px-8 py-3`}>
       <div className="flex items-center gap-2">
-        <span className="text-xs text-[var(--brand-text-muted)] shrink-0">
+        <span className={`shrink-0 text-xs ${mutedText}`}>
           Test cadence
         </span>
         <Segmented
@@ -1596,7 +1586,7 @@ function TestSettingsBar({
         />
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-xs text-[var(--brand-text-muted)] shrink-0">
+        <span className={`shrink-0 text-xs ${mutedText}`}>
           Placement
         </span>
         <Segmented
@@ -1610,7 +1600,7 @@ function TestSettingsBar({
         <button
           onClick={onReset}
           disabled={recomputing}
-          className="text-xs text-[var(--brand-blue)] hover:underline disabled:opacity-50 disabled:no-underline"
+          className={`text-xs ${accentLinkClass}`}
         >
           Reset to defaults
         </button>
@@ -1618,14 +1608,14 @@ function TestSettingsBar({
       {recomputing && (
         <span
           data-testid="recomputing"
-          className="text-xs text-[var(--brand-text-muted)] flex items-center gap-1.5"
+          className={`flex items-center gap-1.5 text-xs ${mutedText}`}
         >
-          <span className="w-3 h-3 rounded-full border border-[var(--brand-blue)]/30 border-t-[var(--brand-blue)] animate-spin" />
-          Recomputing…
+          <span className={`inline-block h-2 w-8 ${pulseBarClass}`} style={radiusStyle} />
+          <span className="animate-pulse">Recomputing…</span>
         </span>
       )}
       {error && (
-        <span className="text-xs text-[var(--brand-error)]">{error}</span>
+        <span className={`text-xs ${inkText}`}>{error}</span>
       )}
     </div>
   );
@@ -1676,7 +1666,7 @@ function ShowOverrideControls({
       className="mt-2 flex items-center gap-3 text-xs"
       onClick={(e) => e.stopPropagation()}
     >
-      <label className="flex items-center gap-1.5 text-[var(--brand-text-muted)]">
+      <label className={`flex items-center gap-1.5 ${mutedText}`}>
         Placement
         <select
           data-testid="show-placement-select"
@@ -1685,7 +1675,8 @@ function ShowOverrideControls({
           onChange={(e) =>
             onPlacementOverride(entry.showId, e.target.value as Placement)
           }
-          className="bg-[var(--brand-surface)] border border-[var(--brand-border)] rounded px-1.5 py-0.5 text-[var(--brand-text)] disabled:opacity-50"
+          className={`px-1.5 py-0.5 ${fieldClass}`}
+          style={radiusStyle}
         >
           {PLACEMENTS.map((p) => (
             <option key={p.value} value={p.value}>
@@ -1694,7 +1685,7 @@ function ShowOverrideControls({
           ))}
         </select>
       </label>
-      <span className="flex items-center gap-1.5 text-[var(--brand-text-muted)]">
+      <span className={`flex items-center gap-1.5 ${mutedText}`}>
         CPM
         {editing ? (
           <input
@@ -1711,7 +1702,8 @@ function ShowOverrideControls({
               if (e.key === "Enter") commitCpm();
               if (e.key === "Escape") setEditing(false);
             }}
-            className="w-16 bg-[var(--brand-surface)] border border-[var(--brand-blue)]/40 rounded px-1.5 py-0.5 text-[var(--brand-text)]"
+            className={`w-16 px-1.5 py-0.5 ${fieldClass}`}
+            style={radiusStyle}
           />
         ) : (
           <button
@@ -1721,7 +1713,7 @@ function ShowOverrideControls({
               setEditing(true);
             }}
             disabled={recomputing}
-            className="font-medium text-[var(--brand-blue)] hover:underline disabled:opacity-50"
+            className={accentLinkClass}
           >
             {currentCpm != null ? `$${currentCpm}` : "set"} ✎
           </button>
@@ -1744,17 +1736,20 @@ function Segmented({
   disabled?: boolean;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-[var(--brand-border)] overflow-hidden">
+    <div
+      className={`inline-flex overflow-hidden border ${hairlineRule}`}
+      style={radiusStyle}
+    >
       {options.map((o) => (
         <button
           key={o.value}
           onClick={() => onChange(o.value)}
           disabled={disabled}
           aria-pressed={value === o.value}
-          className={`px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+          className={`px-2.5 py-1 text-xs font-medium disabled:opacity-50 ${
             value === o.value
-              ? "bg-[var(--brand-blue)] text-white"
-              : "bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)]"
+              ? "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]"
+              : "bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:bg-[var(--ts-band-shows)]"
           }`}
         >
           {o.label}
@@ -1784,9 +1779,9 @@ function BudgetMeter({
   return (
     <div data-testid="budget-meter" className="flex-1 max-w-md">
       <div className="flex items-center justify-between text-xs mb-1">
-        <span className="text-[var(--brand-text-muted)]">
+        <span className={mutedText}>
           {selectedCount} selected ·{" "}
-          <span className="font-medium text-[var(--brand-text)]">
+          <span className={`font-medium ${inkText}`}>
             {formatMoneyCents(spentCents)}
           </span>{" "}
           of {formatMoneyCents(budgetCents)}
@@ -1794,17 +1789,15 @@ function BudgetMeter({
         {overBudget && (
           <span
             data-testid="budget-warning"
-            className="font-medium text-[var(--brand-warning)]"
+            className={`font-medium ${accentText}`}
           >
             Over test budget
           </span>
         )}
       </div>
-      <div className="h-1.5 rounded-full bg-[var(--brand-border)] overflow-hidden">
+      <div className="h-1.5 overflow-hidden bg-[var(--ts-hairline-on-paper)]" style={radiusStyle}>
         <div
-          className={`h-full rounded-full ${
-            overBudget ? "bg-[var(--brand-warning)]" : "bg-[var(--brand-blue)]"
-          }`}
+          className={`h-full ${overBudget ? "bg-[var(--ts-accent)]" : "bg-[var(--ts-ink-on-paper)]"}`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -1829,17 +1822,13 @@ function SectionHeading({
 }) {
   return (
     <div className="flex items-baseline gap-3">
-      <h2
-        className={`text-base font-bold ${
-          muted ? "text-[var(--brand-text-secondary)]" : "text-[var(--brand-text)]"
-        }`}
-      >
+      <h2 className={`text-base font-semibold ${muted ? mutedText : inkText}`}>
         {title}
       </h2>
-      <span className="text-xs text-[var(--brand-text-muted)]">
+      <span className={`text-xs ${mutedText}`}>
         {count} {count === 1 ? "show" : "shows"}
       </span>
-      <span className="text-xs text-[var(--brand-text-muted)] hidden sm:inline">
+      <span className={`hidden text-xs sm:inline ${mutedText}`}>
         {sub}
       </span>
     </div>
@@ -1848,7 +1837,7 @@ function SectionHeading({
 
 function EmptySection({ note }: { note: string }) {
   return (
-    <div className="mt-3 px-4 py-6 rounded-xl border border-dashed border-[var(--brand-border)] text-center text-sm text-[var(--brand-text-muted)]">
+    <div className={`px-4 py-6 text-center text-sm ${mutedText}`}>
       {note}
     </div>
   );
@@ -1864,16 +1853,31 @@ function ShowMore({
   return (
     <button
       onClick={onClick}
-      className="mt-3 text-xs text-[var(--brand-blue)] hover:underline"
+      className={`border-t ${hairlineRule} px-4 py-3 text-left text-xs ${accentLinkClass}`}
     >
       Show {Math.min(remaining, PAGE_SIZE)} more
     </button>
   );
 }
 
+function BandBadge({ label }: { label: string }) {
+  return (
+    <span
+      data-testid="band-badge"
+      className={`border px-1.5 py-0.5 text-[11px] font-medium ${hairlineRule} ${mutedText}`}
+      style={radiusStyle}
+    >
+      {label}
+    </span>
+  );
+}
+
 function RingTag({ label }: { label: string }) {
   return (
-    <span className="text-[10px] uppercase tracking-wide text-[var(--brand-text-muted)] border border-[var(--brand-border)] rounded px-1.5 py-0.5">
+    <span
+      className={`border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${hairlineRule} ${mutedText}`}
+      style={radiusStyle}
+    >
       {label}
     </span>
   );
@@ -1891,7 +1895,8 @@ function ShowAvatar({
   const size = small ? "w-8 h-8" : "w-10 h-10";
   return (
     <div
-      className={`${size} rounded-lg flex-shrink-0 overflow-hidden bg-gradient-to-br from-[var(--brand-blue)]/20 to-[var(--brand-teal)]/20 flex items-center justify-center`}
+      className={`${size} flex flex-shrink-0 items-center justify-center overflow-hidden border ${hairlineRule} bg-[var(--ts-band-shows)]`}
+      style={radiusStyle}
     >
       {show?.image_url ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -1901,7 +1906,7 @@ function ShowAvatar({
           className="w-full h-full object-cover"
         />
       ) : (
-        <span className="text-xs font-bold text-[var(--brand-blue)]">
+        <span className={`text-xs font-semibold ${inkText}`}>
           {name.slice(0, 2).toUpperCase()}
         </span>
       )}
@@ -1913,36 +1918,34 @@ function SubScore({
   label,
   value,
   unmeasured,
-  accent,
 }: {
   label: string;
   value?: number | null;
   unmeasured?: boolean;
-  accent: string;
 }) {
   return (
     <div data-testid="sub-score" data-dimension={label}>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[11px] text-[var(--brand-text-muted)]">
+      <div className="mb-1 flex items-center justify-between">
+        <span className={`text-[11px] ${mutedText}`}>
           {label}
         </span>
         {unmeasured ? (
-          <span className="text-[11px] font-medium text-[var(--brand-text-muted)] italic">
+          <span className={`text-[11px] font-medium italic ${mutedText}`}>
             Unmeasured
           </span>
         ) : (
-          <span className="text-[11px] font-semibold text-[var(--brand-text)]">
+          <span className={`text-[11px] font-semibold ${inkText}`}>
             {value ?? "—"}
           </span>
         )}
       </div>
-      <div className="h-1.5 rounded-full bg-[var(--brand-border)] overflow-hidden">
+      <div className="h-1.5 overflow-hidden bg-[var(--ts-hairline-on-paper)]" style={radiusStyle}>
         {unmeasured ? (
           // No bar for an unmeasured dimension — a dashed track, not a fake fill.
-          <div className="h-full w-full bg-[repeating-linear-gradient(90deg,var(--brand-border)_0,var(--brand-border)_4px,transparent_4px,transparent_8px)]" />
+          <div className="h-full w-full bg-[repeating-linear-gradient(90deg,var(--ts-hairline-on-paper)_0,var(--ts-hairline-on-paper)_4px,transparent_4px,transparent_8px)]" />
         ) : (
           <div
-            className={`h-full rounded-full ${accent}`}
+            className="h-full bg-[var(--ts-ink-on-paper)]"
             style={{ width: `${clampPct(value)}%` }}
           />
         )}
@@ -1956,25 +1959,26 @@ function BrandSafetyNotice({ flag }: { flag: BrandSafetyFlag }) {
     <div
       data-testid="brand-safety-notice"
       role="note"
-      className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg border border-[var(--brand-warning)]/30 bg-[var(--brand-warning)]/[0.06]"
+      className={`mt-3 flex items-start gap-2 border px-3 py-2 ${hairlineRule} bg-[var(--ts-paper)]`}
+      style={radiusStyle}
     >
       <svg
         width="14"
         height="14"
         viewBox="0 0 24 24"
         fill="none"
-        stroke="var(--brand-warning)"
+        stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="mt-0.5 flex-shrink-0"
+        className={`mt-0.5 flex-shrink-0 ${inkText}`}
       >
         <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
         <line x1="12" y1="9" x2="12" y2="13" />
         <line x1="12" y1="17" x2="12.01" y2="17" />
       </svg>
-      <div className="text-xs text-[var(--brand-text-secondary)]">
-        <span className="font-medium text-[var(--brand-text)]">
+      <div className={`text-xs ${mutedText}`}>
+        <span className={`font-medium ${inkText}`}>
           Brand-safety flag ({flag.level}).
         </span>{" "}
         {flag.note ?? "Review whether this show fits your brand values."} This is
@@ -2001,14 +2005,15 @@ function Shell({
 }) {
   void campaignId;
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)]">
-      <div className="px-8 pt-6 pb-4 border-b border-[var(--brand-border)] bg-[var(--brand-surface-elevated)]">
-        <div className="flex items-center gap-3">
+    <div className={`flex h-[calc(100vh-64px)] flex-col bg-[var(--ts-paper)] ${inkText}`}>
+      <div className={`border-b ${hairlineRule} bg-[var(--ts-paper)] px-8 pt-6 pb-4`}>
+        <div className="mb-3 flex items-center gap-3">
           <BackButton router={router} />
-          <h1 className="text-xl font-bold text-[var(--brand-text)] tracking-tight">
-            {campaignName}
-          </h1>
+          <p className={kickerClass}>For brands</p>
         </div>
+        <h1 className={`text-xl font-semibold tracking-tight ${inkText}`}>
+          {campaignName}
+        </h1>
       </div>
       <div className="flex-1 overflow-y-auto">{children}</div>
     </div>
@@ -2019,14 +2024,14 @@ function DiscoveringState({ ringCount }: { ringCount: number }) {
   return (
     <div
       data-testid="discovering-state"
-      className="flex flex-col items-center justify-center h-full gap-4 text-center px-8"
+      className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
     >
-      <div className="w-10 h-10 rounded-full border-2 border-[var(--brand-blue)]/30 border-t-[var(--brand-blue)] animate-spin" />
+      <div className={`h-2 w-24 ${pulseBarClass}`} style={radiusStyle} />
       <div>
-        <p className="text-base font-semibold text-[var(--brand-text)]">
+        <p className={`text-base font-semibold ${inkText}`}>
           Scoring the show universe…
         </p>
-        <p className="text-sm text-[var(--brand-text-secondary)] mt-1 max-w-md">
+        <p className={`mt-1 max-w-md animate-pulse text-sm ${mutedText}`}>
           Reasoning across {ringCount} {ringCount === 1 ? "ring" : "rings"} —
           this takes ~30–60 seconds. You can stay here; it’ll fill in
           automatically.
@@ -2040,21 +2045,24 @@ function CenteredState({
   title,
   body,
   action,
+  pulse,
 }: {
   title: string;
   body: string;
   action?: { label: string; onClick: () => void };
+  pulse?: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-8 py-20">
-      <p className="text-base font-semibold text-[var(--brand-text)]">{title}</p>
-      <p className="text-sm text-[var(--brand-text-secondary)] max-w-md">
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-8 py-20 text-center">
+      <p className={`text-base font-semibold ${inkText}`}>{title}</p>
+      <p className={`max-w-md text-sm ${mutedText} ${pulse ? "animate-pulse" : ""}`}>
         {body}
       </p>
       {action && (
         <button
           onClick={action.onClick}
-          className="mt-2 px-5 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-all"
+          className={`mt-2 ${inkBtnClass}`}
+          style={radiusStyle}
         >
           {action.label}
         </button>
@@ -2071,27 +2079,21 @@ function FilterChip({
   active,
   onClick,
   label,
-  dot,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
-  dot?: string;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5 ${
+      className={`whitespace-nowrap border px-3 py-1.5 text-xs font-medium ${hairlineRule} ${
         active
-          ? "bg-[var(--brand-blue)] text-white"
-          : "bg-[var(--brand-surface-elevated)] border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)]/40"
+          ? "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]"
+          : "bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:bg-[var(--ts-band-shows)]"
       }`}
+      style={radiusStyle}
     >
-      {dot && (
-        <span
-          className={`w-1.5 h-1.5 rounded-full ${active ? "bg-white" : dot}`}
-        />
-      )}
       {label}
     </button>
   );
@@ -2102,7 +2104,7 @@ function BackButton({ router }: { router: ReturnType<typeof useRouter> }) {
     <button
       onClick={() => router.push("/campaigns")}
       aria-label="Back to campaigns"
-      className="text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+      className={`${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
     >
       <svg
         width="18"

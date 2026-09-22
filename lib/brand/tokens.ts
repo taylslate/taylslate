@@ -4,10 +4,12 @@
  * Values live in tokens.css as CSS variables. Import this module instead of
  * copying hex. Applied on homepage, /login, the authenticated dashboard
  * shell (layout + sidebar + /dashboard), the /campaigns list,
- * /campaigns/new (returning check-in + brief), and
- * /campaigns/[id]/interpretation.
- * Signup, onboarding, campaign detail, deals, invoices,
- * and settings page bodies still use --brand-* until those restyles land.
+ * /campaigns/new (returning check-in + brief),
+ * /campaigns/[id]/interpretation, and the v2 conviction discovery
+ * view at /campaigns/[id].
+ * Signup, onboarding, legacy campaign detail and discovery list,
+ * deals, invoices, and settings page bodies still use --brand-*
+ * until those restyles land.
  */
 export const tokens = {
   field: "var(--ts-field)",
