@@ -7,6 +7,23 @@ import type {
   BrandProfile,
   BrandTargetGender,
 } from "@/lib/data/types";
+import { tokens } from "@/lib/brand/tokens";
+
+const radiusStyle = { borderRadius: tokens.radius };
+
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
+const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const fieldClass =
+  "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
+const inkBtnClass =
+  "inline-flex items-center gap-2 bg-[var(--ts-ink-on-paper)] px-6 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
+const kickerClass =
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+const chipOn = `border ${hairlineRule} bg-[var(--ts-band-brands)] ${inkText}`;
+const chipOff = `border ${hairlineRule} bg-[var(--ts-paper)] ${mutedText} hover:bg-[var(--ts-band-shows)]`;
+const chipDisabled = `border ${hairlineRule} bg-[var(--ts-paper)] ${mutedText} cursor-not-allowed opacity-40`;
 
 const GENDER_OPTIONS: { value: BrandTargetGender; label: string }[] = [
   { value: "mostly_men", label: "Mostly men" },
@@ -136,19 +153,22 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
   };
 
   return (
-    <div className="p-8 max-w-2xl">
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">
-          Brand profile
-        </h1>
+    <div className="max-w-2xl p-4 sm:p-8">
+      <div className="mb-1 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className={kickerClass}>For brands</p>
+          <h1 className={`mt-2 text-2xl font-semibold tracking-tight ${inkText}`}>
+            Brand profile
+          </h1>
+        </div>
         <Link
           href="/settings"
-          className="text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+          className={`text-sm ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
         >
           ← Back to settings
         </Link>
       </div>
-      <p className="text-sm text-[var(--brand-text-secondary)] mb-8">
+      <p className={`mb-8 text-sm ${mutedText}`}>
         Update the foundational info we use to match your campaigns with shows. Changes apply to every
         future campaign — use the new-campaign flow to override anything for a single campaign.
       </p>
@@ -163,7 +183,8 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
             maxLength={MAX_BRAND_NAME}
             required
             placeholder="e.g. Aurora Sleep"
-            className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+            className={fieldClass}
+            style={radiusStyle}
           />
           <Hint>
             Used as the From name on outreach emails and the headline on the public pitch page.
@@ -176,7 +197,8 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
             onChange={(e) => setIdentity(e.target.value)}
             rows={4}
             placeholder="Start typing..."
-            className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none"
+            className={`${fieldClass} resize-none`}
+            style={radiusStyle}
           />
           <Hint>
             What do you sell and who&apos;s it for? Include your product type, price range, and what
@@ -190,7 +212,8 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
             value={website}
             onChange={(e) => setWebsite(e.target.value)}
             placeholder="https://yourbrand.com"
-            className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+            className={fieldClass}
+            style={radiusStyle}
           />
         </Section>
 
@@ -200,7 +223,8 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
             onChange={(e) => setCustomer(e.target.value)}
             rows={4}
             placeholder="Start typing..."
-            className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none"
+            className={`${fieldClass} resize-none`}
+            style={radiusStyle}
           />
           <Hint>
             Think about who actually buys from you — their age, interests, lifestyle, and what problems
@@ -209,16 +233,16 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
         </Section>
 
         <Section title="Target age range">
-          <div className="rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
-            <div className="flex items-center justify-center gap-6 mb-5">
+          <div className={`p-5 ${panelClass}`} style={radiusStyle}>
+            <div className="mb-5 flex items-center justify-center gap-6">
               <div className="text-center">
-                <div className="text-[10px] uppercase tracking-wider text-[var(--brand-text-muted)] font-medium">From</div>
-                <div className="text-2xl font-bold text-[var(--brand-text)] tabular-nums">{ageMin}</div>
+                <div className={`text-[10px] font-medium uppercase tracking-wider ${mutedText}`}>From</div>
+                <div className={`text-2xl font-semibold tabular-nums ${inkText}`}>{ageMin}</div>
               </div>
-              <div className="text-xl text-[var(--brand-text-muted)]">–</div>
+              <div className={`text-xl ${mutedText}`}>–</div>
               <div className="text-center">
-                <div className="text-[10px] uppercase tracking-wider text-[var(--brand-text-muted)] font-medium">To</div>
-                <div className="text-2xl font-bold text-[var(--brand-text)] tabular-nums">{formatMax(ageMaxState)}</div>
+                <div className={`text-[10px] font-medium uppercase tracking-wider ${mutedText}`}>To</div>
+                <div className={`text-2xl font-semibold tabular-nums ${inkText}`}>{formatMax(ageMaxState)}</div>
               </div>
             </div>
             <div className="space-y-3">
@@ -228,7 +252,7 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
                 max={AGE_MAX}
                 value={ageMin}
                 onChange={(e) => handleAgeMin(Number(e.target.value))}
-                className="w-full accent-[var(--brand-blue)]"
+                className="w-full accent-[var(--ts-accent)]"
                 aria-label="Minimum age"
               />
               <input
@@ -237,7 +261,7 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
                 max={AGE_MAX}
                 value={ageMaxState}
                 onChange={(e) => handleAgeMax(Number(e.target.value))}
-                className="w-full accent-[var(--brand-blue)]"
+                className="w-full accent-[var(--ts-accent)]"
                 aria-label="Maximum age"
               />
             </div>
@@ -253,11 +277,8 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
                   key={opt.value}
                   type="button"
                   onClick={() => setGender(opt.value)}
-                  className={`p-3 rounded-lg border text-sm font-semibold transition-all ${
-                    selected
-                      ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]"
-                      : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)]/30"
-                  }`}
+                  className={`p-3 text-sm font-medium ${selected ? chipOn : chipOff}`}
+                  style={radiusStyle}
                 >
                   {opt.label}
                 </button>
@@ -267,7 +288,7 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
         </Section>
 
         <Section title="Content categories" hint={`${categories.size} of ${MAX_CATEGORIES} selected`}>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {CATEGORIES.map((cat) => {
               const selected = categories.has(cat);
               const disabled = !selected && categories.size >= MAX_CATEGORIES;
@@ -277,13 +298,10 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
                   type="button"
                   disabled={disabled}
                   onClick={() => toggleCategory(cat)}
-                  className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all ${
-                    selected
-                      ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]"
-                      : disabled
-                        ? "border-[var(--brand-border)] bg-[var(--brand-surface)] opacity-40 cursor-not-allowed text-[var(--brand-text-muted)]"
-                        : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)]/30"
+                  className={`px-3 py-2 text-xs font-medium ${
+                    selected ? chipOn : disabled ? chipDisabled : chipOff
                   }`}
+                  style={radiusStyle}
                 >
                   {cat}
                 </button>
@@ -303,13 +321,10 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
                   type="button"
                   disabled={disabled}
                   onClick={() => toggleGoal(opt.value)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold transition-all text-left ${
-                    selected
-                      ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]"
-                      : disabled
-                        ? "border-[var(--brand-border)] bg-[var(--brand-surface)] opacity-40 cursor-not-allowed text-[var(--brand-text-muted)]"
-                        : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)]/30"
+                  className={`flex items-center gap-2 px-3 py-2 text-left text-sm font-medium ${
+                    selected ? chipOn : disabled ? chipDisabled : chipOff
                   }`}
+                  style={radiusStyle}
                 >
                   <span>{opt.emoji}</span>
                   <span>{opt.title}</span>
@@ -325,7 +340,8 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
             onChange={(e) => setExclusions(e.target.value)}
             rows={3}
             placeholder="Start typing..."
-            className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none"
+            className={`${fieldClass} resize-none`}
+            style={radiusStyle}
           />
           <Hint>
             List any topics, competitors, or content types you want to avoid. Leave blank if you&apos;re
@@ -334,21 +350,25 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
         </Section>
       </div>
 
-      <div className="mt-8 pt-6 border-t border-[var(--brand-border)] flex items-center justify-between">
-        <div className="text-xs text-[var(--brand-text-muted)]">
+      <div className={`mt-8 flex items-center justify-between border-t pt-6 ${hairlineRule}`}>
+        <div className={`text-xs ${mutedText}`}>
           {savedAt && !error ? `Saved at ${savedAt}` : ""}
         </div>
         <button
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+          className={inkBtnClass}
+          style={radiusStyle}
         >
           {saving ? "Saving…" : "Save changes"}
         </button>
       </div>
       {error && (
-        <div className="mt-4 p-3 rounded-lg border border-[var(--brand-error)]/30 bg-[var(--brand-error)]/[0.04] text-sm text-[var(--brand-error)]">
+        <div
+          className="mt-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] p-3 text-sm text-[var(--ts-accent)]"
+          style={radiusStyle}
+        >
           {error}
         </div>
       )}
@@ -372,11 +392,11 @@ function Section({
       <div className="flex items-center justify-between mb-2">
         <label
           htmlFor={htmlFor}
-          className="block text-sm font-medium text-[var(--brand-text)]"
+          className={`block text-sm font-medium ${inkText}`}
         >
           {title}
         </label>
-        {hint && <span className="text-xs text-[var(--brand-text-muted)]">{hint}</span>}
+        {hint && <span className={`text-xs ${mutedText}`}>{hint}</span>}
       </div>
       {children}
     </div>
@@ -384,5 +404,5 @@ function Section({
 }
 
 function Hint({ children }: { children: React.ReactNode }) {
-  return <p className="text-xs text-[var(--brand-text-muted)] mt-2">{children}</p>;
+  return <p className={`mt-2 text-xs ${mutedText}`}>{children}</p>;
 }

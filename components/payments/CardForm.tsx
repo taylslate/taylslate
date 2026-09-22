@@ -3,6 +3,15 @@
 import { useState, useEffect } from "react";
 import { loadStripe, Stripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { tokens } from "@/lib/brand/tokens";
+
+const radiusStyle = { borderRadius: tokens.radius };
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const accentText = "text-[var(--ts-accent)]";
+const panelClass = "mb-6 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5";
+const inkBtnClass =
+  "inline-flex items-center bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 
 interface PaymentMethod {
   id: string;
@@ -15,7 +24,10 @@ interface PaymentMethod {
 function CardIcon({ brand }: { brand: string }) {
   const label = brand.charAt(0).toUpperCase() + brand.slice(1);
   return (
-    <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]">
+    <span
+      className="inline-block bg-[var(--ts-band-brands)] px-2 py-0.5 text-xs font-medium text-[var(--ts-ink-on-paper)]"
+      style={radiusStyle}
+    >
       {label}
     </span>
   );
@@ -51,14 +63,17 @@ function AddCardForm({ clientSecret, onSuccess }: { clientSecret: string; onSucc
 
   return (
     <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-      <div className="p-3 rounded-lg border border-[var(--brand-border)] bg-white">
+      <div className="border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-3" style={radiusStyle}>
         <CardElement
           options={{
             style: {
               base: {
                 fontSize: "14px",
-                color: "#1a1a2e",
-                "::placeholder": { color: "#9ca3af" },
+                // Stripe paints this field in a cross-origin iframe, so it
+                // cannot read --ts-* variables. Matches --ts-ink-on-paper
+                // and --ts-ink-muted-on-paper.
+                color: "#1c1915",
+                "::placeholder": { color: "#5c564c" },
               },
             },
           }}
@@ -68,12 +83,13 @@ function AddCardForm({ clientSecret, onSuccess }: { clientSecret: string; onSucc
         <button
           type="submit"
           disabled={!stripe || saving}
-          className="px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+          className={inkBtnClass}
+          style={radiusStyle}
         >
           {saving ? "Saving..." : "Save Card"}
         </button>
       </div>
-      {error && <p className="text-sm text-[var(--brand-error)]">{error}</p>}
+      {error && <p className={`text-sm ${accentText}`}>{error}</p>}
     </form>
   );
 }
@@ -151,37 +167,38 @@ export default function CardForm() {
 
   if (loading) {
     return (
-      <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-        <h2 className="font-semibold text-[var(--brand-text)] mb-4">Payment Methods</h2>
-        <p className="text-sm text-[var(--brand-text-muted)]">Loading payment methods...</p>
+      <div className={panelClass} style={radiusStyle}>
+        <h2 className={`mb-4 font-semibold ${inkText}`}>Payment Methods</h2>
+        <p className={`text-sm ${mutedText}`}>Loading payment methods...</p>
       </div>
     );
   }
 
   return (
-    <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-      <h2 className="font-semibold text-[var(--brand-text)] mb-4">Payment Methods</h2>
+    <div className={panelClass} style={radiusStyle}>
+      <h2 className={`mb-4 font-semibold ${inkText}`}>Payment Methods</h2>
 
       {paymentMethods.length > 0 ? (
-        <div className="space-y-3 mb-4">
+        <div className="mb-4 space-y-3">
           {paymentMethods.map((pm) => (
             <div
               key={pm.id}
-              className="flex items-center justify-between p-3 rounded-lg border border-[var(--brand-border)]"
+              className="flex items-center justify-between border border-[var(--ts-hairline-on-paper)] p-3"
+              style={radiusStyle}
             >
               <div className="flex items-center gap-3">
                 <CardIcon brand={pm.brand} />
-                <span className="text-sm text-[var(--brand-text)]">
+                <span className={`text-sm ${inkText}`}>
                   ****{pm.last4}
                 </span>
-                <span className="text-sm text-[var(--brand-text-muted)]">
+                <span className={`text-sm ${mutedText}`}>
                   {String(pm.exp_month).padStart(2, "0")}/{pm.exp_year}
                 </span>
               </div>
               <button
                 onClick={() => handleRemove(pm.id)}
                 disabled={removingId === pm.id}
-                className="text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-error)] transition-colors disabled:opacity-50"
+                className={`text-sm ${mutedText} hover:text-[var(--ts-accent)] disabled:opacity-50`}
               >
                 {removingId === pm.id ? "Removing..." : "Remove"}
               </button>
@@ -189,7 +206,7 @@ export default function CardForm() {
           ))}
         </div>
       ) : (
-        <p className="text-sm text-[var(--brand-text-muted)] mb-4">No payment methods on file.</p>
+        <p className={`mb-4 text-sm ${mutedText}`}>No payment methods on file.</p>
       )}
 
       {showAddForm && clientSecret && stripeInstance ? (
@@ -199,13 +216,14 @@ export default function CardForm() {
       ) : (
         <button
           onClick={handleAddCard}
-          className="px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors"
+          className={inkBtnClass}
+          style={radiusStyle}
         >
           Add Payment Method
         </button>
       )}
 
-      {error && <p className="text-sm text-[var(--brand-error)] mt-3">{error}</p>}
+      {error && <p className={`mt-3 text-sm ${accentText}`}>{error}</p>}
     </div>
   );
 }

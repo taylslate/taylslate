@@ -3,6 +3,16 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PLANS, type PlanId } from "@/lib/billing/plans";
+import { tokens } from "@/lib/brand/tokens";
+
+const radiusStyle = { borderRadius: tokens.radius };
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const inkBtnClass =
+  "inline-flex items-center bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+const ghostBtnClass =
+  "inline-flex items-center justify-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:cursor-not-allowed disabled:opacity-50";
 
 export interface BillingProfileSnapshot {
   plan: PlanId;
@@ -108,24 +118,25 @@ export default function BillingClient({
     <>
       {(error || info) && (
         <div
-          className={`p-4 rounded-xl mb-6 text-sm ${
+          className={`mb-6 border p-4 text-sm ${
             error
-              ? "bg-[var(--brand-error)]/10 border border-[var(--brand-error)]/30 text-[var(--brand-error)]"
-              : "bg-[var(--brand-success)]/10 border border-[var(--brand-success)]/30 text-[var(--brand-success)]"
+              ? "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] text-[var(--ts-accent)]"
+              : "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] text-[var(--ts-ink-on-paper)]"
           }`}
+          style={radiusStyle}
         >
           {error ?? info}
         </div>
       )}
 
       {upgradeTarget && (
-        <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-          <div className="flex items-start justify-between gap-4">
+        <div className={`mb-6 p-5 ${panelClass}`} style={radiusStyle}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="font-semibold text-[var(--brand-text)]">
+              <h2 className={`font-semibold ${inkText}`}>
                 Upgrade to {PLANS[upgradeTarget].label}
               </h2>
-              <p className="text-sm text-[var(--brand-text-muted)] mt-1">
+              <p className={`mt-1 text-sm ${mutedText}`}>
                 {formatUsd(PLANS[upgradeTarget].monthlyBaseCents)}/mo +{" "}
                 {(PLANS[upgradeTarget].feePercentage * 100).toFixed(0)}% transaction fee.
                 {upgradeTarget === "operator" &&
@@ -135,7 +146,8 @@ export default function BillingClient({
             <button
               onClick={handleUpgrade}
               disabled={isPending}
-              className="px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+              className={inkBtnClass}
+              style={radiusStyle}
             >
               {isPending ? "Working…" : `Upgrade`}
             </button>
@@ -144,11 +156,11 @@ export default function BillingClient({
       )}
 
       {seatsAllowed && (
-        <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-          <div className="flex items-start justify-between gap-4 mb-2">
+        <div className={`mb-6 p-5 ${panelClass}`} style={radiusStyle}>
+          <div className="mb-2 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="font-semibold text-[var(--brand-text)]">Seats</h2>
-              <p className="text-sm text-[var(--brand-text-muted)] mt-1">
+              <h2 className={`font-semibold ${inkText}`}>Seats</h2>
+              <p className={`mt-1 text-sm ${mutedText}`}>
                 {PLANS[initial.plan].seatsIncluded} included.{" "}
                 {formatUsd(PLANS[initial.plan].additionalSeatCents)}/mo per
                 additional seat.
@@ -158,17 +170,19 @@ export default function BillingClient({
               <button
                 onClick={() => handleSeats(-1)}
                 disabled={isPending || initial.seatCount <= 1}
-                className="w-8 h-8 rounded-lg border border-[var(--brand-border)] text-[var(--brand-text)] hover:bg-[var(--brand-surface)] disabled:opacity-50 transition-colors"
+                className={`h-8 w-8 ${ghostBtnClass}`}
+                style={radiusStyle}
               >
                 −
               </button>
-              <span className="w-8 text-center font-semibold text-[var(--brand-text)]">
+              <span className={`w-8 text-center font-semibold ${inkText}`}>
                 {initial.seatCount}
               </span>
               <button
                 onClick={() => handleSeats(1)}
                 disabled={isPending}
-                className="w-8 h-8 rounded-lg border border-[var(--brand-border)] text-[var(--brand-text)] hover:bg-[var(--brand-surface)] disabled:opacity-50 transition-colors"
+                className={`h-8 w-8 ${ghostBtnClass}`}
+                style={radiusStyle}
               >
                 +
               </button>
@@ -178,13 +192,13 @@ export default function BillingClient({
       )}
 
       {initial.plan !== "pay_as_you_go" && (
-        <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-          <div className="flex items-start justify-between gap-4">
+        <div className={`mb-6 p-5 ${panelClass}`} style={radiusStyle}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="font-semibold text-[var(--brand-text)]">
+              <h2 className={`font-semibold ${inkText}`}>
                 Downgrade to Pay-as-you-go
               </h2>
-              <p className="text-sm text-[var(--brand-text-muted)] mt-1">
+              <p className={`mt-1 text-sm ${mutedText}`}>
                 Takes effect at the end of your current billing period. You
                 keep all features until then.
               </p>
@@ -192,7 +206,8 @@ export default function BillingClient({
             <button
               onClick={handleDowngrade}
               disabled={isPending}
-              className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text)] hover:bg-[var(--brand-surface)] disabled:opacity-50 transition-colors"
+              className={`px-4 py-2 ${ghostBtnClass}`}
+              style={radiusStyle}
             >
               {isPending ? "Working…" : "Downgrade"}
             </button>

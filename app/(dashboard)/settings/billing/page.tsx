@@ -2,7 +2,16 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { PLANS, type PlanId } from "@/lib/billing/plans";
+import { tokens } from "@/lib/brand/tokens";
 import BillingClient, { type BillingProfileSnapshot } from "./billing-client";
+
+const radiusStyle = { borderRadius: tokens.radius };
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const accentText = "text-[var(--ts-accent)]";
+const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const kickerClass =
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
 
 export default async function BillingSettingsPage() {
   const supabase = await createClient();
@@ -39,53 +48,54 @@ export default async function BillingSettingsPage() {
   const formatPct = (pct: number) => `${(pct * 100).toFixed(0)}%`;
 
   return (
-    <div className="p-8 max-w-2xl">
-      <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight mb-1">
+    <div className="max-w-2xl p-4 sm:p-8">
+      <p className={kickerClass}>For brands</p>
+      <h1 className={`mt-2 text-2xl font-semibold tracking-tight ${inkText}`}>
         Billing
       </h1>
-      <p className="text-sm text-[var(--brand-text-secondary)] mb-8">
+      <p className={`mb-8 mt-1 text-sm ${mutedText}`}>
         Manage your subscription tier, transaction fee, and seats.
       </p>
 
-      <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-        <div className="flex items-start justify-between mb-4">
+      <div className={`mb-6 p-5 ${panelClass}`} style={radiusStyle}>
+        <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-semibold text-[var(--brand-text)]">
+            <h2 className={`font-semibold ${inkText}`}>
               Current plan
             </h2>
-            <p className="text-sm text-[var(--brand-text-muted)] mt-0.5">
+            <p className={`mt-0.5 text-sm ${mutedText}`}>
               {planRecord.label}
               {planRecord.monthlyBaseCents > 0 &&
                 ` — ${formatUsd(planRecord.monthlyBaseCents)}/mo`}
             </p>
           </div>
-          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]">
+          <span className={`text-xs font-medium ${mutedText}`}>
             {snapshot.subscriptionStatus}
           </span>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 text-sm">
+        <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
           <div>
-            <div className="text-[var(--brand-text-muted)] text-xs uppercase tracking-wide">
+            <div className={`text-xs uppercase tracking-wide ${mutedText}`}>
               Transaction fee
             </div>
-            <div className="font-semibold text-[var(--brand-text)] mt-1">
+            <div className={`mt-1 font-semibold ${inkText}`}>
               {formatPct(snapshot.platformFeePercentage)}
             </div>
           </div>
           <div>
-            <div className="text-[var(--brand-text-muted)] text-xs uppercase tracking-wide">
+            <div className={`text-xs uppercase tracking-wide ${mutedText}`}>
               Seats
             </div>
-            <div className="font-semibold text-[var(--brand-text)] mt-1">
+            <div className={`mt-1 font-semibold ${inkText}`}>
               {snapshot.seatCount}
             </div>
           </div>
           <div>
-            <div className="text-[var(--brand-text-muted)] text-xs uppercase tracking-wide">
+            <div className={`text-xs uppercase tracking-wide ${mutedText}`}>
               Concurrent campaigns
             </div>
-            <div className="font-semibold text-[var(--brand-text)] mt-1">
+            <div className={`mt-1 font-semibold ${inkText}`}>
               {planRecord.concurrentCampaignCap ?? "Unlimited"}
             </div>
           </div>

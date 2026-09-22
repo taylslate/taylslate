@@ -1,6 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { tokens } from "@/lib/brand/tokens";
+
+const radiusStyle = { borderRadius: tokens.radius };
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const accentText = "text-[var(--ts-accent)]";
+const panelClass = "mb-6 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5";
+const inkBtnClass =
+  "inline-flex items-center bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 
 interface ConnectStatus {
   connected: boolean;
@@ -55,9 +64,9 @@ export default function ConnectOnboarding() {
 
   if (loading) {
     return (
-      <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-        <h2 className="font-semibold text-[var(--brand-text)] mb-4">Receive Payments</h2>
-        <p className="text-sm text-[var(--brand-text-muted)]">Loading payout status...</p>
+      <div className={panelClass} style={radiusStyle}>
+        <h2 className={`mb-4 font-semibold ${inkText}`}>Receive Payments</h2>
+        <p className={`text-sm ${mutedText}`}>Loading payout status...</p>
       </div>
     );
   }
@@ -66,29 +75,29 @@ export default function ConnectOnboarding() {
   const isPartiallyOnboarded = status?.connected && !isFullyOnboarded;
 
   return (
-    <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-      <h2 className="font-semibold text-[var(--brand-text)] mb-4">Receive Payments</h2>
+    <div className={panelClass} style={radiusStyle}>
+      <h2 className={`mb-4 font-semibold ${inkText}`}>Receive Payments</h2>
 
       {isFullyOnboarded ? (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-[var(--brand-success)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className={`h-5 w-5 ${accentText}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span className="text-sm font-medium text-[var(--brand-success)]">Payouts enabled</span>
+            <span className={`text-sm font-medium ${inkText}`}>Payouts enabled</span>
           </div>
           <a
             href="https://connect.stripe.com/express_login"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm font-medium text-[var(--brand-blue)] hover:underline"
+            className={`text-sm font-medium ${accentText} hover:underline`}
           >
             Manage on Stripe
           </a>
         </div>
       ) : (
         <>
-          <p className="text-sm text-[var(--brand-text-muted)] mb-4">
+          <p className={`mb-4 text-sm ${mutedText}`}>
             {isPartiallyOnboarded
               ? "Complete your payout setup to start receiving payments."
               : "Connect your bank account to receive payouts from completed deals."}
@@ -96,11 +105,12 @@ export default function ConnectOnboarding() {
           <button
             onClick={handleConnect}
             disabled={actionLoading}
-            className="px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+            className={inkBtnClass}
+            style={radiusStyle}
           >
             {actionLoading ? "Redirecting..." : isPartiallyOnboarded ? "Continue Setup" : "Connect Bank Account"}
           </button>
-          {error && <p className="text-sm text-[var(--brand-error)] mt-3">{error}</p>}
+          {error && <p className={`mt-3 text-sm ${accentText}`}>{error}</p>}
         </>
       )}
     </div>
