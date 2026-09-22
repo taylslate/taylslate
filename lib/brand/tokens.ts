@@ -5,10 +5,10 @@
  * copying hex. Applied on homepage, /login, the authenticated dashboard
  * shell (layout + sidebar + /dashboard), the /campaigns list,
  * /campaigns/new (returning check-in + brief),
- * /campaigns/[id]/interpretation, and the v2 conviction discovery
- * view at /campaigns/[id].
+ * /campaigns/[id]/interpretation, the v2 conviction discovery
+ * view at /campaigns/[id], and the media plan at /campaigns/[id]/plan.
  * Signup, onboarding, legacy campaign detail and discovery list,
- * deals, invoices, and settings page bodies still use --brand-*
+ * outreach, deals, invoices, and settings page bodies still use --brand-*
  * until those restyles land.
  */
 export const tokens = {

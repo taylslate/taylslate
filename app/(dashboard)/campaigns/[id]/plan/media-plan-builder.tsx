@@ -19,6 +19,24 @@ import {
   spotPrice,
   totalImpressions,
 } from "@/lib/utils/pricing";
+import { tokens } from "@/lib/brand/tokens";
+
+const radiusStyle = { borderRadius: tokens.radius };
+
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const accentText = "text-[var(--ts-accent)]";
+const kickerClass =
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
+const panelClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const inkBtnClass =
+  "inline-flex items-center justify-center gap-2 bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+const ghostBtnClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium hover:bg-[var(--ts-band-shows)] disabled:cursor-not-allowed disabled:opacity-50";
+const fieldClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-xs font-medium text-[var(--ts-ink-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
 
 const PLACEMENT_OPTIONS: Placement[] = ["pre-roll", "mid-roll", "post-roll"];
 const SPACING_OPTIONS: { value: PlanSpacing; label: string }[] = [
@@ -53,7 +71,8 @@ function EstTag() {
     <span
       data-testid="plan-estimate"
       title="Estimated from Podscan data — confirmed at outreach"
-      className="px-1 py-0.5 rounded bg-[var(--brand-border)]/50 text-[10px] text-[var(--brand-text-muted)] font-medium"
+      className={`border px-1 py-0.5 text-[10px] font-medium ${hairlineRule} bg-[var(--ts-paper)] ${mutedText}`}
+      style={radiusStyle}
     >
       est.
     </span>
@@ -293,75 +312,70 @@ export default function MediaPlanBuilder({
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)]">
+    <div className={`flex h-[calc(100vh-64px)] flex-col bg-[var(--ts-paper)] ${inkText}`}>
       {/* ---- Header ---- */}
-      <div className="px-8 pt-6 pb-5 border-b border-[var(--brand-border)] bg-[var(--brand-surface-elevated)]">
-        <div className="flex items-center gap-3 mb-2">
+      <div className={`border-b ${hairlineRule} bg-[var(--ts-paper)] px-8 pt-6 pb-5`}>
+        <div className="mb-3 flex items-center gap-3">
           <button
             onClick={() => router.push(`/campaigns/${campaignId}`)}
-            className="flex items-center gap-1.5 text-xs text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+            className={`flex items-center gap-1.5 text-xs ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="m15 18-6-6 6-6" />
             </svg>
             Back to discovery
           </button>
+          <p className={kickerClass}>For brands</p>
           {saving && (
-            <span className="text-xs text-[var(--brand-text-muted)]">Saving…</span>
+            <span className={`text-xs ${mutedText}`}>Saving…</span>
           )}
         </div>
-        <div className="flex items-end justify-between gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">{campaignName}</h1>
-            <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+            <h1 className={`text-xl font-semibold tracking-tight ${inkText}`}>{campaignName}</h1>
+            <p className={`mt-1 text-sm ${mutedText}`}>
               Configure placements, episodes, and spacing. Pricing updates as you edit.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => router.push(`/campaigns/${campaignId}`)}
-              className="px-4 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-sm font-medium text-[var(--brand-text-secondary)] hover:border-[var(--brand-text-muted)] transition-colors"
+              className={`${ghostBtnClass} ${inkText}`}
+              style={radiusStyle}
             >
               Edit shows
             </button>
             <button
               onClick={exportCsv}
               disabled={visibleItems.length === 0}
-              className="px-4 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-sm font-medium text-[var(--brand-text-secondary)] hover:border-[var(--brand-text-muted)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className={`${ghostBtnClass} ${inkText}`}
+              style={radiusStyle}
             >
               Export CSV
             </button>
             <button
               onClick={() => router.push(`/campaigns/${campaignId}/outreach`)}
               disabled={visibleItems.length === 0}
-              className="px-4 py-2 rounded-lg border border-[var(--brand-blue)]/40 bg-[var(--brand-blue)]/[0.06] text-sm font-medium text-[var(--brand-blue)] hover:bg-[var(--brand-blue)]/[0.12] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className={`${ghostBtnClass} ${accentText}`}
+              style={radiusStyle}
             >
               Send outreach
             </button>
             <button
               onClick={generateIOs}
               disabled={visibleItems.length === 0 || generating}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+              className={inkBtnClass}
+              style={radiusStyle}
             >
-              {generating ? (
-                <>
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Generating…
-                </>
-              ) : (
-                "Generate IOs"
-              )}
+              {generating ? "Generating…" : "Generate IOs"}
             </button>
           </div>
         </div>
       </div>
 
       {/* ---- Summary cards + global controls ---- */}
-      <div className="px-8 py-5 border-b border-[var(--brand-border)] bg-[var(--brand-surface)]">
-        <div className="grid grid-cols-4 gap-4 mb-5">
+      <div className={`border-b ${hairlineRule} bg-[var(--ts-paper)] px-8 py-5`}>
+        <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <SummaryCard
             label="Total spend"
             value={formatCurrency(summary.totalSpend)}
@@ -392,11 +406,13 @@ export default function MediaPlanBuilder({
                 <button
                   key={p}
                   onClick={() => applyDefaultPlacement(p)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  aria-pressed={placementDefault === p}
+                  className={`border px-3 py-1.5 text-xs font-medium ${hairlineRule} ${
                     placementDefault === p
-                      ? "bg-[var(--brand-blue)] text-white"
-                      : "bg-[var(--brand-surface-elevated)] border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-text-muted)]"
+                      ? "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]"
+                      : "bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:bg-[var(--ts-band-shows)]"
                   }`}
+                  style={radiusStyle}
                 >
                   {placementLabel(p)}
                 </button>
@@ -408,7 +424,8 @@ export default function MediaPlanBuilder({
             <select
               value={episodesDefault}
               onChange={(e) => applyDefaultEpisodes(Number(e.target.value))}
-              className="px-3 py-1.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30"
+              className={`px-3 py-1.5 ${fieldClass}`}
+              style={radiusStyle}
             >
               {EPISODE_OPTIONS.map((n) => (
                 <option key={n} value={n}>
@@ -422,7 +439,8 @@ export default function MediaPlanBuilder({
             <select
               value={spacing}
               onChange={(e) => setSpacing(e.target.value as PlanSpacing)}
-              className="px-3 py-1.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30"
+              className={`px-3 py-1.5 ${fieldClass}`}
+              style={radiusStyle}
             >
               {SPACING_OPTIONS.map((s) => (
                 <option key={s.value} value={s.value}>
@@ -437,14 +455,14 @@ export default function MediaPlanBuilder({
       {/* ---- Line items table ---- */}
       <div className="flex-1 overflow-auto px-8 py-6">
         {visibleItems.length === 0 ? (
-          <div className="text-center py-12 text-sm text-[var(--brand-text-muted)]">
-            No shows in the plan. <button onClick={() => router.push(`/campaigns/${campaignId}`)} className="text-[var(--brand-blue)] hover:underline">Go back to discovery</button> to add some.
+          <div className={`py-12 text-center text-sm ${mutedText}`}>
+            No shows in the plan. <button onClick={() => router.push(`/campaigns/${campaignId}`)} className={`${accentText} hover:underline`}>Go back to discovery</button> to add some.
           </div>
         ) : (
-          <div className="rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] overflow-hidden">
+          <div className={`${panelClass} overflow-hidden`} style={radiusStyle}>
             <table className="w-full text-sm">
-              <thead className="bg-[var(--brand-surface)] border-b border-[var(--brand-border)]">
-                <tr className="text-left text-xs font-medium text-[var(--brand-text-muted)] uppercase tracking-wider">
+              <thead className={`border-b ${hairlineRule} bg-[var(--ts-paper)]`}>
+                <tr className={`text-left text-xs font-medium uppercase tracking-wider ${mutedText}`}>
                   <th className="px-4 py-3">Show</th>
                   <th className="px-4 py-3 text-right">Audience</th>
                   <th className="px-4 py-3 text-right">CPM</th>
@@ -455,7 +473,7 @@ export default function MediaPlanBuilder({
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--brand-border)]">
+              <tbody className={`divide-y divide-[var(--ts-hairline-on-paper)]`}>
                 {visibleItems.map((li) => {
                   const show = showById.get(li.podcast_id)!;
                   const adj = adjustedCpm(show.estimatedCpm, li.placement);
@@ -463,43 +481,45 @@ export default function MediaPlanBuilder({
                   const total = spot * li.num_episodes;
                   const multiplier = PLACEMENT_MULTIPLIERS[li.placement];
                   return (
-                    <tr key={li.podcast_id} className="hover:bg-[var(--brand-surface)]/60">
+                    <tr key={li.podcast_id} className="hover:bg-[var(--ts-band-shows)]">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           {show.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={show.imageUrl} alt="" className="w-9 h-9 rounded-md object-cover border border-[var(--brand-border)]" />
+                            <img src={show.imageUrl} alt="" className={`h-9 w-9 border object-cover ${hairlineRule}`} style={radiusStyle} />
                           ) : (
-                            <div className="w-9 h-9 rounded-md bg-[var(--brand-surface)] border border-[var(--brand-border)]" />
+                            <div className={`h-9 w-9 border bg-[var(--ts-paper)] ${hairlineRule}`} style={radiusStyle} />
                           )}
                           <div className="min-w-0">
-                            <div className="font-medium text-[var(--brand-text)] truncate">{show.name}</div>
+                            <div className={`truncate font-medium ${inkText}`}>{show.name}</div>
                             {show.publisherName && (
-                              <div className="text-xs text-[var(--brand-text-muted)] truncate">{show.publisherName}</div>
+                              <div className={`truncate text-xs ${mutedText}`}>{show.publisherName}</div>
                             )}
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-[var(--brand-text-secondary)]">
-                        <span className="inline-flex items-center gap-1.5 justify-end">
+                      <td className={`px-4 py-3 text-right tabular-nums ${mutedText}`}>
+                        <span className="inline-flex items-center justify-end gap-1.5">
                           {formatImpressions(show.audienceSize)}
                           {show.audienceIsEstimate && <EstTag />}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
-                        <div className="inline-flex items-center gap-1.5 justify-end text-[var(--brand-text)]">
+                        <div className={`inline-flex items-center justify-end gap-1.5 ${inkText}`}>
                           ${adj.toFixed(2)}
                           {show.costIsEstimate && <EstTag />}
                         </div>
-                        <div className="text-xs text-[var(--brand-text-muted)]">
+                        <div className={`text-xs ${mutedText}`}>
                           ${show.estimatedCpm.toFixed(2)} × {multiplier}
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <select
+                          aria-label={`Placement for ${show.name}`}
                           value={li.placement}
                           onChange={(e) => updateItem(li.podcast_id, { placement: e.target.value as Placement })}
-                          className="px-2.5 py-1.5 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30"
+                          className={`px-2.5 py-1.5 ${fieldClass}`}
+                          style={radiusStyle}
                         >
                           {PLACEMENT_OPTIONS.map((p) => (
                             <option key={p} value={p}>
@@ -510,9 +530,11 @@ export default function MediaPlanBuilder({
                       </td>
                       <td className="px-4 py-3">
                         <select
+                          aria-label={`Episodes for ${show.name}`}
                           value={li.num_episodes}
                           onChange={(e) => updateItem(li.podcast_id, { num_episodes: Number(e.target.value) })}
-                          className="px-2.5 py-1.5 rounded-md border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30"
+                          className={`px-2.5 py-1.5 ${fieldClass}`}
+                          style={radiusStyle}
                         >
                           {EPISODE_OPTIONS.map((n) => (
                             <option key={n} value={n}>
@@ -521,16 +543,17 @@ export default function MediaPlanBuilder({
                           ))}
                         </select>
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-[var(--brand-text-secondary)]">
+                      <td className={`px-4 py-3 text-right tabular-nums ${mutedText}`}>
                         {formatCurrency(spot)}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--brand-text)]">
+                      <td className={`px-4 py-3 text-right font-semibold tabular-nums ${inkText}`}>
                         {formatCurrency(total)}
                       </td>
                       <td className="px-4 py-3">
                         <button
                           onClick={() => removeItem(li.podcast_id)}
-                          className="p-1.5 rounded-md text-[var(--brand-text-muted)] hover:text-[var(--brand-error)] hover:bg-[var(--brand-error)]/[0.06] transition-colors"
+                          className={`p-1.5 ${mutedText} hover:bg-[var(--ts-band-shows)] hover:text-[var(--ts-ink-on-paper)]`}
+                          style={radiusStyle}
                           title="Remove from plan"
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -549,7 +572,7 @@ export default function MediaPlanBuilder({
               const s = showById.get(li.podcast_id);
               return Boolean(s?.costIsEstimate || s?.audienceIsEstimate);
             }) && (
-              <p className="px-4 py-3 border-t border-[var(--brand-border)] text-xs text-[var(--brand-text-muted)] flex items-center gap-1.5">
+              <p className={`flex items-center gap-1.5 border-t px-4 py-3 text-xs ${hairlineRule} ${mutedText}`}>
                 <EstTag /> Audience &amp; CPM are Podscan estimates; spot prices and
                 line totals are derived from them and confirmed at outreach.
               </p>
@@ -558,7 +581,7 @@ export default function MediaPlanBuilder({
         )}
 
         {error && (
-          <div className="mt-4 p-3 rounded-lg border border-[var(--brand-error)]/30 bg-[var(--brand-error)]/[0.04] text-sm text-[var(--brand-error)]">
+          <div className={`mt-4 border p-3 text-sm ${panelClass} ${inkText}`} style={radiusStyle}>
             {error}
           </div>
         )}
@@ -579,12 +602,12 @@ function SummaryCard({
   tone?: "neutral" | "warning";
 }) {
   const valueClass =
-    tone === "warning" ? "text-[var(--brand-warning)]" : "text-[var(--brand-text)]";
+    tone === "warning" ? "text-[var(--ts-accent)]" : "text-[var(--ts-ink-on-paper)]";
   return (
-    <div className="rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] px-4 py-3">
-      <div className="text-xs font-medium text-[var(--brand-text-muted)] uppercase tracking-wider">{label}</div>
-      <div className={`text-xl font-bold tabular-nums mt-1 ${valueClass}`}>{value}</div>
-      <div className="text-xs text-[var(--brand-text-muted)] mt-0.5">{sub}</div>
+    <div className={`${panelClass} px-4 py-3`} style={radiusStyle}>
+      <div className={`text-xs font-medium uppercase tracking-wider ${mutedText}`}>{label}</div>
+      <div className={`mt-1 text-xl font-semibold tabular-nums ${valueClass}`}>{value}</div>
+      <div className={`mt-0.5 text-xs ${mutedText}`}>{sub}</div>
     </div>
   );
 }
@@ -592,7 +615,7 @@ function SummaryCard({
 function ControlGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs font-medium text-[var(--brand-text-muted)] uppercase tracking-wider">{label}</span>
+      <span className={`text-xs font-medium uppercase tracking-wider ${mutedText}`}>{label}</span>
       {children}
     </div>
   );
