@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getAuthenticatedUser, transcribeIoLine, AircheckLineNotFound } = vi.hoisted(() => {
+const { getAuthenticatedUser, aircheckIoLine, AircheckLineNotFound } = vi.hoisted(() => {
   class AircheckLineNotFound extends Error {
     constructor(message?: string) {
       super(message);
@@ -9,7 +9,7 @@ const { getAuthenticatedUser, transcribeIoLine, AircheckLineNotFound } = vi.hois
   }
   return {
     getAuthenticatedUser: vi.fn(),
-    transcribeIoLine: vi.fn(),
+    aircheckIoLine: vi.fn(),
     AircheckLineNotFound,
   };
 });
@@ -18,7 +18,7 @@ vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: (...args: unknown[]) => getAuthenticatedUser(...args),
 }));
 vi.mock("@/lib/airchecks", () => ({
-  transcribeIoLine: (...args: unknown[]) => transcribeIoLine(...args),
+  aircheckIoLine: (...args: unknown[]) => aircheckIoLine(...args),
   AircheckLineNotFound,
 }));
 
@@ -42,7 +42,7 @@ describe("POST /api/admin/aircheck", () => {
     getAuthenticatedUser.mockResolvedValueOnce(null);
     const res = await POST(makeReq({ ioLineItemId: "li_1" }) as never);
     expect(res.status).toBe(401);
-    expect(transcribeIoLine).not.toHaveBeenCalled();
+    expect(aircheckIoLine).not.toHaveBeenCalled();
   });
 
   it("forbids users not on the allowlist", async () => {
@@ -52,7 +52,7 @@ describe("POST /api/admin/aircheck", () => {
     });
     const res = await POST(makeReq({ ioLineItemId: "li_1" }) as never);
     expect(res.status).toBe(403);
-    expect(transcribeIoLine).not.toHaveBeenCalled();
+    expect(aircheckIoLine).not.toHaveBeenCalled();
   });
 
   it("rejects a missing ioLineItemId", async () => {
@@ -69,20 +69,22 @@ describe("POST /api/admin/aircheck", () => {
       id: "u1",
       email: "ops@taylslate.com",
     });
-    transcribeIoLine.mockResolvedValueOnce({
+    aircheckIoLine.mockResolvedValueOnce({
       id: "ac_1",
       io_line_item_id: "li_1",
       status: "transcribed",
       provider: "podscan",
       transcript_text: "the read",
       error: null,
+      match_result: "matched",
     });
     const res = await POST(makeReq({ ioLineItemId: "li_1" }) as never);
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.ok).toBe(true);
     expect(json.provider).toBe("podscan");
-    expect(transcribeIoLine).toHaveBeenCalledWith("li_1");
+    expect(json.match).toBe("matched");
+    expect(aircheckIoLine).toHaveBeenCalledWith("li_1");
   });
 
   it("reports a stored failure without treating it as an unhandled error", async () => {
@@ -90,10 +92,11 @@ describe("POST /api/admin/aircheck", () => {
       id: "u1",
       email: "ops@taylslate.com",
     });
-    transcribeIoLine.mockResolvedValueOnce({
+    aircheckIoLine.mockResolvedValueOnce({
       id: "ac_1",
       status: "failed",
       provider: null,
+      match_result: "skipped",
       error: "Podscan returned no transcript and AIRCHECK_TRANSCRIPTION_PROVIDER is off",
     });
     const res = await POST(makeReq({ ioLineItemId: "li_1" }) as never);
@@ -108,7 +111,7 @@ describe("POST /api/admin/aircheck", () => {
       id: "u1",
       email: "ops@taylslate.com",
     });
-    transcribeIoLine.mockRejectedValueOnce(new AircheckLineNotFound("missing"));
+    aircheckIoLine.mockRejectedValueOnce(new AircheckLineNotFound("missing"));
     const res = await POST(makeReq({ ioLineItemId: "missing" }) as never);
     expect(res.status).toBe(404);
   });

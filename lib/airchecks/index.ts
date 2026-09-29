@@ -1,2 +1,9 @@
+export { aircheckIoLine } from "./match";
 export { AircheckLineNotFound, transcribeIoLine } from "./transcribe";
-export type { AircheckRow, AircheckStatus } from "./types";
+export type {
+  AircheckBuy,
+  AircheckMatchEvidence,
+  AircheckMatchResult,
+  AircheckRow,
+  AircheckStatus,
+} from "./types";
