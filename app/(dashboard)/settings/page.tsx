@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import ConnectOnboarding from "@/components/payments/ConnectOnboarding";
 import CardForm from "@/components/payments/CardForm";
 import SignOutButton from "@/components/auth/SignOutButton";
-import { PLANS, type PlanId } from "@/lib/billing/plans";
+import { PLANS, listPublicPlans, type PlanId, type PlanRecord } from "@/lib/billing/plans";
 import { tokens } from "@/lib/brand/tokens";
 
 type UserRole = "brand" | "agency" | "agent" | "show";
@@ -59,25 +59,19 @@ export default function SettingsPage() {
   const showPayoutSection = role === "show" || role === "agent";
   const showPaymentMethodSection = role === "brand" || role === "agency";
 
-  const planTiers: PlanId[] = ["pay_as_you_go", "operator", "agency"];
+  const publicPlans = listPublicPlans();
   const formatPct = (pct: number) => `${(pct * 100).toFixed(0)}%`;
   const formatMonthly = (cents: number) =>
     cents === 0 ? "$0" : `$${(cents / 100).toLocaleString()}`;
-  const planSubline = (id: PlanId) => {
-    const p = PLANS[id];
-    if (id === "pay_as_you_go") {
-      return `${formatPct(p.feePercentage)} transaction fee, no monthly fee`;
-    }
-    return `${formatMonthly(p.monthlyBaseCents)}/mo + ${formatPct(
-      p.feePercentage
-    )} transaction`;
-  };
-  const planFeatureLine = (id: PlanId) => {
-    if (id === "pay_as_you_go") return "Up to 2 concurrent campaigns";
-    if (id === "operator") return "Unlimited campaigns, API access, priority support";
-    return "White-label, multi-client, dedicated success manager";
+  const campaignLimit = (cap: number | null) => {
+    if (cap === null) return "Unlimited active campaigns";
+    if (cap === 1) return "1 active campaign";
+    return `${cap} active campaigns`;
   };
   const currentPlan = PLANS[plan];
+  const currentLabel = currentPlan.public ? currentPlan.label : "Legacy plan";
+  const planSummary = (record: PlanRecord) =>
+    `${formatMonthly(record.monthlyBaseCents)}/mo, ${formatPct(record.feePercentage)} card fee, ${campaignLimit(record.concurrentCampaignCap)}`;
   const kicker = role === "show" || role === "agent" ? "For shows" : "For brands";
 
   return (
@@ -91,7 +85,7 @@ export default function SettingsPage() {
           <div>
             <h2 className={`font-semibold ${inkText}`}>Current Plan</h2>
             <p className={`mt-0.5 text-sm ${mutedText}`}>
-              {currentPlan.label} — {planSubline(plan)}
+              {currentLabel} — {planSummary(currentPlan)}
             </p>
           </div>
           <Link href="/settings/billing" className={inkBtnClass} style={radiusStyle}>
@@ -99,12 +93,11 @@ export default function SettingsPage() {
           </Link>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {planTiers.map((id) => {
-            const p = PLANS[id];
-            const isCurrent = id === plan;
+          {publicPlans.map((p) => {
+            const isCurrent = p.id === plan;
             return (
               <div
-                key={id}
+                key={p.id}
                 className={`border p-4 ${hairlineRule} ${
                   isCurrent ? "bg-[var(--ts-band-brands)]" : "bg-[var(--ts-paper)]"
                 }`}
@@ -123,11 +116,14 @@ export default function SettingsPage() {
                   <span className={`text-xs font-normal ${mutedText}`}>/mo</span>
                 </div>
                 <div className={`mt-1 text-xs ${mutedText}`}>
-                  + {formatPct(p.feePercentage)} transaction
+                  {formatPct(p.feePercentage)} card fee
                 </div>
-                <div className={`mt-2 text-xs leading-snug ${mutedText}`}>
-                  {planFeatureLine(id)}
+                <div className={`mt-1 text-xs ${mutedText}`}>
+                  {campaignLimit(p.concurrentCampaignCap)}
                 </div>
+                <p className={`mt-2 text-xs leading-snug ${mutedText}`}>
+                  Pay by bank transfer: {formatPct(p.bankFeePercentage)} (coming soon)
+                </p>
               </div>
             );
           })}

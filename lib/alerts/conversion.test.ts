@@ -9,41 +9,48 @@ describe("buildConversionAlertPayload", () => {
     company_name: "Aurora Sleep",
   };
 
-  it("at $12,500/mo Operator and PAYG cost the same — savings ~ 0", () => {
-    // breakeven point: PAYG fee 10% × 12.5K = $1,250; Operator $499 + 6% × 12.5K = $499 + $750 = $1,249.
-    // Annual delta = ($1,250 - $1,249) × 12 = $12.
+  it("at $12,500/mo compares Free with Starter and Operator", () => {
+    // Free: 0.10 × 12.5K = $1,250/mo → $15,000/yr.
+    // Starter: $79 + 0.08 × 12.5K = $1,079/mo → $12,948/yr. Save $2,052/yr.
+    // Operator: $299 + 0.06 × 12.5K = $1,049/mo → $12,588/yr. Save $2,412/yr.
     const payload = buildConversionAlertPayload({
       profile,
       monthlyAvgCents: 1_250_000,
     });
     expect(payload.subject).toContain("Aurora Sleep");
-    expect(Math.abs(payload.operatorSavingsAnnualCents)).toBeLessThanOrEqual(
-      5000
-    ); // within ~$50/yr
+    expect(payload.operatorSavingsAnnualCents).toBe(241_200);
+    expect(payload.starterSavingsAnnualCents).toBe(205_200);
     expect(payload.text).toContain("$12,500");
+    expect(payload.text).toContain("Starter");
+    expect(payload.text).toContain("Operator");
+    expect(payload.text).toContain("$79/mo + 8%");
+    expect(payload.text).toContain("$299/mo + 6%");
+    expect(payload.html).not.toContain("$499");
+    expect(payload.text).not.toContain("Agency");
   });
 
-  it("at $25,000/mo monthly spend Operator wins by ~$9,000/yr", () => {
-    // PAYG: 0.10 × 25K = $2,500/mo. Operator: $499 + 0.06 × 25K = $1,999/mo.
-    // Monthly delta $501 → annual $6,012.
+  it("at $25,000/mo Operator saves $8,412/yr against Free", () => {
+    // Free: $2,500/mo → $30,000/yr.
+    // Starter: $79 + $2,000 = $2,079/mo → $24,948/yr. Save $5,052/yr.
+    // Operator: $299 + $1,500 = $1,799/mo → $21,588/yr. Save $8,412/yr.
     const payload = buildConversionAlertPayload({
       profile,
       monthlyAvgCents: 2_500_000,
     });
-    expect(payload.operatorSavingsAnnualCents).toBeGreaterThan(500_000); // > $5,000/yr
-    expect(payload.operatorSavingsAnnualCents).toBeLessThan(800_000); // < $8,000/yr
+    expect(payload.operatorSavingsAnnualCents).toBe(841_200);
+    expect(payload.starterSavingsAnnualCents).toBe(505_200);
     expect(payload.html).toContain("$25,000");
   });
 
-  it("at $50,000/mo Operator wins by ~$18k/yr", () => {
-    // PAYG: 0.10 × 50K = $5,000/mo. Operator: $499 + 0.06 × 50K = $3,499/mo.
-    // Monthly delta $1,501 → annual $18,012.
+  it("at $50,000/mo Operator saves $20,412/yr against Free", () => {
+    // Free: $5,000/mo. Operator: $299 + $3,000 = $3,299/mo.
+    // Monthly delta $1,701 → annual $20,412.
     const payload = buildConversionAlertPayload({
       profile,
       monthlyAvgCents: 5_000_000,
     });
-    expect(payload.operatorSavingsAnnualCents).toBeGreaterThan(1_700_000);
-    expect(payload.operatorSavingsAnnualCents).toBeLessThan(1_900_000);
+    expect(payload.operatorSavingsAnnualCents).toBe(2_041_200);
+    expect(payload.starterSavingsAnnualCents).toBe(1_105_200);
   });
 
   it("falls back to email/id labels when company_name is missing", () => {
@@ -51,17 +58,18 @@ describe("buildConversionAlertPayload", () => {
       profile: { id: "u-2", email: "a@b.com", company_name: null },
       monthlyAvgCents: 2_000_000,
     });
-    // Expect either company_name absence triggers email or full_name use.
     expect(payload.subject).toMatch(/a@b\.com|u-2/);
   });
 
-  it("includes both PAYG annual and Operator annual in the email body", () => {
+  it("includes Free, Starter, and Operator annual costs in the email body", () => {
     const payload = buildConversionAlertPayload({
       profile,
       monthlyAvgCents: 2_500_000,
     });
-    // PAYG annual = $30,000; Operator annual = $23,988.
     expect(payload.text).toContain("$30,000");
-    expect(payload.text).toContain("$23,988");
+    expect(payload.text).toContain("$24,948");
+    expect(payload.text).toContain("$21,588");
+    expect(payload.html).toContain("Free");
+    expect(payload.html).toContain("Starter");
   });
 });

@@ -28,7 +28,7 @@ import {
   PLANS,
   type PlanId,
 } from "./plans";
-import { getPriceMap } from "./constants";
+import { getPriceMap, type PriceMap } from "./constants";
 
 /** Profile fields the subscription helpers read/write. */
 export interface BillingProfile extends StripeCustomerProfileInput {
@@ -95,7 +95,24 @@ type SubscriptionWithFlags = Stripe.Subscription & {
   canceled_at?: number | null;
 };
 
-/** Pricing items for a paid plan: base + (extra seats × seat price). */
+function basePriceId(
+  plan: Exclude<PlanId, "pay_as_you_go">,
+  prices: PriceMap
+): string {
+  if (plan === "starter") return prices.starterBase;
+  if (plan === "operator") return prices.operatorBase;
+  return prices.agencyBase;
+}
+
+function seatPriceId(
+  plan: Exclude<PlanId, "pay_as_you_go">,
+  prices: PriceMap
+): string {
+  if (plan === "agency") return prices.agencySeat;
+  return prices.operatorSeat;
+}
+
+/** Pricing items for a paid plan. Seat prices are omitted when seats are not sold. */
 function buildSubscriptionItems(
   plan: PlanId,
   seatCount: number
@@ -108,15 +125,16 @@ function buildSubscriptionItems(
     throw new Error("seat_count must be >= 1");
   }
   const prices = getPriceMap();
-  const baseId = plan === "operator" ? prices.operatorBase : prices.agencyBase;
-  const seatId = plan === "operator" ? prices.operatorSeat : prices.agencySeat;
-
   const items: Stripe.SubscriptionCreateParams.Item[] = [
-    { price: baseId, quantity: 1 },
+    { price: basePriceId(plan, prices), quantity: 1 },
   ];
-  const extraSeats = seatCount - planRecord.seatsIncluded;
-  if (extraSeats > 0) {
-    items.push({ price: seatId, quantity: extraSeats });
+  // additionalSeatCents is 0 on every current plan. Skip the seat price
+  // so a subscription update cannot prorate a seat charge.
+  if (planRecord.additionalSeatCents > 0) {
+    const extraSeats = seatCount - planRecord.seatsIncluded;
+    if (extraSeats > 0) {
+      items.push({ price: seatPriceId(plan, prices), quantity: extraSeats });
+    }
   }
   return items;
 }
@@ -419,10 +437,13 @@ interface SeatChangeInput {
 }
 
 /**
- * Adjust seat count by `delta` (+ or -). Updates the Stripe Subscription
- * quantity on the seat add-on Price and persists `seat_count` on the
+ * Adjust seat count by `delta` (+ or -). Persists `seat_count` on the
  * profile. Validates seat_count never drops below 1 and that the customer
- * is on a paid plan (PAYG seats are conceptually fixed at 1).
+ * is on a paid plan (Free seats are conceptually fixed at 1).
+ *
+ * Seats are not sold (`additionalSeatCents` is 0). This path must not
+ * create a Stripe charge: it skips the subscription item update that
+ * would prorate a seat price.
  */
 export async function changeSeats(
   input: SeatChangeInput
@@ -446,35 +467,36 @@ export async function changeSeats(
   }
 
   const planRecord = getPlan(profile.plan);
-  const prices = getPriceMap();
-  const seatPriceId =
-    profile.plan === "operator" ? prices.operatorSeat : prices.agencySeat;
-  const newExtraSeats = Math.max(newSeatCount - planRecord.seatsIncluded, 0);
+  if (planRecord.additionalSeatCents > 0) {
+    const prices = getPriceMap();
+    const seatPrice = seatPriceId(profile.plan, prices);
+    const newExtraSeats = Math.max(newSeatCount - planRecord.seatsIncluded, 0);
 
-  const subscription = await stripe.subscriptions.retrieve(
-    profile.stripe_subscription_id
-  );
+    const subscription = await stripe.subscriptions.retrieve(
+      profile.stripe_subscription_id
+    );
 
-  const existingSeatItem = subscription.items.data.find(
-    (item) => item.price.id === seatPriceId
-  );
+    const existingSeatItem = subscription.items.data.find(
+      (item) => item.price.id === seatPrice
+    );
 
-  const updateItems: Stripe.SubscriptionUpdateParams.Item[] = [];
-  if (existingSeatItem) {
-    if (newExtraSeats === 0) {
-      updateItems.push({ id: existingSeatItem.id, deleted: true });
-    } else {
-      updateItems.push({ id: existingSeatItem.id, quantity: newExtraSeats });
+    const updateItems: Stripe.SubscriptionUpdateParams.Item[] = [];
+    if (existingSeatItem) {
+      if (newExtraSeats === 0) {
+        updateItems.push({ id: existingSeatItem.id, deleted: true });
+      } else {
+        updateItems.push({ id: existingSeatItem.id, quantity: newExtraSeats });
+      }
+    } else if (newExtraSeats > 0) {
+      updateItems.push({ price: seatPrice, quantity: newExtraSeats });
     }
-  } else if (newExtraSeats > 0) {
-    updateItems.push({ price: seatPriceId, quantity: newExtraSeats });
-  }
 
-  if (updateItems.length > 0) {
-    await stripe.subscriptions.update(profile.stripe_subscription_id, {
-      items: updateItems,
-      proration_behavior: "create_prorations",
-    });
+    if (updateItems.length > 0) {
+      await stripe.subscriptions.update(profile.stripe_subscription_id, {
+        items: updateItems,
+        proration_behavior: "create_prorations",
+      });
+    }
   }
 
   const before = snapshot(profile);
@@ -519,9 +541,8 @@ export async function upgradeByProfileId(
   actorId?: string | null
 ) {
   const profile = await fetchBillingProfile(profileId);
-  // Only PAYG → Operator → Agency forward steps allowed via this entry.
-  // Same-plan calls and Operator → Operator are handled by upgradeSubscription's
-  // own validation; here we just block obviously-wrong transitions.
+  // Starter and Operator use this same path. Same-plan calls are rejected
+  // by upgradeSubscription. The billing route is what hides Agency.
   if (profile.plan === targetPlan) {
     throw new Error(`Already on ${targetPlan}`);
   }

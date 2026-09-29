@@ -54,7 +54,7 @@ export default async function BillingSettingsPage() {
         Billing
       </h1>
       <p className={`mb-8 mt-1 text-sm ${mutedText}`}>
-        Manage your subscription tier, transaction fee, and seats.
+        Your plan, card fee, and how many campaigns can be active at once.
       </p>
 
       <div className={`mb-6 p-5 ${panelClass}`} style={radiusStyle}>
@@ -64,9 +64,8 @@ export default async function BillingSettingsPage() {
               Current plan
             </h2>
             <p className={`mt-0.5 text-sm ${mutedText}`}>
-              {planRecord.label}
-              {planRecord.monthlyBaseCents > 0 &&
-                ` — ${formatUsd(planRecord.monthlyBaseCents)}/mo`}
+              {planRecord.public ? planRecord.label : "Legacy plan"}
+              {` — ${formatUsd(planRecord.monthlyBaseCents)}/mo`}
             </p>
           </div>
           <span className={`text-xs font-medium ${mutedText}`}>
@@ -74,10 +73,10 @@ export default async function BillingSettingsPage() {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
           <div>
             <div className={`text-xs uppercase tracking-wide ${mutedText}`}>
-              Transaction fee
+              Card fee
             </div>
             <div className={`mt-1 font-semibold ${inkText}`}>
               {formatPct(snapshot.platformFeePercentage)}
@@ -85,21 +84,18 @@ export default async function BillingSettingsPage() {
           </div>
           <div>
             <div className={`text-xs uppercase tracking-wide ${mutedText}`}>
-              Seats
-            </div>
-            <div className={`mt-1 font-semibold ${inkText}`}>
-              {snapshot.seatCount}
-            </div>
-          </div>
-          <div>
-            <div className={`text-xs uppercase tracking-wide ${mutedText}`}>
-              Concurrent campaigns
+              Active campaigns
             </div>
             <div className={`mt-1 font-semibold ${inkText}`}>
               {planRecord.concurrentCampaignCap ?? "Unlimited"}
             </div>
           </div>
         </div>
+        {planRecord.public && (
+          <p className={`mt-4 text-xs ${mutedText}`}>
+            Pay by bank transfer: {formatPct(planRecord.bankFeePercentage)} (coming soon)
+          </p>
+        )}
       </div>
 
       <BillingClient initial={snapshot} />

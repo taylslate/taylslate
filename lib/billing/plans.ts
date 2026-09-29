@@ -1,21 +1,39 @@
-// Wave 13 — Plan catalogue and pricing math.
+// Plan catalogue — locked 2026-09-28.
 //
-// Single source of truth for what each tier costs, what fee % applies, how
-// many seats are included, and which feature flags it unlocks. Every other
-// piece of the billing system reads from here.
+// Single source of truth for plan id, customer-facing label, card fee,
+// monthly base, bank-transfer fee, and active-campaign cap. Charge-time
+// math reads `profiles.platform_fee_percentage`. upgradeSubscription and
+// finalizeDowngrade copy `feePercentage` from here onto that column.
 //
-// IMPORTANT: per CLAUDE.md and PRICING_DECISIONS.md, no fee percentage is
-// allowed to be hardcoded outside this file. All charge-time math reads
-// either `profile.platform_fee_percentage` (per-customer) or the constants
-// here (when computing what *would* apply on a different plan).
+// `bankFeePercentage` is data only. No charge path reads it until the
+// separate ACH job ships. Card charges keep using `feePercentage`.
+//
+// Seats are no longer sold. `additionalSeatCents` is 0 on every plan.
+// `seatsIncluded` is a soft cap in data only (Free 1, Starter 3,
+// Operator 10). It is not enforced and not billed.
+//
+// The id `pay_as_you_go` stays so existing profile rows keep resolving.
+// The customer-facing label is Free.
+//
+// Agency stays so legacy references and the profiles.plan check
+// constraint still resolve. `public: false` excludes it from upgrade
+// options and pricing copy.
+//
+// Card fees: Free 10%, Starter 8%, Operator 6%.
+// Bank fees (data only): Free 7%, Starter 5%, Operator 3%.
+// Active campaigns: Free 1, Starter 5, Operator unlimited (null).
 
-export type PlanId = "pay_as_you_go" | "operator" | "agency";
+export type PlanId = "pay_as_you_go" | "starter" | "operator" | "agency";
 
 export const PLAN_IDS = {
   PAYG: "pay_as_you_go",
+  STARTER: "starter",
   OPERATOR: "operator",
   AGENCY: "agency",
 } as const;
+
+/** Public catalogue order. Agency is intentionally absent. */
+const PUBLIC_PLAN_ORDER: PlanId[] = ["pay_as_you_go", "starter", "operator"];
 
 export interface PlanFeatures {
   apiAccess: boolean;
@@ -28,27 +46,57 @@ export interface PlanFeatures {
 export interface PlanRecord {
   id: PlanId;
   label: string;
-  /** Fractional fee, e.g. 0.10 for 10%. Stored numerically; UI formats. */
+  /**
+   * Card fee as a fraction, e.g. 0.10 for 10%. This is the rate written
+   * to profiles.platform_fee_percentage on upgrade and downgrade.
+   */
   feePercentage: number;
+  /**
+   * Bank-transfer fee as a fraction. Data only: not read by any charge
+   * path until the separate ACH job ships.
+   */
+  bankFeePercentage: number;
   monthlyBaseCents: number;
-  /** $0 for PAYG; the per-extra-seat cents amount otherwise. */
+  /** Always 0. Seats are no longer sold. */
   additionalSeatCents: number;
-  /** Number of seats covered by the base subscription. */
+  /** Soft cap in data only. Not enforced and not billed. */
   seatsIncluded: number;
-  /** PAYG cap on concurrent active campaigns; null = unlimited. */
+  /** Active-campaign cap. null = unlimited. Not enforced yet. */
   concurrentCampaignCap: number | null;
+  /** False hides the plan from upgrade options and pricing copy. */
+  public: boolean;
   features: PlanFeatures;
 }
 
 export const PLANS: Record<PlanId, PlanRecord> = {
   pay_as_you_go: {
     id: "pay_as_you_go",
-    label: "Pay-as-you-go",
+    label: "Free",
     feePercentage: 0.10,
+    bankFeePercentage: 0.07,
     monthlyBaseCents: 0,
     additionalSeatCents: 0,
     seatsIncluded: 1,
-    concurrentCampaignCap: 2,
+    concurrentCampaignCap: 1,
+    public: true,
+    features: {
+      apiAccess: false,
+      whiteLabel: false,
+      multiClient: false,
+      prioritySupport: false,
+      unlimitedCampaigns: false,
+    },
+  },
+  starter: {
+    id: "starter",
+    label: "Starter",
+    feePercentage: 0.08,
+    bankFeePercentage: 0.05,
+    monthlyBaseCents: 7900,
+    additionalSeatCents: 0,
+    seatsIncluded: 3,
+    concurrentCampaignCap: 5,
+    public: true,
     features: {
       apiAccess: false,
       whiteLabel: false,
@@ -61,10 +109,12 @@ export const PLANS: Record<PlanId, PlanRecord> = {
     id: "operator",
     label: "Operator",
     feePercentage: 0.06,
-    monthlyBaseCents: 49900,
-    additionalSeatCents: 29900,
-    seatsIncluded: 1,
+    bankFeePercentage: 0.03,
+    monthlyBaseCents: 29900,
+    additionalSeatCents: 0,
+    seatsIncluded: 10,
     concurrentCampaignCap: null,
+    public: true,
     features: {
       apiAccess: true,
       whiteLabel: false,
@@ -77,10 +127,13 @@ export const PLANS: Record<PlanId, PlanRecord> = {
     id: "agency",
     label: "Agency",
     feePercentage: 0.04,
+    // Legacy row only. Not a published bank rate.
+    bankFeePercentage: 0.04,
     monthlyBaseCents: 500000,
-    additionalSeatCents: 50000,
+    additionalSeatCents: 0,
     seatsIncluded: 5,
     concurrentCampaignCap: null,
+    public: false,
     features: {
       apiAccess: true,
       whiteLabel: true,
@@ -97,6 +150,11 @@ export function getPlan(id: PlanId): PlanRecord {
     throw new Error(`Unknown plan id: ${id}`);
   }
   return plan;
+}
+
+/** Free, Starter, and Operator, in catalogue order. Agency is excluded. */
+export function listPublicPlans(): PlanRecord[] {
+  return PUBLIC_PLAN_ORDER.map((id) => PLANS[id]).filter((plan) => plan.public);
 }
 
 /**
@@ -121,7 +179,7 @@ export function getPlanForFeePercentage(pct: number): PlanRecord | null {
  * Math: monthly cost = monthlyBaseCents + spend × feePercentage. Multiply
  * the difference by 12 to get the annualised number used in conversion
  * alerts. Negative result means the move would cost more (e.g. low-volume
- * customers on Operator vs PAYG).
+ * customers on Operator vs Free).
  *
  * Pure function — no Stripe, no DB, easy to unit test.
  */

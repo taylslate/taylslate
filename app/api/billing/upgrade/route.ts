@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/data/queries";
 import { upgradeByProfileId } from "@/lib/billing/subscription";
-import type { PlanId } from "@/lib/billing/plans";
+import { listPublicPlans, type PlanId } from "@/lib/billing/plans";
 
-const ALLOWED_TARGETS: Array<Exclude<PlanId, "pay_as_you_go">> = [
-  "operator",
-  "agency",
-];
+const ALLOWED_TARGETS: Array<Exclude<PlanId, "pay_as_you_go">> = listPublicPlans()
+  .map((plan) => plan.id)
+  .filter((id): id is Exclude<PlanId, "pay_as_you_go"> => id !== "pay_as_you_go");
 
 export async function POST(request: NextRequest) {
   try {

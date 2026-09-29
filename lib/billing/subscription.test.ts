@@ -41,6 +41,7 @@ vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin }));
 vi.mock("@/lib/stripe/customer", () => ({ getOrCreateStripeCustomer }));
 vi.mock("@/lib/data/events", () => ({ logEvent }));
 
+import { getPriceMap } from "./constants";
 import {
   createSubscription,
   upgradeSubscription,
@@ -164,8 +165,32 @@ describe("upgradeSubscription", () => {
     });
 
     expect(profile.plan).toBe("operator");
+    expect(profile.platform_fee_percentage).toBe(0.06);
+    expect(profilesBuilder._patches[0].platform_fee_percentage).toBe(0.06);
     expect(stripe.subscriptions.create).toHaveBeenCalled();
     expect(stripe.subscriptions.update).not.toHaveBeenCalled();
+  });
+
+  it("PAYG → Starter writes platform_fee_percentage 0.08 and uses the starter price", async () => {
+    stripe.subscriptions.create.mockResolvedValueOnce({
+      id: "sub_starter",
+      items: { data: [] },
+    });
+
+    const { profile } = await upgradeSubscription({
+      profile: paygProfile(),
+      targetPlan: "starter",
+    });
+
+    expect(profile.plan).toBe("starter");
+    expect(profile.platform_fee_percentage).toBe(0.08);
+    expect(profilesBuilder._patches[0].platform_fee_percentage).toBe(0.08);
+    expect(profilesBuilder._patches[0].plan).toBe("starter");
+
+    const call = stripe.subscriptions.create.mock.calls[0][0];
+    expect(call.items).toEqual([
+      { price: getPriceMap().starterBase, quantity: 1 },
+    ]);
   });
 
   it("rejects same-plan upgrade", async () => {
@@ -267,26 +292,41 @@ describe("finalizeDowngrade", () => {
 });
 
 describe("changeSeats", () => {
-  it("adding a seat updates Stripe quantity and writes seat_count", async () => {
+  it("adding a seat writes seat_count and does not create a Stripe charge", async () => {
     const operator = paygProfile({
       plan: "operator",
       platform_fee_percentage: 0.06,
       subscription_status: "active",
       stripe_subscription_id: "sub_op",
-      seat_count: 1,
+      seat_count: 10,
     });
-    stripe.subscriptions.retrieve.mockResolvedValueOnce({
-      id: "sub_op",
-      items: { data: [{ id: "si_op_base", price: { id: "price_op_base" } }] },
-    });
-    stripe.subscriptions.update.mockResolvedValueOnce({ id: "sub_op" });
 
     const { profile } = await changeSeats({ profile: operator, delta: 2 });
 
-    expect(profile.seat_count).toBe(3);
-    expect(profilesBuilder._patches[0]).toEqual({ seat_count: 3 });
+    expect(profile.seat_count).toBe(12);
+    expect(profilesBuilder._patches[0]).toEqual({ seat_count: 12 });
+    expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled();
+    expect(stripe.subscriptions.update).not.toHaveBeenCalled();
     expect(logEvent).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: "customer.seat_added" })
+    );
+  });
+
+  it("removing a seat does not create a Stripe charge", async () => {
+    const starter = paygProfile({
+      plan: "starter",
+      platform_fee_percentage: 0.08,
+      subscription_status: "active",
+      stripe_subscription_id: "sub_starter",
+      seat_count: 3,
+    });
+
+    const { profile } = await changeSeats({ profile: starter, delta: -1 });
+
+    expect(profile.seat_count).toBe(2);
+    expect(stripe.subscriptions.update).not.toHaveBeenCalled();
+    expect(logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: "customer.seat_removed" })
     );
   });
 

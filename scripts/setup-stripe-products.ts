@@ -1,5 +1,5 @@
-// One-off script to create the four Stripe Products + Prices that back the
-// Wave 13 subscription tiers. Idempotent: re-running on a Stripe environment
+// One-off script to create the Stripe Products + Prices that back the
+// subscription tiers. Idempotent: re-running on a Stripe environment
 // that already has the products is a no-op (looks up by Product name and
 // reuses the existing recurring monthly Price if one matches the amount).
 //
@@ -11,11 +11,12 @@
 //   STRIPE_ENV=sandbox STRIPE_SECRET_KEY=sk_test_... \
 //     npx tsx scripts/setup-stripe-products.ts
 //
-// Pricing source of truth: PRICING_DECISIONS.md
-//   Operator base:      $499/mo
-//   Operator extra seat: $299/mo
-//   Agency base:       $5,000/mo
-//   Agency extra seat:   $500/mo
+// Pricing source of truth: PRICING_DECISIONS.md (Locked 2026-09-28)
+//   Starter base:    $79/mo
+//   Operator base:  $299/mo
+// Seat and Agency products below are legacy catalogue rows. Seats are not
+// sold (additionalSeatCents is 0). Do not run this script as part of a
+// copy update.
 
 import { stripe } from "@/lib/stripe/server";
 
@@ -29,10 +30,17 @@ interface ProductSpec {
 
 const SPECS: ProductSpec[] = [
   {
+    key: "starter_base",
+    name: "Taylslate Starter",
+    description: "Starter subscription — $79/mo + 8% card fee.",
+    unitAmountCents: 7900,
+    metadata: { taylslate_plan: "starter", taylslate_role: "base" },
+  },
+  {
     key: "operator_base",
     name: "Taylslate Operator",
-    description: "Operator subscription — $499/mo + 6% transaction fee.",
-    unitAmountCents: 49900,
+    description: "Operator subscription — $299/mo + 6% card fee.",
+    unitAmountCents: 29900,
     metadata: { taylslate_plan: "operator", taylslate_role: "base" },
   },
   {

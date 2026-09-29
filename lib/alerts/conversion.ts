@@ -1,16 +1,19 @@
-// Wave 13 — Conversion-alert payload builder.
+// Conversion-alert payload builder.
 //
-// PAYG → Operator conversion is the single most important Wave 13 metric
-// (per PRICING_DECISIONS.md "Conversion Mechanic"). When a Pay-as-you-go
-// customer's trailing-90 monthly average GMV crosses the Operator
-// breakeven (~$12,500/mo), we owe ourselves a relationship-grade nudge —
-// not an automated upgrade email to the customer, but an internal alert
-// to chris@taylslate.com so a human can have the upgrade conversation.
+// Free → paid conversion is the relationship moment. This module builds
+// one internal alert (no new alert type) that compares Free with Starter
+// and Operator using the live plan catalogue. The cron at
+// app/api/cron/conversion-alerts decides who receives it and sends it.
 //
-// This module builds the payload only. The cron handler at
-// app/api/cron/conversion-alerts wires the send.
+// Bases and card fees come from lib/billing/plans.ts. Bank-transfer rates
+// are not part of this email.
 
-import { monthlySavingsAtSpend, getPlan } from "@/lib/billing/plans";
+import {
+  monthlySavingsAtSpend,
+  breakevenSpendCents,
+  getPlan,
+  type PlanRecord,
+} from "@/lib/billing/plans";
 
 export interface ConversionAlertProfile {
   id: string;
@@ -28,8 +31,10 @@ export interface ConversionAlertPayload {
   subject: string;
   html: string;
   text: string;
-  /** Annual savings (cents) on Operator vs PAYG at the customer's spend. */
+  /** Annual savings (cents) on Operator vs Free at the customer's spend. */
   operatorSavingsAnnualCents: number;
+  /** Annual savings (cents) on Starter vs Free at the customer's spend. */
+  starterSavingsAnnualCents: number;
 }
 
 function fmtUsd(cents: number): string {
@@ -59,6 +64,12 @@ function customerLabel(profile: ConversionAlertProfile): string {
   );
 }
 
+function planRateLabel(plan: PlanRecord): string {
+  const dollars = (plan.monthlyBaseCents / 100).toLocaleString("en-US");
+  const fee = (plan.feePercentage * 100).toFixed(0);
+  return `$${dollars}/mo + ${fee}%`;
+}
+
 /**
  * Build the internal alert email body. Pure function — no Resend, no DB.
  */
@@ -66,23 +77,35 @@ export function buildConversionAlertPayload(
   input: ConversionAlertInput
 ): ConversionAlertPayload {
   const { profile, monthlyAvgCents } = input;
-  const payg = getPlan("pay_as_you_go");
+  const free = getPlan("pay_as_you_go");
+  const starter = getPlan("starter");
   const operator = getPlan("operator");
 
-  const paygMonthlyCents =
-    payg.monthlyBaseCents + Math.round(monthlyAvgCents * payg.feePercentage);
+  const freeMonthlyCents =
+    free.monthlyBaseCents + Math.round(monthlyAvgCents * free.feePercentage);
+  const starterMonthlyCents =
+    starter.monthlyBaseCents +
+    Math.round(monthlyAvgCents * starter.feePercentage);
   const operatorMonthlyCents =
     operator.monthlyBaseCents +
     Math.round(monthlyAvgCents * operator.feePercentage);
 
-  const paygAnnualCents = paygMonthlyCents * 12;
+  const freeAnnualCents = freeMonthlyCents * 12;
+  const starterAnnualCents = starterMonthlyCents * 12;
   const operatorAnnualCents = operatorMonthlyCents * 12;
 
-  const savings = monthlySavingsAtSpend(
+  const starterSavings = monthlySavingsAtSpend(
+    monthlyAvgCents,
+    "pay_as_you_go",
+    "starter"
+  );
+  const operatorSavings = monthlySavingsAtSpend(
     monthlyAvgCents,
     "pay_as_you_go",
     "operator"
   );
+  const operatorBreakevenCents =
+    breakevenSpendCents("pay_as_you_go", "operator") ?? 0;
 
   const label = customerLabel(profile);
   const subject = `Conversion alert: ${label} crossed Operator breakeven`;
@@ -99,8 +122,9 @@ export function buildConversionAlertPayload(
         <p style="font-size:14px;color:#1f2937;line-height:1.6;margin:0 0 14px;">
           <strong>${escapeHtml(label)}</strong> (profile id <code>${escapeHtml(profile.id)}</code>)
           has trailing-90 monthly average GMV of <strong>${fmtUsd(monthlyAvgCents)}/mo</strong>,
-          above the Operator breakeven of $12,500/mo. Time for the upgrade
-          conversation.
+          above the Operator breakeven of ${fmtUsd(operatorBreakevenCents)}/mo.
+          Starter and Operator are both priced against Free below. Time for
+          the upgrade conversation.
         </p>
         <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:13px;color:#1f2937;">
           <tr>
@@ -108,16 +132,24 @@ export function buildConversionAlertPayload(
             <td style="padding:6px 0;text-align:right;font-weight:600;">${fmtUsd(monthlyAvgCents)}</td>
           </tr>
           <tr>
-            <td style="padding:6px 0;color:#6b7280;">Current PAYG annual cost</td>
-            <td style="padding:6px 0;text-align:right;">${fmtUsd(paygAnnualCents)}</td>
+            <td style="padding:6px 0;color:#6b7280;">Current ${escapeHtml(free.label)} annual cost</td>
+            <td style="padding:6px 0;text-align:right;">${fmtUsd(freeAnnualCents)}</td>
           </tr>
           <tr>
-            <td style="padding:6px 0;color:#6b7280;">Operator annual cost ($499/mo + 6%)</td>
+            <td style="padding:6px 0;color:#6b7280;">${escapeHtml(starter.label)} annual cost (${planRateLabel(starter)})</td>
+            <td style="padding:6px 0;text-align:right;">${fmtUsd(starterAnnualCents)}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0;color:#15803d;font-weight:600;">Annual savings on ${escapeHtml(starter.label)}</td>
+            <td style="padding:6px 0;text-align:right;color:#15803d;font-weight:600;">${fmtUsd(starterSavings.annualCents)}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0;color:#6b7280;">${escapeHtml(operator.label)} annual cost (${planRateLabel(operator)})</td>
             <td style="padding:6px 0;text-align:right;">${fmtUsd(operatorAnnualCents)}</td>
           </tr>
           <tr>
-            <td style="padding:6px 0;color:#15803d;font-weight:600;">Annual savings on Operator</td>
-            <td style="padding:6px 0;text-align:right;color:#15803d;font-weight:600;">${fmtUsd(savings.annualCents)}</td>
+            <td style="padding:6px 0;color:#15803d;font-weight:600;">Annual savings on ${escapeHtml(operator.label)}</td>
+            <td style="padding:6px 0;text-align:right;color:#15803d;font-weight:600;">${fmtUsd(operatorSavings.annualCents)}</td>
           </tr>
         </table>
         <p style="font-size:12px;color:#6b7280;margin-top:18px;line-height:1.55;">
@@ -130,12 +162,14 @@ export function buildConversionAlertPayload(
 </html>`.trim();
 
   const text = [
-    `${label} (id ${profile.id}) crossed the Operator breakeven.`,
+    `${label} (id ${profile.id}) crossed the Operator breakeven of ${fmtUsd(operatorBreakevenCents)}/mo.`,
     "",
-    `Current monthly spend:     ${fmtUsd(monthlyAvgCents)}`,
-    `Current PAYG annual cost:  ${fmtUsd(paygAnnualCents)}`,
-    `Operator annual cost:      ${fmtUsd(operatorAnnualCents)}`,
-    `Annual savings on Operator: ${fmtUsd(savings.annualCents)}`,
+    `Current monthly spend:       ${fmtUsd(monthlyAvgCents)}`,
+    `Current ${free.label} annual cost:    ${fmtUsd(freeAnnualCents)}`,
+    `${starter.label} annual cost:         ${fmtUsd(starterAnnualCents)} (${planRateLabel(starter)})`,
+    `Annual savings on ${starter.label}:   ${fmtUsd(starterSavings.annualCents)}`,
+    `${operator.label} annual cost:        ${fmtUsd(operatorAnnualCents)} (${planRateLabel(operator)})`,
+    `Annual savings on ${operator.label}:  ${fmtUsd(operatorSavings.annualCents)}`,
     "",
     `Conversion is sales-led — reach out personally.`,
   ].join("\n");
@@ -144,6 +178,7 @@ export function buildConversionAlertPayload(
     subject,
     html,
     text,
-    operatorSavingsAnnualCents: savings.annualCents,
+    operatorSavingsAnnualCents: operatorSavings.annualCents,
+    starterSavingsAnnualCents: starterSavings.annualCents,
   };
 }

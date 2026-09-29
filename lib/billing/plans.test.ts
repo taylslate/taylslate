@@ -1,40 +1,86 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin: { from: () => ({}) } }));
+vi.mock("@/lib/stripe/server", () => ({ stripe: {} }));
+vi.mock("@/lib/data/events", () => ({ logEvent: async () => null }));
+
 import {
   PLANS,
   getPlan,
   getPlanForFeePercentage,
+  listPublicPlans,
   monthlySavingsAtSpend,
   breakevenSpendCents,
 } from "./plans";
+import { computeApplicationFeeCents } from "@/lib/stripe/payment-intent";
 
 describe("PLANS catalogue", () => {
-  it("locks the three plan ids", () => {
+  it("locks the plan ids", () => {
     expect(Object.keys(PLANS).sort()).toEqual([
       "agency",
       "operator",
       "pay_as_you_go",
+      "starter",
     ]);
   });
 
-  it("matches the locked PRICING_DECISIONS.md numbers", () => {
+  it("matches the locked 2026-09-28 numbers", () => {
+    expect(PLANS.pay_as_you_go.label).toBe("Free");
     expect(PLANS.pay_as_you_go.feePercentage).toBe(0.10);
+    expect(PLANS.pay_as_you_go.bankFeePercentage).toBe(0.07);
     expect(PLANS.pay_as_you_go.monthlyBaseCents).toBe(0);
+    expect(PLANS.pay_as_you_go.additionalSeatCents).toBe(0);
     expect(PLANS.pay_as_you_go.seatsIncluded).toBe(1);
+    expect(PLANS.pay_as_you_go.concurrentCampaignCap).toBe(1);
+    expect(PLANS.pay_as_you_go.public).toBe(true);
 
+    expect(PLANS.starter.label).toBe("Starter");
+    expect(PLANS.starter.feePercentage).toBe(0.08);
+    expect(PLANS.starter.bankFeePercentage).toBe(0.05);
+    expect(PLANS.starter.monthlyBaseCents).toBe(7900);
+    expect(PLANS.starter.additionalSeatCents).toBe(0);
+    expect(PLANS.starter.seatsIncluded).toBe(3);
+    expect(PLANS.starter.concurrentCampaignCap).toBe(5);
+    expect(PLANS.starter.public).toBe(true);
+
+    expect(PLANS.operator.label).toBe("Operator");
     expect(PLANS.operator.feePercentage).toBe(0.06);
-    expect(PLANS.operator.monthlyBaseCents).toBe(49900);
-    expect(PLANS.operator.additionalSeatCents).toBe(29900);
-    expect(PLANS.operator.seatsIncluded).toBe(1);
+    expect(PLANS.operator.bankFeePercentage).toBe(0.03);
+    expect(PLANS.operator.monthlyBaseCents).toBe(29900);
+    expect(PLANS.operator.additionalSeatCents).toBe(0);
+    expect(PLANS.operator.seatsIncluded).toBe(10);
+    expect(PLANS.operator.concurrentCampaignCap).toBeNull();
+    expect(PLANS.operator.public).toBe(true);
 
+    expect(PLANS.agency.public).toBe(false);
+    expect(PLANS.agency.additionalSeatCents).toBe(0);
     expect(PLANS.agency.feePercentage).toBe(0.04);
     expect(PLANS.agency.monthlyBaseCents).toBe(500000);
-    expect(PLANS.agency.additionalSeatCents).toBe(50000);
     expect(PLANS.agency.seatsIncluded).toBe(5);
   });
 
-  it("only Operator and Agency unlock the API/scale features", () => {
+  it("keeps Starter's active-campaign cap at 5", () => {
+    expect(PLANS.starter.concurrentCampaignCap).toBe(5);
+  });
+
+  it("lists Free, Starter, and Operator and hides Agency", () => {
+    expect(listPublicPlans().map((plan) => plan.id)).toEqual([
+      "pay_as_you_go",
+      "starter",
+      "operator",
+    ]);
+    expect(listPublicPlans().map((plan) => plan.label)).toEqual([
+      "Free",
+      "Starter",
+      "Operator",
+    ]);
+  });
+
+  it("keeps API access on Operator and the legacy agency record", () => {
     expect(PLANS.pay_as_you_go.features.apiAccess).toBe(false);
     expect(PLANS.pay_as_you_go.features.unlimitedCampaigns).toBe(false);
+    expect(PLANS.starter.features.apiAccess).toBe(false);
+    expect(PLANS.starter.features.unlimitedCampaigns).toBe(false);
     expect(PLANS.operator.features.apiAccess).toBe(true);
     expect(PLANS.operator.features.unlimitedCampaigns).toBe(true);
     expect(PLANS.agency.features.whiteLabel).toBe(true);
@@ -45,19 +91,22 @@ describe("PLANS catalogue", () => {
 describe("getPlan", () => {
   it("returns the matching record", () => {
     expect(getPlan("operator").label).toBe("Operator");
+    expect(getPlan("pay_as_you_go").label).toBe("Free");
+    expect(getPlan("starter").label).toBe("Starter");
   });
 });
 
 describe("getPlanForFeePercentage", () => {
-  it("reverse-looks-up exact fee percentages", () => {
+  it("resolves the locked card rates to the right plans", () => {
     expect(getPlanForFeePercentage(0.10)?.id).toBe("pay_as_you_go");
+    expect(getPlanForFeePercentage(0.08)?.id).toBe("starter");
     expect(getPlanForFeePercentage(0.06)?.id).toBe("operator");
     expect(getPlanForFeePercentage(0.04)?.id).toBe("agency");
   });
 
   it("tolerates the NUMERIC(5,4) round-trip from Postgres", () => {
-    // Postgres NUMERIC(5,4) might come back as 0.1000000000001
     expect(getPlanForFeePercentage(0.0999999999)?.id).toBe("pay_as_you_go");
+    expect(getPlanForFeePercentage(0.0800000001)?.id).toBe("starter");
   });
 
   it("returns null for legacy custom rates", () => {
@@ -65,38 +114,62 @@ describe("getPlanForFeePercentage", () => {
   });
 });
 
+describe("computeApplicationFeeCents at plan rates", () => {
+  it("charges $25.00 / $20.00 / $15.00 on a $250.00 line", () => {
+    expect(
+      computeApplicationFeeCents(25000, PLANS.pay_as_you_go.feePercentage)
+    ).toBe(2500);
+    expect(computeApplicationFeeCents(25000, PLANS.starter.feePercentage)).toBe(
+      2000
+    );
+    expect(
+      computeApplicationFeeCents(25000, PLANS.operator.feePercentage)
+    ).toBe(1500);
+  });
+});
+
 describe("monthlySavingsAtSpend", () => {
-  // Cents conversion: $5K = 500_000 cents, $12.5K = 1_250_000, etc.
-  it("at $5K/mo PAYG beats Operator", () => {
+  it("at $5K/mo Free costs less than Operator", () => {
     const { monthlyCents } = monthlySavingsAtSpend(500_000, "pay_as_you_go", "operator");
-    // PAYG: 0 + 500_000 × 0.10 = 50_000
-    // Operator: 49_900 + 500_000 × 0.06 = 79_900
-    // Saving by switching to Operator: 50_000 - 79_900 = -29_900 (loss)
-    expect(monthlyCents).toBe(-29_900);
+    // Free: 500_000 × 0.10 = 50_000
+    // Operator: 29_900 + 500_000 × 0.06 = 59_900
+    // Saving by switching to Operator: 50_000 - 59_900 = -9_900
+    expect(monthlyCents).toBe(-9_900);
   });
 
-  it("at $12.5K/mo Operator and PAYG break even (within rounding)", () => {
+  it("at the $7,475 breakeven Free and Operator cost the same", () => {
+    const { monthlyCents } = monthlySavingsAtSpend(747_500, "pay_as_you_go", "operator");
+    expect(monthlyCents).toBe(0);
+  });
+
+  it("at $12.5K/mo Operator saves against Free", () => {
     const { monthlyCents } = monthlySavingsAtSpend(1_250_000, "pay_as_you_go", "operator");
-    // PAYG: 1_250_000 × 0.10 = 125_000
-    // Operator: 49_900 + 1_250_000 × 0.06 = 124_900
-    expect(monthlyCents).toBe(100); // within $1 of zero — the breakeven point
+    // Free: 125_000
+    // Operator: 29_900 + 75_000 = 104_900
+    expect(monthlyCents).toBe(20_100);
   });
 
-  it("at $20K/mo Operator clearly wins over PAYG", () => {
+  it("at $20K/mo Operator clearly wins over Free", () => {
     const { monthlyCents, annualCents } = monthlySavingsAtSpend(
       2_000_000,
       "pay_as_you_go",
       "operator"
     );
-    // PAYG: 200_000; Operator: 49_900 + 120_000 = 169_900; saving 30_100
-    expect(monthlyCents).toBe(30_100);
-    expect(annualCents).toBe(30_100 * 12);
+    // Free: 200_000; Operator: 29_900 + 120_000 = 149_900; saving 50_100
+    expect(monthlyCents).toBe(50_100);
+    expect(annualCents).toBe(50_100 * 12);
   });
 
   it("at $50K/mo savings are large", () => {
     const { monthlyCents } = monthlySavingsAtSpend(5_000_000, "pay_as_you_go", "operator");
-    // PAYG: 500_000; Operator: 49_900 + 300_000 = 349_900; saving 150_100
-    expect(monthlyCents).toBe(150_100);
+    // Free: 500_000; Operator: 29_900 + 300_000 = 329_900; saving 170_100
+    expect(monthlyCents).toBe(170_100);
+  });
+
+  it("compares Free with Starter at the Starter breakeven", () => {
+    const { monthlyCents } = monthlySavingsAtSpend(395_000, "pay_as_you_go", "starter");
+    // Free: 39_500; Starter: 7_900 + 31_600 = 39_500
+    expect(monthlyCents).toBe(0);
   });
 
   it("rejects negative spend", () => {
@@ -107,14 +180,18 @@ describe("monthlySavingsAtSpend", () => {
 });
 
 describe("breakevenSpendCents", () => {
-  it("PAYG vs Operator breakeven is $12,475", () => {
-    // base_op - base_payg = 49_900; fee_payg - fee_op = 0.04
-    // 49_900 / 0.04 = 1_247_500 cents = $12,475
+  it("Free vs Operator breakeven is $7,475", () => {
+    // 29_900 / 0.04 = 747_500 cents
     const breakeven = breakevenSpendCents("pay_as_you_go", "operator");
-    expect(breakeven).toBe(1_247_500);
+    expect(breakeven).toBe(747_500);
   });
 
-  it("PAYG vs Agency breakeven is far higher", () => {
+  it("Free vs Starter breakeven is $3,950", () => {
+    // 7_900 / 0.02 = 395_000 cents
+    expect(breakevenSpendCents("pay_as_you_go", "starter")).toBe(395_000);
+  });
+
+  it("Free vs Agency breakeven stays on the legacy agency base", () => {
     // 500_000 / 0.06 = 8_333_333 cents
     const breakeven = breakevenSpendCents("pay_as_you_go", "agency");
     expect(breakeven).toBe(8_333_333);

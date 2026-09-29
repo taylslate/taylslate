@@ -1,12 +1,61 @@
 # Taylslate Pricing Decisions
 
-*Locked April 28, 2026. Source of truth for the pricing model, the reasoning behind it, and the Wave 13 architectural requirements that follow from it.*
+*Locked 2026-09-28. This section is the source of truth. The April 28, 2026 tiers further down are superseded history.*
 
-This document is for engineering reference during Wave 13 build and beyond. For full strategic context, see `TAYLSLATE_CONTEXT.md` Section 4. For build-state and conventions, see `CLAUDE.md`.
+## Locked 2026-09-28
+
+Taylslate is priced brand-first and buyer-first. A brand pays to run campaigns. A show is free and pays no deal fee.
+
+The limit on a plan is how many campaigns can be active at once. Seats are not sold.
+
+### Public plans
+
+The Free plan id stays `pay_as_you_go` so existing `profiles.plan` rows keep resolving. The customer-facing label is Free.
+
+| Plan | Monthly price | Card fee | Bank transfer | Active campaigns |
+| --- | --- | --- | --- | --- |
+| Free | $0 | 10% | 7% | 1 |
+| Starter | $79 | 8% | 5% | 5 |
+| Operator | $299 | 6% | 3% | Unlimited |
+
+Starter's active-campaign limit was amended from 3 to 5 on 2026-09-28.
+
+`seatsIncluded` remains on the plan record as a soft cap in data only: Free 1, Starter 3, Operator 10. It is not enforced and not billed. `additionalSeatCents` is 0 on every plan.
+
+There is no public Agency tier. The Agency record stays in `lib/billing/plans.ts` and in the `profiles.plan` check constraint so legacy references still resolve. It is `public: false` and is excluded from upgrade options and pricing copy.
+
+### Bank transfer
+
+Bank rates live on the plan record as `bankFeePercentage`. They are data only. No charge path reads them, and paying by bank transfer is not built. Where the product shows a bank rate, the label is "Pay by bank transfer: X% (coming soon)" and the rate is not selectable.
+
+Above about $100k per month, custom bank-only pricing is a conversation, with a floor around 1.5%. That is not a self-serve plan.
+
+There is no card surcharge.
+
+### Who pays the platform fee
+
+The locked intent is that the brand pays the platform fee on top of the show's rate.
+
+The current charge path does not do that. Today the brand is charged the gross rate, and the platform fee is taken out of the show's transfer (`lib/stripe/payment-intent.ts` and `lib/payouts/transfer.ts`). Changing who bears the fee is a separate job. The rates in this section are the numbers that job will use. They are already the numbers `upgradeSubscription` and `finalizeDowngrade` write to `profiles.platform_fee_percentage`, which is what a card charge reads.
+
+### What is not built yet
+
+- Bank-transfer / ACH collection. The bank percentages above are stored and displayed as coming soon.
+- Enforcement of the active-campaign limits. The caps are data on the plan record only.
+- Seat enforcement and seat billing.
+- A public Agency tier, HubSpot, airchecks, or agent access. Those are outside this pricing change.
 
 ---
 
-## The Three Plans
+## Superseded — April 28, 2026
+
+The tiers below were the Wave 13 model: Pay-as-you-go at 10% with no subscription, Operator at $499/month + 6% with a $299 seat, and Agency at $5,000/month + 4%. They are history. Do not implement them. The locked section above replaces them.
+
+This document is for engineering reference. For full strategic context, see `TAYLSLATE_CONTEXT.md` Section 4. For build-state and conventions, see `CLAUDE.md`.
+
+---
+
+## The Three Plans (April 28, 2026 — superseded)
 
 ### Pay-as-you-go (Brand entry)
 - **10% transaction fee, no subscription**
