@@ -17,6 +17,9 @@ vi.mock("next/link", () => ({
     <a href={href}>{children}</a>
   ),
 }));
+vi.mock("next/image", () => ({
+  default: () => null,
+}));
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({ auth: { resetPasswordForEmail } }),
 }));

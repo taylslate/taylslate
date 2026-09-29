@@ -3,6 +3,13 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { tokens } from "@/lib/brand/tokens";
+import {
+  AuthShell,
+  inputClass,
+  labelClass,
+  primaryBtnClass,
+} from "@/components/auth/auth-shell";
 import {
   TurnstileWidget,
   type TurnstileHandle,
@@ -65,107 +72,83 @@ export default function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--brand-surface)] px-4">
-        <div className="w-full max-w-sm text-center">
-          <div className="w-14 h-14 rounded-2xl bg-[var(--brand-success)]/10 flex items-center justify-center mx-auto mb-5">
-            <svg
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--brand-success)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-              <polyline points="22 4 12 14.01 9 11.01" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-[var(--brand-text)] mb-2">
+      <AuthShell>
+        <div className="text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">
             Check your email
           </h1>
-          <p className="text-sm text-[var(--brand-text-secondary)] mb-6">
+          <p className="mt-3 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
             If <strong>{email}</strong> has a Taylslate account, a password reset
             link is on its way.
           </p>
           <Link
             href="/login"
-            className="text-sm text-[var(--brand-blue)] font-medium hover:underline"
+            className="mt-8 inline-block text-sm text-[var(--ts-accent)] hover:underline"
           >
             Back to login
           </Link>
         </div>
-      </div>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--brand-surface)] px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-[var(--brand-text)]">
-            Reset your password
-          </h1>
-          <p className="text-sm text-[var(--brand-text-secondary)] mt-2">
-            Enter your email and we&apos;ll send you a reset link.
-          </p>
-        </div>
-
-        <form
-          onSubmit={handleSubmit}
-          className="bg-[var(--brand-surface-elevated)] border border-[var(--brand-border)] rounded-2xl p-6 space-y-4"
-        >
-          {error && (
-            <div className="p-3 rounded-lg bg-[var(--brand-error)]/10 text-[var(--brand-error)] text-sm">
-              {error}
-            </div>
-          )}
-
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-[var(--brand-text)] mb-1.5"
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/40 focus:border-[var(--brand-blue)]"
-              placeholder="you@example.com"
-            />
-          </div>
-
-          <TurnstileWidget
-            ref={turnstileRef}
-            onVerify={setCaptchaToken}
-            onExpire={() => setCaptchaToken(undefined)}
-            onError={() => setCaptchaToken(undefined)}
-          />
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 bg-[var(--brand-blue)] text-white rounded-xl font-semibold hover:bg-[var(--brand-blue-light)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? "Sending..." : "Send reset link"}
-          </button>
-        </form>
-
-        <p className="text-center text-sm text-[var(--brand-text-secondary)] mt-6">
-          Remember your password?{" "}
-          <Link
-            href="/login"
-            className="text-[var(--brand-blue)] font-medium hover:underline"
-          >
-            Log in
-          </Link>
+    <AuthShell>
+      <div className="mb-8">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Reset your password
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
+          Enter your email and we&apos;ll send you a reset link.
         </p>
       </div>
-    </div>
+
+      {error ? (
+        <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label htmlFor="email" className={labelClass}>
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className={inputClass}
+            style={{ borderRadius: tokens.radius }}
+            placeholder="you@example.com"
+          />
+        </div>
+
+        <TurnstileWidget
+          ref={turnstileRef}
+          onVerify={setCaptchaToken}
+          onExpire={() => setCaptchaToken(undefined)}
+          onError={() => setCaptchaToken(undefined)}
+        />
+
+        <button
+          type="submit"
+          disabled={loading}
+          className={primaryBtnClass}
+          style={{ borderRadius: tokens.radius }}
+        >
+          {loading ? "Sending..." : "Send reset link"}
+        </button>
+      </form>
+
+      <p className="mt-8 text-sm text-[var(--ts-ink-muted-on-paper)]">
+        Remember your password?{" "}
+        <Link href="/login" className="text-[var(--ts-accent)] hover:underline">
+          Log in
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

@@ -14,6 +14,9 @@ vi.mock("next/link", () => ({
     <a href={href}>{children}</a>
   ),
 }));
+vi.mock("next/image", () => ({
+  default: () => null,
+}));
 // Sentinel — asserting the form component is (or isn't) rendered, without
 // pulling its client-side supabase dependency into this gate test.
 vi.mock("./reset-password-form", () => ({

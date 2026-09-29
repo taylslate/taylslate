@@ -5,7 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { tokens } from "@/lib/brand/tokens";
-import { MarketingChrome } from "@/components/marketing/marketing-chrome";
+import {
+  AuthShell,
+  inputClass,
+  labelClass,
+  primaryBtnClass,
+} from "@/components/auth/auth-shell";
 import {
   TurnstileWidget,
   type TurnstileHandle,
@@ -20,13 +25,6 @@ import {
   normalizeLoginEmail,
   LOGIN_MAGIC_NO_ACCOUNT,
 } from "@/lib/auth/login-magic";
-
-const inputClass =
-  "w-full border border-[var(--ts-ink-on-paper)]/15 bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:outline-none";
-const labelClass =
-  "mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper)]";
-const primaryBtnClass =
-  "w-full bg-[var(--ts-ink-on-paper)] py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 
 function LoginForm() {
   const router = useRouter();
@@ -253,29 +251,9 @@ function LoginForm() {
   );
 }
 
-function LoginShell({ children }: { children: React.ReactNode }) {
-  return (
-    <MarketingChrome
-      actions={
-        <Link
-          href="/signup"
-          className="hidden bg-[var(--ts-ink-on-paper)] px-3.5 py-1.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 sm:inline-flex"
-          style={{ borderRadius: tokens.radius }}
-        >
-          Get started
-        </Link>
-      }
-    >
-      <main className="flex flex-1 items-center justify-center px-6 py-16">
-        <div className="w-full max-w-sm">{children}</div>
-      </main>
-    </MarketingChrome>
-  );
-}
-
 export default function LoginPage() {
   return (
-    <LoginShell>
+    <AuthShell>
       <Suspense
         fallback={
           <p className="text-center text-sm text-[var(--ts-ink-muted-on-paper)]">
@@ -285,6 +263,6 @@ export default function LoginPage() {
       >
         <LoginForm />
       </Suspense>
-    </LoginShell>
+    </AuthShell>
   );
 }

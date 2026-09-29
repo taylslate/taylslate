@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
+import { AuthShell } from "@/components/auth/auth-shell";
 import { RECOVERY_COOKIE } from "@/lib/auth/recovery-cookie";
 import ResetPasswordForm from "./reset-password-form";
 
@@ -14,25 +15,29 @@ export default async function ResetPasswordPage() {
 
   if (!cameViaRecovery) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--brand-surface)] px-4">
-        <div className="w-full max-w-sm text-center">
-          <h1 className="text-2xl font-bold text-[var(--brand-text)] mb-2">
+      <AuthShell>
+        <div className="text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">
             Reset link invalid
           </h1>
-          <p className="text-sm text-[var(--brand-text-secondary)] mb-6">
+          <p className="mt-3 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
             This reset link is invalid or has expired. Request a new one to
             continue.
           </p>
           <Link
             href="/forgot-password"
-            className="text-sm text-[var(--brand-blue)] font-medium hover:underline"
+            className="mt-8 inline-block text-sm text-[var(--ts-accent)] hover:underline"
           >
             Request a new reset link
           </Link>
         </div>
-      </div>
+      </AuthShell>
     );
   }
 
-  return <ResetPasswordForm />;
+  return (
+    <AuthShell>
+      <ResetPasswordForm />
+    </AuthShell>
+  );
 }

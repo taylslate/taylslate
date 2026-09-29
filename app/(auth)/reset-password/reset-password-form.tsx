@@ -3,6 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { tokens } from "@/lib/brand/tokens";
+import {
+  inputClass,
+  labelClass,
+  primaryBtnClass,
+} from "@/components/auth/auth-shell";
 import { validateNewPassword } from "./validate";
 import { clearRecoveryCookie } from "./actions";
 
@@ -47,74 +53,66 @@ export default function ResetPasswordForm() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--brand-surface)] px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-[var(--brand-text)]">
-            Set a new password
-          </h1>
-          <p className="text-sm text-[var(--brand-text-secondary)] mt-2">
-            Choose a new password for your account.
-          </p>
+    <>
+      <div className="mb-8">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Set a new password
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
+          Choose a new password for your account.
+        </p>
+      </div>
+
+      {error ? (
+        <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label htmlFor="new-password" className={labelClass}>
+            New password
+          </label>
+          <input
+            id="new-password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+            className={inputClass}
+            style={{ borderRadius: tokens.radius }}
+            placeholder="At least 8 characters"
+          />
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="bg-[var(--brand-surface-elevated)] border border-[var(--brand-border)] rounded-2xl p-6 space-y-4"
+        <div>
+          <label htmlFor="confirm-password" className={labelClass}>
+            Confirm password
+          </label>
+          <input
+            id="confirm-password"
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            required
+            minLength={8}
+            className={inputClass}
+            style={{ borderRadius: tokens.radius }}
+            placeholder="Re-enter your new password"
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className={primaryBtnClass}
+          style={{ borderRadius: tokens.radius }}
         >
-          {error && (
-            <div className="p-3 rounded-lg bg-[var(--brand-error)]/10 text-[var(--brand-error)] text-sm">
-              {error}
-            </div>
-          )}
-
-          <div>
-            <label
-              htmlFor="new-password"
-              className="block text-sm font-medium text-[var(--brand-text)] mb-1.5"
-            >
-              New password
-            </label>
-            <input
-              id="new-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/40 focus:border-[var(--brand-blue)]"
-              placeholder="At least 8 characters"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="confirm-password"
-              className="block text-sm font-medium text-[var(--brand-text)] mb-1.5"
-            >
-              Confirm password
-            </label>
-            <input
-              id="confirm-password"
-              type="password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              required
-              minLength={8}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/40 focus:border-[var(--brand-blue)]"
-              placeholder="Re-enter your new password"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 bg-[var(--brand-blue)] text-white rounded-xl font-semibold hover:bg-[var(--brand-blue-light)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? "Updating..." : "Update password"}
-          </button>
-        </form>
-      </div>
-    </div>
+          {loading ? "Updating..." : "Update password"}
+        </button>
+      </form>
+    </>
   );
 }

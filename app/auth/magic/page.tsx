@@ -6,6 +6,7 @@
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { AuthShell } from "@/components/auth/auth-shell";
 
 const ERROR_MESSAGES: Record<string, string> = {
   missing_token: "This link is missing its token. Ask the brand to resend the invite.",
@@ -23,15 +24,15 @@ function MagicMessage() {
   if (error) {
     return (
       <>
-        <h1 className="text-2xl font-bold text-[var(--brand-text)] mb-3">
+        <h1 className="text-2xl font-semibold tracking-tight">
           Something went wrong
         </h1>
-        <p className="text-sm text-[var(--brand-text-secondary)] mb-6">
+        <p className="mt-3 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
           {ERROR_MESSAGES[error] ?? "Unknown error. Please try again."}
         </p>
         <Link
           href="/"
-          className="text-sm text-[var(--brand-blue)] hover:underline font-medium"
+          className="mt-8 inline-block text-sm text-[var(--ts-accent)] hover:underline"
         >
           Back to home
         </Link>
@@ -42,14 +43,14 @@ function MagicMessage() {
   if (sent) {
     return (
       <>
-        <h1 className="text-2xl font-bold text-[var(--brand-text)] mb-3">
+        <h1 className="text-2xl font-semibold tracking-tight">
           Check your email
         </h1>
-        <p className="text-sm text-[var(--brand-text-secondary)] mb-2">
+        <p className="mt-3 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
           We sent you a sign-in link. Click it to set up your account and respond
           to the pitch.
         </p>
-        <p className="text-xs text-[var(--brand-text-muted)]">
+        <p className="mt-2 text-xs text-[var(--ts-ink-muted-on-paper)]">
           The link expires in 24 hours.
         </p>
       </>
@@ -58,10 +59,8 @@ function MagicMessage() {
 
   return (
     <>
-      <h1 className="text-2xl font-bold text-[var(--brand-text)] mb-3">
-        One sec…
-      </h1>
-      <p className="text-sm text-[var(--brand-text-secondary)]">
+      <h1 className="text-2xl font-semibold tracking-tight">One sec…</h1>
+      <p className="mt-3 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
         Verifying your link.
       </p>
     </>
@@ -70,16 +69,18 @@ function MagicMessage() {
 
 export default function MagicLandingPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--brand-surface)] px-4">
-      <div className="w-full max-w-md text-center bg-[var(--brand-surface-elevated)] border border-[var(--brand-border)] rounded-2xl p-8">
+    <AuthShell>
+      <div className="text-center">
         <Suspense
           fallback={
-            <p className="text-sm text-[var(--brand-text-secondary)]">Loading…</p>
+            <p className="text-sm text-[var(--ts-ink-muted-on-paper)]">
+              Loading…
+            </p>
           }
         >
           <MagicMessage />
         </Suspense>
       </div>
-    </div>
+    </AuthShell>
   );
 }

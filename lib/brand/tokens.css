@@ -1,7 +1,8 @@
 /*
   Shared visual tokens.
 
-  Homepage, /login, the authenticated dashboard chrome (layout +
+  Homepage, /login, /signup, /forgot-password, /reset-password,
+  /auth/magic, the authenticated dashboard chrome (layout +
   sidebar + /dashboard), the /campaigns list, /campaigns/new
   (returning check-in + brief), /campaigns/[id]/interpretation,
   the v2 conviction discovery view at /campaigns/[id], the media
@@ -10,9 +11,12 @@
   detail at /deals/[id] (Wave 12 sign flow and the legacy edit),
   and brand settings at /settings, /settings/brand-profile, and
   /settings/billing use these.
-  Signup, onboarding, legacy campaign detail and discovery list,
-  the public pitch page, /deals/new, /deals/import, /deals/[id]/io,
-  and invoices still use --brand-* in globals.css.
+
+  Still on --brand-* in globals.css: the onboarding role picker,
+  /onboarding/brand/*, /onboarding/show/*, /shows, /deals/new,
+  /deals/import, /deals/[id]/io, invoices, legacy campaign detail
+  and discovery list, /campaigns/generated, and the public pitch
+  page.
 
   Accent is copper only. Do not add a second accent.
 */

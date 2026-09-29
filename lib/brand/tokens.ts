@@ -2,8 +2,9 @@
  * Shared visual tokens for Taylslate marketing and dashboard chrome.
  *
  * Values live in tokens.css as CSS variables. Import this module instead of
- * copying hex. Applied on homepage, /login, the authenticated dashboard
- * shell (layout + sidebar + /dashboard), the /campaigns list,
+ * copying hex. Applied on homepage, /login, /signup, /forgot-password,
+ * /reset-password, /auth/magic, the authenticated dashboard shell
+ * (layout + sidebar + /dashboard), the /campaigns list,
  * /campaigns/new (returning check-in + brief),
  * /campaigns/[id]/interpretation, the v2 conviction discovery
  * view at /campaigns/[id], the media plan at /campaigns/[id]/plan,
@@ -11,9 +12,10 @@
  * /deals, deal detail at /deals/[id] (Wave 12 sign flow and
  * the legacy edit), and brand settings at /settings,
  * /settings/brand-profile, and /settings/billing.
- * Signup, onboarding, legacy campaign detail and discovery list,
- * the public pitch page, /deals/new, /deals/import, /deals/[id]/io,
- * and invoices still use --brand-* until those restyles land.
+ * Still on --brand-* in globals.css: the onboarding role picker,
+ * /onboarding/brand/*, /onboarding/show/*, /shows, /deals/new,
+ * /deals/import, /deals/[id]/io, invoices, legacy campaign detail
+ * and discovery list, /campaigns/generated, and the public pitch page.
  */
 export const tokens = {
   field: "var(--ts-field)",

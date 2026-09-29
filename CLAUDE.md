@@ -114,19 +114,20 @@ Complete type system in `lib/data/types.ts`. Core entities: Show, BrandProfile, 
 
 ## Design System
 
-Colors use CSS custom properties from `globals.css` — never hardcode:
-- `--brand-navy` / `-light` — dark backgrounds (landing)
-- `--brand-blue` / `-light` — primary action
-- `--brand-teal` / `-light` — secondary accent
-- `--brand-orange` — tertiary accent (sponsor badges)
-- `--brand-surface` / `-elevated` — light backgrounds (dashboard)
-- `--brand-border` · `--brand-text` / `-secondary` / `-muted` · `--brand-success` / `-warning` / `-error`
+Paper/ink is the lock. Tokens live in `lib/brand/tokens.css` and `lib/brand/tokens.ts` (paper `#f2ebe1`, ink `#1c1915`, accent `#c17a45`).
 
-Dashboard = light theme. Landing + public pitch pages = dark / brand-forward.
+- `--ts-paper` — page field
+- `--ts-ink-on-paper` — primary text; primary buttons are ink fill with paper text
+- `--ts-ink-muted-on-paper` — secondary text
+- `--ts-accent` — copper, the only accent. Never add a second accent.
+- `--ts-hairline-on-paper` — borders
+- `--ts-radius` — 4px
+
+New and restyled surfaces use `--ts-*` tokens only. `--brand-*` in `globals.css` is legacy, kept only for surfaces not yet restyled, and must not be used in new work.
 
 ## Conventions
 
-- Use `var(--brand-*)` for colors, not hardcoded values.
+- Use `var(--ts-*)` from `lib/brand/tokens.css` / `lib/brand/tokens.ts` for colors. `--brand-*` in `globals.css` is legacy and must not be used in new or restyled work.
 - File naming: lowercase-with-hyphens for files, PascalCase for components.
 - Monetary values in USD as numbers (not strings). Dates as ISO strings, displayed via `toLocaleDateString()`.
 - Build clean, MCP-ready-shaped API endpoints from day one. Schemas / forms must match real-world industry documents.

@@ -14,6 +14,9 @@ const { mockPush, mockRefresh, updateUser, clearRecoveryCookie } = vi.hoisted(()
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush, refresh: mockRefresh }),
 }));
+vi.mock("next/image", () => ({
+  default: () => null,
+}));
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({ auth: { updateUser } }),
 }));
