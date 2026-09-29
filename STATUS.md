@@ -4,7 +4,7 @@ _Volatile snapshot. Updated Sep 16, 2026. **Since Sep 8, a discovery-data workst
 
 ## Most recent — aircheck step 1: store an episode transcript (Sep 29, 2026)
 
-`POST /api/admin/aircheck` (internal admin) resolves one IO line from `io_line_items.episode_url` and the show's `rss_url`, then stores a transcript on `airchecks`. It does not mark the line delivered and does not charge. Podscan's enclosure lookup supplies an existing transcript when it has one (`provider = podscan`). `AIRCHECK_TRANSCRIPTION_PROVIDER` defaults to off; set it plus `AIRCHECK_TRANSCRIPTION_URL` to POST the audio to an existing transcription API. Migration **037 is not applied** — paste `supabase/migrations/037_airchecks.sql` into the SQL editor. No matching and no review screen.
+`POST /api/admin/aircheck` (internal admin) resolves one IO line from `io_line_items.episode_url` and the show's `rss_url`, then stores a transcript on `airchecks`. It does not mark the line delivered and does not charge. Podscan's enclosure lookup supplies an existing transcript when it has one (`provider = podscan`). `AIRCHECK_TRANSCRIPTION_PROVIDER` defaults to off; set it plus `AIRCHECK_TRANSCRIPTION_URL` to POST the audio to an existing transcription API. Migration **038 is not applied** — paste `supabase/migrations/038_airchecks.sql` into the SQL editor. No matching and no review screen.
 
 ## Podscan data audit (read-only, July 23, 2026) — what we consume vs. what's null in prod
 
