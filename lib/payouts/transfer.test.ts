@@ -123,46 +123,72 @@ describe("transferPayoutForPayment — settle gate (load-bearing financial invar
     expect(stripe.paymentIntents.retrieve).not.toHaveBeenCalled();
   });
 
-  it("transfers the show net (amount_charged - application_fee) when settled, funded by the charge", async () => {
+  it.each([
+    { label: "10%", charged: 27500, fee: 2500 },
+    { label: "8%", charged: 27000, fee: 2000 },
+    { label: "6%", charged: 26500, fee: 1500 },
+  ])(
+    "transfers the full $250 gross on a settled $250 line at $label (brand paid the fee on top)",
+    async ({ charged, fee }) => {
+      setPayment({
+        id: "pay_2",
+        deal_id: "deal_2",
+        io_line_item_id: "li_2",
+        stripe_payment_intent_id: "pi_pay_2",
+        amount_charged_cents: charged,
+        application_fee_amount_cents: fee,
+        gross_amount_cents: 25000,
+        settled_at: SETTLED_AT,
+      });
+      setExistingPayout(null);
+      setDeal({ id: "deal_2", show_profile_id: "sp_2" });
+      setShowProfile({ id: "sp_2", user_id: "user_2" });
+      setProfile({ id: "user_2", stripe_connect_account_id: "acct_show_2" });
+
+      const result = await transferPayoutForPayment("pay_2");
+
+      expect(stripe.paymentIntents.retrieve).toHaveBeenCalledWith("pi_pay_2");
+      expect(stripe.transfers.create).toHaveBeenCalledTimes(1);
+      const [args, opts] = stripe.transfers.create.mock.calls[0];
+      expect(args).toMatchObject({
+        amount: 25000,
+        currency: "usd",
+        destination: "acct_show_2",
+        // Funded by the brand's charge, never the platform balance.
+        source_transaction: "ch_test_1",
+        transfer_group: "deal_2",
+      });
+      expect(opts).toMatchObject({ idempotencyKey: "transfer:v2:pay_2" });
+      expect(result).toEqual({
+        payoutId: "po_persisted_1",
+        stripeTransferId: "tr_test_123",
+        amountCents: 25000,
+      });
+      expect(payoutInsertCapture.value).toMatchObject({
+        payment_id: "pay_2",
+        stripe_transfer_id: "tr_test_123",
+        amount_cents: 25000,
+        early_payout_fee_cents: 0,
+      });
+    }
+  );
+
+  it("refuses to transfer when the IO gross was not snapshotted", async () => {
     setPayment({
-      id: "pay_2",
+      id: "pay_missing_gross",
       deal_id: "deal_2",
       io_line_item_id: "li_2",
       stripe_payment_intent_id: "pi_pay_2",
-      amount_charged_cents: 25000, // $250 charged
-      application_fee_amount_cents: 2500, // 10% PAYG
+      amount_charged_cents: 27500,
+      application_fee_amount_cents: 2500,
+      gross_amount_cents: null,
       settled_at: SETTLED_AT,
     });
-    setExistingPayout(null);
-    setDeal({ id: "deal_2", show_profile_id: "sp_2" });
-    setShowProfile({ id: "sp_2", user_id: "user_2" });
-    setProfile({ id: "user_2", stripe_connect_account_id: "acct_show_2" });
 
-    const result = await transferPayoutForPayment("pay_2");
-
-    expect(stripe.paymentIntents.retrieve).toHaveBeenCalledWith("pi_pay_2");
-    expect(stripe.transfers.create).toHaveBeenCalledTimes(1);
-    const [args, opts] = stripe.transfers.create.mock.calls[0];
-    expect(args).toMatchObject({
-      amount: 22500, // $225 net (25000 - 2500)
-      currency: "usd",
-      destination: "acct_show_2",
-      // Funded by the brand's charge, never the platform balance.
-      source_transaction: "ch_test_1",
-      transfer_group: "deal_2",
-    });
-    expect(opts).toMatchObject({ idempotencyKey: "transfer:v2:pay_2" });
-    expect(result).toEqual({
-      payoutId: "po_persisted_1",
-      stripeTransferId: "tr_test_123",
-      amountCents: 22500,
-    });
-    expect(payoutInsertCapture.value).toMatchObject({
-      payment_id: "pay_2",
-      stripe_transfer_id: "tr_test_123",
-      amount_cents: 22500,
-      early_payout_fee_cents: 0,
-    });
+    await expect(transferPayoutForPayment("pay_missing_gross")).rejects.toThrow(
+      /gross_amount_cents/
+    );
+    expect(stripe.transfers.create).not.toHaveBeenCalled();
   });
 
   it("is idempotent — returns existing payout and skips Stripe when one already exists", async () => {
@@ -171,8 +197,9 @@ describe("transferPayoutForPayment — settle gate (load-bearing financial invar
       deal_id: "deal_3",
       io_line_item_id: "li_3",
       stripe_payment_intent_id: "pi_pay_3",
-      amount_charged_cents: 25000,
+      amount_charged_cents: 26500,
       application_fee_amount_cents: 1500,
+      gross_amount_cents: 25000,
       settled_at: SETTLED_AT,
     });
     setExistingPayout({
@@ -199,8 +226,9 @@ describe("transferPayoutForPayment — settle gate (load-bearing financial invar
       deal_id: "deal_4",
       io_line_item_id: "li_4",
       stripe_payment_intent_id: "pi_pay_4",
-      amount_charged_cents: 10000,
+      amount_charged_cents: 11000,
       application_fee_amount_cents: 1000,
+      gross_amount_cents: 10000,
       settled_at: SETTLED_AT,
     });
     setExistingPayout(null);
@@ -220,8 +248,9 @@ describe("transferPayoutForPayment — settle gate (load-bearing financial invar
       deal_id: "deal_5",
       io_line_item_id: "li_5",
       stripe_payment_intent_id: null,
-      amount_charged_cents: 10000,
+      amount_charged_cents: 11000,
       application_fee_amount_cents: 1000,
+      gross_amount_cents: 10000,
       settled_at: SETTLED_AT,
     });
 
@@ -238,8 +267,9 @@ describe("transferPayoutForPayment — settle gate (load-bearing financial invar
       deal_id: "deal_6",
       io_line_item_id: "li_6",
       stripe_payment_intent_id: "pi_pay_6",
-      amount_charged_cents: 10000,
+      amount_charged_cents: 11000,
       application_fee_amount_cents: 1000,
+      gross_amount_cents: 10000,
       settled_at: SETTLED_AT,
     });
     setExistingPayout(null);
@@ -263,8 +293,9 @@ describe("transferPayoutForPayment — settle gate (load-bearing financial invar
       deal_id: "deal_7",
       io_line_item_id: "li_7",
       stripe_payment_intent_id: "pi_pay_7",
-      amount_charged_cents: 10000,
+      amount_charged_cents: 11000,
       application_fee_amount_cents: 1000,
+      gross_amount_cents: 10000,
       settled_at: SETTLED_AT,
     });
     setExistingPayout(null);
@@ -284,14 +315,15 @@ describe("transferPayoutForPayment — settle gate (load-bearing financial invar
 });
 
 describe("transferEarlyPayoutForPayment — fee math + double-payout protection", () => {
-  it("applies the 2.5% early-payout fee to the show net", async () => {
+  it("applies the 2.5% early-payout fee to the full IO gross", async () => {
     setPayment({
       id: "pay_e1",
       deal_id: "deal_e1",
       io_line_item_id: "li_e1",
       stripe_payment_intent_id: "pi_pay_e1",
-      amount_charged_cents: 25000, // $250 charged
-      application_fee_amount_cents: 2500, // platform fee, 10%
+      amount_charged_cents: 27500, // $275 charged (gross + 10%)
+      application_fee_amount_cents: 2500,
+      gross_amount_cents: 25000,
       settled_at: SETTLED_AT,
     });
     setExistingPayout(null);
@@ -301,18 +333,18 @@ describe("transferEarlyPayoutForPayment — fee math + double-payout protection"
 
     const result = await transferEarlyPayoutForPayment("pay_e1", 0.025);
 
-    // Show net = 25000 - 2500 = 22500
-    // Early fee = round(22500 * 0.025) = 563
-    // Transfer = 22500 - 563 = 21937
+    // Show gross = 25000
+    // Early fee = round(25000 * 0.025) = 625
+    // Transfer = 25000 - 625 = 24375
     const [args, opts] = stripe.transfers.create.mock.calls[0];
-    expect(args.amount).toBe(21937);
+    expect(args.amount).toBe(24375);
     expect(args.source_transaction).toBe("ch_test_1");
     expect(opts).toMatchObject({ idempotencyKey: "transfer-early:v2:pay_e1" });
-    expect(result.amountCents).toBe(21937);
+    expect(result.amountCents).toBe(24375);
     expect(payoutInsertCapture.value).toMatchObject({
       payment_id: "pay_e1",
-      amount_cents: 21937,
-      early_payout_fee_cents: 563,
+      amount_cents: 24375,
+      early_payout_fee_cents: 625,
     });
   });
 
@@ -322,8 +354,9 @@ describe("transferEarlyPayoutForPayment — fee math + double-payout protection"
       deal_id: "deal_e2",
       io_line_item_id: "li_e2",
       stripe_payment_intent_id: "pi_pay_e2",
-      amount_charged_cents: 25000,
+      amount_charged_cents: 27500,
       application_fee_amount_cents: 2500,
+      gross_amount_cents: 25000,
       settled_at: SETTLED_AT,
     });
     setExistingPayout({

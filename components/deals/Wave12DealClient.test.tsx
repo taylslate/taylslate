@@ -128,6 +128,31 @@ describe("Wave12DealClient payment method card", () => {
     expect(screen.queryByRole("button", { name: /add card on file/i })).not.toBeInTheDocument();
   });
 
+  it("shows the brand the IO rate plus the platform fee on top", () => {
+    render(
+      <Wave12DealClient
+        deal={baseDeal}
+        showName="The Daily Build"
+        brandName="Aurora Sleep"
+        viewerRole="brand"
+        episodeCharge={{
+          grossCents: 25000,
+          feeCents: 2500,
+          chargedCents: 27500,
+          feePercentage: 0.1,
+        }}
+      />
+    );
+
+    expect(screen.getByText("$275.00")).toBeInTheDocument();
+    expect(
+      screen.getByText("$250.00 IO rate plus 10% platform fee on top.")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/IO rate plus the platform fee on top/i)
+    ).toBeInTheDocument();
+  });
+
   it("does not show brand payment setup to the show viewer", () => {
     renderDeal({}, "show");
 

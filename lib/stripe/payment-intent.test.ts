@@ -181,18 +181,18 @@ describe("chargeForEpisode", () => {
     stripe.paymentIntents.create.mockResolvedValue({
       id: "pi_test_1",
       status: "succeeded",
-      amount: 25000,
+      amount: 27500,
     });
   });
 
-  it("computes the platform fee from the brand's CURRENT platform_fee_percentage and snapshots it onto the payments row — never onto the Stripe PI", async () => {
+  it("charges a $250 line at 10% as $275, snapshots a $25 fee, and keeps the $250 gross", async () => {
     const result = await chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" });
 
     // Stripe was called with the right shape — the load-bearing assertion.
     expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
     const [createArg, createOpts] = stripe.paymentIntents.create.mock.calls[0];
     expect(createArg).toMatchObject({
-      amount: 25000,
+      amount: 27500,
       currency: "usd",
       customer: "cus_brand_1",
       payment_method: "pm_deal_card",
@@ -201,8 +201,10 @@ describe("chargeForEpisode", () => {
     });
     // SEPARATE CHARGES & TRANSFERS: application_fee_amount is only legal
     // on direct/destination charges — Stripe rejects it on a
-    // platform-account PI. The fee must NOT be in the create params.
+    // platform-account PI. The fee must NOT be in the create params,
+    // and neither is transfer_data.
     expect(createArg.application_fee_amount).toBeUndefined();
+    expect(createArg.transfer_data).toBeUndefined();
     expect(createArg.metadata).toMatchObject({
       deal_id: "deal_1",
       io_line_item_id: "li_1",
@@ -210,25 +212,27 @@ describe("chargeForEpisode", () => {
       application_fee_amount_cents: "2500",
     });
     // Idempotency key collapses retries on (deal_id, io_line_item_id).
-    // v2: the v1 key shape carried application_fee_amount in its params.
-    expect(createOpts).toMatchObject({ idempotencyKey: "pi:v2:deal_1:li_1" });
+    // v3: the amount is gross + fee. v2 charged the gross alone.
+    expect(createOpts).toMatchObject({ idempotencyKey: "pi:v3:deal_1:li_1" });
 
-    // payments row carries the snapshot.
+    // payments row carries the snapshot. amount is the legacy dollar gross.
     const paymentsBuilder = supabaseAdmin._builders.payments_insert;
     expect(paymentsBuilder._inserted()).toMatchObject({
       deal_id: "deal_1",
       io_line_item_id: "li_1",
       stripe_payment_intent_id: "pi_test_1",
-      amount_charged_cents: 25000,
+      amount_charged_cents: 27500,
       application_fee_amount_cents: 2500,
       platform_fee_percentage_at_charge: 0.10,
+      gross_amount_cents: 25000,
+      amount: 250,
       status: "succeeded",
     });
 
     expect(result).toMatchObject({
       paymentId: "pay_row_1",
       stripePaymentIntentId: "pi_test_1",
-      amountChargedCents: 25000,
+      amountChargedCents: 27500,
       applicationFeeAmountCents: 2500,
       platformFeePercentageAtCharge: 0.10,
       status: "succeeded",
@@ -240,7 +244,31 @@ describe("chargeForEpisode", () => {
     );
   });
 
-  it("uses the brand's Operator rate (6%) when platform_fee_percentage = 0.06", async () => {
+  it("charges a $250 line at 8% as $270 and snapshots a $20 fee", async () => {
+    supabaseTables.profiles.row = {
+      id: "user_brand_1",
+      email: "brand@example.com",
+      stripe_customer_id: "cus_brand_1",
+      platform_fee_percentage: "0.08",
+    };
+
+    await chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" });
+
+    const [createArg] = stripe.paymentIntents.create.mock.calls[0];
+    expect(createArg.amount).toBe(27000);
+    expect(createArg.application_fee_amount).toBeUndefined();
+    expect(createArg.transfer_data).toBeUndefined();
+    expect(createArg.metadata.application_fee_amount_cents).toBe("2000");
+    const paymentsBuilder = supabaseAdmin._builders.payments_insert;
+    expect(paymentsBuilder._inserted()).toMatchObject({
+      amount_charged_cents: 27000,
+      application_fee_amount_cents: 2000,
+      platform_fee_percentage_at_charge: 0.08,
+      gross_amount_cents: 25000,
+    });
+  });
+
+  it("charges a $250 line at 6% as $265 and snapshots a $15 fee", async () => {
     supabaseTables.profiles.row = {
       id: "user_brand_1",
       email: "brand@example.com",
@@ -251,12 +279,16 @@ describe("chargeForEpisode", () => {
     await chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" });
 
     const [createArg] = stripe.paymentIntents.create.mock.calls[0];
+    expect(createArg.amount).toBe(26500);
     expect(createArg.application_fee_amount).toBeUndefined();
+    expect(createArg.transfer_data).toBeUndefined();
     expect(createArg.metadata.application_fee_amount_cents).toBe("1500");
     const paymentsBuilder = supabaseAdmin._builders.payments_insert;
     expect(paymentsBuilder._inserted()).toMatchObject({
+      amount_charged_cents: 26500,
       application_fee_amount_cents: 1500,
       platform_fee_percentage_at_charge: 0.06,
+      gross_amount_cents: 25000,
     });
   });
 

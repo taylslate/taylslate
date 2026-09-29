@@ -164,8 +164,9 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   const audience = showProfile.audience_size ?? 0;
   const cpm = deal.agreed_cpm;
   // Rounded to cents at the per-episode level: gross_rate persists into a
-  // DECIMAL(10,2) column and is the exact amount chargeForEpisode later bills,
-  // so the PDF, the DB row, and the charge must all quote the same figure.
+  // DECIMAL(10,2) column and is the IO rate chargeForEpisode bills the fee
+  // on top of. The PDF table, the DB row, and that gross must quote the
+  // same figure. The brand's card is charged this rate plus the fee.
   const grossPerEp = Math.round((audience / 1000) * cpm * 100) / 100;
 
   const postDates = derivePostDates(
@@ -198,7 +199,7 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
       // Wave12 deals are always CPM-priced (createWave12Deal writes 'cpm');
       // the Wave12Deal type carries no price_type field to read from.
       price_type: "cpm",
-      net_due: grossPerEp, // net = gross: the platform fee comes out of the charge, not on top
+      net_due: grossPerEp, // show is paid the IO rate; the brand's fee is on top of it
       verified: false,
       make_good_triggered: false,
     });
@@ -447,7 +448,7 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   doc.setTextColor(...TEXT);
 
   const terms: [string, string][] = [
-    ["Payment", "Pay-as-delivers via Taylslate. Each verified episode triggers a charge against the brand's card on file. Show payouts follow each charge."],
+    ["Payment", "Pay-as-delivers via Taylslate. Each verified episode charges the brand the rate on this IO plus the platform fee on top. The show is paid the full rate on this IO."],
     ["Exclusivity", "90 days competitor exclusivity from first air date in the brand's stated category."],
     ["ROFR", "30-day right of first refusal on renewed placements at the same CPM."],
     ["Cancellation", "14 business days written notice required prior to next scheduled post date."],

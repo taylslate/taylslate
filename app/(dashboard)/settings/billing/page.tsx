@@ -81,6 +81,7 @@ export default async function BillingSettingsPage() {
             <div className={`mt-1 font-semibold ${inkText}`}>
               {formatPct(snapshot.platformFeePercentage)}
             </div>
+            <p className={`mt-1 text-xs ${mutedText}`}>on top of the show rate</p>
           </div>
           <div>
             <div className={`text-xs uppercase tracking-wide ${mutedText}`}>

@@ -31,6 +31,28 @@ interface Props {
    * nothing in that case. Read-only for both roles (the show pastes it).
    */
   showNotesBlurb?: string | null;
+  /**
+   * What the brand's card is charged for one episode: the IO rate plus
+   * the platform fee. Null when the show has no audience yet, or when
+   * the viewer is the show. The show is paid the IO rate.
+   */
+  episodeCharge?: {
+    grossCents: number;
+    feeCents: number;
+    chargedCents: number;
+    feePercentage: number;
+  } | null;
+}
+
+function formatChargeUsd(cents: number): string {
+  return `$${(cents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatFeePct(pct: number): string {
+  return `${(pct * 100).toFixed(0)}%`;
 }
 
 const STATUS_LABEL: Record<Wave12DealStatus, string> = {
@@ -155,6 +177,7 @@ export default function Wave12DealClient({
   viewerRole,
   trackingLink,
   showNotesBlurb,
+  episodeCharge = null,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -475,6 +498,18 @@ export default function Wave12DealClient({
                 label="Flight"
                 value={`${formatDateOnly(deal.agreed_flight_start)} – ${formatDateOnly(deal.agreed_flight_end)}`}
               />
+              {viewerRole === "brand" && episodeCharge && (
+                <>
+                  <Term
+                    label="Charged / episode"
+                    value={formatChargeUsd(episodeCharge.chargedCents)}
+                  />
+                  <p className={`col-span-2 text-xs ${mutedText}`}>
+                    {formatChargeUsd(episodeCharge.grossCents)} IO rate plus{" "}
+                    {formatFeePct(episodeCharge.feePercentage)} platform fee on top.
+                  </p>
+                </>
+              )}
             </dl>
           </div>
 
@@ -634,6 +669,7 @@ export default function Wave12DealClient({
                   {activeCardSecret ? (
                     <p className={`text-sm ${mutedText}`}>
                       Add the card Taylslate should charge as each episode is verified.
+                      The charge is the IO rate plus the platform fee on top.
                     </p>
                   ) : (
                     <p className={`text-sm ${mutedText}`}>

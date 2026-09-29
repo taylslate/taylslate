@@ -13,9 +13,11 @@
 //   show — Taylslate would be on the hook for the float. Never bypass.
 //
 // Money math:
-//   amount_to_show = payments.amount_charged_cents - payments.application_fee_amount_cents
-//   (the show's net after Taylslate's platform fee, snapshotted at
-//   charge time on the payments row).
+//   amount_to_show = payments.gross_amount_cents
+//   (the IO rate, snapshotted at charge time). The brand was charged
+//   that gross plus the platform fee. The fee stays on the platform
+//   balance. Do not subtract application_fee_amount_cents — that would
+//   take the fee out of the show.
 //
 // Funding (zero-float, part 2):
 //   Every transfer passes `source_transaction` = the charge that funds
@@ -54,6 +56,7 @@ interface PaymentRow {
   stripe_payment_intent_id: string | null;
   amount_charged_cents: number | null;
   application_fee_amount_cents: number | null;
+  gross_amount_cents: number | null;
   settled_at: string | null;
 }
 
@@ -83,7 +86,7 @@ async function loadPayment(paymentId: string): Promise<PaymentRow> {
   const { data, error } = await supabaseAdmin
     .from("payments")
     .select(
-      "id,deal_id,io_line_item_id,stripe_payment_intent_id,amount_charged_cents,application_fee_amount_cents,settled_at"
+      "id,deal_id,io_line_item_id,stripe_payment_intent_id,amount_charged_cents,application_fee_amount_cents,gross_amount_cents,settled_at"
     )
     .eq("id", paymentId)
     .single<PaymentRow>();
@@ -180,10 +183,11 @@ export async function transferPayoutForPayment(
 
   if (
     payment.amount_charged_cents == null ||
-    payment.application_fee_amount_cents == null
+    payment.application_fee_amount_cents == null ||
+    payment.gross_amount_cents == null
   ) {
     throw new Error(
-      `Payment ${paymentId} is settled but missing charge amounts (amount_charged_cents=${payment.amount_charged_cents}, application_fee_amount_cents=${payment.application_fee_amount_cents})`
+      `Payment ${paymentId} is settled but missing charge amounts (amount_charged_cents=${payment.amount_charged_cents}, application_fee_amount_cents=${payment.application_fee_amount_cents}, gross_amount_cents=${payment.gross_amount_cents})`
     );
   }
   if (!payment.deal_id) {
@@ -199,11 +203,10 @@ export async function transferPayoutForPayment(
     );
   }
 
-  const showNetCents =
-    payment.amount_charged_cents - payment.application_fee_amount_cents;
-  if (showNetCents <= 0) {
+  const showGrossCents = payment.gross_amount_cents;
+  if (showGrossCents <= 0) {
     throw new Error(
-      `Payment ${paymentId} has non-positive show net (${showNetCents}); refusing transfer`
+      `Payment ${paymentId} has non-positive show gross (${showGrossCents}); refusing transfer`
     );
   }
 
@@ -233,7 +236,7 @@ export async function transferPayoutForPayment(
   // the create-params shape below MUST bump the version segment (v2 → v3).
   const transfer = (await stripe.transfers.create(
     {
-      amount: showNetCents,
+      amount: showGrossCents,
       currency: "usd",
       destination,
       source_transaction: sourceChargeId,
@@ -254,7 +257,7 @@ export async function transferPayoutForPayment(
       .from("payouts")
       .update({
         stripe_transfer_id: transfer.id,
-        amount_cents: showNetCents,
+        amount_cents: showGrossCents,
         transferred_at: new Date().toISOString(),
       })
       .eq("id", existing.id)
@@ -272,7 +275,7 @@ export async function transferPayoutForPayment(
       .insert({
         payment_id: payment.id,
         stripe_transfer_id: transfer.id,
-        amount_cents: showNetCents,
+        amount_cents: showGrossCents,
         early_payout_fee_cents: 0,
         transferred_at: new Date().toISOString(),
       })
@@ -296,7 +299,7 @@ export async function transferPayoutForPayment(
       io_line_item_id: payment.io_line_item_id,
       stripe_transfer_id: transfer.id,
       destination,
-      amount_cents: showNetCents,
+      amount_cents: showGrossCents,
       kind: "auto_after_settle",
     },
   });
@@ -304,14 +307,15 @@ export async function transferPayoutForPayment(
   return {
     payoutId,
     stripeTransferId: transfer.id,
-    amountCents: showNetCents,
+    amountCents: showGrossCents,
   };
 }
 
 /**
  * Early-payout variant — show requests funds within the settle window
- * for a 2.5% fee on the show net. Same settle-gate, same destination
- * resolution, different fee math.
+ * for a 2.5% fee on the IO gross. Same settle-gate, same destination
+ * resolution, different fee math. The platform fee is not part of this
+ * deduction; the show's starting amount is the full gross.
  *
  * Refuses if a payout already exists for this payment (auto-payout
  * already fired, or duplicate request).
@@ -334,6 +338,7 @@ export async function transferEarlyPayoutForPayment(
   if (
     payment.amount_charged_cents == null ||
     payment.application_fee_amount_cents == null ||
+    payment.gross_amount_cents == null ||
     !payment.deal_id ||
     !payment.stripe_payment_intent_id
   ) {
@@ -354,12 +359,11 @@ export async function transferEarlyPayoutForPayment(
     );
   }
 
-  const showNetCents =
-    payment.amount_charged_cents - payment.application_fee_amount_cents;
+  const showGrossCents = payment.gross_amount_cents;
   // Round half-up at the cent boundary so the show is never silently
   // overpaid via fee under-collection.
-  const earlyFeeCents = Math.round(showNetCents * feePercentage);
-  const transferCents = showNetCents - earlyFeeCents;
+  const earlyFeeCents = Math.round(showGrossCents * feePercentage);
+  const transferCents = showGrossCents - earlyFeeCents;
   if (transferCents <= 0) {
     throw new Error(
       `Early payout for payment ${paymentId} would transfer ${transferCents} cents — refusing`
@@ -437,7 +441,7 @@ export async function transferEarlyPayoutForPayment(
       io_line_item_id: payment.io_line_item_id,
       stripe_transfer_id: transfer.id,
       destination,
-      gross_show_net_cents: showNetCents,
+      gross_amount_cents: showGrossCents,
       early_payout_fee_cents: earlyFeeCents,
       transferred_cents: transferCents,
       fee_percentage: feePercentage,

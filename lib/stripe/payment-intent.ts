@@ -3,33 +3,37 @@
 // CRITICAL FINANCIAL INVARIANT:
 //   The platform fee is computed at charge time from
 //   `profiles.platform_fee_percentage` for the brand making the charge.
-//   The percentage AND the computed fee are snapshotted onto the
-//   resulting `payments` row (`platform_fee_percentage_at_charge`,
-//   `application_fee_amount_cents`) so a later plan change cannot
-//   retroactively rewrite the historical fee. Never hardcode any rate.
+//   The brand is charged the IO gross plus that fee. The percentage AND
+//   the computed fee are snapshotted onto the resulting `payments` row
+//   (`platform_fee_percentage_at_charge`, `application_fee_amount_cents`)
+//   so a later plan change cannot retroactively rewrite the historical
+//   fee. The IO gross — the show's money — is stored separately as
+//   `gross_amount_cents`. Never hardcode any rate.
 //
 // SEPARATE CHARGES AND TRANSFERS — the fee is NEVER sent to Stripe:
 //   The PaymentIntent is created on the PLATFORM account (no
 //   Stripe-Account header, no transfer_data), so Stripe rejects
-//   `application_fee_amount` on it. The fee is collected implicitly:
-//   lib/payouts/transfer.ts transfers only the show net
-//   (amount_charged_cents − application_fee_amount_cents) to the show's
-//   Connect account and the remainder stays on the platform balance.
-//   The computed fee rides the PI metadata for Stripe-dashboard
-//   reconciliation only — no code reads it back from Stripe.
+//   `application_fee_amount` on it. The PaymentIntent amount is the
+//   gross plus the fee. lib/payouts/transfer.ts sends the show
+//   `gross_amount_cents` (the full IO rate). The fee stays on the
+//   platform balance because it was charged on top and is not
+//   transferred. The computed fee rides the PI metadata for
+//   Stripe-dashboard reconciliation only — no code reads it back
+//   from Stripe.
 //
 // The flow:
 //   1. Caller passes `{ dealId, ioLineItemId }` after verifying delivery.
 //      An existing non-failed payments row for that pair short-circuits
 //      (idempotent re-entry — retries converge instead of erroring).
 //   2. We load the deal → brand profile → platform_fee_percentage.
-//   3. We load the io_line_item → gross_rate (the dollar amount the
-//      brand owes for this episode).
-//   4. We compute `application_fee_amount_cents = gross_cents *
-//      platform_fee_percentage` and create the PaymentIntent against the
-//      brand's saved payment method (off-session, confirmed automatically).
+//   3. We load the io_line_item → gross_rate (the show's IO rate for
+//      this episode).
+//   4. We compute the fee from that gross and the brand's current
+//      platform_fee_percentage. The PaymentIntent amount is gross + fee,
+//      created against the brand's saved payment method (off-session,
+//      confirmed automatically).
 //   5. We persist a `payments` row keyed by `stripe_payment_intent_id`
-//      with the snapshotted percentage and fee.
+//      with the snapshotted percentage, the fee, and the gross.
 //
 // Settlement and payout: the `succeeded` status flips to `settled_at` on
 // the `charge.succeeded` webhook. Show payouts (Teammate 3) MUST gate on
@@ -45,8 +49,10 @@ export interface ChargeForEpisodeInput {
   ioLineItemId: string;
   /**
    * Optional Stripe idempotency key. Defaults to
-   * `pi:v2:{dealId}:{ioLineItemId}` so retries collapse. Pass a fresh key
+   * `pi:v3:{dealId}:{ioLineItemId}` so retries collapse. Pass a fresh key
    * only to deliberately re-attempt a genuinely failed/declined charge.
+   * v3: the amount param is gross + fee. v2 charged the gross alone, and
+   * Stripe binds a key to its exact params for ~24h.
    */
   idempotencyKey?: string;
 }
@@ -263,8 +269,9 @@ export async function chargeForEpisode(
       `IO line item ${lineItem.id} has invalid gross_rate ${lineItem.gross_rate}`
     );
   }
-  const amountCents = Math.round(grossDollars * 100);
-  const applicationFeeCents = computeApplicationFeeCents(amountCents, feePercentage);
+  const grossCents = Math.round(grossDollars * 100);
+  const applicationFeeCents = computeApplicationFeeCents(grossCents, feePercentage);
+  const amountChargedCents = grossCents + applicationFeeCents;
 
   // ---- Resolve the payment method saved for this signed deal ----
   let paymentMethodId = deal.payment_method_id ?? null;
@@ -288,21 +295,23 @@ export async function chargeForEpisode(
 
   // ---- Create the PaymentIntent (off-session, confirmed automatically) ----
   //
-  // NO `application_fee_amount` here: this PI lives on the platform
-  // account (separate charges & transfers) and Stripe rejects the param
-  // outside direct/destination charges. The fee is snapshotted on the
-  // payments row and collected via the show-net transfer; metadata
-  // carries it for dashboard reconciliation only.
+  // NO `application_fee_amount` and NO `transfer_data` here: this PI
+  // lives on the platform account (separate charges & transfers) and
+  // Stripe rejects `application_fee_amount` outside direct/destination
+  // charges. The fee is snapshotted on the payments row and kept by
+  // transferring only the IO gross; metadata carries the fee for
+  // dashboard reconciliation only.
   //
   // Key versioning: Stripe binds an idempotency key to its exact params
   // for ~24h — a retry with the same key and different params returns
   // idempotency_error. ANY change to the create-params shape below MUST
-  // bump the version segment (v2 → v3).
+  // bump the version segment (v3 → v4). v3 changed `amount` from the
+  // gross alone to gross + fee.
   const idempotencyKey =
-    input.idempotencyKey ?? `pi:v2:${input.dealId}:${input.ioLineItemId}`;
+    input.idempotencyKey ?? `pi:v3:${input.dealId}:${input.ioLineItemId}`;
   const paymentIntent = (await stripe.paymentIntents.create(
     {
-      amount: amountCents,
+      amount: amountChargedCents,
       currency: "usd",
       customer: profile.stripe_customer_id,
       payment_method: paymentMethodId,
@@ -326,9 +335,13 @@ export async function chargeForEpisode(
       deal_id: input.dealId,
       io_line_item_id: input.ioLineItemId,
       stripe_payment_intent_id: paymentIntent.id,
-      amount_charged_cents: amountCents,
+      amount_charged_cents: amountChargedCents,
       application_fee_amount_cents: applicationFeeCents,
       platform_fee_percentage_at_charge: feePercentage,
+      gross_amount_cents: grossCents,
+      // Legacy dollar column. Holds the IO gross (the show's money),
+      // not the brand charge. gross_amount_cents is the cents source
+      // the transfer reads.
       amount: grossDollars,
       method: "stripe",
       stripe_payment_id: paymentIntent.id,
@@ -366,9 +379,10 @@ export async function chargeForEpisode(
       deal_id: input.dealId,
       io_line_item_id: input.ioLineItemId,
       stripe_payment_intent_id: paymentIntent.id,
-      amount_charged_cents: amountCents,
+      amount_charged_cents: amountChargedCents,
       application_fee_amount_cents: applicationFeeCents,
       platform_fee_percentage_at_charge: feePercentage,
+      gross_amount_cents: grossCents,
       status,
     },
   });
@@ -376,7 +390,7 @@ export async function chargeForEpisode(
   return {
     paymentId: row.id,
     stripePaymentIntentId: paymentIntent.id,
-    amountChargedCents: amountCents,
+    amountChargedCents,
     applicationFeeAmountCents: applicationFeeCents,
     platformFeePercentageAtCharge: feePercentage,
     status,

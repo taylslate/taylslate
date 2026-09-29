@@ -34,9 +34,11 @@ There is no card surcharge.
 
 ### Who pays the platform fee
 
-The locked intent is that the brand pays the platform fee on top of the show's rate.
+The brand pays the platform fee on top of the show's rate.
 
-The current charge path does not do that. Today the brand is charged the gross rate, and the platform fee is taken out of the show's transfer (`lib/stripe/payment-intent.ts` and `lib/payouts/transfer.ts`). Changing who bears the fee is a separate job. The rates in this section are the numbers that job will use. They are already the numbers `upgradeSubscription` and `finalizeDowngrade` write to `profiles.platform_fee_percentage`, which is what a card charge reads.
+`chargeForEpisode` charges the brand the IO gross plus `computeApplicationFeeCents` at the brand's current `profiles.platform_fee_percentage`. That percentage and the computed fee are snapshotted on the payments row. The IO gross is stored separately as `payments.gross_amount_cents` (migration 037) and is what `transferPayoutForPayment` sends the show. The fee stays on the platform balance. `application_fee_amount` is not sent on the PaymentIntent.
+
+The rates above are the numbers `upgradeSubscription` and `finalizeDowngrade` write to `profiles.platform_fee_percentage`, which is what a card charge reads. A $250 line charges the brand $275 at 10%, $270 at 8%, and $265 at 6%, and transfers the show $250 in each case.
 
 ### What is not built yet
 

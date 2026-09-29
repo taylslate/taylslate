@@ -14,10 +14,48 @@ import LegacyDealClient from "./legacy-client";
 import Wave12DealClient from "@/components/deals/Wave12DealClient";
 import { buildTrackingLink } from "@/lib/io/tracking-link";
 import { buildShowNotesBlurb } from "@/lib/io/show-notes";
+import { computeApplicationFeeCents } from "@/lib/stripe/payment-intent";
 import type { BrandProfile, ShowProfile } from "@/lib/data/types";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+}
+
+async function episodeChargeForBrand(
+  userId: string,
+  showProfile: { audience_size?: number | string | null } | null,
+  agreedCpm: number
+): Promise<{
+  grossCents: number;
+  feeCents: number;
+  chargedCents: number;
+  feePercentage: number;
+} | null> {
+  const audience = Number(showProfile?.audience_size ?? 0);
+  if (!Number.isFinite(audience) || audience <= 0 || !(agreedCpm > 0)) return null;
+
+  const { data: feeProfile } = await supabaseAdmin
+    .from("profiles")
+    .select("platform_fee_percentage")
+    .eq("id", userId)
+    .maybeSingle<{ platform_fee_percentage: number | string | null }>();
+  const feePercentage = Number(feeProfile?.platform_fee_percentage);
+  if (!Number.isFinite(feePercentage) || feePercentage < 0 || feePercentage > 1) {
+    return null;
+  }
+
+  // Same cents rounding as generateIoPdfFromDeal, then the same fee the
+  // charge path adds on top.
+  const grossDollars = Math.round((audience / 1000) * agreedCpm * 100) / 100;
+  const grossCents = Math.round(grossDollars * 100);
+  if (grossCents <= 0) return null;
+  const feeCents = computeApplicationFeeCents(grossCents, feePercentage);
+  return {
+    grossCents,
+    feeCents,
+    chargedCents: grossCents + feeCents,
+    feePercentage,
+  };
 }
 
 function brandDisplayName(bp: Partial<BrandProfile> | null): string {
@@ -52,7 +90,7 @@ export default async function DealDetailPage({ params }: PageProps) {
       .single();
     const { data: sp } = await supabaseAdmin
       .from("show_profiles")
-      .select("show_name")
+      .select("show_name, audience_size")
       .eq("id", wave12.show_profile_id)
       .single();
     const outreach = await getOutreachById(wave12.outreach_id);
@@ -74,6 +112,9 @@ export default async function DealDetailPage({ params }: PageProps) {
       promoCode: wave12.promo_code,
       trackingLink,
     });
+    const episodeCharge = ownsAsBrand
+      ? await episodeChargeForBrand(user.id, sp, wave12.agreed_cpm)
+      : null;
     return (
       <Wave12DealClient
         deal={wave12}
@@ -82,6 +123,7 @@ export default async function DealDetailPage({ params }: PageProps) {
         viewerRole={ownsAsBrand ? "brand" : "show"}
         trackingLink={trackingLink}
         showNotesBlurb={showNotesBlurb}
+        episodeCharge={episodeCharge}
       />
     );
   }

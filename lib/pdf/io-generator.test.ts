@@ -297,6 +297,7 @@ describe("generateIoPdfFromDeal lineItems (persistence source of truth)", () => 
     const text = out.pdfBuffer.toString("latin1");
     expect(text).toContain("351.83");
     expect(text).toContain("1,407.32");
+    expect(text).toContain("platform fee on top");
   });
 
   it("carries post dates, placement, and show name into every draft", () => {

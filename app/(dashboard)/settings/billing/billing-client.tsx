@@ -130,7 +130,7 @@ export default function BillingClient({
                 <span className={`text-xs font-normal ${mutedText}`}>/mo</span>
               </div>
               <p className={`mt-1 text-xs ${mutedText}`}>
-                {formatPct(plan.feePercentage)} card fee
+                {formatPct(plan.feePercentage)} card fee, on top of the show rate
               </p>
               <p className={`mt-1 text-xs ${mutedText}`}>
                 {campaignLimit(plan.concurrentCampaignCap)}

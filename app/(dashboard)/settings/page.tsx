@@ -71,7 +71,7 @@ export default function SettingsPage() {
   const currentPlan = PLANS[plan];
   const currentLabel = currentPlan.public ? currentPlan.label : "Legacy plan";
   const planSummary = (record: PlanRecord) =>
-    `${formatMonthly(record.monthlyBaseCents)}/mo, ${formatPct(record.feePercentage)} card fee, ${campaignLimit(record.concurrentCampaignCap)}`;
+    `${formatMonthly(record.monthlyBaseCents)}/mo, ${formatPct(record.feePercentage)} card fee on top of the show rate, ${campaignLimit(record.concurrentCampaignCap)}`;
   const kicker = role === "show" || role === "agent" ? "For shows" : "For brands";
 
   return (
@@ -116,7 +116,7 @@ export default function SettingsPage() {
                   <span className={`text-xs font-normal ${mutedText}`}>/mo</span>
                 </div>
                 <div className={`mt-1 text-xs ${mutedText}`}>
-                  {formatPct(p.feePercentage)} card fee
+                  {formatPct(p.feePercentage)} card fee, on top of the show rate
                 </div>
                 <div className={`mt-1 text-xs ${mutedText}`}>
                   {campaignLimit(p.concurrentCampaignCap)}
