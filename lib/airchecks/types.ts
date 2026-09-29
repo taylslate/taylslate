@@ -1,5 +1,5 @@
 // Stored transcript for one IO line. Column names match public.airchecks
-// (migration 037). Step 1 only — no match score, no pass/fail.
+// (migration 038). Step 1 only — no match score, no pass/fail.
 
 export type AircheckStatus = "pending" | "transcribed" | "failed";
 

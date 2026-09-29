@@ -1,5 +1,5 @@
 // Service-role reads and the one-row-per-line upsert. The unique key is
-// io_line_item_id (migration 037), so a retry updates the same row.
+// io_line_item_id (migration 038), so a retry updates the same row.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { AircheckRow, AircheckWrite } from "./types";

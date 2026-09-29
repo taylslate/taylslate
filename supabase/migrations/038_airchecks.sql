@@ -1,5 +1,5 @@
 -- ============================================================
--- 037: airchecks — stored episode transcript for one IO line
+-- 038: airchecks — stored episode transcript for one IO line
 --
 -- Step 1 of delivery verification. One row per io_line_items row.
 -- Pulls nothing by itself: the admin route writes the row after it
@@ -17,8 +17,7 @@
 -- provider records who produced the transcript ('podscan', or the
 -- AIRCHECK_TRANSCRIPTION_PROVIDER value when that fallback ran).
 --
--- Idempotent. Safe to re-run. Not applied from the repo — paste this
--- file into the Supabase SQL editor.
+-- Idempotent. Safe to re-run. Applied on the live project 2026-09-29.
 --
 -- Introspection check (run after applying):
 --   select column_name from information_schema.columns
