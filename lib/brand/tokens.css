@@ -9,8 +9,9 @@
   plan at /campaigns/[id]/plan, brand outreach at
   /campaigns/[id]/outreach, the deals list at /deals, deal
   detail at /deals/[id] (Wave 12 sign flow and the legacy edit),
-  and brand settings at /settings, /settings/brand-profile, and
-  /settings/billing use these.
+  brand settings at /settings, /settings/brand-profile, and
+  /settings/billing, and the aircheck review at
+  /admin/airchecks/[ioLineItemId] use these.
 
   Still on --brand-* in globals.css: the onboarding role picker,
   /onboarding/brand/*, /onboarding/show/*, /shows, /deals/new,

@@ -1,10 +1,14 @@
-// Stored transcript and match judgment for one IO line.
-// Column names match public.airchecks (migrations 038 and 039).
-// A match is data only: it does not mark the line delivered and does not charge.
+// Stored transcript, match judgment, and human review for one IO line.
+// Column names match public.airchecks (migrations 038, 039, and 040).
+// A match is data only. review_decision confirmed is set only after the
+// existing charge path succeeds. rejected does not charge.
 
 export type AircheckStatus = "pending" | "transcribed" | "failed";
 
 export type AircheckMatchResult = "matched" | "not_matched" | "skipped";
+
+/** Completed human decision. Null until confirm's charge succeeds or the line is rejected. */
+export type AircheckReviewDecision = "confirmed" | "rejected";
 
 /** Whether one buy field showed up in the transcript. */
 export type AircheckFieldCheck = "found" | "missing";
@@ -32,8 +36,41 @@ export interface AircheckRow {
   match_result: AircheckMatchResult | null;
   match_evidence: AircheckMatchEvidence | null;
   matched_at: string | null;
+  review_decision: AircheckReviewDecision | null;
+  review_reason: string | null;
+  /** Internal admin email. */
+  decided_by: string | null;
+  decided_at: string | null;
+  /** Set when confirm's charge failed. The decision stays unconfirmed. */
+  charge_error: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** What the review screen shows for one IO line. No transcript body. */
+export interface AircheckReviewView {
+  ioLineItemId: string;
+  showName: string;
+  advertiserName: string | null;
+  brandName: string | null;
+  promoCode: string | null;
+  url: string | null;
+  placement: string | null;
+  hasAircheck: boolean;
+  matchResult: AircheckMatchResult | null;
+  excerpt: string | null;
+  skipReason: string | null;
+  checks: {
+    brand: AircheckFieldCheck;
+    codeOrUrl: AircheckFieldCheck;
+    position: AircheckFieldCheck;
+    length: AircheckFieldCheck;
+  } | null;
+  reviewDecision: AircheckReviewDecision | null;
+  reviewReason: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  chargeError: string | null;
 }
 
 /** Transcript fields only. A retry must not clear a match written earlier in the same call. */

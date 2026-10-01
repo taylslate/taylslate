@@ -708,6 +708,9 @@ export type DomainEventType =
   // must not leave a delivered-but-unbilled line item.
   | "io_line_item.delivered"
   | "io_line_item.delivery_rolled_back"
+  // Aircheck review — human confirm (charge succeeded) or reject (no charge).
+  | "aircheck.confirmed"
+  | "aircheck.rejected"
   // Wave 13 — Stripe subscription webhook state
   | "subscription.updated"
   | "subscription.deleted"
@@ -788,6 +791,8 @@ export type DomainEntityType =
   | "payout"
   // Pay-as-delivers delivery verification events hang off io_line_items
   | "io_line_item"
+  // Aircheck review decision, one row per IO line.
+  | "aircheck"
   // Wave 14 Phase 2A — brief derivation/interpretation events hang off campaigns
   | "campaign";
 

@@ -11,7 +11,8 @@
  * brand outreach at /campaigns/[id]/outreach, the deals list at
  * /deals, deal detail at /deals/[id] (Wave 12 sign flow and
  * the legacy edit), and brand settings at /settings,
- * /settings/brand-profile, and /settings/billing.
+ * /settings/brand-profile, and /settings/billing, and the aircheck
+ * review at /admin/airchecks/[ioLineItemId].
  * Still on --brand-* in globals.css: the onboarding role picker,
  * /onboarding/brand/*, /onboarding/show/*, /shows, /deals/new,
  * /deals/import, /deals/[id]/io, invoices, legacy campaign detail

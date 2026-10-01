@@ -4,7 +4,10 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type {
   AircheckBuy,
+  AircheckFieldCheck,
   AircheckJudgment,
+  AircheckMatchEvidence,
+  AircheckReviewView,
   AircheckRow,
   AircheckWrite,
 } from "./types";
@@ -15,6 +18,7 @@ interface LineRow {
   episode_url: string | null;
   post_date: string | null;
   format: string;
+  show_name: string | null;
   placement: string | null;
 }
 
@@ -34,6 +38,7 @@ interface InsertionOrderBuyRow {
   id: string;
   deal_id: string;
   advertiser_name: string | null;
+  publisher_name: string | null;
 }
 
 interface BrandBuyRow {
@@ -44,7 +49,16 @@ interface BrandBuyRow {
 
 interface ShowRow {
   id: string;
+  name: string | null;
   rss_url: string | null;
+}
+
+export interface AircheckReviewPatch {
+  review_decision?: AircheckRow["review_decision"];
+  review_reason?: string | null;
+  decided_by?: string | null;
+  decided_at?: string | null;
+  charge_error?: string | null;
 }
 
 async function maybeOne<T>(
@@ -153,6 +167,99 @@ export async function saveAircheckMatch(
   if (error || !data) {
     throw new Error(
       `aircheck match save failed: ${error?.message ?? "no row returned"}`
+    );
+  }
+  return data as AircheckRow;
+}
+
+const CHECKS: AircheckFieldCheck[] = ["found", "missing"];
+
+function asCheck(value: unknown): AircheckFieldCheck {
+  return CHECKS.includes(value as AircheckFieldCheck)
+    ? (value as AircheckFieldCheck)
+    : "missing";
+}
+
+function asEvidence(value: unknown): AircheckMatchEvidence | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Partial<AircheckMatchEvidence>;
+  return {
+    excerpt: typeof row.excerpt === "string" ? row.excerpt : null,
+    reason: typeof row.reason === "string" ? row.reason : null,
+    brand: asCheck(row.brand),
+    code_or_url: asCheck(row.code_or_url),
+    position: asCheck(row.position),
+    length: asCheck(row.length),
+  };
+}
+
+function blank(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed || null;
+}
+
+/** Facts the review screen shows. Null when the IO line does not exist. */
+export async function loadAircheckReview(
+  ioLineItemId: string
+): Promise<AircheckReviewView | null> {
+  const line = await loadIoLine(ioLineItemId);
+  if (!line) return null;
+  const io = await maybeOne<InsertionOrderBuyRow>("insertion_orders", "id", line.io_id);
+  const deal = io?.deal_id
+    ? await maybeOne<DealRow>("deals", "id", io.deal_id)
+    : null;
+  const brand = deal?.brand_profile_id
+    ? await maybeOne<BrandBuyRow>("brand_profiles", "id", deal.brand_profile_id)
+    : null;
+  const show = deal?.show_id
+    ? await maybeOne<ShowRow>("shows", "id", deal.show_id)
+    : null;
+  const aircheck = await findAircheckByLine(ioLineItemId);
+  const evidence = asEvidence(aircheck?.match_evidence);
+  const showName =
+    blank(line.show_name) ?? blank(show?.name) ?? blank(io?.publisher_name) ?? "Show";
+  return {
+    ioLineItemId,
+    showName,
+    advertiserName: blank(io?.advertiser_name),
+    brandName: blank(brand?.brand_name),
+    promoCode: blank(deal?.promo_code),
+    url: blank(brand?.brand_website),
+    placement: blank(line.placement),
+    hasAircheck: Boolean(aircheck),
+    matchResult: aircheck?.match_result ?? null,
+    excerpt: evidence?.excerpt ?? null,
+    skipReason: evidence?.reason ?? null,
+    checks: evidence
+      ? {
+          brand: evidence.brand,
+          codeOrUrl: evidence.code_or_url,
+          position: evidence.position,
+          length: evidence.length,
+        }
+      : null,
+    reviewDecision: aircheck?.review_decision ?? null,
+    reviewReason: aircheck?.review_reason ?? null,
+    decidedBy: aircheck?.decided_by ?? null,
+    decidedAt: aircheck?.decided_at ?? null,
+    chargeError: aircheck?.charge_error ?? null,
+  };
+}
+
+/** Update review columns on the line's existing row. Does not insert. */
+export async function saveAircheckReview(
+  ioLineItemId: string,
+  patch: AircheckReviewPatch
+): Promise<AircheckRow> {
+  const { data, error } = await supabaseAdmin
+    .from("airchecks")
+    .update(patch)
+    .eq("io_line_item_id", ioLineItemId)
+    .select("*")
+    .single();
+  if (error || !data) {
+    throw new Error(
+      `aircheck review save failed: ${error?.message ?? "no row returned"}`
     );
   }
   return data as AircheckRow;

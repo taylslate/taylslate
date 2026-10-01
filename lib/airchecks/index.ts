@@ -4,6 +4,8 @@ export type {
   AircheckBuy,
   AircheckMatchEvidence,
   AircheckMatchResult,
+  AircheckReviewDecision,
+  AircheckReviewView,
   AircheckRow,
   AircheckStatus,
 } from "./types";
