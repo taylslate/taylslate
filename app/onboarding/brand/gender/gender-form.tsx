@@ -30,14 +30,14 @@ export default function GenderForm({ initialValue }: { initialValue: BrandTarget
               key={opt.value}
               type="button"
               onClick={() => setValue(opt.value)}
-              className={`p-4 rounded-xl border text-left transition-all ${
+              className={`rounded-[var(--ts-radius)] border bg-[var(--ts-paper)] p-4 text-left transition-all ${
                 selected
-                  ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.04] ring-2 ring-[var(--brand-blue)]/20"
-                  : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] hover:border-[var(--brand-blue)]/30"
+                  ? "border-[var(--ts-ink-on-paper)] ring-2 ring-inset ring-[var(--ts-ink-on-paper)]"
+                  : "border-[var(--ts-hairline-on-paper)] hover:border-[var(--ts-ink-on-paper)]"
               }`}
             >
-              <div className="font-semibold text-[var(--brand-text)]">{opt.label}</div>
-              <div className="text-xs text-[var(--brand-text-muted)] mt-0.5">{opt.sub}</div>
+              <div className="font-semibold text-[var(--ts-ink-on-paper)]">{opt.label}</div>
+              <div className="mt-0.5 text-xs text-[var(--ts-ink-muted-on-paper)]">{opt.sub}</div>
             </button>
           );
         })}

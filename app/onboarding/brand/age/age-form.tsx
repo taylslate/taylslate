@@ -33,16 +33,16 @@ export default function AgeForm({
         target_age_max: max >= AGE_MAX ? 120 : max,
       })}
     >
-      <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-8">
-        <div className="flex items-center justify-center gap-10 mb-8">
+      <div className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-8">
+        <div className="mb-8 flex items-center justify-center gap-10">
           <div className="text-center">
-            <div className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-medium">From</div>
-            <div className="text-4xl font-bold text-[var(--brand-text)] tabular-nums mt-1">{min}</div>
+            <div className="text-xs font-medium uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">From</div>
+            <div className="mt-1 text-4xl font-bold text-[var(--ts-ink-on-paper)] tabular-nums">{min}</div>
           </div>
-          <div className="text-3xl text-[var(--brand-text-muted)]">–</div>
+          <div className="text-3xl text-[var(--ts-ink-muted-on-paper)]">–</div>
           <div className="text-center">
-            <div className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-medium">To</div>
-            <div className="text-4xl font-bold text-[var(--brand-text)] tabular-nums mt-1">{formatMax(max)}</div>
+            <div className="text-xs font-medium uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">To</div>
+            <div className="mt-1 text-4xl font-bold text-[var(--ts-ink-on-paper)] tabular-nums">{formatMax(max)}</div>
           </div>
         </div>
 
@@ -61,7 +61,7 @@ export default function AgeForm({
           />
         </div>
 
-        <div className="flex justify-between mt-5 text-xs text-[var(--brand-text-muted)]">
+        <div className="mt-5 flex justify-between text-xs text-[var(--ts-ink-muted-on-paper)]">
           <span>{AGE_MIN}</span>
           <span>30</span>
           <span>45</span>
@@ -86,8 +86,8 @@ function SliderRow({
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <label className="text-xs font-medium text-[var(--brand-text-secondary)]">{label}</label>
-        <span className="text-xs tabular-nums text-[var(--brand-text-muted)]">{displayValue}</span>
+        <label className="text-xs font-medium text-[var(--ts-ink-muted-on-paper)]">{label}</label>
+        <span className="text-xs text-[var(--ts-ink-muted-on-paper)] tabular-nums">{displayValue}</span>
       </div>
       <input
         type="range"
@@ -95,7 +95,7 @@ function SliderRow({
         max={AGE_MAX}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-[var(--brand-blue)]"
+        className="w-full accent-[var(--ts-ink-on-paper)]"
       />
     </div>
   );

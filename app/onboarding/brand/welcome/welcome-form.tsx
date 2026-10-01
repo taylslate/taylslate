@@ -35,7 +35,7 @@ export default function WelcomeForm({ initialValue }: { initialValue: string }) 
       onContinue={async () => ({ brand_website: normalize(value) })}
       continueDisabled={!valid}
     >
-      <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-6 space-y-4 mb-6">
+      <div className="mb-6 space-y-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-6">
         <Bullet
           num={1}
           title="Drop in your website"
@@ -58,7 +58,7 @@ export default function WelcomeForm({ initialValue }: { initialValue: string }) 
         />
       </div>
 
-      <label className="block text-sm font-medium text-[var(--brand-text)] mb-2">
+      <label className="mb-2 block text-sm font-medium text-[var(--ts-ink-on-paper)]">
         Your website
       </label>
       <input
@@ -67,13 +67,13 @@ export default function WelcomeForm({ initialValue }: { initialValue: string }) 
         onChange={(e) => setValue(e.target.value)}
         autoFocus
         placeholder="yourbrand.com"
-        className="w-full px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+        className="w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-3 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:outline-none"
       />
-      <p className="text-xs text-[var(--brand-text-muted)] mt-2">
+      <p className="mt-2 text-xs text-[var(--ts-ink-muted-on-paper)]">
         Leave blank if you don&apos;t have one yet.
       </p>
       {!valid && (
-        <p className="text-xs text-[var(--brand-warning)] mt-2">
+        <p className="mt-2 text-xs text-[var(--ts-accent)]">
           That doesn&apos;t look like a valid URL.
         </p>
       )}
@@ -84,12 +84,12 @@ export default function WelcomeForm({ initialValue }: { initialValue: string }) 
 function Bullet({ num, title, body }: { num: number; title: string; body: string }) {
   return (
     <div className="flex gap-4">
-      <div className="w-7 h-7 rounded-full bg-[var(--brand-blue)]/10 text-[var(--brand-blue)] flex items-center justify-center text-xs font-bold flex-shrink-0">
+      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-xs font-bold text-[var(--ts-ink-on-paper)]">
         {num}
       </div>
       <div>
-        <div className="font-semibold text-[var(--brand-text)]">{title}</div>
-        <div className="text-sm text-[var(--brand-text-secondary)]">{body}</div>
+        <div className="font-semibold text-[var(--ts-ink-on-paper)]">{title}</div>
+        <div className="text-sm text-[var(--ts-ink-muted-on-paper)]">{body}</div>
       </div>
     </div>
   );

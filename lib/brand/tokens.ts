@@ -10,13 +10,14 @@
  * view at /campaigns/[id], the media plan at /campaigns/[id]/plan,
  * brand outreach at /campaigns/[id]/outreach, the deals list at
  * /deals, deal detail at /deals/[id] (Wave 12 sign flow and
- * the legacy edit), and brand settings at /settings,
- * /settings/brand-profile, and /settings/billing, and the aircheck
- * review at /admin/airchecks/[ioLineItemId].
- * Still on --brand-* in globals.css: the onboarding role picker,
- * /onboarding/brand/*, /onboarding/show/*, /shows, /deals/new,
- * /deals/import, /deals/[id]/io, invoices, legacy campaign detail
- * and discovery list, /campaigns/generated, and the public pitch page.
+ * the legacy edit), brand settings at /settings,
+ * /settings/brand-profile, and /settings/billing, the aircheck
+ * review at /admin/airchecks/[ioLineItemId], the onboarding role
+ * picker, and /onboarding/brand/*.
+ * Still on --brand-* in globals.css: /onboarding/show/*, /shows,
+ * /deals/new, /deals/import, /deals/[id]/io, invoices, legacy
+ * campaign detail and discovery list, /campaigns/generated, and
+ * the public pitch page.
  */
 export const tokens = {
   field: "var(--ts-field)",

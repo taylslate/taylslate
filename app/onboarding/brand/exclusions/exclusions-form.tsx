@@ -19,9 +19,9 @@ export default function ExclusionsForm({ initialValue }: { initialValue: string 
         rows={5}
         autoFocus
         placeholder="Start typing..."
-        className="w-full px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all resize-none"
+        className="w-full resize-none rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-3 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:outline-none"
       />
-      <p className="text-xs text-[var(--brand-text-muted)] mt-2">
+      <p className="mt-2 text-xs text-[var(--ts-ink-muted-on-paper)]">
         List any topics, competitors, or content types you want to avoid. Leave blank if you&apos;re open to everything.
       </p>
     </OnboardingShell>

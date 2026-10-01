@@ -47,22 +47,22 @@ export default function GoalsForm({ initialValue }: { initialValue: BrandCampaig
               type="button"
               onClick={() => toggle(opt.value)}
               disabled={disabled}
-              className={`p-3.5 rounded-xl border text-left transition-all ${
+              className={`rounded-[var(--ts-radius)] border bg-[var(--ts-paper)] p-3.5 text-left transition-all ${
                 isSelected
-                  ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.04] ring-2 ring-[var(--brand-blue)]/20"
+                  ? "border-[var(--ts-ink-on-paper)] ring-2 ring-inset ring-[var(--ts-ink-on-paper)]"
                   : disabled
-                    ? "border-[var(--brand-border)] bg-[var(--brand-surface)] opacity-40 cursor-not-allowed"
-                    : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] hover:border-[var(--brand-blue)]/30"
+                    ? "cursor-not-allowed border-[var(--ts-hairline-on-paper)] opacity-40"
+                    : "border-[var(--ts-hairline-on-paper)] hover:border-[var(--ts-ink-on-paper)]"
               }`}
             >
-              <div className="text-xl mb-1">{opt.emoji}</div>
-              <div className="text-sm font-semibold text-[var(--brand-text)] leading-tight">{opt.title}</div>
-              <div className="text-xs text-[var(--brand-text-muted)] mt-1 leading-snug">{opt.sub}</div>
+              <div className="mb-1 text-xl">{opt.emoji}</div>
+              <div className="text-sm font-semibold leading-tight text-[var(--ts-ink-on-paper)]">{opt.title}</div>
+              <div className="mt-1 text-xs leading-snug text-[var(--ts-ink-muted-on-paper)]">{opt.sub}</div>
             </button>
           );
         })}
       </div>
-      <p className="text-xs text-[var(--brand-text-muted)] mt-3">
+      <p className="mt-3 text-xs text-[var(--ts-ink-muted-on-paper)]">
         {count} of {MAX_PICK} selected
       </p>
     </OnboardingShell>

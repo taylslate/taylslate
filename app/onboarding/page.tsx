@@ -191,10 +191,10 @@ export default function OnboardingPage() {
   const currentStepIndex = selectedRole === "agent" ? step : (step === 1 ? 1 : 2);
 
   return (
-    <div className="min-h-screen bg-[var(--brand-surface)] flex items-center justify-center p-4">
+    <div className="flex min-h-screen items-center justify-center bg-[var(--ts-paper)] p-4 text-[var(--ts-ink-on-paper)]">
       <div className="w-full max-w-xl">
         {/* Stepper */}
-        <div className="flex items-center justify-center gap-2 mb-10">
+        <div className="mb-10 flex items-center justify-center gap-2">
           {stepLabels.map((label, i) => {
             const stepNum = i + 1;
             const isActive = currentStepIndex === stepNum;
@@ -203,24 +203,25 @@ export default function OnboardingPage() {
               <div key={label} className="flex items-center gap-2">
                 {i > 0 && (
                   <div
-                    className="w-8 h-0.5 rounded-full"
+                    className="h-0.5 w-8 rounded-[var(--ts-radius)]"
                     style={{
                       backgroundColor: isCompleted || isActive
-                        ? "var(--brand-blue)"
-                        : "var(--brand-border)",
+                        ? "var(--ts-ink-on-paper)"
+                        : "var(--ts-hairline-on-paper)",
                     }}
                   />
                 )}
                 <div className="flex items-center gap-2">
                   <div
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors"
+                    className="flex h-7 w-7 items-center justify-center rounded-[var(--ts-radius)] text-xs font-semibold transition-colors"
                     style={{
-                      backgroundColor: isActive
-                        ? "var(--brand-blue)"
-                        : isCompleted
-                          ? "var(--brand-blue)"
-                          : "var(--brand-border)",
-                      color: isActive || isCompleted ? "#fff" : "var(--brand-text-muted)",
+                      backgroundColor: isActive || isCompleted
+                        ? "var(--ts-ink-on-paper)"
+                        : "var(--ts-paper)",
+                      color: isActive || isCompleted ? "var(--ts-paper)" : "var(--ts-ink-muted-on-paper)",
+                      boxShadow: isActive || isCompleted
+                        ? undefined
+                        : "inset 0 0 0 1px var(--ts-hairline-on-paper)",
                     }}
                   >
                     {isCompleted ? (
@@ -232,9 +233,9 @@ export default function OnboardingPage() {
                     )}
                   </div>
                   <span
-                    className="text-sm font-medium hidden sm:block"
+                    className="hidden text-sm font-medium sm:block"
                     style={{
-                      color: isActive ? "var(--brand-text)" : "var(--brand-text-muted)",
+                      color: isActive ? "var(--ts-ink-on-paper)" : "var(--ts-ink-muted-on-paper)",
                     }}
                   >
                     {label}
@@ -248,11 +249,11 @@ export default function OnboardingPage() {
         {/* Step 1: Role Selection */}
         {step === 1 && (
           <div>
-            <div className="text-center mb-10">
-              <h1 className="text-3xl font-bold text-[var(--brand-text)] mb-3">
+            <div className="mb-10 text-center">
+              <h1 className="mb-3 text-3xl font-bold text-[var(--ts-ink-on-paper)]">
                 Welcome to Taylslate
               </h1>
-              <p className="text-[var(--brand-text-secondary)] max-w-md mx-auto">
+              <p className="mx-auto max-w-md text-[var(--ts-ink-muted-on-paper)]">
                 How will you be using Taylslate?
               </p>
             </div>
@@ -262,20 +263,20 @@ export default function OnboardingPage() {
                 <button
                   key={role.id}
                   onClick={() => handleRoleSelect(role.id)}
-                  className="w-full flex items-center gap-5 p-5 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] hover:border-[var(--brand-blue)]/40 hover:bg-[var(--brand-blue)]/[0.02] transition-all text-left group"
+                  className="group flex w-full items-center gap-5 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5 text-left transition-all hover:border-[var(--ts-ink-on-paper)]"
                 >
-                  <div className="w-12 h-12 rounded-xl bg-[var(--brand-blue)]/[0.06] flex items-center justify-center shrink-0 text-[var(--brand-blue)] group-hover:bg-[var(--brand-blue)]/[0.1] transition-colors">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-on-paper)]">
                     {role.icon}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-[var(--brand-text)] mb-0.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-0.5 font-semibold text-[var(--ts-ink-on-paper)]">
                       {role.title}
                     </div>
-                    <div className="text-sm text-[var(--brand-text-secondary)]">
+                    <div className="text-sm text-[var(--ts-ink-muted-on-paper)]">
                       {role.description}
                     </div>
                   </div>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ts-ink-muted-on-paper)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                     <polyline points="9 18 15 12 9 6" />
                   </svg>
                 </button>
@@ -287,20 +288,20 @@ export default function OnboardingPage() {
         {/* Step 2: CSV Upload (Agent only) */}
         {step === 2 && selectedRole === "agent" && (
           <div>
-            <h2 className="text-2xl font-bold text-[var(--brand-text)] mb-2">
+            <h2 className="mb-2 text-2xl font-bold text-[var(--ts-ink-on-paper)]">
               Import your show roster
             </h2>
-            <p className="text-sm text-[var(--brand-text-secondary)] mb-6">
+            <p className="mb-6 text-sm text-[var(--ts-ink-muted-on-paper)]">
               Upload a CSV with your shows. We&apos;ll add them to your roster so you can start managing deals.
             </p>
 
             {/* Upload Area */}
             {parsedRows.length === 0 && (
               <div
-                className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all ${
+                className={`relative rounded-[var(--ts-radius)] border-2 border-dashed p-12 text-center transition-all ${
                   dragActive
-                    ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.04]"
-                    : "border-[var(--brand-border)] hover:border-[var(--brand-blue)]/40"
+                    ? "border-[var(--ts-ink-on-paper)] bg-[var(--ts-paper)]"
+                    : "border-[var(--ts-hairline-on-paper)] hover:border-[var(--ts-ink-on-paper)]"
                 }`}
                 onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                 onDragLeave={() => setDragActive(false)}
@@ -308,26 +309,26 @@ export default function OnboardingPage() {
               >
                 {isProcessing ? (
                   <div>
-                    <div className="w-10 h-10 border-3 border-[var(--brand-blue)]/20 border-t-[var(--brand-blue)] rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-sm font-medium text-[var(--brand-text)]">Parsing CSV...</p>
-                    <p className="text-xs text-[var(--brand-text-muted)] mt-1">{fileName}</p>
+                    <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-[var(--ts-hairline-on-paper)] border-t-[var(--ts-ink-on-paper)]" />
+                    <p className="text-sm font-medium text-[var(--ts-ink-on-paper)]">Parsing CSV...</p>
+                    <p className="mt-1 text-xs text-[var(--ts-ink-muted-on-paper)]">{fileName}</p>
                   </div>
                 ) : (
                   <div>
-                    <div className="w-12 h-12 rounded-xl bg-[var(--brand-blue)]/[0.06] flex items-center justify-center mx-auto mb-4">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-on-paper)]">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                         <polyline points="17 8 12 3 7 8" />
                         <line x1="12" x2="12" y1="3" y2="15" />
                       </svg>
                     </div>
-                    <p className="text-sm font-medium text-[var(--brand-text)] mb-1">
+                    <p className="mb-1 text-sm font-medium text-[var(--ts-ink-on-paper)]">
                       Drag and drop your CSV file here
                     </p>
-                    <p className="text-xs text-[var(--brand-text-muted)] mb-4">or click to browse</p>
+                    <p className="mb-4 text-xs text-[var(--ts-ink-muted-on-paper)]">or click to browse</p>
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="px-4 py-2 text-sm font-medium text-[var(--brand-blue)] border border-[var(--brand-blue)]/30 rounded-lg hover:bg-[var(--brand-blue)]/[0.04] transition-colors"
+                      className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-on-paper)] transition-colors hover:border-[var(--ts-ink-on-paper)]"
                     >
                       Choose file
                     </button>
@@ -347,48 +348,44 @@ export default function OnboardingPage() {
             {parsedRows.length > 0 && (
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm font-medium text-[var(--brand-text)]">
+                  <p className="text-sm font-medium text-[var(--ts-ink-on-paper)]">
                     {parsedRows.length} show{parsedRows.length !== 1 ? "s" : ""} found in {fileName}
                   </p>
                   <button
                     onClick={() => { setParsedRows([]); setFileName(""); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-                    className="text-xs text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+                    className="text-xs text-[var(--ts-accent)] transition-colors hover:opacity-80"
                   >
                     Clear
                   </button>
                 </div>
-                <div className="bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] overflow-hidden">
-                  <div className="overflow-x-auto max-h-72 overflow-y-auto">
+                <div className="overflow-hidden rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]">
+                  <div className="max-h-72 overflow-x-auto overflow-y-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-[var(--brand-border)] bg-[var(--brand-surface)]">
-                          <th className="text-left px-4 py-2.5 font-medium text-[var(--brand-text-muted)] text-xs uppercase tracking-wider">Name</th>
-                          <th className="text-left px-4 py-2.5 font-medium text-[var(--brand-text-muted)] text-xs uppercase tracking-wider">Platform</th>
-                          <th className="text-right px-4 py-2.5 font-medium text-[var(--brand-text-muted)] text-xs uppercase tracking-wider">Audience</th>
-                          <th className="text-right px-4 py-2.5 font-medium text-[var(--brand-text-muted)] text-xs uppercase tracking-wider">Rate</th>
+                        <tr className="border-b border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]">
+                          <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">Name</th>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">Platform</th>
+                          <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">Audience</th>
+                          <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">Rate</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-[var(--brand-border)]">
+                      <tbody className="divide-y divide-[var(--ts-hairline-on-paper)]">
                         {parsedRows.map((row, i) => {
                           const isYT = row.channel_type.toLowerCase() === "youtube";
                           return (
-                            <tr key={i} className="hover:bg-[var(--brand-surface)] transition-colors">
-                              <td className="px-4 py-2.5 font-medium text-[var(--brand-text)]">{row.show_name}</td>
+                            <tr key={i}>
+                              <td className="px-4 py-2.5 font-medium text-[var(--ts-ink-on-paper)]">{row.show_name}</td>
                               <td className="px-4 py-2.5">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                                  isYT
-                                    ? "bg-[var(--brand-error)]/10 text-[var(--brand-error)]"
-                                    : "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]"
-                                }`}>
+                                <span className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold uppercase text-[var(--ts-ink-on-paper)]">
                                   {isYT ? "YouTube" : "Podcast"}
                                 </span>
                               </td>
-                              <td className="px-4 py-2.5 text-right text-[var(--brand-text-secondary)]">
+                              <td className="px-4 py-2.5 text-right text-[var(--ts-ink-muted-on-paper)]">
                                 {row.downloads >= 1000
                                   ? `${(row.downloads / 1000).toFixed(row.downloads >= 10000 ? 0 : 1)}K`
                                   : row.downloads}
                               </td>
-                              <td className="px-4 py-2.5 text-right text-[var(--brand-text-secondary)]">
+                              <td className="px-4 py-2.5 text-right text-[var(--ts-ink-muted-on-paper)]">
                                 {row.cpm > 0 ? `$${row.cpm} CPM` : row.price_per_spot > 0 ? `$${row.price_per_spot.toLocaleString()}` : "--"}
                               </td>
                             </tr>
@@ -402,26 +399,26 @@ export default function OnboardingPage() {
             )}
 
             {uploadError && (
-              <div className="mt-4 p-3 rounded-lg bg-[var(--brand-error)]/10 text-[var(--brand-error)] text-sm">
+              <div className="mt-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-3 text-sm text-[var(--ts-accent)]">
                 {uploadError}
               </div>
             )}
 
             {/* Expected format hint */}
             {parsedRows.length === 0 && (
-              <div className="mt-6 p-4 rounded-xl bg-[var(--brand-surface-elevated)] border border-[var(--brand-border)]">
-                <h3 className="text-sm font-semibold text-[var(--brand-text)] mb-2">Expected CSV format</h3>
-                <p className="text-xs text-[var(--brand-text-muted)] font-mono">
+              <div className="mt-6 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4">
+                <h3 className="mb-2 text-sm font-semibold text-[var(--ts-ink-on-paper)]">Expected CSV format</h3>
+                <p className="font-mono text-xs text-[var(--ts-ink-muted-on-paper)]">
                   Show, Host(s), Category, Channel Type, Source File, Ad Type, Downloads, CPM, Price/Spot, Male/Female, Audience Age, Notes
                 </p>
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex items-center justify-between mt-6 pt-4 border-t border-[var(--brand-border)]">
+            <div className="mt-6 flex items-center justify-between border-t border-[var(--ts-hairline-on-paper)] pt-4">
               <button
                 onClick={() => setStep(3)}
-                className="text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-blue)] transition-colors"
+                className="text-sm text-[var(--ts-accent)] transition-colors hover:opacity-80"
               >
                 Skip for now
               </button>
@@ -429,11 +426,11 @@ export default function OnboardingPage() {
                 <button
                   onClick={handleImport}
                   disabled={isImporting}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-[var(--brand-blue)] text-white rounded-xl font-semibold hover:bg-[var(--brand-blue-light)] transition-colors disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-6 py-2.5 font-semibold text-[var(--ts-paper)] transition-colors hover:opacity-90 disabled:opacity-50"
                 >
                   {isImporting ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--ts-paper)]/30 border-t-[var(--ts-paper)]" />
                       Importing...
                     </>
                   ) : (
@@ -448,15 +445,15 @@ export default function OnboardingPage() {
         {/* Step 3: Success */}
         {step === 3 && (
           <div className="text-center py-8">
-            <div className="w-16 h-16 rounded-2xl bg-[var(--brand-success)]/10 flex items-center justify-center mx-auto mb-6">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--brand-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-on-paper)]">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-[var(--brand-text)] mb-2">
+            <h2 className="mb-2 text-2xl font-bold text-[var(--ts-ink-on-paper)]">
               Your account is ready
             </h2>
-            <p className="text-[var(--brand-text-secondary)] mb-2">
+            <p className="mb-2 text-[var(--ts-ink-muted-on-paper)]">
               {importResult
                 ? `${importResult.imported} show${importResult.imported !== 1 ? "s" : ""} imported${importResult.skipped > 0 ? `, ${importResult.skipped} skipped (duplicates)` : ""}.`
                 : selectedRole === "agent"
@@ -464,21 +461,21 @@ export default function OnboardingPage() {
                   : "You're all set to start planning campaigns."}
             </p>
             {importResult && importResult.errors.length > 0 && (
-              <p className="text-xs text-[var(--brand-warning)] mb-4">
+              <p className="mb-4 text-xs text-[var(--ts-accent)]">
                 {importResult.errors.length} error{importResult.errors.length !== 1 ? "s" : ""} during import.
               </p>
             )}
-            <div className="flex items-center justify-center gap-3 mt-6">
+            <div className="mt-6 flex items-center justify-center gap-3">
               <button
                 onClick={() => router.push("/dashboard")}
-                className="px-6 py-2.5 bg-[var(--brand-blue)] text-white rounded-xl font-semibold hover:bg-[var(--brand-blue-light)] transition-colors"
+                className="rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-6 py-2.5 font-semibold text-[var(--ts-paper)] transition-colors hover:opacity-90"
               >
                 Go to Dashboard
               </button>
               {selectedRole === "agent" && (
                 <button
                   onClick={() => router.push("/shows")}
-                  className="px-6 py-2.5 border border-[var(--brand-border)] text-[var(--brand-text)] rounded-xl font-semibold hover:bg-[var(--brand-surface-elevated)] transition-colors"
+                  className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] px-6 py-2.5 font-semibold text-[var(--ts-ink-on-paper)] transition-colors hover:border-[var(--ts-ink-on-paper)]"
                 >
                   View Your Shows
                 </button>
