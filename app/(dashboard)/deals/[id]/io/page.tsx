@@ -3,7 +3,12 @@
 import { useState, useEffect, use } from "react";
 import IOGeneratorForm from "@/components/io/IOGeneratorForm";
 import Link from "next/link";
+import { tokens } from "@/lib/brand/tokens";
 import type { Deal, Show, InsertionOrder, Profile } from "@/lib/data/types";
+
+const radiusStyle = { borderRadius: tokens.radius };
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
 
 interface DealApiResponse {
   deal: Deal & {
@@ -147,40 +152,32 @@ export default function IOPage({ params }: { params: Promise<{ id: string }> }) 
 
   if (loading) {
     return (
-      <div className="p-8 max-w-4xl">
-        <Link
-          href="/deals"
-          className="flex items-center gap-1.5 text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors mb-3"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-          All Deals
-        </Link>
-        <div className="flex items-center gap-3 mt-8">
-          <div className="w-5 h-5 border-2 border-[var(--brand-blue)] border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm text-[var(--brand-text-secondary)]">Loading insertion order...</span>
-        </div>
+      <div className="max-w-4xl p-4 sm:p-8">
+        <div className={`mb-3 h-3 w-24 ${pulseClass}`} style={radiusStyle} />
+        <div className={`mb-2 h-7 w-56 ${pulseClass}`} style={radiusStyle} />
+        <div className={`h-4 w-72 ${pulseClass}`} style={radiusStyle} />
+        <p className={`mt-6 text-sm ${mutedText}`}>Loading insertion order...</p>
       </div>
     );
   }
 
   if (error || !deal || !show || !brand) {
     return (
-      <div className="p-8 max-w-4xl">
+      <div className="max-w-4xl p-4 sm:p-8">
         <Link
           href="/deals"
-          className="flex items-center gap-1.5 text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors mb-3"
+          className={`mb-3 flex items-center gap-1.5 text-xs ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="m15 18-6-6 6-6" />
           </svg>
           All Deals
         </Link>
-        <div className="mt-8 p-4 rounded-xl bg-[var(--brand-error)]/[0.06] border border-[var(--brand-error)]/20">
-          <p className="text-sm font-medium text-[var(--brand-error)]">
-            {error || "Deal not found"}
-          </p>
+        <div
+          className="mt-6 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm text-[var(--ts-accent)]"
+          style={radiusStyle}
+        >
+          {error || "Deal not found"}
         </div>
       </div>
     );

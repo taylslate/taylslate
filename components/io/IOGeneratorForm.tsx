@@ -3,7 +3,25 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { tokens } from "@/lib/brand/tokens";
 import type { Deal, Show, InsertionOrder, Profile, IOLineItem, Placement, PriceType } from "@/lib/data/types";
+
+const radiusStyle = { borderRadius: tokens.radius };
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const accentText = "text-[var(--ts-accent)]";
+const kickerClass =
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+const panelClass =
+  "mb-6 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5";
+const sectionHead =
+  "mb-4 text-sm font-semibold uppercase tracking-wider text-[var(--ts-ink-on-paper)]";
+const inkBtnClass =
+  "inline-flex items-center justify-center gap-2 bg-[var(--ts-ink-on-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+const ghostBtnClass =
+  "inline-flex items-center justify-center gap-2 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:cursor-not-allowed disabled:opacity-50";
+const netDueClass =
+  "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] px-3 py-2 text-sm font-semibold text-[var(--ts-ink-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
 
 interface IOGeneratorFormProps {
   deal: Deal;
@@ -71,10 +89,10 @@ function generateLineItems(deal: Deal, show: Show): IOLineItem[] {
 }
 
 const inputClass =
-  "w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)] placeholder-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)] focus:border-transparent transition-all";
-const labelClass = "text-sm font-medium text-[var(--brand-text)] mb-1.5 block";
+  "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
+const labelClass = "mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper)]";
 const readOnlyClass =
-  "w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)]/60 text-sm text-[var(--brand-text-secondary)] cursor-default";
+  "w-full cursor-default break-words border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] px-3 py-2 text-sm text-[var(--ts-ink-muted-on-paper)]";
 
 export default function IOGeneratorForm({ deal, show, existingIO, brand, agency, agent }: IOGeneratorFormProps) {
   const router = useRouter();
@@ -383,31 +401,35 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
   const hasDeliveredItems = lineItems.some((li) => li.verified);
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="max-w-4xl p-4 sm:p-8">
       {/* Header */}
       <div className="mb-8">
-        <Link
-          href="/deals"
-          className="flex items-center gap-1.5 text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors mb-3"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-          All Deals
-        </Link>
-        <div className="flex items-center justify-between">
+        <div className="mb-3 flex items-center gap-3">
+          <Link
+            href="/deals"
+            className={`flex items-center gap-1.5 text-xs ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            All Deals
+          </Link>
+          <p className={kickerClass}>For brands</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">
+            <h1 className={`text-xl font-semibold tracking-tight ${inkText}`}>
               {hasExistingIO && !isEditing ? "Insertion Order" : isEditing && hasExistingIO ? "Edit Insertion Order" : "Generate Insertion Order"}
             </h1>
-            <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+            <p className={`mt-1 text-sm ${mutedText}`}>
               {show.name} &middot; {brand.company_name} &middot; {deal.num_episodes} episode{deal.num_episodes !== 1 ? "s" : ""}
             </p>
           </div>
           {hasExistingIO && !isEditing && (
             <button
               onClick={() => setIsEditing(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)] hover:text-[var(--brand-blue)] transition-all"
+              className={ghostBtnClass}
+              style={radiusStyle}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -420,20 +442,23 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
       </div>
 
       {/* IO Number */}
-      <div className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-        <div className="flex items-center justify-between">
+      <div className={panelClass} style={radiusStyle}>
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <span className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider">IO Number</span>
-            <div className="text-lg font-bold text-[var(--brand-text)] mt-0.5">{ioNumber}</div>
+            <span className={`text-xs font-medium uppercase tracking-wider ${mutedText}`}>IO Number</span>
+            <div className={`mt-0.5 text-lg font-semibold ${inkText}`}>{ioNumber}</div>
           </div>
           {hasExistingIO && existingIO && (
-            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-              existingIO.status === "signed" || existingIO.status === "active"
-                ? "bg-[var(--brand-success)]/10 text-[var(--brand-success)]"
-                : existingIO.status === "completed"
-                  ? "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]"
-                  : "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]"
-            }`}>
+            <span
+              className={`px-2.5 py-1 text-xs font-medium ${
+                existingIO.status === "signed" || existingIO.status === "active"
+                  ? "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]"
+                  : existingIO.status === "completed"
+                    ? "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)]"
+                    : "bg-[var(--ts-band-shows)] text-[var(--ts-ink-on-paper)]"
+              }`}
+              style={radiusStyle}
+            >
               {existingIO.status.charAt(0).toUpperCase() + existingIO.status.slice(1)}
             </span>
           )}
@@ -441,62 +466,62 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
       </div>
 
       {/* Advertiser */}
-      <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-        <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider mb-4">Advertiser</h2>
-        <div className="grid grid-cols-2 gap-4">
+      <section className={panelClass} style={radiusStyle}>
+        <h2 className={sectionHead}>Advertiser</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className={labelClass}>Company</label>
             {isEditing ? (
-              <input type="text" value={advCompany} onChange={(e) => setAdvCompany(e.target.value)} className={inputClass} />
+              <input type="text" value={advCompany} onChange={(e) => setAdvCompany(e.target.value)} className={inputClass} style={radiusStyle} />
             ) : (
-              <div className={readOnlyClass}>{advCompany}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{advCompany}</div>
             )}
           </div>
           <div>
             <label className={labelClass}>Contact</label>
             {isEditing ? (
-              <input type="text" value={advContact} onChange={(e) => setAdvContact(e.target.value)} className={inputClass} />
+              <input type="text" value={advContact} onChange={(e) => setAdvContact(e.target.value)} className={inputClass} style={radiusStyle} />
             ) : (
-              <div className={readOnlyClass}>{advContact}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{advContact}</div>
             )}
           </div>
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className={labelClass}>Email</label>
             {isEditing ? (
-              <input type="email" value={advEmail} onChange={(e) => setAdvEmail(e.target.value)} className={inputClass} />
+              <input type="email" value={advEmail} onChange={(e) => setAdvEmail(e.target.value)} className={inputClass} style={radiusStyle} />
             ) : (
-              <div className={readOnlyClass}>{advEmail}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{advEmail}</div>
             )}
           </div>
         </div>
       </section>
 
       {/* Publisher */}
-      <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-        <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider mb-4">Publisher</h2>
-        <div className="grid grid-cols-2 gap-4">
+      <section className={panelClass} style={radiusStyle}>
+        <h2 className={sectionHead}>Publisher</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className={labelClass}>Company</label>
             {isEditing ? (
-              <input type="text" value={pubCompany} onChange={(e) => setPubCompany(e.target.value)} className={inputClass} />
+              <input type="text" value={pubCompany} onChange={(e) => setPubCompany(e.target.value)} className={inputClass} style={radiusStyle} />
             ) : (
-              <div className={readOnlyClass}>{pubCompany || "\u2014"}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{pubCompany || "\u2014"}</div>
             )}
           </div>
           <div>
             <label className={labelClass}>Contact</label>
             {isEditing ? (
-              <input type="text" value={pubContact} onChange={(e) => setPubContact(e.target.value)} className={inputClass} />
+              <input type="text" value={pubContact} onChange={(e) => setPubContact(e.target.value)} className={inputClass} style={radiusStyle} />
             ) : (
-              <div className={readOnlyClass}>{pubContact || "\u2014"}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{pubContact || "\u2014"}</div>
             )}
           </div>
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className={labelClass}>Email</label>
             {isEditing ? (
-              <input type="email" value={pubEmail} onChange={(e) => setPubEmail(e.target.value)} className={inputClass} />
+              <input type="email" value={pubEmail} onChange={(e) => setPubEmail(e.target.value)} className={inputClass} style={radiusStyle} />
             ) : (
-              <div className={readOnlyClass}>{pubEmail || "\u2014"}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{pubEmail || "\u2014"}</div>
             )}
           </div>
         </div>
@@ -504,31 +529,31 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
 
       {/* Agency */}
       {(isEditing || agencyCompany) && (
-        <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-          <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider mb-4">Agency</h2>
-          <div className="grid grid-cols-2 gap-4">
+        <section className={panelClass} style={radiusStyle}>
+          <h2 className={sectionHead}>Agency</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className={labelClass}>Company</label>
               {isEditing ? (
-                <input type="text" value={agencyCompany} onChange={(e) => setAgencyCompany(e.target.value)} placeholder="Leave blank if no agency" className={inputClass} />
+                <input type="text" value={agencyCompany} onChange={(e) => setAgencyCompany(e.target.value)} placeholder="Leave blank if no agency" className={inputClass} style={radiusStyle} />
               ) : (
-                <div className={readOnlyClass}>{agencyCompany}</div>
+                <div className={readOnlyClass} style={radiusStyle}>{agencyCompany}</div>
               )}
             </div>
             <div>
               <label className={labelClass}>Contact</label>
               {isEditing ? (
-                <input type="text" value={agencyContact} onChange={(e) => setAgencyContact(e.target.value)} className={inputClass} />
+                <input type="text" value={agencyContact} onChange={(e) => setAgencyContact(e.target.value)} className={inputClass} style={radiusStyle} />
               ) : (
-                <div className={readOnlyClass}>{agencyContact}</div>
+                <div className={readOnlyClass} style={radiusStyle}>{agencyContact}</div>
               )}
             </div>
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <label className={labelClass}>Email</label>
               {isEditing ? (
-                <input type="email" value={agencyEmail} onChange={(e) => setAgencyEmail(e.target.value)} className={inputClass} />
+                <input type="email" value={agencyEmail} onChange={(e) => setAgencyEmail(e.target.value)} className={inputClass} style={radiusStyle} />
               ) : (
-                <div className={readOnlyClass}>{agencyEmail}</div>
+                <div className={readOnlyClass} style={radiusStyle}>{agencyEmail}</div>
               )}
             </div>
           </div>
@@ -536,14 +561,14 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
       )}
 
       {/* Line Items */}
-      <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
+      <section className={panelClass} style={radiusStyle}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider">Line Items</h2>
+          <h2 className={`${sectionHead} mb-0`}>Line Items</h2>
           {isEditing && (
             <button
               type="button"
               onClick={addLineItem}
-              className="flex items-center gap-1.5 text-sm text-[var(--brand-blue)] hover:text-[var(--brand-blue-light)] font-medium transition-colors"
+              className={`flex items-center gap-1.5 text-sm font-medium ${accentText} hover:underline`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 5v14M5 12h14" />
@@ -554,9 +579,9 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
         </div>
         <div className="space-y-3">
           {lineItems.map((item, index) => (
-            <div key={item.id} className="p-4 bg-[var(--brand-surface)] rounded-lg border border-[var(--brand-border)]/50">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--brand-blue)]/10 text-xs font-bold text-[var(--brand-blue)]">
+            <div key={item.id} className="border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] p-4" style={radiusStyle}>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center bg-[var(--ts-band-brands)] text-xs font-medium text-[var(--ts-ink-on-paper)]" style={radiusStyle}>
                   {index + 1}
                 </span>
                 {isEditing ? (
@@ -564,23 +589,23 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                     type="text"
                     value={item.show_name}
                     onChange={(e) => updateLineItem(index, "show_name", e.target.value)}
-                    className="flex-1 px-2 py-1 rounded border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm font-medium text-[var(--brand-text)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)] focus:border-transparent"
+                    className={`${inputClass} min-w-0 flex-1 !w-auto px-2 py-1 font-medium`} style={radiusStyle}
                   />
                 ) : (
-                  <span className="text-sm font-medium text-[var(--brand-text)]">{item.show_name}</span>
+                  <span className={`text-sm font-medium ${inkText}`}>{item.show_name}</span>
                 )}
                 {isEditing ? (
                   <select
                     value={item.placement}
                     onChange={(e) => updateLineItem(index, "placement", e.target.value)}
-                    className="px-2 py-1 rounded border border-[var(--brand-border)] bg-[var(--brand-surface)] text-xs text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]"
+                    className={`${inputClass} !w-auto px-2 py-1 text-xs`} style={radiusStyle}
                   >
                     {(["pre-roll", "mid-roll", "post-roll"] as Placement[]).map((p) => (
                       <option key={p} value={p}>{p}</option>
                     ))}
                   </select>
                 ) : (
-                  <span className="text-xs text-[var(--brand-text-muted)] bg-[var(--brand-surface-elevated)] px-2 py-0.5 rounded">
+                  <span className={`px-2 py-0.5 text-xs ${mutedText}`} style={radiusStyle}>
                     {item.placement} &middot; {item.reader_type.replace("_", " ")}
                   </span>
                 )}
@@ -588,7 +613,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                   <button
                     type="button"
                     onClick={() => removeLineItem(index)}
-                    className="ml-auto p-1.5 rounded-lg text-[var(--brand-text-muted)] hover:text-[var(--brand-error)] hover:bg-[var(--brand-error)]/[0.06] transition-all"
+                    className={`ml-auto p-1.5 ${mutedText} hover:text-[var(--ts-ink-on-paper)]`} style={radiusStyle}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M18 6 6 18M6 6l12 12" />
@@ -596,7 +621,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                   </button>
                 )}
               </div>
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                   <label className={labelClass}>Post Date</label>
                   {isEditing ? (
@@ -604,10 +629,10 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                       type="date"
                       value={item.post_date}
                       onChange={(e) => updateLineItem(index, "post_date", e.target.value)}
-                      className={inputClass}
+                      className={inputClass} style={radiusStyle}
                     />
                   ) : (
-                    <div className={readOnlyClass}>
+                    <div className={readOnlyClass} style={radiusStyle}>
                       {new Date(item.post_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
                     </div>
                   )}
@@ -620,59 +645,59 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                       value={item.guaranteed_downloads}
                       onChange={(e) => updateLineItem(index, "guaranteed_downloads", Number(e.target.value))}
                       min="0"
-                      className={inputClass}
+                      className={inputClass} style={radiusStyle}
                     />
                   ) : (
-                    <div className={readOnlyClass}>{item.guaranteed_downloads.toLocaleString()}</div>
+                    <div className={readOnlyClass} style={radiusStyle}>{item.guaranteed_downloads.toLocaleString()}</div>
                   )}
                 </div>
                 <div>
                   <label className={labelClass}>Gross Rate</label>
                   {isEditing ? (
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--brand-text-muted)]">$</span>
+                      <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-xs ${mutedText}`}>$</span>
                       <input
                         type="number"
                         value={item.gross_rate}
                         onChange={(e) => updateLineItem(index, "gross_rate", Number(e.target.value))}
                         min="0"
                         step="0.01"
-                        className={`${inputClass} pl-6`}
+                        className={`${inputClass} pl-6`} style={radiusStyle}
                       />
                     </div>
                   ) : (
-                    <div className={readOnlyClass}>${item.gross_rate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className={readOnlyClass} style={radiusStyle}>${item.gross_rate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                   )}
                 </div>
                 <div>
                   <label className={labelClass}>Net Due</label>
                   {isEditing ? (
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--brand-text-muted)]">$</span>
+                      <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-xs ${mutedText}`}>$</span>
                       <input
                         type="number"
                         value={item.net_due}
                         onChange={(e) => updateLineItem(index, "net_due", Number(e.target.value))}
                         min="0"
                         step="0.01"
-                        className="w-full pl-6 px-3 py-2 rounded-lg border border-[var(--brand-blue)]/20 bg-[var(--brand-blue)]/[0.04] text-sm font-semibold text-[var(--brand-blue)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)] focus:border-transparent transition-all"
+                        className={`${netDueClass} pl-6`} style={radiusStyle}
                       />
                     </div>
                   ) : (
-                    <div className="w-full px-3 py-2 rounded-lg border border-[var(--brand-blue)]/20 bg-[var(--brand-blue)]/[0.04] text-sm font-semibold text-[var(--brand-blue)]">
+                    <div className={netDueClass} style={radiusStyle}>
                       ${item.net_due.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   )}
                 </div>
               </div>
               {isEditing ? (
-                <div className="grid grid-cols-4 gap-3 mt-3">
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <label className={labelClass}>Price Type</label>
                     <select
                       value={item.price_type}
                       onChange={(e) => updateLineItem(index, "price_type", e.target.value)}
-                      className={inputClass}
+                      className={inputClass} style={radiusStyle}
                     >
                       <option value="cpm">CPM</option>
                       <option value="flat_rate">Flat Rate</option>
@@ -681,14 +706,14 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                   <div>
                     <label className={labelClass}>Gross CPM</label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--brand-text-muted)]">$</span>
+                      <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-xs ${mutedText}`}>$</span>
                       <input
                         type="number"
                         value={item.gross_cpm}
                         onChange={(e) => updateLineItem(index, "gross_cpm", Number(e.target.value))}
                         min="0"
                         step="0.01"
-                        className={`${inputClass} pl-6`}
+                        className={`${inputClass} pl-6`} style={radiusStyle}
                       />
                     </div>
                   </div>
@@ -697,7 +722,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                     <select
                       value={item.reader_type}
                       onChange={(e) => updateLineItem(index, "reader_type", e.target.value)}
-                      className={inputClass}
+                      className={inputClass} style={radiusStyle}
                     >
                       <option value="host_read">Host Read</option>
                       <option value="producer_read">Producer Read</option>
@@ -709,7 +734,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                     <select
                       value={item.content_type}
                       onChange={(e) => updateLineItem(index, "content_type", e.target.value)}
-                      className={inputClass}
+                      className={inputClass} style={radiusStyle}
                     >
                       <option value="evergreen">Evergreen</option>
                       <option value="dated">Dated</option>
@@ -717,30 +742,30 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-4 mt-3 text-xs text-[var(--brand-text-muted)]">
+                <div className={`mt-3 flex flex-wrap items-center gap-4 text-xs ${mutedText}`}>
                   <span>{item.price_type === "cpm" ? `$${item.gross_cpm} CPM` : "Flat rate"}</span>
                   <span>{item.is_scripted ? "Scripted" : "Organic"}</span>
                   <span>{item.is_personal_experience ? "Personal exp." : "Standard"}</span>
                   <span>{item.content_type}</span>
-                  {item.pixel_required && <span className="text-[var(--brand-blue)]">Pixel</span>}
+                  {item.pixel_required && <span className={inkText}>Pixel</span>}
                 </div>
               )}
 
               {/* Delivery Tracking */}
               {hasExistingIO && !isEditing && (
-                <div className="mt-3 pt-3 border-t border-[var(--brand-border)]/30">
+                <div className="mt-3 border-t border-[var(--ts-hairline-on-paper)] pt-3">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-[var(--brand-text-muted)] uppercase tracking-wider">Delivery</span>
+                      <span className={`text-xs font-medium uppercase tracking-wider ${mutedText}`}>Delivery</span>
                       {item.verified ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--brand-success)]/10 text-[var(--brand-success)]">
+                        <span className="inline-flex items-center gap-1 bg-[var(--ts-band-brands)] px-2 py-0.5 text-xs font-medium text-[var(--ts-ink-on-paper)]" style={radiusStyle}>
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M20 6 9 17l-5-5" />
                           </svg>
                           Delivered
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]">
+                        <span className="inline-flex items-center bg-[var(--ts-band-shows)] px-2 py-0.5 text-xs font-medium text-[var(--ts-ink-muted-on-paper)]" style={radiusStyle}>
                           Pending
                         </span>
                       )}
@@ -749,7 +774,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                       <button
                         type="button"
                         onClick={() => handleMarkAsDelivered(item)}
-                        className="text-xs font-medium text-[var(--brand-blue)] hover:text-[var(--brand-blue-light)] transition-colors"
+                        className={`text-xs font-medium ${accentText} hover:underline`}
                       >
                         Mark as Delivered
                       </button>
@@ -759,7 +784,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                   {/* Delivery edit fields */}
                   {deliveryEditing[item.id] && (
                     <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                           <label className={labelClass}>Actual Downloads</label>
                           <input
@@ -772,7 +797,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                               }))
                             }
                             min="0"
-                            className={inputClass}
+                            className={inputClass} style={radiusStyle}
                           />
                         </div>
                         <div>
@@ -787,7 +812,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                               }))
                             }
                             placeholder="https://..."
-                            className={inputClass}
+                            className={inputClass} style={radiusStyle}
                           />
                         </div>
                       </div>
@@ -796,14 +821,14 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                           type="button"
                           onClick={() => handleSaveDelivery(item.id)}
                           disabled={isSavingDelivery}
-                          className="px-3 py-1.5 rounded-lg bg-[var(--brand-success)] hover:bg-[var(--brand-success)]/90 text-white text-xs font-medium transition-colors disabled:opacity-50"
+                          className={`${inkBtnClass} px-3 py-1.5 text-xs`} style={radiusStyle}
                         >
                           {isSavingDelivery ? "Saving..." : "Save Delivery"}
                         </button>
                         <button
                           type="button"
                           onClick={() => handleCancelDelivery(item.id)}
-                          className="px-3 py-1.5 rounded-lg border border-[var(--brand-border)] text-xs font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+                          className={`${ghostBtnClass} px-3 py-1.5 text-xs`} style={radiusStyle}
                         >
                           Cancel
                         </button>
@@ -813,13 +838,13 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
 
                   {/* Delivery summary (when already verified and not editing) */}
                   {item.verified && !deliveryEditing[item.id] && (
-                    <div className="grid grid-cols-3 gap-3 text-xs">
+                    <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
                       <div>
-                        <span className="text-[var(--brand-text-muted)]">Actual DLs: </span>
+                        <span className={mutedText}>Actual DLs: </span>
                         <span className={`font-medium ${
                           (item.actual_downloads ?? 0) >= item.guaranteed_downloads
-                            ? "text-[var(--brand-success)]"
-                            : "text-[var(--brand-warning)]"
+                            ? inkText
+                            : accentText
                         }`}>
                           {(item.actual_downloads ?? 0).toLocaleString()}
                           {" / "}
@@ -828,8 +853,8 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                       </div>
                       {item.actual_post_date && (
                         <div>
-                          <span className="text-[var(--brand-text-muted)]">Aired: </span>
-                          <span className="font-medium text-[var(--brand-text)]">
+                          <span className={mutedText}>Aired: </span>
+                          <span className={`font-medium ${inkText}`}>
                             {new Date(item.actual_post_date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}
                           </span>
                         </div>
@@ -840,7 +865,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                             href={item.episode_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[var(--brand-blue)] hover:underline"
+                            className={`${accentText} hover:underline`}
                           >
                             View Episode
                           </a>
@@ -855,70 +880,70 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
         </div>
 
         {/* Totals */}
-        <div className="mt-4 pt-4 border-t border-[var(--brand-border)]">
-          <div className="grid grid-cols-3 gap-4">
+        <div className="mt-4 border-t border-[var(--ts-hairline-on-paper)] pt-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="text-center">
-              <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Total Downloads</div>
-              <div className="text-lg font-bold text-[var(--brand-text)]">{totalDownloads.toLocaleString()}</div>
+              <div className={`mb-1 text-xs font-medium uppercase tracking-wider ${mutedText}`}>Total Downloads</div>
+              <div className={`text-lg font-semibold ${inkText}`}>{totalDownloads.toLocaleString()}</div>
             </div>
             <div className="text-center">
-              <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Total Gross</div>
-              <div className="text-lg font-bold text-[var(--brand-text)]">${totalGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              <div className={`mb-1 text-xs font-medium uppercase tracking-wider ${mutedText}`}>Total Gross</div>
+              <div className={`text-lg font-semibold ${inkText}`}>${totalGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
             <div className="text-center">
-              <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Total Net</div>
-              <div className="text-lg font-bold text-[var(--brand-blue)]">${totalNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              <div className={`mb-1 text-xs font-medium uppercase tracking-wider ${mutedText}`}>Total Net</div>
+              <div className={`text-lg font-semibold ${inkText}`}>${totalNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
           </div>
         </div>
       </section>
 
       {/* Terms */}
-      <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-        <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider mb-4">Terms &amp; Conditions</h2>
-        <div className="grid grid-cols-2 gap-4">
+      <section className={panelClass} style={radiusStyle}>
+        <h2 className={sectionHead}>Terms &amp; Conditions</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className={labelClass}>Payment Terms</label>
             {isEditing ? (
-              <select value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} className={inputClass}>
+              <select value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} className={inputClass} style={radiusStyle}>
                 {PAYMENT_TERMS_OPTIONS.map((pt) => (
                   <option key={pt} value={pt}>{pt}</option>
                 ))}
               </select>
             ) : (
-              <div className={readOnlyClass}>{paymentTerms}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{paymentTerms}</div>
             )}
           </div>
           <div>
             <label className={labelClass}>Exclusivity (days)</label>
             {isEditing ? (
-              <input type="number" value={exclusivityDays} onChange={(e) => setExclusivityDays(Number(e.target.value))} className={inputClass} />
+              <input type="number" value={exclusivityDays} onChange={(e) => setExclusivityDays(Number(e.target.value))} className={inputClass} style={radiusStyle} />
             ) : (
-              <div className={readOnlyClass}>{exclusivityDays}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{exclusivityDays}</div>
             )}
           </div>
           <div>
             <label className={labelClass}>ROFR (days)</label>
             {isEditing ? (
-              <input type="number" value={rofrDays} onChange={(e) => setRofrDays(Number(e.target.value))} className={inputClass} />
+              <input type="number" value={rofrDays} onChange={(e) => setRofrDays(Number(e.target.value))} className={inputClass} style={radiusStyle} />
             ) : (
-              <div className={readOnlyClass}>{rofrDays}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{rofrDays}</div>
             )}
           </div>
           <div>
             <label className={labelClass}>Cancellation Notice (days)</label>
             {isEditing ? (
-              <input type="number" value={cancellationDays} onChange={(e) => setCancellationDays(Number(e.target.value))} className={inputClass} />
+              <input type="number" value={cancellationDays} onChange={(e) => setCancellationDays(Number(e.target.value))} className={inputClass} style={radiusStyle} />
             ) : (
-              <div className={readOnlyClass}>{cancellationDays}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{cancellationDays}</div>
             )}
           </div>
           <div>
             <label className={labelClass}>Download Tracking (days)</label>
             {isEditing ? (
-              <input type="number" value={trackingDays} onChange={(e) => setTrackingDays(Number(e.target.value))} className={inputClass} />
+              <input type="number" value={trackingDays} onChange={(e) => setTrackingDays(Number(e.target.value))} className={inputClass} style={radiusStyle} />
             ) : (
-              <div className={readOnlyClass}>{trackingDays}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{trackingDays}</div>
             )}
           </div>
           <div>
@@ -929,14 +954,14 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                   type="number"
                   value={(makeGoodThreshold * 100).toFixed(0)}
                   onChange={(e) => setMakeGoodThreshold(Number(e.target.value) / 100)}
-                  className={inputClass}
+                  className={inputClass} style={radiusStyle}
                   min={0}
                   max={100}
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--brand-text-muted)]">%</span>
+                <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs ${mutedText}`}>%</span>
               </div>
             ) : (
-              <div className={readOnlyClass}>{(makeGoodThreshold * 100).toFixed(0)}%</div>
+              <div className={readOnlyClass} style={radiusStyle}>{(makeGoodThreshold * 100).toFixed(0)}%</div>
             )}
           </div>
         </div>
@@ -949,20 +974,20 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                 value={competitorExclusion}
                 onChange={(e) => setCompetitorExclusion(e.target.value)}
                 placeholder="Brand A, Brand B, Brand C"
-                className={inputClass}
+                className={inputClass} style={radiusStyle}
               />
-              <p className="text-xs text-[var(--brand-text-muted)] mt-1">Comma-separated brand names</p>
+              <p className={`mt-1 text-xs ${mutedText}`}>Comma-separated brand names</p>
             </>
           ) : (
             <div className="flex items-center gap-2 flex-wrap">
               {competitorExclusion.split(",").map((c) => c.trim()).filter(Boolean).length > 0 ? (
                 competitorExclusion.split(",").map((c) => c.trim()).filter(Boolean).map((comp) => (
-                  <span key={comp} className="text-xs bg-[var(--brand-orange)]/[0.08] text-[var(--brand-orange)] px-2.5 py-1 rounded-full font-medium">
+                  <span key={comp} className="bg-[var(--ts-band-shows)] px-2.5 py-1 text-xs font-medium text-[var(--ts-ink-on-paper)]" style={radiusStyle}>
                     {comp}
                   </span>
                 ))
               ) : (
-                <span className="text-xs text-[var(--brand-text-muted)]">None</span>
+                <span className={`text-xs ${mutedText}`}>None</span>
               )}
             </div>
           )}
@@ -971,20 +996,20 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
 
       {/* Signature section (view mode, existing signed IO) */}
       {!isEditing && hasExistingIO && existingIO?.signed_at && (
-        <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-success)]/20 mb-6">
-          <h2 className="text-sm font-semibold text-[var(--brand-success)] uppercase tracking-wider mb-3">Signed</h2>
-          <div className="grid grid-cols-2 gap-4 text-sm">
+        <section className={panelClass} style={radiusStyle}>
+          <h2 className={sectionHead}>Signed</h2>
+          <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
             <div>
-              <span className="text-[var(--brand-text-muted)]">Publisher: </span>
-              <span className="font-medium text-[var(--brand-text)]">{existingIO.signed_by_publisher}</span>
+              <span className={mutedText}>Publisher: </span>
+              <span className={`font-medium ${inkText}`}>{existingIO.signed_by_publisher}</span>
             </div>
             <div>
-              <span className="text-[var(--brand-text-muted)]">Agency: </span>
-              <span className="font-medium text-[var(--brand-text)]">{existingIO.signed_by_agency ?? "\u2014"}</span>
+              <span className={mutedText}>Agency: </span>
+              <span className={`font-medium ${inkText}`}>{existingIO.signed_by_agency ?? "\u2014"}</span>
             </div>
-            <div className="col-span-2">
-              <span className="text-[var(--brand-text-muted)]">Signed on: </span>
-              <span className="font-medium text-[var(--brand-text)]">
+            <div className="sm:col-span-2">
+              <span className={mutedText}>Signed on: </span>
+              <span className={`font-medium ${inkText}`}>
                 {new Date(existingIO.signed_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
               </span>
             </div>
@@ -993,13 +1018,13 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {isEditing && (
           <>
             {hasExistingIO && (
               <button
                 onClick={() => setIsEditing(false)}
-                className="px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+                className={ghostBtnClass} style={radiusStyle}
               >
                 Cancel
               </button>
@@ -1007,7 +1032,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors disabled:opacity-50"
+              className={ghostBtnClass} style={radiusStyle}
             >
               {isSaving ? "Saving..." : "Save Draft"}
             </button>
@@ -1015,7 +1040,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
               <button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+                className={inkBtnClass} style={radiusStyle}
               >
                 {isSaving ? "Sending..." : "Send IO"}
               </button>
@@ -1025,7 +1050,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
         <button
           onClick={handleDownloadPdf}
           disabled={isDownloading}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors disabled:opacity-50"
+          className={ghostBtnClass} style={radiusStyle}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -1037,7 +1062,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
         <button
           onClick={() => setShowSendConfirm(true)}
           disabled={isSending}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--brand-teal)] hover:bg-[var(--brand-teal-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+          className={inkBtnClass} style={radiusStyle}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="22" y1="2" x2="11" y2="13" />
@@ -1049,7 +1074,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
           <button
             onClick={handleGenerateInvoice}
             disabled={isGeneratingInvoice}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+            className={inkBtnClass} style={radiusStyle}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -1064,10 +1089,10 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
 
       {/* Delivery / Invoice error messages */}
       {deliveryError && (
-        <div className="mt-4 p-3 rounded-xl bg-[var(--brand-error)]/[0.06] border border-[var(--brand-error)]/20">
+        <div className="mt-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-3" style={radiusStyle}>
           <div className="flex items-center justify-between">
-            <p className="text-sm text-[var(--brand-error)]">{deliveryError}</p>
-            <button onClick={() => setDeliveryError(null)} className="p-1 text-[var(--brand-text-muted)] hover:text-[var(--brand-text)]">
+            <p className={`text-sm ${accentText}`}>{deliveryError}</p>
+            <button onClick={() => setDeliveryError(null)} className={`p-1 ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 6 6 18M6 6l12 12" />
               </svg>
@@ -1076,10 +1101,10 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
         </div>
       )}
       {invoiceError && (
-        <div className="mt-4 p-3 rounded-xl bg-[var(--brand-error)]/[0.06] border border-[var(--brand-error)]/20">
+        <div className="mt-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-3" style={radiusStyle}>
           <div className="flex items-center justify-between">
-            <p className="text-sm text-[var(--brand-error)]">{invoiceError}</p>
-            <button onClick={() => setInvoiceError(null)} className="p-1 text-[var(--brand-text-muted)] hover:text-[var(--brand-text)]">
+            <p className={`text-sm ${accentText}`}>{invoiceError}</p>
+            <button onClick={() => setInvoiceError(null)} className={`p-1 ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 6 6 18M6 6l12 12" />
               </svg>
@@ -1090,27 +1115,27 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
 
       {/* Send confirmation modal */}
       {showSendConfirm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowSendConfirm(false)}>
-          <div className="bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)] shadow-xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-2">Send IO via Email</h3>
-            <p className="text-sm text-[var(--brand-text-secondary)] mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ts-ink-on-paper)]/40" onClick={() => setShowSendConfirm(false)}>
+          <div className="mx-4 w-full max-w-md border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-6" style={radiusStyle} onClick={(e) => e.stopPropagation()}>
+            <h3 className={`mb-2 text-lg font-semibold ${inkText}`}>Send IO via Email</h3>
+            <p className={`mb-4 text-sm ${mutedText}`}>
               This will email <strong>{ioNumber}</strong> as a PDF attachment to:
             </p>
-            <div className="p-3 rounded-lg bg-[var(--brand-surface)] border border-[var(--brand-border)] mb-5">
-              <div className="text-sm font-medium text-[var(--brand-text)]">{recipientName}</div>
-              <div className="text-sm text-[var(--brand-text-muted)]">{recipientEmail}</div>
+            <div className="mb-5 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] p-3" style={radiusStyle}>
+              <div className={`text-sm font-medium ${inkText}`}>{recipientName}</div>
+              <div className={`text-sm ${mutedText}`}>{recipientEmail}</div>
             </div>
             <div className="flex items-center gap-3 justify-end">
               <button
                 onClick={() => setShowSendConfirm(false)}
-                className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+                className={ghostBtnClass} style={radiusStyle}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSendEmail}
                 disabled={isSending}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-teal)] hover:bg-[var(--brand-teal-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+                className={inkBtnClass} style={radiusStyle}
               >
                 {isSending ? (
                   <>
@@ -1131,39 +1156,38 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
 
       {/* Send result toast */}
       {sendResult && (
-        <div className={`mt-4 p-4 rounded-xl border ${
-          sendResult.success
-            ? "bg-[var(--brand-success)]/[0.06] border-[var(--brand-success)]/20"
-            : "bg-[var(--brand-error)]/[0.06] border-[var(--brand-error)]/20"
-        }`}>
+        <div
+          className="mt-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4"
+          style={radiusStyle}
+        >
           <div className="flex items-start gap-3">
             {sendResult.success ? (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
                 <path d="M20 6 9 17l-5-5" />
               </svg>
             ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-error)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`mt-0.5 shrink-0 ${accentText}`}>
                 <circle cx="12" cy="12" r="10" />
                 <line x1="15" y1="9" x2="9" y2="15" />
                 <line x1="9" y1="9" x2="15" y2="15" />
               </svg>
             )}
             <div>
-              <p className={`text-sm font-medium ${sendResult.success ? "text-[var(--brand-success)]" : "text-[var(--brand-error)]"}`}>
+              <p className={`text-sm font-medium ${sendResult.success ? inkText : accentText}`}>
                 {sendResult.success
                   ? `IO sent to ${sendResult.toName ?? sendResult.to}`
                   : "Failed to send"}
               </p>
               {sendResult.success && sendResult.to && (
-                <p className="text-xs text-[var(--brand-text-muted)] mt-0.5">{sendResult.to}</p>
+                <p className={`mt-0.5 text-xs ${mutedText}`}>{sendResult.to}</p>
               )}
               {sendResult.error && (
-                <p className="text-xs text-[var(--brand-error)] mt-0.5">{sendResult.error}</p>
+                <p className={`mt-0.5 text-xs ${accentText}`}>{sendResult.error}</p>
               )}
             </div>
             <button
               onClick={() => setSendResult(null)}
-              className="ml-auto p-1 rounded text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+              className={`ml-auto p-1 ${mutedText} hover:text-[var(--ts-ink-on-paper)]`} style={radiusStyle}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 6 6 18M6 6l12 12" />
