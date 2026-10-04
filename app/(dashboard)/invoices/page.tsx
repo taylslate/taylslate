@@ -19,13 +19,29 @@ interface Deal {
   status: string;
 }
 
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const accentText = "text-[var(--ts-accent)]";
+const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
+const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const radiusClass = "rounded-[var(--ts-radius)]";
+const inkBtnClass =
+  "inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+const ghostBtnClass =
+  "inline-flex items-center gap-2 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-ink-on-paper)]/[0.04] disabled:cursor-not-allowed disabled:opacity-50";
+const pulseClass = "animate-pulse rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)]/10";
+const textLinkClass =
+  "inline-flex items-center gap-1.5 text-xs font-medium text-[var(--ts-accent)] hover:underline disabled:opacity-50";
+const pillBase =
+  "inline-block rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-2.5 py-1 text-xs font-medium";
+
 const statusStyles: Record<InvoiceStatus, string> = {
-  draft: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
-  sent: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
-  paid: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-  overdue: "bg-[var(--brand-error)]/10 text-[var(--brand-error)]",
-  disputed: "bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]",
-  cancelled: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
+  draft: `${pillBase} ${mutedText}`,
+  sent: `${pillBase} ${inkText}`,
+  paid: `${pillBase} ${inkText}`,
+  overdue: `${pillBase} ${accentText}`,
+  disputed: `${pillBase} ${accentText}`,
+  cancelled: `${pillBase} ${mutedText}`,
 };
 
 const statusLabels: Record<InvoiceStatus, string> = {
@@ -246,27 +262,27 @@ export default function InvoicesPage() {
 
   if (loading) {
     return (
-      <div className="p-8 max-w-5xl">
+      <div className={`bg-[var(--ts-paper)] p-8 max-w-5xl ${inkText}`}>
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Invoices</h1>
-            <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+            <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
+            <p className={`text-sm mt-1 ${mutedText}`}>
               Track invoices and payments for your shows.
             </p>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 mb-8">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] animate-pulse">
-              <div className="h-3 w-20 bg-[var(--brand-border)] rounded mb-2" />
-              <div className="h-6 w-16 bg-[var(--brand-border)] rounded" />
+            <div key={i} className={`p-4 ${panelClass} ${radiusClass}`}>
+              <div className={`mb-2 h-3 w-20 ${pulseClass}`} />
+              <div className={`h-6 w-16 ${pulseClass}`} />
             </div>
           ))}
         </div>
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] animate-pulse">
-              <div className="h-4 w-48 bg-[var(--brand-border)] rounded" />
+            <div key={i} className={`p-5 ${panelClass} ${radiusClass}`}>
+              <div className={`h-4 w-48 ${pulseClass}`} />
             </div>
           ))}
         </div>
@@ -276,20 +292,20 @@ export default function InvoicesPage() {
 
   if (error) {
     return (
-      <div className="p-8 max-w-5xl">
+      <div className={`bg-[var(--ts-paper)] p-8 max-w-5xl ${inkText}`}>
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Invoices</h1>
-            <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+            <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
+            <p className={`text-sm mt-1 ${mutedText}`}>
               Track invoices and payments for your shows.
             </p>
           </div>
         </div>
-        <div className="p-6 bg-[var(--brand-error)]/[0.06] border border-[var(--brand-error)]/20 rounded-xl text-center">
-          <p className="text-sm text-[var(--brand-error)] font-medium">{error}</p>
+        <div className={`p-6 text-center ${panelClass} ${radiusClass}`}>
+          <p className={`text-sm font-medium ${accentText}`}>{error}</p>
           <button
             onClick={fetchData}
-            className="mt-3 px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors"
+            className={`mt-3 ${inkBtnClass}`}
           >
             Retry
           </button>
@@ -301,11 +317,11 @@ export default function InvoicesPage() {
   const hasInvoices = invoices.length > 0;
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className={`bg-[var(--ts-paper)] p-8 max-w-5xl ${inkText}`}>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Invoices</h1>
-          <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+          <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
+          <p className={`text-sm mt-1 ${mutedText}`}>
             Track invoices and payments for your shows.
           </p>
         </div>
@@ -317,7 +333,7 @@ export default function InvoicesPage() {
               setGenerateError(null);
               setSelectedIOId("");
             }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors"
+            className={inkBtnClass}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 5v14M5 12h14" />
@@ -328,17 +344,17 @@ export default function InvoicesPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-8">
-        <div className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
-          <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Outstanding</div>
-          <div className="text-xl font-bold text-[var(--brand-text)]">${stats.total_outstanding.toLocaleString()}</div>
+        <div className={`p-4 ${panelClass} ${radiusClass}`}>
+          <div className={`text-xs font-medium uppercase tracking-wider mb-1 ${mutedText}`}>Outstanding</div>
+          <div className={`text-xl font-bold ${inkText}`}>${stats.total_outstanding.toLocaleString()}</div>
         </div>
-        <div className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
-          <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Paid This Month</div>
-          <div className="text-xl font-bold text-[var(--brand-success)]">${stats.total_paid_this_month.toLocaleString()}</div>
+        <div className={`p-4 ${panelClass} ${radiusClass}`}>
+          <div className={`text-xs font-medium uppercase tracking-wider mb-1 ${mutedText}`}>Paid This Month</div>
+          <div className={`text-xl font-bold ${inkText}`}>${stats.total_paid_this_month.toLocaleString()}</div>
         </div>
-        <div className="p-4 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
-          <div className="text-xs text-[var(--brand-text-muted)] font-medium uppercase tracking-wider mb-1">Pending</div>
-          <div className="text-xl font-bold text-[var(--brand-text)]">{pendingCount}</div>
+        <div className={`p-4 ${panelClass} ${radiusClass}`}>
+          <div className={`text-xs font-medium uppercase tracking-wider mb-1 ${mutedText}`}>Pending</div>
+          <div className={`text-xl font-bold ${inkText}`}>{pendingCount}</div>
         </div>
       </div>
 
@@ -352,11 +368,11 @@ export default function InvoicesPage() {
               <Link
                 key={invoice.id}
                 href={`/invoices/${invoice.id}`}
-                className="flex items-center justify-between p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] hover:border-[var(--brand-blue)]/30 hover:shadow-sm transition-all group"
+                className={`group flex items-center justify-between p-5 ${panelClass} ${radiusClass} transition-colors hover:border-[var(--ts-ink-on-paper)]`}
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--brand-blue)]/10 to-[var(--brand-teal)]/10 flex items-center justify-center">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <div className={`flex h-10 w-10 items-center justify-center border bg-[var(--ts-paper)] ${hairlineRule} ${radiusClass} ${inkText}`}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                       <polyline points="14 2 14 8 20 8" />
                       <line x1="16" x2="8" y1="13" y2="13" />
@@ -365,11 +381,11 @@ export default function InvoicesPage() {
                     </svg>
                   </div>
                   <div>
-                    <h3 className="font-semibold text-[var(--brand-text)]">{invoice.invoice_number}</h3>
+                    <h3 className={`font-semibold ${inkText}`}>{invoice.invoice_number}</h3>
                     <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs text-[var(--brand-text-muted)]">{invoice.advertiser_name}</span>
-                      {showNames && <span className="text-xs text-[var(--brand-text-muted)]">{showNames}</span>}
-                      <span className="text-xs text-[var(--brand-text-muted)]">Due {dueDate}</span>
+                      <span className={`text-xs ${mutedText}`}>{invoice.advertiser_name}</span>
+                      {showNames && <span className={`text-xs ${mutedText}`}>{showNames}</span>}
+                      <span className={`text-xs ${mutedText}`}>Due {dueDate}</span>
                     </div>
                   </div>
                 </div>
@@ -378,7 +394,7 @@ export default function InvoicesPage() {
                     <button
                       onClick={(e) => { e.preventDefault(); handleDownloadExisting(invoice.id); }}
                       disabled={isDownloading === invoice.id}
-                      className="flex items-center gap-1.5 text-xs text-[var(--brand-blue)] hover:underline font-medium disabled:opacity-50"
+                      className={textLinkClass}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -389,7 +405,7 @@ export default function InvoicesPage() {
                     </button>
                     <button
                       onClick={(e) => { e.preventDefault(); handleSendExisting(invoice); }}
-                      className="flex items-center gap-1.5 text-xs text-[var(--brand-teal)] hover:underline font-medium"
+                      className={textLinkClass}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="22" y1="2" x2="11" y2="13" />
@@ -399,10 +415,10 @@ export default function InvoicesPage() {
                     </button>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-semibold text-[var(--brand-text)]">${invoice.total_due.toLocaleString()}</div>
-                    <div className="text-xs text-[var(--brand-text-muted)]">total due</div>
+                    <div className={`text-sm font-semibold ${inkText}`}>${invoice.total_due.toLocaleString()}</div>
+                    <div className={`text-xs ${mutedText}`}>total due</div>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusStyles[invoice.status]}`}>
+                  <span className={statusStyles[invoice.status]}>
                     {statusLabels[invoice.status]}
                   </span>
                 </div>
@@ -411,17 +427,17 @@ export default function InvoicesPage() {
           })}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-24 bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)] border-dashed">
-          <div className="w-16 h-16 rounded-2xl bg-[var(--brand-blue)]/[0.06] flex items-center justify-center mb-5">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <div className={`flex flex-col items-center justify-center border-dashed py-24 ${panelClass} ${radiusClass}`}>
+          <div className={`mb-5 flex h-16 w-16 items-center justify-center border bg-[var(--ts-paper)] ${hairlineRule} ${radiusClass} ${inkText}`}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <polyline points="14 2 14 8 20 8" />
               <line x1="16" x2="8" y1="13" y2="13" />
               <line x1="16" x2="8" y1="17" y2="17" />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-2">No invoices yet</h3>
-          <p className="text-sm text-[var(--brand-text-muted)] mb-6 max-w-sm text-center">
+          <h3 className={`text-lg font-semibold mb-2 ${inkText}`}>No invoices yet</h3>
+          <p className={`text-sm mb-6 max-w-sm text-center ${mutedText}`}>
             Invoices will appear here once deals are completed and delivered.
           </p>
         </div>
@@ -429,24 +445,24 @@ export default function InvoicesPage() {
 
       {/* Generate Invoice Modal */}
       {showGenerateModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowGenerateModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ts-ink-on-paper)]/40" onClick={() => setShowGenerateModal(false)}>
           <div
-            className="bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)] shadow-xl p-6 max-w-lg w-full mx-4"
+            className={`mx-4 w-full max-w-lg p-6 ${panelClass} ${radiusClass}`}
             onClick={(e) => e.stopPropagation()}
           >
             {!generatedInvoice ? (
               <>
-                <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-2">Generate Invoice</h3>
-                <p className="text-sm text-[var(--brand-text-secondary)] mb-4">
+                <h3 className={`text-lg font-semibold mb-2 ${inkText}`}>Generate Invoice</h3>
+                <p className={`text-sm mb-4 ${mutedText}`}>
                   Select an IO with delivered episodes to generate an invoice.
                 </p>
 
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Insertion Order</label>
+                  <label className={`mb-1.5 block text-sm font-medium ${inkText}`}>Insertion Order</label>
                   <select
                     value={selectedIOId}
                     onChange={(e) => setSelectedIOId(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+                    className={`w-full px-4 py-2.5 text-sm focus:border-[var(--ts-accent)] focus:outline-none ${panelClass} ${radiusClass} ${inkText}`}
                   >
                     <option value="">Select an IO</option>
                     {invoiceableIOs.map((io) => {
@@ -461,7 +477,7 @@ export default function InvoicesPage() {
                 </div>
 
                 {selectedIOId && (
-                  <div className="p-3 rounded-lg bg-[var(--brand-surface)] border border-[var(--brand-border)] mb-4">
+                  <div className={`mb-4 p-3 ${panelClass} ${radiusClass}`}>
                     {(() => {
                       const io = invoiceableIOs.find((o) => o.id === selectedIOId);
                       if (!io) return null;
@@ -469,21 +485,21 @@ export default function InvoicesPage() {
                       return (
                         <div className="space-y-1.5 text-sm">
                           <div className="flex justify-between">
-                            <span className="text-[var(--brand-text-muted)]">Advertiser</span>
-                            <span className="font-medium text-[var(--brand-text)]">{io.advertiser_name}</span>
+                            <span className={mutedText}>Advertiser</span>
+                            <span className={`font-medium ${inkText}`}>{io.advertiser_name}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-[var(--brand-text-muted)]">Delivered episodes</span>
-                            <span className="font-medium text-[var(--brand-text)]">{delivered.length}</span>
+                            <span className={mutedText}>Delivered episodes</span>
+                            <span className={`font-medium ${inkText}`}>{delivered.length}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-[var(--brand-text-muted)]">Total net</span>
-                            <span className="font-medium text-[var(--brand-blue)]">
+                            <span className={mutedText}>Total net</span>
+                            <span className={`font-medium ${inkText}`}>
                               ${delivered.reduce((s, li) => s + li.net_due, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                             </span>
                           </div>
                           {delivered.some((li) => li.actual_downloads != null && li.actual_downloads < li.guaranteed_downloads * 0.9) && (
-                            <div className="flex items-center gap-1.5 mt-1 text-xs text-[var(--brand-warning)]">
+                            <div className={`mt-1 flex items-center gap-1.5 text-xs ${accentText}`}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
                                 <line x1="12" y1="9" x2="12" y2="13" />
@@ -499,22 +515,22 @@ export default function InvoicesPage() {
                 )}
 
                 {generateError && (
-                  <div className="p-3 rounded-lg bg-[var(--brand-error)]/[0.06] border border-[var(--brand-error)]/20 mb-4">
-                    <p className="text-sm text-[var(--brand-error)]">{generateError}</p>
+                  <div className={`mb-4 p-3 ${panelClass} ${radiusClass}`}>
+                    <p className={`text-sm ${accentText}`}>{generateError}</p>
                   </div>
                 )}
 
                 <div className="flex items-center gap-3 justify-end">
                   <button
                     onClick={() => setShowGenerateModal(false)}
-                    className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+                    className={ghostBtnClass}
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleGenerate}
                     disabled={!selectedIOId || isGenerating}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+                    className={inkBtnClass}
                   >
                     {isGenerating ? (
                       <>
@@ -533,60 +549,60 @@ export default function InvoicesPage() {
             ) : (
               <>
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-xl bg-[var(--brand-success)]/[0.08] flex items-center justify-center">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <div className={`flex h-10 w-10 items-center justify-center border bg-[var(--ts-paper)] ${hairlineRule} ${radiusClass} ${inkText}`}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M20 6 9 17l-5-5" />
                     </svg>
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-[var(--brand-text)]">Invoice Generated</h3>
-                    <p className="text-sm text-[var(--brand-text-muted)]">{generatedInvoice.invoice_number}</p>
+                    <h3 className={`text-lg font-semibold ${inkText}`}>Invoice Generated</h3>
+                    <p className={`text-sm ${mutedText}`}>{generatedInvoice.invoice_number}</p>
                   </div>
                 </div>
 
-                <div className="p-4 rounded-lg bg-[var(--brand-surface)] border border-[var(--brand-border)] mb-4 space-y-2 text-sm">
+                <div className={`mb-4 space-y-2 p-4 text-sm ${panelClass} ${radiusClass}`}>
                   <div className="flex justify-between">
-                    <span className="text-[var(--brand-text-muted)]">Bill to</span>
-                    <span className="font-medium text-[var(--brand-text)]">{generatedInvoice.bill_to_name}</span>
+                    <span className={mutedText}>Bill to</span>
+                    <span className={`font-medium ${inkText}`}>{generatedInvoice.bill_to_name}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[var(--brand-text-muted)]">Advertiser</span>
-                    <span className="font-medium text-[var(--brand-text)]">{generatedInvoice.advertiser_name}</span>
+                    <span className={mutedText}>Advertiser</span>
+                    <span className={`font-medium ${inkText}`}>{generatedInvoice.advertiser_name}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[var(--brand-text-muted)]">Period</span>
-                    <span className="font-medium text-[var(--brand-text)]">{generatedInvoice.campaign_period}</span>
+                    <span className={mutedText}>Period</span>
+                    <span className={`font-medium ${inkText}`}>{generatedInvoice.campaign_period}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[var(--brand-text-muted)]">Line items</span>
-                    <span className="font-medium text-[var(--brand-text)]">{generatedInvoice.line_items.length}</span>
+                    <span className={mutedText}>Line items</span>
+                    <span className={`font-medium ${inkText}`}>{generatedInvoice.line_items.length}</span>
                   </div>
                   {generatedInvoice.adjustments !== 0 && (
                     <div className="flex justify-between">
-                      <span className="text-[var(--brand-text-muted)]">Adjustments</span>
-                      <span className="font-medium text-[var(--brand-warning)]">
+                      <span className={mutedText}>Adjustments</span>
+                      <span className={`font-medium ${accentText}`}>
                         -${Math.abs(generatedInvoice.adjustments).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   )}
-                  <div className="flex justify-between pt-2 border-t border-[var(--brand-border)]">
-                    <span className="font-semibold text-[var(--brand-text)]">Total due</span>
-                    <span className="font-bold text-[var(--brand-blue)]">
+                  <div className={`flex justify-between border-t pt-2 ${hairlineRule}`}>
+                    <span className={`font-semibold ${inkText}`}>Total due</span>
+                    <span className={`font-bold ${inkText}`}>
                       ${generatedInvoice.total_due.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[var(--brand-text-muted)]">Due date</span>
-                    <span className="font-medium text-[var(--brand-text)]">
+                    <span className={mutedText}>Due date</span>
+                    <span className={`font-medium ${inkText}`}>
                       {new Date(generatedInvoice.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                     </span>
                   </div>
                 </div>
 
                 {generatedInvoice.line_items.some((li) => li.make_good) && (
-                  <div className="p-3 rounded-lg bg-[var(--brand-warning)]/[0.06] border border-[var(--brand-warning)]/20 mb-4">
-                    <p className="text-sm text-[var(--brand-warning)] font-medium">Make-good applied</p>
-                    <p className="text-xs text-[var(--brand-text-muted)] mt-0.5">
+                  <div className={`mb-4 p-3 ${panelClass} ${radiusClass}`}>
+                    <p className={`text-sm font-medium ${accentText}`}>Make-good applied</p>
+                    <p className={`mt-0.5 text-xs ${mutedText}`}>
                       One or more episodes underdelivered by &gt;10%. Those line items are zeroed out and make-good episodes will be scheduled.
                     </p>
                   </div>
@@ -595,14 +611,14 @@ export default function InvoicesPage() {
                 <div className="flex items-center gap-3 justify-end">
                   <button
                     onClick={() => setShowGenerateModal(false)}
-                    className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+                    className={ghostBtnClass}
                   >
                     Close
                   </button>
                   <button
                     onClick={handleDownloadGenerated}
                     disabled={isDownloading === "generated"}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors disabled:opacity-50"
+                    className={ghostBtnClass}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -613,7 +629,7 @@ export default function InvoicesPage() {
                   </button>
                   <button
                     onClick={handleSendGenerated}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-teal)] hover:bg-[var(--brand-teal-light)] text-white text-sm font-medium transition-colors"
+                    className={inkBtnClass}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="22" y1="2" x2="11" y2="13" />
@@ -630,34 +646,34 @@ export default function InvoicesPage() {
 
       {/* Send Confirmation Modal */}
       {showSendConfirm && invoiceToSend && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowSendConfirm(false)}>
-          <div className="bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)] shadow-xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-2">Send Invoice via Email</h3>
-            <p className="text-sm text-[var(--brand-text-secondary)] mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ts-ink-on-paper)]/40" onClick={() => setShowSendConfirm(false)}>
+          <div className={`mx-4 w-full max-w-md p-6 ${panelClass} ${radiusClass}`} onClick={(e) => e.stopPropagation()}>
+            <h3 className={`text-lg font-semibold mb-2 ${inkText}`}>Send Invoice via Email</h3>
+            <p className={`text-sm mb-4 ${mutedText}`}>
               This will email <strong>{invoiceToSend.invoice_number}</strong> as a PDF attachment to:
             </p>
-            <div className="p-3 rounded-lg bg-[var(--brand-surface)] border border-[var(--brand-border)] mb-3">
-              <div className="text-sm font-medium text-[var(--brand-text)]">{invoiceToSend.bill_to_name}</div>
-              <div className="text-sm text-[var(--brand-text-muted)]">{invoiceToSend.bill_to_email}</div>
+            <div className={`mb-3 p-3 ${panelClass} ${radiusClass}`}>
+              <div className={`text-sm font-medium ${inkText}`}>{invoiceToSend.bill_to_name}</div>
+              <div className={`text-sm ${mutedText}`}>{invoiceToSend.bill_to_email}</div>
             </div>
-            <div className="p-3 rounded-lg bg-[var(--brand-surface)] border border-[var(--brand-border)] mb-5 space-y-1.5 text-sm">
+            <div className={`mb-5 space-y-1.5 p-3 text-sm ${panelClass} ${radiusClass}`}>
               <div className="flex justify-between">
-                <span className="text-[var(--brand-text-muted)]">Advertiser</span>
-                <span className="font-medium text-[var(--brand-text)]">{invoiceToSend.advertiser_name}</span>
+                <span className={mutedText}>Advertiser</span>
+                <span className={`font-medium ${inkText}`}>{invoiceToSend.advertiser_name}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[var(--brand-text-muted)]">Period</span>
-                <span className="font-medium text-[var(--brand-text)]">{invoiceToSend.campaign_period}</span>
+                <span className={mutedText}>Period</span>
+                <span className={`font-medium ${inkText}`}>{invoiceToSend.campaign_period}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[var(--brand-text-muted)]">Total due</span>
-                <span className="font-bold text-[var(--brand-blue)]">
+                <span className={mutedText}>Total due</span>
+                <span className={`font-bold ${inkText}`}>
                   ${invoiceToSend.total_due.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[var(--brand-text-muted)]">Due date</span>
-                <span className="font-medium text-[var(--brand-text)]">
+                <span className={mutedText}>Due date</span>
+                <span className={`font-medium ${inkText}`}>
                   {new Date(invoiceToSend.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                 </span>
               </div>
@@ -665,14 +681,14 @@ export default function InvoicesPage() {
             <div className="flex items-center gap-3 justify-end">
               <button
                 onClick={() => setShowSendConfirm(false)}
-                className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+                className={ghostBtnClass}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSendEmail}
                 disabled={isSending}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-teal)] hover:bg-[var(--brand-teal-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+                className={inkBtnClass}
               >
                 {isSending ? (
                   <>
@@ -693,39 +709,35 @@ export default function InvoicesPage() {
 
       {/* Send result toast */}
       {sendResult && (
-        <div className={`mt-4 p-4 rounded-xl border ${
-          sendResult.success
-            ? "bg-[var(--brand-success)]/[0.06] border-[var(--brand-success)]/20"
-            : "bg-[var(--brand-error)]/[0.06] border-[var(--brand-error)]/20"
-        }`}>
+        <div className={`mt-4 p-4 ${panelClass} ${radiusClass}`}>
           <div className="flex items-start gap-3">
             {sendResult.success ? (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`mt-0.5 shrink-0 ${inkText}`}>
                 <path d="M20 6 9 17l-5-5" />
               </svg>
             ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-error)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`mt-0.5 shrink-0 ${accentText}`}>
                 <circle cx="12" cy="12" r="10" />
                 <line x1="15" y1="9" x2="9" y2="15" />
                 <line x1="9" y1="9" x2="15" y2="15" />
               </svg>
             )}
             <div>
-              <p className={`text-sm font-medium ${sendResult.success ? "text-[var(--brand-success)]" : "text-[var(--brand-error)]"}`}>
+              <p className={`text-sm font-medium ${sendResult.success ? inkText : accentText}`}>
                 {sendResult.success
                   ? `Invoice sent to ${sendResult.toName ?? sendResult.to}`
                   : "Failed to send"}
               </p>
               {sendResult.success && sendResult.to && (
-                <p className="text-xs text-[var(--brand-text-muted)] mt-0.5">{sendResult.to}</p>
+                <p className={`mt-0.5 text-xs ${mutedText}`}>{sendResult.to}</p>
               )}
               {sendResult.error && (
-                <p className="text-xs text-[var(--brand-error)] mt-0.5">{sendResult.error}</p>
+                <p className={`mt-0.5 text-xs ${accentText}`}>{sendResult.error}</p>
               )}
             </div>
             <button
               onClick={() => setSendResult(null)}
-              className="ml-auto p-1 rounded text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+              className={`ml-auto p-1 ${radiusClass} ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 6 6 18M6 6l12 12" />

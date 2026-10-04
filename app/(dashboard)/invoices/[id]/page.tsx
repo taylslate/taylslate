@@ -4,13 +4,26 @@ import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import type { Invoice, InvoiceStatus } from "@/lib/data/types";
 
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const accentText = "text-[var(--ts-accent)]";
+const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
+const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const radiusClass = "rounded-[var(--ts-radius)]";
+const inkBtnClass =
+  "inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+const ghostBtnClass =
+  "inline-flex items-center gap-2 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-ink-on-paper)]/[0.04] disabled:cursor-not-allowed disabled:opacity-50";
+const pillBase =
+  "inline-block rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-2.5 py-1 text-xs font-medium";
+
 const statusStyles: Record<InvoiceStatus, string> = {
-  draft: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
-  sent: "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]",
-  paid: "bg-[var(--brand-success)]/10 text-[var(--brand-success)]",
-  overdue: "bg-[var(--brand-error)]/10 text-[var(--brand-error)]",
-  disputed: "bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]",
-  cancelled: "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]",
+  draft: `${pillBase} ${mutedText}`,
+  sent: `${pillBase} ${inkText}`,
+  paid: `${pillBase} ${inkText}`,
+  overdue: `${pillBase} ${accentText}`,
+  disputed: `${pillBase} ${accentText}`,
+  cancelled: `${pillBase} ${mutedText}`,
 };
 
 const statusLabels: Record<InvoiceStatus, string> = {
@@ -130,9 +143,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
   if (isLoading) {
     return (
-      <div className="p-8 max-w-4xl">
+      <div className={`bg-[var(--ts-paper)] p-8 max-w-4xl ${inkText}`}>
         <div className="flex items-center justify-center py-24">
-          <div className="w-8 h-8 border-3 border-[var(--brand-blue)]/20 border-t-[var(--brand-blue)] rounded-full animate-spin" />
+          <div className={`h-8 w-8 animate-spin rounded-full border-2 border-[var(--ts-hairline-on-paper)] border-t-[var(--ts-ink-on-paper)]`} />
         </div>
       </div>
     );
@@ -140,12 +153,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
   if (error || !invoice) {
     return (
-      <div className="p-8 max-w-4xl">
-        <Link href="/invoices" className="flex items-center gap-1.5 text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors mb-4">
+      <div className={`bg-[var(--ts-paper)] p-8 max-w-4xl ${inkText}`}>
+        <Link href="/invoices" className={`mb-4 flex items-center gap-1.5 text-sm ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
           All Invoices
         </Link>
-        <h1 className="text-2xl font-bold text-[var(--brand-text)]">{error || "Invoice not found"}</h1>
+        <div className={`p-4 ${panelClass} ${radiusClass}`}>
+          <h1 className={`text-sm font-medium ${accentText}`}>{error || "Invoice not found"}</h1>
+        </div>
       </div>
     );
   }
@@ -153,12 +168,12 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const canMarkPaid = invoice.status === "sent" || invoice.status === "overdue";
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className={`bg-[var(--ts-paper)] p-8 max-w-4xl ${inkText}`}>
       {/* Back + Header */}
       <div className="mb-8">
         <Link
           href="/invoices"
-          className="flex items-center gap-1.5 text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors mb-4"
+          className={`mb-4 flex items-center gap-1.5 text-sm ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="m15 18-6-6 6-6" />
@@ -167,17 +182,17 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         </Link>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">
+            <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>
               {invoice.invoice_number}
             </h1>
-            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusStyles[invoice.status]}`}>
+            <span className={statusStyles[invoice.status]}>
               {statusLabels[invoice.status]}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleDownloadPdf}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)] hover:text-[var(--brand-blue)] transition-all"
+              className={ghostBtnClass}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -188,7 +203,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             </button>
             <button
               onClick={() => setShowSendModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors"
+              className={inkBtnClass}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="22" y1="2" x2="11" y2="13" />
@@ -200,7 +215,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               <button
                 onClick={handleMarkPaid}
                 disabled={isMarkingPaid}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--brand-success)] hover:opacity-90 text-white text-sm font-medium transition-colors disabled:opacity-50"
+                className={inkBtnClass}
               >
                 {isMarkingPaid ? (
                   <>
@@ -225,84 +240,84 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       </div>
 
       {/* From / To */}
-      <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
+      <section className={`mb-6 p-5 ${panelClass} ${radiusClass}`}>
         <div className="grid grid-cols-2 gap-8">
           <div>
-            <h2 className="text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-3">From</h2>
-            <p className="text-sm font-medium text-[var(--brand-text)]">{invoice.from_name}</p>
-            <p className="text-sm text-[var(--brand-text-secondary)]">{invoice.from_email}</p>
+            <h2 className={`mb-3 text-xs font-semibold uppercase tracking-wider ${mutedText}`}>From</h2>
+            <p className={`text-sm font-medium ${inkText}`}>{invoice.from_name}</p>
+            <p className={`text-sm ${mutedText}`}>{invoice.from_email}</p>
           </div>
           <div>
-            <h2 className="text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-3">Bill To</h2>
-            <p className="text-sm font-medium text-[var(--brand-text)]">{invoice.bill_to_name}</p>
-            <p className="text-sm text-[var(--brand-text-secondary)]">{invoice.bill_to_email}</p>
+            <h2 className={`mb-3 text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Bill To</h2>
+            <p className={`text-sm font-medium ${inkText}`}>{invoice.bill_to_name}</p>
+            <p className={`text-sm ${mutedText}`}>{invoice.bill_to_email}</p>
           </div>
         </div>
       </section>
 
       {/* Reference Info */}
-      <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-        <h2 className="text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-4">Reference</h2>
+      <section className={`mb-6 p-5 ${panelClass} ${radiusClass}`}>
+        <h2 className={`mb-4 text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Reference</h2>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs text-[var(--brand-text-muted)] mb-1">IO Number</label>
-            <p className="text-sm font-medium text-[var(--brand-text)]">{invoice.io_number}</p>
+            <label className={`mb-1 block text-xs ${mutedText}`}>IO Number</label>
+            <p className={`text-sm font-medium ${inkText}`}>{invoice.io_number}</p>
           </div>
           <div>
-            <label className="block text-xs text-[var(--brand-text-muted)] mb-1">Advertiser</label>
-            <p className="text-sm font-medium text-[var(--brand-text)]">{invoice.advertiser_name}</p>
+            <label className={`mb-1 block text-xs ${mutedText}`}>Advertiser</label>
+            <p className={`text-sm font-medium ${inkText}`}>{invoice.advertiser_name}</p>
           </div>
           <div>
-            <label className="block text-xs text-[var(--brand-text-muted)] mb-1">Campaign Period</label>
-            <p className="text-sm font-medium text-[var(--brand-text)]">{invoice.campaign_period}</p>
+            <label className={`mb-1 block text-xs ${mutedText}`}>Campaign Period</label>
+            <p className={`text-sm font-medium ${inkText}`}>{invoice.campaign_period}</p>
           </div>
           <div>
-            <label className="block text-xs text-[var(--brand-text-muted)] mb-1">Due Date</label>
-            <p className="text-sm font-medium text-[var(--brand-text)]">{fmtDate(invoice.due_date)}</p>
+            <label className={`mb-1 block text-xs ${mutedText}`}>Due Date</label>
+            <p className={`text-sm font-medium ${inkText}`}>{fmtDate(invoice.due_date)}</p>
           </div>
         </div>
       </section>
 
       {/* Line Items Table */}
-      <section className="bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6 overflow-hidden">
+      <section className={`mb-6 overflow-hidden ${panelClass} ${radiusClass}`}>
         <div className="px-5 pt-5 pb-3">
-          <h2 className="text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider">Line Items</h2>
+          <h2 className={`text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Line Items</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-t border-b border-[var(--brand-border)] bg-[var(--brand-surface)]">
-                <th className="text-left px-5 py-2.5 text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider">#</th>
-                <th className="text-left px-5 py-2.5 text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider">Show</th>
-                <th className="text-left px-5 py-2.5 text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider">Post Date</th>
-                <th className="text-left px-5 py-2.5 text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider">Description</th>
-                <th className="text-right px-5 py-2.5 text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider">Guaranteed DLs</th>
-                <th className="text-right px-5 py-2.5 text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider">Actual DLs</th>
-                <th className="text-right px-5 py-2.5 text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider">Amount</th>
-                <th className="text-center px-5 py-2.5 text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider">Status</th>
+              <tr className={`border-t border-b bg-[var(--ts-paper)] ${hairlineRule}`}>
+                <th className={`px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${mutedText}`}>#</th>
+                <th className={`px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Show</th>
+                <th className={`px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Post Date</th>
+                <th className={`px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Description</th>
+                <th className={`px-5 py-2.5 text-right text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Guaranteed DLs</th>
+                <th className={`px-5 py-2.5 text-right text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Actual DLs</th>
+                <th className={`px-5 py-2.5 text-right text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Amount</th>
+                <th className={`px-5 py-2.5 text-center text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Status</th>
               </tr>
             </thead>
             <tbody>
               {invoice.line_items.map((li, i) => (
-                <tr key={li.id} className="border-b border-[var(--brand-border)] last:border-b-0">
-                  <td className="px-5 py-3 text-[var(--brand-text-muted)]">{i + 1}</td>
-                  <td className="px-5 py-3 font-medium text-[var(--brand-text)]">{li.show_name}</td>
-                  <td className="px-5 py-3 text-[var(--brand-text-secondary)]">{fmtDate(li.post_date)}</td>
-                  <td className="px-5 py-3 text-[var(--brand-text-secondary)]">{li.description}</td>
-                  <td className="px-5 py-3 text-right text-[var(--brand-text-secondary)]">{li.guaranteed_downloads.toLocaleString()}</td>
-                  <td className="px-5 py-3 text-right text-[var(--brand-text-secondary)]">
+                <tr key={li.id} className={`border-b last:border-b-0 ${hairlineRule}`}>
+                  <td className={`px-5 py-3 ${mutedText}`}>{i + 1}</td>
+                  <td className={`px-5 py-3 font-medium ${inkText}`}>{li.show_name}</td>
+                  <td className={`px-5 py-3 ${mutedText}`}>{fmtDate(li.post_date)}</td>
+                  <td className={`px-5 py-3 ${mutedText}`}>{li.description}</td>
+                  <td className={`px-5 py-3 text-right ${mutedText}`}>{li.guaranteed_downloads.toLocaleString()}</td>
+                  <td className={`px-5 py-3 text-right ${mutedText}`}>
                     {li.actual_downloads != null ? li.actual_downloads.toLocaleString() : "—"}
                   </td>
-                  <td className="px-5 py-3 text-right font-medium text-[var(--brand-text)]">
+                  <td className={`px-5 py-3 text-right font-medium ${inkText}`}>
                     {li.make_good ? "$0.00" : `$${fmt(li.rate)}`}
                   </td>
                   <td className="px-5 py-3 text-center">
                     {li.make_good ? (
-                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]">
+                      <span className={`${pillBase} ${accentText}`}>
                         Make-Good
                       </span>
                     ) : (
-                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--brand-success)]/10 text-[var(--brand-success)]">
+                      <span className={`${pillBase} ${inkText}`}>
                         Delivered
                       </span>
                     )}
@@ -315,60 +330,60 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       </section>
 
       {/* Totals */}
-      <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
+      <section className={`mb-6 p-5 ${panelClass} ${radiusClass}`}>
         <div className="flex flex-col items-end gap-2 text-sm">
           <div className="flex justify-between w-64">
-            <span className="text-[var(--brand-text-muted)]">Subtotal</span>
-            <span className="font-medium text-[var(--brand-text)]">${fmt(invoice.subtotal)}</span>
+            <span className={mutedText}>Subtotal</span>
+            <span className={`font-medium ${inkText}`}>${fmt(invoice.subtotal)}</span>
           </div>
           {invoice.adjustments !== 0 && (
             <div className="flex justify-between w-64">
-              <span className="text-[var(--brand-warning)]">Adjustments</span>
-              <span className="font-medium text-[var(--brand-warning)]">-${fmt(Math.abs(invoice.adjustments))}</span>
+              <span className={accentText}>Adjustments</span>
+              <span className={`font-medium ${accentText}`}>-${fmt(Math.abs(invoice.adjustments))}</span>
             </div>
           )}
-          <div className="flex justify-between w-64 pt-2 border-t border-[var(--brand-border)]">
-            <span className="font-semibold text-[var(--brand-text)]">Total Due</span>
-            <span className="font-bold text-[var(--brand-blue)]">${fmt(invoice.total_due)}</span>
+          <div className={`flex w-64 justify-between border-t pt-2 ${hairlineRule}`}>
+            <span className={`font-semibold ${inkText}`}>Total Due</span>
+            <span className={`font-bold ${inkText}`}>${fmt(invoice.total_due)}</span>
           </div>
         </div>
       </section>
 
       {/* Notes */}
       {invoice.notes && (
-        <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] mb-6">
-          <h2 className="text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-3">Notes</h2>
-          <p className="text-sm text-[var(--brand-text-secondary)] whitespace-pre-wrap">{invoice.notes}</p>
+        <section className={`mb-6 p-5 ${panelClass} ${radiusClass}`}>
+          <h2 className={`mb-3 text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Notes</h2>
+          <p className={`whitespace-pre-wrap text-sm ${mutedText}`}>{invoice.notes}</p>
         </section>
       )}
 
       {/* Send Confirmation Modal */}
       {showSendModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => !isSending && setShowSendModal(false)} />
-          <div className="relative bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] p-6 w-full max-w-md shadow-xl">
-            <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-2">Send Invoice</h3>
-            <p className="text-sm text-[var(--brand-text-secondary)] mb-1">
-              This will send <span className="font-medium text-[var(--brand-text)]">{invoice.invoice_number}</span> to:
+          <div className="absolute inset-0 bg-[var(--ts-ink-on-paper)]/40" onClick={() => !isSending && setShowSendModal(false)} />
+          <div className={`relative w-full max-w-md p-6 ${panelClass} ${radiusClass}`}>
+            <h3 className={`mb-2 text-lg font-semibold ${inkText}`}>Send Invoice</h3>
+            <p className={`mb-1 text-sm ${mutedText}`}>
+              This will send <span className={`font-medium ${inkText}`}>{invoice.invoice_number}</span> to:
             </p>
-            <p className="text-sm font-medium text-[var(--brand-text)] mb-4">
+            <p className={`mb-4 text-sm font-medium ${inkText}`}>
               {invoice.bill_to_name} &lt;{invoice.bill_to_email}&gt;
             </p>
-            <p className="text-sm text-[var(--brand-text-secondary)] mb-6">
+            <p className={`mb-6 text-sm ${mutedText}`}>
               A PDF copy of the invoice will be attached to the email.
             </p>
             <div className="flex items-center justify-end gap-3">
               <button
                 onClick={() => setShowSendModal(false)}
                 disabled={isSending}
-                className="px-4 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors disabled:opacity-50"
+                className={ghostBtnClass}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSendInvoice}
                 disabled={isSending}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+                className={inkBtnClass}
               >
                 {isSending ? (
                   <>
