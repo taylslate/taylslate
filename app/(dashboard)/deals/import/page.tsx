@@ -4,13 +4,30 @@ import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import IOPreview from "@/components/io/IOPreview";
 import type { InsertionOrder, IOLineItem, Placement, PriceType } from "@/lib/data";
+import { tokens } from "@/lib/brand/tokens";
 
 type Step = "choose" | "pdf" | "manual" | "preview" | "confirmed";
 
-// Reusable classes matching existing patterns
+const radiusStyle = { borderRadius: tokens.radius };
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const kickerClass =
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
 const inputClass =
-  "w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all";
-const labelClass = "block text-sm font-medium text-[var(--brand-text)] mb-1.5";
+  "min-w-0 w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
+const labelClass = "mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper)]";
+const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5";
+const chipOn =
+  "rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] px-3 py-1.5 text-xs font-medium text-[var(--ts-ink-on-paper)]";
+const chipOff =
+  "rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-1.5 text-xs font-medium text-[var(--ts-ink-muted-on-paper)] hover:bg-[var(--ts-band-shows)]";
+const linkClass = "text-sm font-medium text-[var(--ts-accent)] hover:underline";
+const errorClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm text-[var(--ts-accent)]";
+const inkBtnClass =
+  "inline-flex items-center justify-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+const ghostBtnClass =
+  "inline-flex items-center justify-center rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)]";
 
 // Default empty line item
 function emptyLineItem(index: number): IOLineItem {
@@ -284,28 +301,31 @@ export default function ImportIOPage() {
   };
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="max-w-3xl p-4 sm:p-8">
       {/* Header */}
       <div className="mb-8">
-        <button
-          onClick={() => {
-            if (step === "choose" || step === "confirmed") {
-              router.push("/deals");
-            } else if (step === "preview") {
-              handleEditFromPreview();
-            } else {
-              setStep("choose");
-            }
-          }}
-          className="flex items-center gap-1.5 text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors mb-4"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-          {step === "choose" || step === "confirmed" ? "Deals" : "Back"}
-        </button>
-        <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Import IO</h1>
-        <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <button
+            onClick={() => {
+              if (step === "choose" || step === "confirmed") {
+                router.push("/deals");
+              } else if (step === "preview") {
+                handleEditFromPreview();
+              } else {
+                setStep("choose");
+              }
+            }}
+            className={`flex items-center gap-1.5 text-xs ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            {step === "choose" || step === "confirmed" ? "Deals" : "Back"}
+          </button>
+          <p className={`${kickerClass} whitespace-nowrap`}>For brands</p>
+        </div>
+        <h1 className={`text-2xl font-semibold tracking-tight ${inkText}`}>Import IO</h1>
+        <p className={`mt-1 text-sm ${mutedText}`}>
           {step === "choose" && "Import an existing insertion order into Taylslate."}
           {step === "pdf" && "Upload an IO PDF to extract data automatically."}
           {step === "manual" && "Enter insertion order details manually."}
@@ -316,13 +336,17 @@ export default function ImportIOPage() {
 
       {/* Step 1: Choose Mode */}
       {step === "choose" && (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <button
             onClick={() => setStep("pdf")}
-            className="flex flex-col items-center gap-4 p-8 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] hover:border-[var(--brand-blue)]/40 hover:shadow-sm transition-all text-left group"
+            className="flex flex-col items-center gap-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-8 text-left hover:bg-[var(--ts-band-shows)]"
+            style={radiusStyle}
           >
-            <div className="w-14 h-14 rounded-2xl bg-[var(--brand-blue)]/[0.08] flex items-center justify-center group-hover:bg-[var(--brand-blue)]/[0.12] transition-colors">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <div
+              className="flex h-14 w-14 items-center justify-center bg-[var(--ts-band-shows)] text-[var(--ts-ink-on-paper)]"
+              style={radiusStyle}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
                 <line x1="16" y1="13" x2="8" y2="13" />
@@ -331,25 +355,29 @@ export default function ImportIOPage() {
               </svg>
             </div>
             <div className="text-center">
-              <h3 className="font-semibold text-[var(--brand-text)] mb-1">Upload PDF</h3>
-              <p className="text-xs text-[var(--brand-text-muted)]">
+              <h3 className={`mb-1 font-semibold ${inkText}`}>Upload PDF</h3>
+              <p className={`text-xs ${mutedText}`}>
                 Upload an IO document and we&apos;ll extract the data automatically using AI.
               </p>
             </div>
           </button>
           <button
             onClick={() => setStep("manual")}
-            className="flex flex-col items-center gap-4 p-8 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] hover:border-[var(--brand-teal)]/40 hover:shadow-sm transition-all text-left group"
+            className="flex flex-col items-center gap-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-8 text-left hover:bg-[var(--ts-band-shows)]"
+            style={radiusStyle}
           >
-            <div className="w-14 h-14 rounded-2xl bg-[var(--brand-teal)]/[0.08] flex items-center justify-center group-hover:bg-[var(--brand-teal)]/[0.12] transition-colors">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--brand-teal)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <div
+              className="flex h-14 w-14 items-center justify-center bg-[var(--ts-band-shows)] text-[var(--ts-ink-on-paper)]"
+              style={radiusStyle}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
               </svg>
             </div>
             <div className="text-center">
-              <h3 className="font-semibold text-[var(--brand-text)] mb-1">Manual Entry</h3>
-              <p className="text-xs text-[var(--brand-text-muted)]">
+              <h3 className={`mb-1 font-semibold ${inkText}`}>Manual Entry</h3>
+              <p className={`text-xs ${mutedText}`}>
                 Enter IO details by hand — advertiser, publisher, line items, and terms.
               </p>
             </div>
@@ -365,34 +393,38 @@ export default function ImportIOPage() {
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onClick={() => fileInputRef.current?.click()}
-            className={`flex flex-col items-center justify-center py-16 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
+            className={`flex cursor-pointer flex-col items-center justify-center border-2 border-dashed py-16 ${
               dragActive
-                ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.04]"
-                : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] hover:border-[var(--brand-blue)]/30"
+                ? "border-[var(--ts-ink-on-paper)] bg-[var(--ts-band-shows)]"
+                : "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] hover:bg-[var(--ts-band-shows)]"
             }`}
+            style={radiusStyle}
           >
             {isUploading ? (
               <>
-                <svg className="animate-spin h-8 w-8 text-[var(--brand-blue)] mb-4" viewBox="0 0 24 24" fill="none">
+                <svg className={`mb-4 h-8 w-8 animate-spin ${inkText}`} viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                <p className="text-sm font-medium text-[var(--brand-text)]">Extracting IO data...</p>
-                <p className="text-xs text-[var(--brand-text-muted)] mt-1">This may take a few seconds.</p>
+                <p className={`text-sm font-medium ${inkText}`}>Extracting IO data...</p>
+                <p className={`mt-1 text-xs ${mutedText}`}>This may take a few seconds.</p>
               </>
             ) : (
               <>
-                <div className="w-14 h-14 rounded-2xl bg-[var(--brand-blue)]/[0.08] flex items-center justify-center mb-4">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <div
+                  className={`mb-4 flex h-14 w-14 items-center justify-center bg-[var(--ts-band-shows)] ${inkText}`}
+                  style={radiusStyle}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <polyline points="17 8 12 3 7 8" />
                     <line x1="12" y1="3" x2="12" y2="15" />
                   </svg>
                 </div>
-                <p className="text-sm font-medium text-[var(--brand-text)]">
+                <p className={`text-sm font-medium ${inkText}`}>
                   Drop your IO PDF here, or click to browse
                 </p>
-                <p className="text-xs text-[var(--brand-text-muted)] mt-1">PDF files only, up to 10MB</p>
+                <p className={`mt-1 text-xs ${mutedText}`}>PDF files only, up to 10MB</p>
               </>
             )}
           </div>
@@ -408,14 +440,14 @@ export default function ImportIOPage() {
           />
 
           {uploadError && (
-            <div className="mt-4 p-4 rounded-lg bg-[var(--brand-error)]/[0.06] border border-[var(--brand-error)]/20">
-              <p className="text-sm text-[var(--brand-error)]">{uploadError}</p>
+            <div className={`mt-4 ${errorClass}`} style={radiusStyle}>
+              <p>{uploadError}</p>
               <button
                 onClick={() => {
                   setUploadError(null);
                   setStep("manual");
                 }}
-                className="text-sm text-[var(--brand-blue)] hover:underline font-medium mt-2"
+                className={`mt-2 ${linkClass}`}
               >
                 Switch to manual entry
               </button>
@@ -428,12 +460,12 @@ export default function ImportIOPage() {
       {step === "manual" && (
         <div className="space-y-6">
           {/* Advertiser Section */}
-          <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
-            <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider mb-4">
+          <section className={panelClass} style={radiusStyle}>
+            <h2 className={`mb-4 text-sm font-semibold uppercase tracking-wider ${inkText}`}>
               Advertiser
             </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
                 <label className={labelClass}>Company Name *</label>
                 <input
                   type="text"
@@ -467,11 +499,11 @@ export default function ImportIOPage() {
           </section>
 
           {/* Publisher Section */}
-          <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
-            <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider mb-4">
+          <section className={panelClass} style={radiusStyle}>
+            <h2 className={`mb-4 text-sm font-semibold uppercase tracking-wider ${inkText}`}>
               Publisher
             </h2>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className={labelClass}>Company Name *</label>
                 <input
@@ -516,25 +548,21 @@ export default function ImportIOPage() {
           </section>
 
           {/* Agency Toggle + Section */}
-          <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider">
+          <section className={panelClass} style={radiusStyle}>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className={`text-sm font-semibold uppercase tracking-wider ${inkText}`}>
                 Agency
               </h2>
               <button
                 type="button"
                 onClick={() => setShowAgency(!showAgency)}
-                className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                  showAgency
-                    ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]"
-                    : "border-[var(--brand-border)] text-[var(--brand-text-muted)] hover:border-[var(--brand-text-muted)]"
-                }`}
+                className={showAgency ? chipOn : chipOff}
               >
                 {showAgency ? "Remove Agency" : "Add Agency"}
               </button>
             </div>
             {showAgency && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className={labelClass}>Company Name</label>
                   <input
@@ -578,29 +606,33 @@ export default function ImportIOPage() {
               </div>
             )}
             {!showAgency && (
-              <p className="text-xs text-[var(--brand-text-muted)]">
+              <p className={`text-xs ${mutedText}`}>
                 Only add an agency if this IO involves a media buying agency.
               </p>
             )}
           </section>
 
           {/* Line Items */}
-          <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
-            <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider mb-4">
+          <section className={panelClass} style={radiusStyle}>
+            <h2 className={`mb-4 text-sm font-semibold uppercase tracking-wider ${inkText}`}>
               Line Items
             </h2>
             <div className="space-y-4">
               {lineItems.map((item, index) => (
                 <div
                   key={item.id}
-                  className="p-4 bg-[var(--brand-surface)] rounded-lg border border-[var(--brand-border)]/50"
+                  className="border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] p-4"
+                  style={radiusStyle}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--brand-blue)]/10 text-xs font-bold text-[var(--brand-blue)]">
+                      <span
+                        className="inline-flex h-6 w-6 items-center justify-center bg-[var(--ts-paper)] text-xs font-medium text-[var(--ts-ink-on-paper)]"
+                        style={radiusStyle}
+                      >
                         {index + 1}
                       </span>
-                      <span className="text-sm font-medium text-[var(--brand-text)]">
+                      <span className={`text-sm font-medium ${inkText}`}>
                         {item.show_name || "Line Item"}
                       </span>
                     </div>
@@ -608,7 +640,7 @@ export default function ImportIOPage() {
                       <button
                         type="button"
                         onClick={() => removeLineItem(index)}
-                        className="p-1.5 rounded-lg text-[var(--brand-text-muted)] hover:text-[var(--brand-error)] hover:bg-[var(--brand-error)]/[0.06] transition-all"
+                        className={`rounded-[var(--ts-radius)] p-1.5 ${mutedText} hover:text-[var(--ts-accent)]`}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M18 6 6 18M6 6l12 12" />
@@ -617,7 +649,7 @@ export default function ImportIOPage() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <label className={labelClass}>Show Name</label>
                       <input
@@ -639,7 +671,7 @@ export default function ImportIOPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 mb-3">
+                  <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div>
                       <label className={labelClass}>Placement</label>
                       <select
@@ -676,7 +708,7 @@ export default function ImportIOPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div>
                       <label className={labelClass}>Guaranteed DLs</label>
                       <input
@@ -719,7 +751,7 @@ export default function ImportIOPage() {
             <button
               type="button"
               onClick={addLineItem}
-              className="flex items-center gap-1.5 mt-3 text-sm text-[var(--brand-blue)] hover:text-[var(--brand-blue-light)] font-medium transition-colors"
+              className={`mt-3 flex items-center gap-1.5 ${linkClass}`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 5v14M5 12h14" />
@@ -729,11 +761,11 @@ export default function ImportIOPage() {
           </section>
 
           {/* Terms */}
-          <section className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)]">
-            <h2 className="text-sm font-semibold text-[var(--brand-text)] uppercase tracking-wider mb-4">
+          <section className={panelClass} style={radiusStyle}>
+            <h2 className={`mb-4 text-sm font-semibold uppercase tracking-wider ${inkText}`}>
               Terms &amp; Conditions
             </h2>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className={labelClass}>Payment Terms</label>
                 <input
@@ -794,15 +826,15 @@ export default function ImportIOPage() {
           </section>
 
           {manualError && (
-            <div className="p-4 rounded-lg bg-[var(--brand-error)]/[0.06] border border-[var(--brand-error)]/20">
-              <p className="text-sm text-[var(--brand-error)]">{manualError}</p>
+            <div className={errorClass} style={radiusStyle}>
+              <p>{manualError}</p>
             </div>
           )}
 
-          <div className="border-t border-[var(--brand-border)] pt-6">
+          <div className="border-t border-[var(--ts-hairline-on-paper)] pt-6">
             <button
               onClick={handleManualSubmit}
-              className="w-full flex items-center justify-center gap-2 bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white py-3 rounded-xl text-sm font-semibold transition-all"
+              className={`${inkBtnClass} w-full py-3`}
             >
               Preview IO
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -825,17 +857,23 @@ export default function ImportIOPage() {
 
       {/* Step 4: Confirmed */}
       {step === "confirmed" && (
-        <div className="flex flex-col items-center justify-center py-20 bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)]">
-          <div className="w-16 h-16 rounded-2xl bg-[var(--brand-success)]/[0.08] flex items-center justify-center mb-5">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brand-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div
+          className="flex flex-col items-center justify-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] py-20"
+          style={radiusStyle}
+        >
+          <div
+            className={`mb-5 flex h-16 w-16 items-center justify-center bg-[var(--ts-band-shows)] ${inkText}`}
+            style={radiusStyle}
+          >
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 6 9 17l-5-5" />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-2">IO Imported</h3>
-          <p className="text-sm text-[var(--brand-text-muted)] mb-1">
+          <h3 className={`mb-2 text-lg font-semibold ${inkText}`}>IO Imported</h3>
+          <p className={`mb-1 text-sm ${mutedText}`}>
             {ioData?.io_number ?? "IO"} &mdash; {ioData?.advertiser_name ?? "Unknown Advertiser"}
           </p>
-          <p className="text-sm text-[var(--brand-text-muted)] mb-6">
+          <p className={`mb-6 text-sm ${mutedText}`}>
             {ioData?.line_items?.length ?? 0} line item{(ioData?.line_items?.length ?? 0) !== 1 ? "s" : ""} &middot; $
             {(ioData?.total_net ?? 0).toLocaleString(undefined, {
               minimumFractionDigits: 2,
@@ -843,10 +881,10 @@ export default function ImportIOPage() {
             })}{" "}
             net
           </p>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={() => router.push("/deals")}
-              className="px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors"
+              className={inkBtnClass}
             >
               View Deals
             </button>
@@ -855,7 +893,7 @@ export default function ImportIOPage() {
                 setStep("choose");
                 setIOData(null);
               }}
-              className="px-5 py-2.5 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors"
+              className={ghostBtnClass}
             >
               Import Another
             </button>
