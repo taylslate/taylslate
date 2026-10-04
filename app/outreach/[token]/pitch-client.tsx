@@ -3,6 +3,20 @@
 import { useState } from "react";
 import type { Outreach } from "@/lib/data/types";
 import { formatDateOnly } from "@/lib/format/date-only";
+import { tokens } from "@/lib/brand/tokens";
+
+const radiusStyle = { borderRadius: tokens.radius };
+const inkText = "text-[var(--ts-ink-on-paper)]";
+const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
+const accentText = "text-[var(--ts-accent)]";
+const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
+const inkBtnClass =
+  "inline-flex items-center justify-center bg-[var(--ts-ink-on-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+const ghostBtnClass =
+  "inline-flex items-center justify-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] disabled:cursor-not-allowed disabled:opacity-50";
+const textBtnClass = `px-4 py-2 text-sm ${mutedText} hover:text-[var(--ts-ink-on-paper)] disabled:opacity-50`;
+const fieldClass =
+  "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
 
 interface PitchClientProps {
   token: string;
@@ -77,10 +91,10 @@ export default function PitchClient(props: PitchClientProps) {
     <div className="max-w-2xl mx-auto px-4 py-10">
       {/* Header */}
       <div className="mb-6">
-        <div className="text-xs text-[var(--brand-text-muted)] uppercase tracking-wider mb-1">
+        <div className={`mb-1 text-xs uppercase tracking-wider ${mutedText}`}>
           Sponsorship pitch
         </div>
-        <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">
+        <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>
           {brand.brand_name} wants to work with {outreach.show_name}
         </h1>
         {brand.brand_url && (
@@ -88,7 +102,7 @@ export default function PitchClient(props: PitchClientProps) {
             href={brand.brand_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-[var(--brand-blue)] hover:underline"
+            className={`text-sm ${accentText} hover:underline`}
           >
             {brand.brand_url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
           </a>
@@ -96,7 +110,7 @@ export default function PitchClient(props: PitchClientProps) {
       </div>
 
       {/* Pitch body */}
-      <article className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-6 mb-5">
+      <article className={`mb-5 p-6 ${panelClass}`} style={radiusStyle}>
         {outreach.pitch_body
           .split(/\n{2,}/)
           .map((p) => p.trim())
@@ -104,7 +118,7 @@ export default function PitchClient(props: PitchClientProps) {
           .map((p, i) => (
             <p
               key={i}
-              className="text-sm text-[var(--brand-text)] leading-relaxed mb-3 last:mb-0 whitespace-pre-wrap"
+              className={`mb-3 text-sm leading-relaxed whitespace-pre-wrap last:mb-0 ${inkText}`}
             >
               {p}
             </p>
@@ -112,8 +126,8 @@ export default function PitchClient(props: PitchClientProps) {
       </article>
 
       {/* Proposed terms */}
-      <section className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-6 mb-6">
-        <h2 className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] font-semibold mb-4">
+      <section className={`mb-6 p-6 ${panelClass}`} style={radiusStyle}>
+        <h2 className={`mb-4 text-xs font-semibold uppercase tracking-wider ${mutedText}`}>
           Proposed terms
         </h2>
         <dl className="grid grid-cols-2 gap-y-3 text-sm">
@@ -126,7 +140,7 @@ export default function PitchClient(props: PitchClientProps) {
           />
         </dl>
         {showStandardCpm != null && showStandardCpm > 0 && (
-          <div className="mt-4 pt-4 border-t border-[var(--brand-border)] text-xs text-[var(--brand-text-secondary)]">
+          <div className={`mt-4 border-t border-[var(--ts-hairline-on-paper)] pt-4 text-xs ${mutedText}`}>
             Their offer: <strong>${outreach.proposed_cpm.toFixed(2)}</strong> · Your standard:{" "}
             <strong>${showStandardCpm.toFixed(2)}</strong>
           </div>
@@ -135,7 +149,10 @@ export default function PitchClient(props: PitchClientProps) {
 
       {/* Action area */}
       {error && (
-        <div className="mb-4 p-3 rounded-lg border border-[var(--brand-error)]/30 bg-[var(--brand-error)]/[0.04] text-sm text-[var(--brand-error)]">
+        <div
+          className={`mb-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-3 text-sm ${accentText}`}
+          style={radiusStyle}
+        >
           {error}
         </div>
       )}
@@ -157,21 +174,24 @@ export default function PitchClient(props: PitchClientProps) {
           <button
             onClick={accept}
             disabled={submitting}
-            className="px-5 py-2.5 rounded-xl bg-[var(--brand-success)] hover:bg-[var(--brand-success)]/90 text-white text-sm font-semibold disabled:opacity-50"
+            className={inkBtnClass}
+            style={radiusStyle}
           >
             Accept offer
           </button>
           <button
             onClick={() => setMode("counter")}
             disabled={submitting}
-            className="px-5 py-2.5 rounded-xl bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold disabled:opacity-50"
+            className={inkBtnClass}
+            style={radiusStyle}
           >
             Counter terms
           </button>
           <button
             onClick={() => setMode("decline")}
             disabled={submitting}
-            className="px-5 py-2.5 rounded-xl border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:text-[var(--brand-text)]"
+            className={ghostBtnClass}
+            style={radiusStyle}
           >
             Decline
           </button>
@@ -207,7 +227,7 @@ export default function PitchClient(props: PitchClientProps) {
         />
       )}
 
-      <footer className="mt-10 text-center text-xs text-[var(--brand-text-muted)]">
+      <footer className={`mt-10 text-center text-xs ${mutedText}`}>
         Payments and contracting powered by Taylslate.
       </footer>
     </div>
@@ -217,8 +237,8 @@ export default function PitchClient(props: PitchClientProps) {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <>
-      <dt className="text-[var(--brand-text-muted)]">{label}</dt>
-      <dd className="text-[var(--brand-text)] font-medium tabular-nums">{value}</dd>
+      <dt className={mutedText}>{label}</dt>
+      <dd className={`font-medium tabular-nums ${inkText}`}>{value}</dd>
     </>
   );
 }
@@ -292,9 +312,9 @@ function UnonboardedActions({
 
   if (magicSent) {
     return (
-      <div className="rounded-2xl border border-[var(--brand-success)]/30 bg-[var(--brand-success)]/[0.05] p-5">
-        <div className="text-sm font-semibold text-[var(--brand-text)]">Check your inbox</div>
-        <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+      <div className={`p-5 ${panelClass}`} style={radiusStyle}>
+        <div className={`text-sm font-semibold ${inkText}`}>Check your inbox</div>
+        <p className={`mt-1 text-sm ${mutedText}`}>
           We just sent a sign-in link to <strong>{email}</strong>. Click it to set up
           your show profile (about three minutes), then come right back here to
           accept or counter the offer.
@@ -305,11 +325,11 @@ function UnonboardedActions({
 
   if (mode === "view") {
     return (
-      <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5">
-        <div className="text-sm font-semibold text-[var(--brand-text)] mb-2">
+      <div className={`p-5 ${panelClass}`} style={radiusStyle}>
+        <div className={`mb-2 text-sm font-semibold ${inkText}`}>
           Interested? Set up your account to respond.
         </div>
-        <p className="text-sm text-[var(--brand-text-secondary)] mb-4">
+        <p className={`mb-4 text-sm ${mutedText}`}>
           You&apos;ll quickly walk through your show details, then return here to
           accept, counter, or decline.
         </p>
@@ -319,12 +339,14 @@ function UnonboardedActions({
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@yourshow.com"
-            className="flex-1 px-3 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30"
+            className={`flex-1 px-3 py-2.5 ${fieldClass}`}
+            style={radiusStyle}
           />
           <button
             onClick={startMagic}
             disabled={submitting || !email}
-            className="px-5 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+            className={inkBtnClass}
+            style={radiusStyle}
           >
             {submitting ? "Sending…" : "Set up my account"}
           </button>
@@ -332,7 +354,7 @@ function UnonboardedActions({
         <button
           onClick={decline}
           disabled={submitting}
-          className="mt-3 text-xs text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] underline"
+          className={`mt-3 text-xs underline ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
         >
           Not interested, not now
         </button>
@@ -357,9 +379,9 @@ function CounterForm({
   const [counterCpm, setCounterCpm] = useState<number>(proposedCpm);
   const [message, setMessage] = useState<string>("");
   return (
-    <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5 space-y-3">
+    <div className={`space-y-3 p-5 ${panelClass}`} style={radiusStyle}>
       <div>
-        <label className="block text-xs font-medium text-[var(--brand-text-muted)] uppercase tracking-wider mb-1.5">
+        <label className={`mb-1.5 block text-xs font-medium uppercase tracking-wider ${mutedText}`}>
           Your counter CPM ($)
         </label>
         <input
@@ -368,11 +390,12 @@ function CounterForm({
           step={0.5}
           value={counterCpm}
           onChange={(e) => setCounterCpm(Number(e.target.value))}
-          className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)]"
+          className={fieldClass}
+          style={radiusStyle}
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-[var(--brand-text-muted)] uppercase tracking-wider mb-1.5">
+        <label className={`mb-1.5 block text-xs font-medium uppercase tracking-wider ${mutedText}`}>
           Note (optional)
         </label>
         <textarea
@@ -380,17 +403,19 @@ function CounterForm({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="e.g. Happy to do this, but my mid-roll rate is $X with a 4-spot minimum."
-          className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)]"
+          className={fieldClass}
+          style={radiusStyle}
         />
       </div>
       <div className="flex justify-end gap-2 pt-1">
-        <button onClick={onCancel} disabled={submitting} className="px-4 py-2 text-sm text-[var(--brand-text-secondary)] hover:text-[var(--brand-text)]">
+        <button onClick={onCancel} disabled={submitting} className={textBtnClass}>
           Cancel
         </button>
         <button
           onClick={() => onSubmit(counterCpm, message.trim() || undefined)}
           disabled={submitting || counterCpm <= 0}
-          className="px-5 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-semibold disabled:opacity-50"
+          className={inkBtnClass}
+          style={radiusStyle}
         >
           Send counter
         </button>
@@ -410,9 +435,9 @@ function DeclineForm({
 }) {
   const [reason, setReason] = useState<string>("");
   return (
-    <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-5 space-y-3">
+    <div className={`space-y-3 p-5 ${panelClass}`} style={radiusStyle}>
       <div>
-        <label className="block text-xs font-medium text-[var(--brand-text-muted)] uppercase tracking-wider mb-1.5">
+        <label className={`mb-1.5 block text-xs font-medium uppercase tracking-wider ${mutedText}`}>
           Reason (optional)
         </label>
         <textarea
@@ -420,17 +445,19 @@ function DeclineForm({
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="Optional — helps the brand understand."
-          className="w-full px-3 py-2 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-sm text-[var(--brand-text)]"
+          className={fieldClass}
+          style={radiusStyle}
         />
       </div>
       <div className="flex justify-end gap-2 pt-1">
-        <button onClick={onCancel} disabled={submitting} className="px-4 py-2 text-sm text-[var(--brand-text-secondary)] hover:text-[var(--brand-text)]">
+        <button onClick={onCancel} disabled={submitting} className={textBtnClass}>
           Cancel
         </button>
         <button
           onClick={() => onSubmit(reason.trim() || undefined)}
           disabled={submitting}
-          className="px-5 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:text-[var(--brand-text)]"
+          className={ghostBtnClass}
+          style={radiusStyle}
         >
           Send decline
         </button>
@@ -458,12 +485,12 @@ function DonePanel({
           : "This opportunity has already been responded to.";
   return (
     <div className="max-w-lg mx-auto px-4 py-20 text-center">
-      <h1 className="text-2xl font-bold text-[var(--brand-text)] mb-3">{headline}</h1>
-      <p className="text-sm text-[var(--brand-text-secondary)]">
+      <h1 className={`mb-3 text-2xl font-bold ${inkText}`}>{headline}</h1>
+      <p className={`text-sm ${mutedText}`}>
         We&apos;ve let {brandName} know. They&apos;ll follow up with {showName} from
         here. You can close this tab.
       </p>
-      <footer className="mt-10 text-xs text-[var(--brand-text-muted)]">
+      <footer className={`mt-10 text-xs ${mutedText}`}>
         Payments and contracting powered by Taylslate.
       </footer>
     </div>

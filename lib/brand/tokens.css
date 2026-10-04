@@ -9,15 +9,15 @@
   plan at /campaigns/[id]/plan, brand outreach at
   /campaigns/[id]/outreach, the deals list at /deals, deal
   detail at /deals/[id] (Wave 12 sign flow and the legacy edit),
-  the IO page at /deals/[id]/io, brand settings at /settings,
+  the IO page at /deals/[id]/io, the public pitch page at
+  /outreach/[token], brand settings at /settings,
   /settings/brand-profile, and /settings/billing, the aircheck
   review at /admin/airchecks/[ioLineItemId], the onboarding role
   picker, and /onboarding/brand/* use these.
 
   Still on --brand-* in globals.css: /onboarding/show/*, /shows,
   /deals/new, /deals/import, invoices, legacy campaign detail
-  and discovery list, /campaigns/generated, and the public pitch
-  page.
+  and discovery list, and /campaigns/generated.
 
   Accent is copper only. Do not add a second accent.
 */
@@ -40,7 +40,8 @@
 
 .marketing-page *:focus-visible,
 .brand-app *:focus-visible,
-.onboarding-flow *:focus-visible {
+.onboarding-flow *:focus-visible,
+.pitch-page *:focus-visible {
   outline: 2px solid var(--ts-accent);
   outline-offset: 2px;
   border-radius: var(--ts-radius);
