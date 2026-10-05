@@ -43,10 +43,10 @@ export default function ContactsForm({
     >
       <div className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">
+          <label className="mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper)]">
             Ad copy & talking points
           </label>
-          <p className="text-xs text-[var(--brand-text-muted)] mb-2">
+          <p className="mb-2 text-xs text-[var(--ts-ink-muted-on-paper)]">
             Where we send brand briefs, scripts, and pixel instructions.
           </p>
           <input
@@ -54,15 +54,15 @@ export default function ContactsForm({
             value={adCopyEmail}
             onChange={(e) => setAdCopyEmail(e.target.value)}
             placeholder={signingEmail || "ads@yourshow.com"}
-            className="w-full px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-base focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+            className="w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-3 text-base text-[var(--ts-ink-on-paper)] focus:outline-none"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">
+          <label className="mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper)]">
             Invoices & payment notifications
           </label>
-          <p className="text-xs text-[var(--brand-text-muted)] mb-2">
+          <p className="mb-2 text-xs text-[var(--ts-ink-muted-on-paper)]">
             Where we send IO confirmations, invoices, and payout updates.
           </p>
           <input
@@ -70,17 +70,17 @@ export default function ContactsForm({
             value={billingEmail}
             onChange={(e) => setBillingEmail(e.target.value)}
             placeholder={signingEmail || "billing@yourshow.com"}
-            className="w-full px-4 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-base focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+            className="w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-3 text-base text-[var(--ts-ink-on-paper)] focus:outline-none"
           />
         </div>
 
         {!valid && (
-          <p className="text-xs text-[var(--brand-warning)]">
+          <p className="text-xs text-[var(--ts-accent)]">
             Please use a valid email format, or clear the field to use your signing email.
           </p>
         )}
 
-        <div className="text-xs text-[var(--brand-text-muted)] border-t border-[var(--brand-border)] pt-4">
+        <div className="border-t border-[var(--ts-hairline-on-paper)] pt-4 text-xs text-[var(--ts-ink-muted-on-paper)]">
           You can always change these later in settings.
         </div>
       </div>

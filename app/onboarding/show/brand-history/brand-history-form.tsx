@@ -42,7 +42,7 @@ function clean(drafts: EntryDraft[]): ShowBrandHistoryEntry[] {
 }
 
 const inputClass =
-  "w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all";
+  "w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] focus:outline-none";
 
 export default function BrandHistoryForm({ initialValue }: { initialValue: ShowBrandHistoryEntry[] }) {
   const [drafts, setDrafts] = useState<EntryDraft[]>(
@@ -71,10 +71,10 @@ export default function BrandHistoryForm({ initialValue }: { initialValue: ShowB
         {drafts.map((d, index) => (
           <div
             key={index}
-            className="rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-4 space-y-3"
+            className="space-y-3 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4"
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-[var(--brand-text-muted)] uppercase tracking-wider">
+              <span className="text-xs font-medium uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">
                 Advertiser {index + 1}
               </span>
               {drafts.length > 1 && (
@@ -82,7 +82,7 @@ export default function BrandHistoryForm({ initialValue }: { initialValue: ShowB
                   type="button"
                   onClick={() => removeRow(index)}
                   aria-label={`Remove advertiser ${index + 1}`}
-                  className="p-1.5 rounded-lg text-[var(--brand-text-muted)] hover:text-[var(--brand-error)] hover:bg-[var(--brand-error)]/[0.06] transition-all"
+                  className="rounded-[var(--ts-radius)] p-1.5 text-[var(--ts-ink-muted-on-paper)] transition-all hover:text-[var(--ts-accent)]"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M18 6 6 18M6 6l12 12" />
@@ -132,13 +132,13 @@ export default function BrandHistoryForm({ initialValue }: { initialValue: ShowB
           <button
             type="button"
             onClick={addRow}
-            className="flex items-center gap-1.5 text-sm text-[var(--brand-blue)] hover:text-[var(--brand-blue-light)] font-medium transition-colors"
+            className="flex items-center gap-1.5 text-sm font-medium text-[var(--ts-accent)] transition-colors hover:opacity-80"
           >
             + Add another advertiser
           </button>
         )}
 
-        <p className="text-xs text-[var(--brand-text-muted)] border-t border-[var(--brand-border)] pt-4">
+        <p className="border-t border-[var(--ts-hairline-on-paper)] pt-4 text-xs text-[var(--ts-ink-muted-on-paper)]">
           Leave blank and continue if you&apos;d rather skip. You can add these later in settings.
         </p>
       </div>

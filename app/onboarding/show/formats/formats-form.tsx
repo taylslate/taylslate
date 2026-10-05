@@ -33,7 +33,7 @@ export default function FormatsForm({ initialValue }: { initialValue: ShowAdForm
       continueDisabled={selected.size === 0}
     >
       <MultiCardGrid options={OPTIONS} selected={selected} onToggle={toggle} columns={1} />
-      <p className="text-xs text-[var(--brand-text-muted)] mt-3">
+      <p className="mt-3 text-xs text-[var(--ts-ink-muted-on-paper)]">
         Host-read baked-in ads are read by the host and permanently part of the episode. They command higher CPMs.
         Dynamic insertion ads are pre-recorded and stitched in at playback.
       </p>

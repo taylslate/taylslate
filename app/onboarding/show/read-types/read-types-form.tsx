@@ -35,7 +35,7 @@ export default function ReadTypesForm({ initialValue }: { initialValue: ShowAdRe
       continueDisabled={selected.size === 0}
     >
       <MultiCardGrid options={OPTIONS} selected={selected} onToggle={toggle} columns={2} mutuallyExclusive="any" />
-      <p className="text-xs text-[var(--brand-text-muted)] mt-3">
+      <p className="mt-3 text-xs text-[var(--ts-ink-muted-on-paper)]">
         Most brands prefer talking points — 3-5 bullet points the host ad-libs from. Personal experience
         commands the highest trust.
       </p>

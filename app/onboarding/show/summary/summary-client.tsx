@@ -112,44 +112,43 @@ export default function SummaryClient({ profile }: { profile: ShowProfile }) {
   const marketHigh = bench ? spotPrice(audience, bench.cpmMax) : null;
 
   return (
-    <div className="min-h-screen bg-[var(--brand-surface)] flex flex-col">
-      <div className="w-full h-1 bg-[var(--brand-border)]">
+    <div className="flex min-h-screen flex-col bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
+      <div className="h-1 w-full bg-[var(--ts-hairline-on-paper)]">
         <div
-          className="h-full bg-[var(--brand-blue)] transition-all duration-300"
+          className="h-full bg-[var(--ts-ink-on-paper)] transition-all duration-300"
           style={{ width: `${progressPct}%` }}
         />
       </div>
 
-      <div className="flex items-center justify-between px-8 py-5 border-b border-[var(--brand-border)]">
-        <Link href="/" className="font-bold text-[var(--brand-text)] tracking-tight">taylslate</Link>
-        <div className="text-xs text-[var(--brand-text-muted)]">
+      <div className="flex items-center border-b border-[var(--ts-hairline-on-paper)] px-8 py-5">
+        <div className="text-xs text-[var(--ts-ink-muted-on-paper)]">
           Step {current + 1} of {TOTAL_STEPS} · {SHOW_ONBOARDING_STEPS[current].label}
         </div>
       </div>
 
-      <div className="flex-1 flex items-start justify-center p-8 pt-12">
+      <div className="flex flex-1 items-start justify-center p-8 pt-12">
         <div className="w-full max-w-2xl">
-          <h1 className="text-3xl font-bold text-[var(--brand-text)] tracking-tight">Does this look right?</h1>
-          <p className="text-[var(--brand-text-secondary)] mt-2 mb-8">
+          <h1 className="text-3xl font-bold tracking-tight text-[var(--ts-ink-on-paper)]">Does this look right?</h1>
+          <p className="mt-2 mb-8 text-[var(--ts-ink-muted-on-paper)]">
             Edit any section that needs tweaking. You can always change this later in settings.
           </p>
 
           {profile.show_image_url && (
-            <div className="mb-6 flex items-center gap-4 rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] p-4">
+            <div className="mb-6 flex items-center gap-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4">
               <Image
                 src={profile.show_image_url}
                 alt=""
                 width={64}
                 height={64}
-                className="rounded-xl object-cover"
+                className="rounded-[var(--ts-radius)] object-cover"
                 unoptimized
               />
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-[var(--brand-text)] truncate">
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-semibold text-[var(--ts-ink-on-paper)]">
                   {profile.show_name ?? "Your show"}
                 </div>
                 {profile.show_description && (
-                  <div className="text-xs text-[var(--brand-text-muted)] line-clamp-2">
+                  <div className="line-clamp-2 text-xs text-[var(--ts-ink-muted-on-paper)]">
                     {profile.show_description}
                   </div>
                 )}
@@ -157,7 +156,7 @@ export default function SummaryClient({ profile }: { profile: ShowProfile }) {
             </div>
           )}
 
-          <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] divide-y divide-[var(--brand-border)]">
+          <div className="divide-y divide-[var(--ts-hairline-on-paper)] rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]">
             <Row label="Feed URL" value={profile.feed_url ?? ""} editSlug="welcome" emptyLabel="Add your feed URL" />
             <Row
               label="Show"
@@ -209,11 +208,11 @@ export default function SummaryClient({ profile }: { profile: ShowProfile }) {
           </div>
 
           {bench && userSpot != null && marketLow != null && marketHigh != null && (
-            <div className="mt-6 rounded-2xl border border-[var(--brand-blue)]/20 bg-[var(--brand-blue)]/[0.03] p-5">
-              <div className="text-xs uppercase tracking-wider text-[var(--brand-blue)] font-semibold mb-2">
+            <div className="mt-6 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">
                 What you can realistically expect to earn
               </div>
-              <div className="text-sm text-[var(--brand-text)] leading-relaxed">
+              <div className="text-sm leading-relaxed text-[var(--ts-ink-on-paper)]">
                 At <strong>{audience.toLocaleString()}</strong> downloads, the market pays{" "}
                 <strong>${marketLow.toLocaleString()}–${marketHigh.toLocaleString()}</strong> per ad spot
                 (${bench.cpmMin}–${bench.cpmMax} CPM). At your ${expected} CPM expectation, each spot
@@ -223,15 +222,15 @@ export default function SummaryClient({ profile }: { profile: ShowProfile }) {
           )}
 
           {error && (
-            <div className="mt-4 p-3 rounded-lg border border-[var(--brand-error)]/30 bg-[var(--brand-error)]/[0.04] text-sm text-[var(--brand-error)]">
+            <div className="mt-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-3 text-sm text-[var(--ts-accent)]">
               {error}
             </div>
           )}
 
-          <div className="flex items-center justify-between mt-8">
+          <div className="mt-8 flex items-center justify-between">
             <Link
               href="/onboarding/show/contacts"
-              className="text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+              className="text-sm text-[var(--ts-ink-muted-on-paper)] transition-colors hover:text-[var(--ts-ink-on-paper)]"
             >
               ← Back
             </Link>
@@ -239,7 +238,7 @@ export default function SummaryClient({ profile }: { profile: ShowProfile }) {
               type="button"
               onClick={complete}
               disabled={finishing}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+              className="inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-6 py-3 text-sm font-semibold text-[var(--ts-paper)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {finishing ? "Finishing…" : "Looks good — take me to my dashboard"}
             </button>
@@ -267,14 +266,14 @@ function Row({
   return (
     <div className="flex items-start justify-between gap-4 px-5 py-4">
       <div className="flex-1 min-w-0">
-        <div className="text-xs font-medium text-[var(--brand-text-muted)] uppercase tracking-wider">{label}</div>
+        <div className="text-xs font-medium uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">{label}</div>
         <div
-          className={`text-sm mt-1 ${
+          className={`mt-1 text-sm ${
             isEmpty
               ? placeholderAsEmpty
-                ? "text-[var(--brand-text-muted)] italic"
-                : "text-[var(--brand-warning)]"
-              : "text-[var(--brand-text)]"
+                ? "text-[var(--ts-ink-muted-on-paper)] italic"
+                : "text-[var(--ts-accent)]"
+              : "text-[var(--ts-ink-on-paper)]"
           }`}
         >
           {isEmpty ? emptyLabel ?? "—" : value}
@@ -282,7 +281,7 @@ function Row({
       </div>
       <Link
         href={`/onboarding/show/${editSlug}?return=summary`}
-        className="text-xs font-medium text-[var(--brand-blue)] hover:text-[var(--brand-blue-light)] transition-colors whitespace-nowrap"
+        className="text-xs font-medium whitespace-nowrap text-[var(--ts-accent)] transition-colors hover:opacity-80"
       >
         Edit
       </Link>

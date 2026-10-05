@@ -18,8 +18,8 @@
  * pitch page at /outreach/[token], brand settings at /settings,
  * /settings/brand-profile, and /settings/billing, the aircheck
  * review at /admin/airchecks/[ioLineItemId], the onboarding role
- * picker, and /onboarding/brand/*.
- * Still on --brand-* in globals.css: /onboarding/show/* and /shows.
+ * picker, /onboarding/brand/*, /shows, and /onboarding/show/*.
+ * globals.css still defines --brand-*. No page uses those variables.
  */
 export const tokens = {
   field: "var(--ts-field)",

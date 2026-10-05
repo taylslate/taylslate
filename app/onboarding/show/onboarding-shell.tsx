@@ -98,33 +98,30 @@ export default function OnboardingShell({
   const back = prevStepSlug(slug);
 
   return (
-    <div className="min-h-screen bg-[var(--brand-surface)] flex flex-col">
-      <div className="w-full h-1 bg-[var(--brand-border)]">
+    <div className="flex min-h-screen flex-col bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
+      <div className="h-1 w-full bg-[var(--ts-hairline-on-paper)]">
         <div
-          className="h-full bg-[var(--brand-blue)] transition-all duration-300"
+          className="h-full bg-[var(--ts-ink-on-paper)] transition-all duration-300"
           style={{ width: `${progressPct}%` }}
         />
       </div>
 
-      <div className="flex items-center justify-between px-8 py-5 border-b border-[var(--brand-border)]">
-        <Link href="/" className="font-bold text-[var(--brand-text)] tracking-tight">
-          taylslate
-        </Link>
-        <div className="text-xs text-[var(--brand-text-muted)]">
+      <div className="flex items-center border-b border-[var(--ts-hairline-on-paper)] px-8 py-5">
+        <div className="text-xs text-[var(--ts-ink-muted-on-paper)]">
           Step {current + 1} of {TOTAL_STEPS} · {SHOW_ONBOARDING_STEPS[current].label}
         </div>
       </div>
 
-      <div className="flex-1 flex items-start justify-center p-8 pt-16">
+      <div className="flex flex-1 items-start justify-center p-8 pt-16">
         <div className="w-full max-w-xl">
-          <h1 className="text-3xl font-bold text-[var(--brand-text)] tracking-tight">{title}</h1>
-          {subtitle && <p className="text-[var(--brand-text-secondary)] mt-2 mb-8">{subtitle}</p>}
+          <h1 className="text-3xl font-bold tracking-tight text-[var(--ts-ink-on-paper)]">{title}</h1>
+          {subtitle && <p className="mt-2 mb-8 text-[var(--ts-ink-muted-on-paper)]">{subtitle}</p>}
           {!subtitle && <div className="mb-8" />}
 
           <div className="mb-8">{children}</div>
 
           {error && (
-            <div className="mb-4 p-3 rounded-lg border border-[var(--brand-error)]/30 bg-[var(--brand-error)]/[0.04] text-sm text-[var(--brand-error)]">
+            <div className="mb-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-3 text-sm text-[var(--ts-accent)]">
               {error}
             </div>
           )}
@@ -133,7 +130,7 @@ export default function OnboardingShell({
             {!hideBack && back ? (
               <Link
                 href={`/onboarding/show/${back}`}
-                className="text-sm text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+                className="text-sm text-[var(--ts-ink-muted-on-paper)] transition-colors hover:text-[var(--ts-ink-on-paper)]"
               >
                 ← Back
               </Link>
@@ -144,7 +141,7 @@ export default function OnboardingShell({
               type="button"
               onClick={handleContinue}
               disabled={continueDisabled || submitting}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+              className="inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-6 py-3 text-sm font-semibold text-[var(--ts-paper)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submitting ? (
                 <>

@@ -22,9 +22,9 @@ function getEnrichStatus(show: AgentShow): EnrichStatus {
 }
 
 const enrichColors: Record<EnrichStatus, { dot: string; label: string }> = {
-  fresh: { dot: "var(--brand-success)", label: "Enriched" },
-  stale: { dot: "var(--brand-warning)", label: "Stale" },
-  never: { dot: "var(--brand-text-muted)", label: "Not enriched" },
+  fresh: { dot: "var(--ts-ink-on-paper)", label: "Enriched" },
+  stale: { dot: "var(--ts-accent)", label: "Stale" },
+  never: { dot: "var(--ts-ink-muted-on-paper)", label: "Not enriched" },
 };
 
 export default function ShowsClient() {
@@ -206,38 +206,38 @@ export default function ShowsClient() {
     }
   };
 
-  const inputClass = "w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all";
+  const inputClass = "w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
 
   const renderForm = (onSave: () => void, onCancel: () => void, title: string) => (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)] shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-1">{title}</h3>
-        <p className="text-sm text-[var(--brand-text-secondary)] mb-5">
+      <div className="mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-6 text-[var(--ts-ink-on-paper)]" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-1 text-lg font-semibold text-[var(--ts-ink-on-paper)]">{title}</h3>
+        <p className="mb-5 text-sm text-[var(--ts-ink-muted-on-paper)]">
           {title === "Add Show" ? "Add a new podcast or YouTube channel to your roster." : "Update show details."}
         </p>
 
         <div className="space-y-5">
           {/* Basic */}
           <div>
-            <label className="block text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-3">Basic Info</label>
+            <label className="block text-xs font-semibold text-[var(--ts-ink-muted-on-paper)] uppercase tracking-wider mb-3">Basic Info</label>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Show Name</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Show Name</label>
                 <input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g., The Daily Podcast" className={inputClass} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-2">Platform</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-2">Platform</label>
                 <div className="flex gap-3">
                   {(["podcast", "youtube"] as Platform[]).map((p) => (
                     <button key={p} type="button" onClick={() => setFormPlatform(p)}
-                      className={`flex-1 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${formPlatform === p ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]" : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-text-muted)]"}`}>
+                      className={`flex-1 rounded-[var(--ts-radius)] border px-4 py-2.5 text-sm font-medium transition-all ${formPlatform === p ? "border-[var(--ts-ink-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)] ring-2 ring-inset ring-[var(--ts-ink-on-paper)]" : "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)]"}`}>
                       {p === "podcast" ? "Podcast" : "YouTube"}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Description <span className="text-[var(--brand-text-muted)] font-normal ml-1">(optional)</span></label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Description <span className="text-[var(--ts-ink-muted-on-paper)] font-normal ml-1">(optional)</span></label>
                 <textarea value={formDescription} onChange={(e) => setFormDescription(e.target.value)} rows={2} placeholder="Brief show description" className={`${inputClass} resize-none`} />
               </div>
             </div>
@@ -245,15 +245,15 @@ export default function ShowsClient() {
 
           {/* Audience */}
           <div>
-            <label className="block text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-3">Audience</label>
+            <label className="block text-xs font-semibold text-[var(--ts-ink-muted-on-paper)] uppercase tracking-wider mb-3">Audience</label>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">{formPlatform === "podcast" ? "Avg Downloads/Ep" : "Avg Views"}</label>
+                  <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">{formPlatform === "podcast" ? "Avg Downloads/Ep" : "Avg Views"}</label>
                   <input type="number" value={formAudienceSize} onChange={(e) => setFormAudienceSize(e.target.value ? Number(e.target.value) : "")} placeholder="35000" min="0" className={inputClass} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Episode Cadence</label>
+                  <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Episode Cadence</label>
                   <select value={formEpisodeCadence} onChange={(e) => setFormEpisodeCadence(e.target.value as Show["episode_cadence"])} className={inputClass}>
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly</option>
@@ -263,23 +263,23 @@ export default function ShowsClient() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Categories</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Categories</label>
                 <input type="text" value={formCategories} onChange={(e) => setFormCategories(e.target.value)} placeholder="Comedy, True Crime, Business" className={inputClass} />
-                <p className="text-xs text-[var(--brand-text-muted)] mt-1">Comma-separated</p>
+                <p className="text-xs text-[var(--ts-ink-muted-on-paper)] mt-1">Comma-separated</p>
               </div>
             </div>
           </div>
 
           {/* Pricing */}
           <div>
-            <label className="block text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-3">Pricing</label>
+            <label className="block text-xs font-semibold text-[var(--ts-ink-muted-on-paper)] uppercase tracking-wider mb-3">Pricing</label>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-2">Price Type</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-2">Price Type</label>
                 <div className="flex gap-3">
                   {(["cpm", "flat_rate"] as PriceType[]).map((pt) => (
                     <button key={pt} type="button" onClick={() => setFormPriceType(pt)}
-                      className={`flex-1 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${formPriceType === pt ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.06] text-[var(--brand-blue)]" : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-text-muted)]"}`}>
+                      className={`flex-1 rounded-[var(--ts-radius)] border px-4 py-2.5 text-sm font-medium transition-all ${formPriceType === pt ? "border-[var(--ts-ink-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)] ring-2 ring-inset ring-[var(--ts-ink-on-paper)]" : "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)]"}`}>
                       {pt === "cpm" ? "CPM" : "Flat Rate"}
                     </button>
                   ))}
@@ -289,9 +289,9 @@ export default function ShowsClient() {
                 <div className="grid grid-cols-3 gap-3">
                   {([["Pre-roll", formPrerollCpm, setFormPrerollCpm] as const, ["Mid-roll", formMidrollCpm, setFormMidrollCpm] as const, ["Post-roll", formPostrollCpm, setFormPostrollCpm] as const]).map(([label, val, setter]) => (
                     <div key={label}>
-                      <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">{label} CPM</label>
+                      <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">{label} CPM</label>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--brand-text-muted)]">$</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--ts-ink-muted-on-paper)]">$</span>
                         <input type="number" value={val} onChange={(e) => setter(e.target.value ? Number(e.target.value) : "")} placeholder="25" min="0" step="0.01" className={`${inputClass} pl-7`} />
                       </div>
                     </div>
@@ -299,18 +299,18 @@ export default function ShowsClient() {
                 </div>
               ) : (
                 <div>
-                  <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Flat Rate</label>
+                  <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Flat Rate</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--brand-text-muted)]">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--ts-ink-muted-on-paper)]">$</span>
                     <input type="number" value={formFlatRate} onChange={(e) => setFormFlatRate(e.target.value ? Number(e.target.value) : "")} placeholder="5000" min="0" step="1" className={`${inputClass} pl-7`} />
                   </div>
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Commission Rate <span className="text-[var(--brand-text-muted)] font-normal ml-1">(%)</span></label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Commission Rate <span className="text-[var(--ts-ink-muted-on-paper)] font-normal ml-1">(%)</span></label>
                 <div className="relative">
                   <input type="number" value={formCommissionRate} onChange={(e) => setFormCommissionRate(e.target.value ? Number(e.target.value) : "")} placeholder="15" min="0" max="100" step="1" className={`${inputClass} pr-8`} />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--brand-text-muted)]">%</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--ts-ink-muted-on-paper)]">%</span>
                 </div>
               </div>
             </div>
@@ -318,20 +318,20 @@ export default function ShowsClient() {
 
           {/* Contact */}
           <div>
-            <label className="block text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-3">Contact</label>
+            <label className="block text-xs font-semibold text-[var(--ts-ink-muted-on-paper)] uppercase tracking-wider mb-3">Contact</label>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Contact Name</label>
+                  <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Contact Name</label>
                   <input type="text" value={formContactName} onChange={(e) => setFormContactName(e.target.value)} placeholder="John Smith" className={inputClass} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Contact Email</label>
+                  <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Contact Email</label>
                   <input type="email" value={formContactEmail} onChange={(e) => setFormContactEmail(e.target.value)} placeholder="john@show.com" className={inputClass} />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Contact Method</label>
+                <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Contact Method</label>
                 <select value={formContactMethod} onChange={(e) => setFormContactMethod(e.target.value as Show["contact"]["method"])} className={inputClass}>
                   <option value="email">Email</option>
                   <option value="form">Form</option>
@@ -344,17 +344,17 @@ export default function ShowsClient() {
 
           {/* Availability */}
           <div>
-            <label className="block text-xs font-semibold text-[var(--brand-text-muted)] uppercase tracking-wider mb-3">Availability</label>
+            <label className="block text-xs font-semibold text-[var(--ts-ink-muted-on-paper)] uppercase tracking-wider mb-3">Availability</label>
             <div>
-              <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">Available Slots (next 30 days)</label>
+              <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Available Slots (next 30 days)</label>
               <input type="number" value={formAvailableSlots} onChange={(e) => setFormAvailableSlots(e.target.value ? Number(e.target.value) : "")} placeholder="4" min="0" className={inputClass} />
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 justify-end mt-6 pt-5 border-t border-[var(--brand-border)]">
-          <button onClick={onCancel} className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors">Cancel</button>
-          <button onClick={onSave} disabled={!formName} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50">
+        <div className="flex items-center gap-3 justify-end mt-6 pt-5 border-t border-[var(--ts-hairline-on-paper)]">
+          <button onClick={onCancel} className="px-4 py-2 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-sm font-medium text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)] transition-colors">Cancel</button>
+          <button onClick={onSave} disabled={!formName} className="flex items-center gap-2 px-4 py-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90 disabled:opacity-50">
             {title === "Add Show" ? "Add Show" : "Save Changes"}
           </button>
         </div>
@@ -363,11 +363,11 @@ export default function ShowsClient() {
   );
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="max-w-5xl bg-[var(--ts-paper)] p-8 text-[var(--ts-ink-on-paper)]">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--brand-text)] tracking-tight">Shows</h1>
-          <p className="text-sm text-[var(--brand-text-secondary)] mt-1">
+          <h1 className="text-2xl font-bold text-[var(--ts-ink-on-paper)] tracking-tight">Shows</h1>
+          <p className="text-sm text-[var(--ts-ink-muted-on-paper)] mt-1">
             Manage the podcasts and YouTube channels you represent.
           </p>
         </div>
@@ -376,11 +376,11 @@ export default function ShowsClient() {
             <button
               onClick={handleEnrichAll}
               disabled={enrichingAll}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] text-sm font-medium transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)] text-sm font-medium transition-colors disabled:opacity-50"
             >
               {enrichingAll ? (
                 <>
-                  <div className="w-3.5 h-3.5 border-2 border-[var(--brand-blue)]/30 border-t-[var(--brand-blue)] rounded-full animate-spin" />
+                  <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--ts-ink-on-paper)]/30 border-t-[var(--ts-ink-on-paper)]" />
                   Enriching...
                 </>
               ) : (
@@ -395,7 +395,7 @@ export default function ShowsClient() {
           )}
           <button
             onClick={() => setShowImportModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] text-sm font-medium transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)] text-sm font-medium transition-colors"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -406,7 +406,7 @@ export default function ShowsClient() {
           </button>
           <button
             onClick={handleAdd}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 5v14M5 12h14" />
@@ -418,14 +418,14 @@ export default function ShowsClient() {
 
       {/* Enrich progress bar */}
       {enrichProgress && (
-        <div className="mb-4 p-3 rounded-lg bg-[var(--brand-surface-elevated)] border border-[var(--brand-border)]">
-          <div className="flex items-center justify-between text-xs text-[var(--brand-text-secondary)] mb-1.5">
+        <div className="mb-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-3">
+          <div className="mb-1.5 flex items-center justify-between text-xs text-[var(--ts-ink-muted-on-paper)]">
             <span>Enriching shows...</span>
             <span>{enrichProgress.done}/{enrichProgress.total}</span>
           </div>
-          <div className="w-full h-1.5 bg-[var(--brand-border)] rounded-full overflow-hidden">
+          <div className="h-1.5 w-full overflow-hidden rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)]/10">
             <div
-              className="h-full bg-[var(--brand-blue)] rounded-full transition-all duration-300"
+              className="h-full bg-[var(--ts-ink-on-paper)] transition-all duration-300"
               style={{ width: `${enrichProgress.total > 0 ? (enrichProgress.done / enrichProgress.total) * 100 : 0}%` }}
             />
           </div>
@@ -435,7 +435,7 @@ export default function ShowsClient() {
       {/* Search */}
       <div className="mb-5">
         <div className="relative">
-          <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--brand-text-muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ts-ink-muted-on-paper)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="11" cy="11" r="8" />
             <path d="m21 21-4.3-4.3" />
           </svg>
@@ -444,7 +444,7 @@ export default function ShowsClient() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search shows..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm placeholder:text-[var(--brand-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+            className="w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] py-2.5 pr-4 pl-10 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none"
           />
         </div>
       </div>
@@ -452,12 +452,12 @@ export default function ShowsClient() {
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] animate-pulse">
+            <div key={i} className="animate-pulse rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5">
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-[var(--brand-border)]" />
+                <div className="h-10 w-10 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)]/10" />
                 <div className="flex-1">
-                  <div className="h-4 w-40 bg-[var(--brand-border)] rounded mb-2" />
-                  <div className="h-3 w-64 bg-[var(--brand-border)] rounded" />
+                  <div className="mb-2 h-4 w-40 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)]/10" />
+                  <div className="h-3 w-64 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)]/10" />
                 </div>
               </div>
             </div>
@@ -478,18 +478,18 @@ export default function ShowsClient() {
             return (
               <div
                 key={show.id}
-                className="flex items-center justify-between p-5 bg-[var(--brand-surface-elevated)] rounded-xl border border-[var(--brand-border)] hover:border-[var(--brand-blue)]/30 hover:shadow-sm transition-all group"
+                className="group flex items-center justify-between rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5 transition-all hover:border-[var(--ts-ink-on-paper)]"
               >
                 <div className="flex items-center gap-4 min-w-0 flex-1">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isPodcast ? "bg-gradient-to-br from-[var(--brand-blue)]/10 to-[var(--brand-teal)]/10" : "bg-gradient-to-br from-[var(--brand-error)]/10 to-[var(--brand-orange)]/10"}`}>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-on-paper)]">
                     {isPodcast ? (
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
                         <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                         <line x1="12" x2="12" y1="19" y2="22" />
                       </svg>
                     ) : (
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-error)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <polygon points="23 7 16 12 23 17 23 7" />
                         <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                       </svg>
@@ -497,24 +497,24 @@ export default function ShowsClient() {
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-[var(--brand-text)] truncate">{show.name}</h3>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider shrink-0 ${isPodcast ? "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]" : "bg-[var(--brand-error)]/10 text-[var(--brand-error)]"}`}>
+                      <h3 className="font-semibold text-[var(--ts-ink-on-paper)] truncate">{show.name}</h3>
+                      <span className="shrink-0 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">
                         {show.platform}
                       </span>
                       {/* Enrichment status dot */}
                       <div className="flex items-center gap-1 shrink-0" title={enrichInfo.label}>
                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: enrichInfo.dot }} />
-                        <span className="text-[10px] text-[var(--brand-text-muted)]">{enrichInfo.label}</span>
+                        <span className="text-[10px] text-[var(--ts-ink-muted-on-paper)]">{enrichInfo.label}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 mt-1 flex-wrap">
-                      <span className="text-xs text-[var(--brand-text-muted)]">
+                      <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">
                         {show.audience_size >= 1000
                           ? `${(show.audience_size / 1000).toFixed(show.audience_size >= 10000 ? 0 : 1)}K`
                           : show.audience_size} {audienceLabel}
                       </span>
                       {show.categories.length > 0 && (
-                        <span className="text-xs text-[var(--brand-text-muted)]">
+                        <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">
                           {show.categories.slice(0, 2).join(", ")}
                         </span>
                       )}
@@ -523,15 +523,15 @@ export default function ShowsClient() {
                 </div>
                 <div className="flex items-center gap-4 shrink-0 ml-4">
                   <div className="text-right">
-                    <div className="text-sm font-semibold text-[var(--brand-text)]">{displayRate}</div>
-                    <div className="text-xs text-[var(--brand-text-muted)]">{rateLabel}</div>
+                    <div className="text-sm font-semibold text-[var(--ts-ink-on-paper)]">{displayRate}</div>
+                    <div className="text-xs text-[var(--ts-ink-muted-on-paper)]">{rateLabel}</div>
                   </div>
 
                   {/* Categories as tags */}
                   {show.categories.length > 0 && (
                     <div className="hidden lg:flex items-center gap-1">
                       {show.categories.slice(0, 2).map((cat) => (
-                        <span key={cat} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[var(--brand-surface)] text-[var(--brand-text-muted)] border border-[var(--brand-border)]">
+                        <span key={cat} className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-2 py-0.5 text-[10px] font-medium text-[var(--ts-ink-muted-on-paper)]">
                           {cat}
                         </span>
                       ))}
@@ -541,25 +541,25 @@ export default function ShowsClient() {
                   {/* Actions */}
                   {removingId === show.id ? (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-[var(--brand-text-muted)]">Remove?</span>
-                      <button onClick={() => setRemovingId(null)} className="px-2.5 py-1 rounded-lg border border-[var(--brand-border)] text-xs font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors">Cancel</button>
-                      <button onClick={() => handleRemove(show.id)} className="px-2.5 py-1 rounded-lg bg-[var(--brand-error)] text-white text-xs font-medium hover:opacity-90 transition-colors">Remove</button>
+                      <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">Remove?</span>
+                      <button onClick={() => setRemovingId(null)} className="px-2.5 py-1 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-xs font-medium text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)] transition-colors">Cancel</button>
+                      <button onClick={() => handleRemove(show.id)} className="rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-2.5 py-1 text-xs font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90">Remove</button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleEnrich(show.id)}
                         disabled={enrichingId === show.id}
-                        className="px-3 py-1.5 rounded-lg border border-[var(--brand-border)] text-xs font-medium text-[var(--brand-text-secondary)] hover:border-[var(--brand-teal)] hover:text-[var(--brand-teal)] transition-all disabled:opacity-50"
+                        className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] px-3 py-1.5 text-xs font-medium text-[var(--ts-ink-on-paper)] transition-all hover:border-[var(--ts-ink-on-paper)] disabled:opacity-50"
                       >
                         {enrichingId === show.id ? (
-                          <div className="w-3 h-3 border-2 border-[var(--brand-teal)]/30 border-t-[var(--brand-teal)] rounded-full animate-spin" />
+                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-[var(--ts-ink-on-paper)]/30 border-t-[var(--ts-ink-on-paper)]" />
                         ) : (
                           "Enrich"
                         )}
                       </button>
-                      <button onClick={() => handleEdit(show)} className="px-3 py-1.5 rounded-lg border border-[var(--brand-border)] text-xs font-medium text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)] hover:text-[var(--brand-blue)] transition-all">Edit</button>
-                      <button onClick={() => setRemovingId(show.id)} className="p-1.5 rounded-lg text-[var(--brand-text-muted)] hover:text-[var(--brand-error)] hover:bg-[var(--brand-error)]/[0.06] transition-all">
+                      <button onClick={() => handleEdit(show)} className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] px-3 py-1.5 text-xs font-medium text-[var(--ts-ink-on-paper)] transition-all hover:border-[var(--ts-ink-on-paper)]">Edit</button>
+                      <button onClick={() => setRemovingId(show.id)} className="rounded-[var(--ts-radius)] p-1.5 text-[var(--ts-ink-muted-on-paper)] transition-all hover:text-[var(--ts-accent)]">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M18 6 6 18M6 6l12 12" />
                         </svg>
@@ -572,24 +572,24 @@ export default function ShowsClient() {
           })}
         </div>
       ) : showList.length > 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)] border-dashed">
-          <p className="text-sm text-[var(--brand-text-muted)]">No shows match &ldquo;{search}&rdquo;</p>
+        <div className="flex flex-col items-center justify-center rounded-[var(--ts-radius)] border border-dashed border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] py-16">
+          <p className="text-sm text-[var(--ts-ink-muted-on-paper)]">No shows match &ldquo;{search}&rdquo;</p>
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-24 bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)] border-dashed">
-          <div className="w-16 h-16 rounded-2xl bg-[var(--brand-blue)]/[0.06] flex items-center justify-center mb-5">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <div className="flex flex-col items-center justify-center rounded-[var(--ts-radius)] border border-dashed border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] py-24">
+          <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-on-paper)]">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
               <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
               <line x1="12" x2="12" y1="19" y2="22" />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-2">No shows yet</h3>
-          <p className="text-sm text-[var(--brand-text-muted)] mb-6 max-w-sm text-center">
+          <h3 className="text-lg font-semibold text-[var(--ts-ink-on-paper)] mb-2">No shows yet</h3>
+          <p className="text-sm text-[var(--ts-ink-muted-on-paper)] mb-6 max-w-sm text-center">
             Import your roster to get started, or add shows manually.
           </p>
           <div className="flex items-center gap-3">
-            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] text-sm font-medium transition-colors">
+            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)] text-sm font-medium transition-colors">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="17 8 12 3 7 8" />
@@ -597,7 +597,7 @@ export default function ShowsClient() {
               </svg>
               Import Shows
             </button>
-            <button onClick={handleAdd} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors">
+            <button onClick={handleAdd} className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 5v14M5 12h14" />
               </svg>
@@ -713,35 +713,35 @@ function ImportShowsModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-[var(--brand-surface-elevated)] rounded-2xl border border-[var(--brand-border)] shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-[var(--brand-text)] mb-1">Import Shows</h3>
-        <p className="text-sm text-[var(--brand-text-secondary)] mb-5">Upload a CSV file with your show roster.</p>
+      <div className="mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-6 text-[var(--ts-ink-on-paper)]" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-[var(--ts-ink-on-paper)] mb-1">Import Shows</h3>
+        <p className="text-sm text-[var(--ts-ink-muted-on-paper)] mb-5">Upload a CSV file with your show roster.</p>
 
         {parsedRows.length === 0 ? (
           <div
-            className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${dragActive ? "border-[var(--brand-blue)] bg-[var(--brand-blue)]/[0.04]" : "border-[var(--brand-border)] hover:border-[var(--brand-blue)]/40"}`}
+            className={`rounded-[var(--ts-radius)] border-2 border-dashed p-8 text-center transition-all ${dragActive ? "border-[var(--ts-ink-on-paper)] bg-[var(--ts-paper)]" : "border-[var(--ts-hairline-on-paper)] hover:border-[var(--ts-ink-on-paper)]"}`}
             onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
             onDragLeave={() => setDragActive(false)}
             onDrop={handleDrop}
           >
             {isProcessing ? (
               <div>
-                <div className="w-8 h-8 border-2 border-[var(--brand-blue)]/20 border-t-[var(--brand-blue)] rounded-full animate-spin mx-auto mb-3" />
-                <p className="text-sm text-[var(--brand-text)]">Parsing {fileName}...</p>
+                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-[var(--ts-ink-on-paper)]/20 border-t-[var(--ts-ink-on-paper)]" />
+                <p className="text-sm text-[var(--ts-ink-on-paper)]">Parsing {fileName}...</p>
               </div>
             ) : (
               <div>
-                <div className="w-10 h-10 rounded-lg bg-[var(--brand-blue)]/[0.06] flex items-center justify-center mx-auto mb-3">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-on-paper)]">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <polyline points="17 8 12 3 7 8" />
                     <line x1="12" x2="12" y1="3" y2="15" />
                   </svg>
                 </div>
-                <p className="text-sm text-[var(--brand-text)] mb-1">Drop CSV here or click to browse</p>
+                <p className="text-sm text-[var(--ts-ink-on-paper)] mb-1">Drop CSV here or click to browse</p>
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-sm text-[var(--brand-blue)] hover:underline"
+                  className="text-sm text-[var(--ts-accent)] hover:underline"
                 >
                   Choose file
                 </button>
@@ -753,16 +753,16 @@ function ImportShowsModal({
         ) : (
           <div>
             <div className="flex items-center justify-between mb-3">
-              <p className="text-sm text-[var(--brand-text)]">{parsedRows.length} shows found</p>
-              <button onClick={() => { setParsedRows([]); setFileName(""); }} className="text-xs text-[var(--brand-text-muted)] hover:text-[var(--brand-text)]">Clear</button>
+              <p className="text-sm text-[var(--ts-ink-on-paper)]">{parsedRows.length} shows found</p>
+              <button onClick={() => { setParsedRows([]); setFileName(""); }} className="text-xs text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]">Clear</button>
             </div>
-            <div className="max-h-48 overflow-y-auto border border-[var(--brand-border)] rounded-lg">
+            <div className="max-h-48 overflow-y-auto rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)]">
               <table className="w-full text-sm">
-                <tbody className="divide-y divide-[var(--brand-border)]">
+                <tbody className="divide-y divide-[var(--ts-hairline-on-paper)]">
                   {parsedRows.map((row, i) => (
-                    <tr key={i} className="hover:bg-[var(--brand-surface)]">
-                      <td className="px-3 py-2 font-medium text-[var(--brand-text)]">{row.show_name}</td>
-                      <td className="px-3 py-2 text-right text-[var(--brand-text-muted)] text-xs">
+                    <tr key={i} className="hover:border-[var(--ts-ink-on-paper)]">
+                      <td className="px-3 py-2 font-medium text-[var(--ts-ink-on-paper)]">{row.show_name}</td>
+                      <td className="px-3 py-2 text-right text-[var(--ts-ink-muted-on-paper)] text-xs">
                         {row.downloads >= 1000 ? `${(row.downloads / 1000).toFixed(0)}K` : row.downloads}
                       </td>
                     </tr>
@@ -774,15 +774,15 @@ function ImportShowsModal({
         )}
 
         {error && (
-          <div className="mt-3 p-2.5 rounded-lg bg-[var(--brand-error)]/10 text-[var(--brand-error)] text-sm">{error}</div>
+          <div className="mt-3 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-2.5 text-sm text-[var(--ts-accent)]">{error}</div>
         )}
 
-        <div className="flex items-center gap-3 justify-end mt-5 pt-4 border-t border-[var(--brand-border)]">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg border border-[var(--brand-border)] text-sm font-medium text-[var(--brand-text-secondary)] hover:bg-[var(--brand-surface)] transition-colors">Cancel</button>
+        <div className="flex items-center gap-3 justify-end mt-5 pt-4 border-t border-[var(--ts-hairline-on-paper)]">
+          <button onClick={onClose} className="px-4 py-2 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-sm font-medium text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)] transition-colors">Cancel</button>
           {parsedRows.length > 0 && (
-            <button onClick={handleImport} disabled={isImporting} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] text-white text-sm font-medium transition-colors disabled:opacity-50">
+            <button onClick={handleImport} disabled={isImporting} className="flex items-center gap-2 px-4 py-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90 disabled:opacity-50">
               {isImporting ? (
-                <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Importing...</>
+                <><div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--ts-paper)]/30 border-t-[var(--ts-paper)]" /> Importing...</>
               ) : (
                 `Import ${parsedRows.length} Shows`
               )}

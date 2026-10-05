@@ -34,7 +34,7 @@ export default function PlacementsForm({ initialValue }: { initialValue: ShowPla
       continueDisabled={selected.size === 0}
     >
       <MultiCardGrid options={OPTIONS} selected={selected} onToggle={toggle} columns={1} />
-      <p className="text-xs text-[var(--brand-text-muted)] mt-3">
+      <p className="mt-3 text-xs text-[var(--ts-ink-muted-on-paper)]">
         Mid-roll commands the highest rates because listeners are most engaged.
       </p>
     </OnboardingShell>

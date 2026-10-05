@@ -34,18 +34,18 @@ export default function AudienceForm({
           step={100}
           autoFocus
           placeholder="e.g. 12000"
-          className="w-full pl-4 pr-32 py-3 rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-base focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] transition-all"
+          className="w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] py-3 pr-32 pl-4 text-base text-[var(--ts-ink-on-paper)] focus:outline-none"
         />
-        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-[var(--brand-text-muted)] whitespace-nowrap">
+        <span className="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-xs whitespace-nowrap text-[var(--ts-ink-muted-on-paper)]">
           downloads / ep
         </span>
       </div>
-      <p className="text-xs text-[var(--brand-text-muted)] mt-2">
+      <p className="mt-2 text-xs text-[var(--ts-ink-muted-on-paper)]">
         Check your hosting platform dashboard if you&apos;re not sure (Megaphone, Libsyn, Transistor, etc.).
       </p>
       {podscanEstimate != null && (
-        <div className="mt-4 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3 text-xs text-[var(--brand-text-secondary)]">
-          Podscan estimate: <strong className="text-[var(--brand-text)]">{podscanEstimate.toLocaleString()}</strong> downloads/ep.
+        <div className="mt-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-3 text-xs text-[var(--ts-ink-muted-on-paper)]">
+          Podscan estimate: <strong className="text-[var(--ts-ink-on-paper)]">{podscanEstimate.toLocaleString()}</strong> downloads/ep.
           Use your own number if you have it — it&apos;s more accurate.
         </div>
       )}

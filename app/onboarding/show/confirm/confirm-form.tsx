@@ -47,10 +47,10 @@ export default function ConfirmForm({ profile }: { profile: ShowProfile | null }
             alt=""
             width={72}
             height={72}
-            className="rounded-xl object-cover"
+            className="rounded-[var(--ts-radius)] object-cover"
             unoptimized
           />
-          <div className="text-xs text-[var(--brand-text-muted)]">
+          <div className="text-xs text-[var(--ts-ink-muted-on-paper)]">
             Cover art pulled from your feed.
           </div>
         </div>
@@ -62,7 +62,7 @@ export default function ConfirmForm({ profile }: { profile: ShowProfile | null }
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Your show name"
-          className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)]"
+          className="w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] focus:outline-none"
         />
       </Field>
 
@@ -72,7 +72,7 @@ export default function ConfirmForm({ profile }: { profile: ShowProfile | null }
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
           placeholder="What's your show about?"
-          className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)] resize-none"
+          className="w-full resize-none rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] focus:outline-none"
         />
       </Field>
 
@@ -85,7 +85,7 @@ export default function ConfirmForm({ profile }: { profile: ShowProfile | null }
           value={categories}
           onChange={(e) => setCategories(e.target.value)}
           placeholder="Business, Technology"
-          className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)]"
+          className="w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] focus:outline-none"
         />
       </Field>
 
@@ -97,19 +97,19 @@ export default function ConfirmForm({ profile }: { profile: ShowProfile | null }
           min={0}
           step={1}
           placeholder="0"
-          className="w-full px-4 py-2.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-[var(--brand-text)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand-blue)]/30 focus:border-[var(--brand-blue)]"
+          className="w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] focus:outline-none"
         />
       </Field>
 
       {profile?.audience_size != null && (
-        <div className="mt-3 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3">
-          <div className="text-xs uppercase tracking-wider text-[var(--brand-text-muted)] mb-1">
+        <div className="mt-3 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-3">
+          <div className="mb-1 text-xs uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">
             Estimated audience size
           </div>
-          <div className="text-sm text-[var(--brand-text)]">
+          <div className="text-sm text-[var(--ts-ink-on-paper)]">
             {profile.audience_size.toLocaleString()} avg. downloads per episode (Podscan estimate)
           </div>
-          <div className="text-xs text-[var(--brand-text-muted)] mt-1">
+          <div className="mt-1 text-xs text-[var(--ts-ink-muted-on-paper)]">
             You&apos;ll confirm this yourself in a couple of steps.
           </div>
         </div>
@@ -129,9 +129,9 @@ function Field({
 }) {
   return (
     <div className="mb-4">
-      <label className="block text-sm font-medium text-[var(--brand-text)] mb-1.5">{label}</label>
+      <label className="mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper)]">{label}</label>
       {children}
-      {hint && <p className="text-xs text-[var(--brand-text-muted)] mt-1.5">{hint}</p>}
+      {hint && <p className="mt-1.5 text-xs text-[var(--ts-ink-muted-on-paper)]">{hint}</p>}
     </div>
   );
 }

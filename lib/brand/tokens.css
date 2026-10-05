@@ -17,9 +17,9 @@
   /outreach/[token], brand settings at /settings,
   /settings/brand-profile, and /settings/billing, the aircheck
   review at /admin/airchecks/[ioLineItemId], the onboarding role
-  picker, and /onboarding/brand/* use these.
+  picker, /onboarding/brand/*, /shows, and /onboarding/show/* use these.
 
-  Still on --brand-* in globals.css: /onboarding/show/* and /shows.
+  globals.css still defines --brand-*. No page uses those variables.
 
   Accent is copper only. Do not add a second accent.
 */

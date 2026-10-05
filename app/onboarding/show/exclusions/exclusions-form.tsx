@@ -53,7 +53,7 @@ export default function ExclusionsForm({ initialValue }: { initialValue: ShowCat
         columns={2}
         mutuallyExclusive="none"
       />
-      <p className="text-xs text-[var(--brand-text-muted)] mt-3">
+      <p className="mt-3 text-xs text-[var(--ts-ink-muted-on-paper)]">
         We&apos;ll filter incoming deals so you don&apos;t have to say no.
       </p>
     </OnboardingShell>
