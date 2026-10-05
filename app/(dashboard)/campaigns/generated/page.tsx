@@ -35,13 +35,13 @@ export default function GeneratedCampaignPage() {
 
   if (loading || !campaign) {
     return (
-      <div className="p-8 max-w-6xl">
+      <div className="max-w-6xl bg-[var(--ts-paper)] p-8 text-[var(--ts-ink-on-paper)]">
         <div className="animate-pulse space-y-4">
-          <div className="h-8 w-64 bg-[var(--brand-border)] rounded" />
-          <div className="h-4 w-48 bg-[var(--brand-border)] rounded" />
-          <div className="grid grid-cols-4 gap-4 mt-6">
+          <div className="h-8 w-64 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)]/10" />
+          <div className="h-4 w-48 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)]/10" />
+          <div className="mt-6 grid grid-cols-4 gap-4">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-24 bg-[var(--brand-border)] rounded-xl" />
+              <div key={i} className="h-24 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)]/10" />
             ))}
           </div>
         </div>

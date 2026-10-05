@@ -7,19 +7,19 @@
  * (layout + sidebar + /dashboard), the /campaigns list,
  * /campaigns/new (returning check-in + brief),
  * /campaigns/[id]/interpretation, the v2 conviction discovery
- * view at /campaigns/[id], the media plan at /campaigns/[id]/plan,
- * brand outreach at /campaigns/[id]/outreach, the deals list at
- * /deals, deal detail at /deals/[id] (Wave 12 sign flow and
- * the legacy edit), the IO page at /deals/[id]/io, new deal at
- * /deals/new, import at /deals/import, the invoices list at
+ * view at /campaigns/[id], the legacy campaign detail and
+ * discovery list at /campaigns/[id], /campaigns/generated, the
+ * media plan at /campaigns/[id]/plan, brand outreach at
+ * /campaigns/[id]/outreach, the deals list at /deals, deal
+ * detail at /deals/[id] (Wave 12 sign flow and the legacy edit),
+ * the IO page at /deals/[id]/io, new deal at /deals/new, import
+ * at /deals/import, the invoices list at
  * /invoices and invoice detail at /invoices/[id], the public
  * pitch page at /outreach/[token], brand settings at /settings,
  * /settings/brand-profile, and /settings/billing, the aircheck
  * review at /admin/airchecks/[ioLineItemId], the onboarding role
  * picker, and /onboarding/brand/*.
- * Still on --brand-* in globals.css: /onboarding/show/*, /shows,
- * legacy campaign detail and discovery list, and
- * /campaigns/generated.
+ * Still on --brand-* in globals.css: /onboarding/show/* and /shows.
  */
 export const tokens = {
   field: "var(--ts-field)",

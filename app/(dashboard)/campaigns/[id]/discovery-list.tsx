@@ -28,19 +28,19 @@ function formatCurrency(n: number): string {
 }
 
 function fitScoreColor(score: number): string {
-  if (score >= 90) return "bg-[var(--brand-success)]/10 text-[var(--brand-success)]";
-  if (score >= 75) return "bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]";
-  if (score >= 60) return "bg-[var(--brand-warning)]/10 text-[var(--brand-warning)]";
-  return "bg-[var(--brand-text-muted)]/10 text-[var(--brand-text-muted)]";
+  const tone = score >= 75
+    ? "text-[var(--ts-ink-on-paper)]"
+    : "text-[var(--ts-ink-muted-on-paper)]";
+  return `border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] ${tone}`;
 }
 
 function riskBadge(level: string): { text: string; color: string } {
   switch (level) {
-    case "none": return { text: "Safe", color: "text-[var(--brand-success)]" };
-    case "low": return { text: "Low risk", color: "text-[var(--brand-success)]" };
-    case "medium": return { text: "Med risk", color: "text-[var(--brand-warning)]" };
-    case "high": return { text: "High risk", color: "text-[var(--brand-error)]" };
-    default: return { text: "Unknown", color: "text-[var(--brand-text-muted)]" };
+    case "none": return { text: "Safe", color: "text-[var(--ts-ink-on-paper)]" };
+    case "low": return { text: "Low risk", color: "text-[var(--ts-ink-on-paper)]" };
+    case "medium": return { text: "Med risk", color: "text-[var(--ts-ink-muted-on-paper)]" };
+    case "high": return { text: "High risk", color: "text-[var(--ts-ink-on-paper)]" };
+    default: return { text: "Unknown", color: "text-[var(--ts-ink-muted-on-paper)]" };
   }
 }
 
@@ -177,24 +177,24 @@ export default function DiscoveryList({ campaign }: DiscoveryListProps) {
   }, [shows, selectedIds]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)]">
+    <div className="flex h-[calc(100vh-64px)] flex-col bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
       {/* ---- Brief summary bar ---- */}
-      <div className="px-8 pt-6 pb-4 border-b border-[var(--brand-border)] bg-[var(--brand-surface-elevated)]">
+      <div className="px-8 pt-6 pb-4 border-b border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]">
         <div className="flex items-center gap-3 mb-1">
           <button
             onClick={() => router.push("/campaigns")}
-            className="text-[var(--brand-text-muted)] hover:text-[var(--brand-text)] transition-colors"
+            className="text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)] transition-colors"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="m15 18-6-6 6-6" />
             </svg>
           </button>
-          <h1 className="text-xl font-bold text-[var(--brand-text)] tracking-tight">{campaign.name}</h1>
+          <h1 className="text-xl font-bold text-[var(--ts-ink-on-paper)] tracking-tight">{campaign.name}</h1>
           {isSaving && (
-            <span className="text-xs text-[var(--brand-text-muted)] animate-pulse">Saving...</span>
+            <span className="text-xs text-[var(--ts-ink-muted-on-paper)] animate-pulse">Saving...</span>
           )}
         </div>
-        <div className="flex items-center gap-4 text-sm text-[var(--brand-text-secondary)]">
+        <div className="flex items-center gap-4 text-sm text-[var(--ts-ink-muted-on-paper)]">
           {brief?.brand_url && (
             <span className="flex items-center gap-1">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -211,20 +211,20 @@ export default function DiscoveryList({ campaign }: DiscoveryListProps) {
           {brief && brief.target_interests.length > 0 && (
             <span>{brief.target_interests.slice(0, 3).join(", ")}</span>
           )}
-          <span className="text-[var(--brand-text-muted)]">{shows.length} shows scored</span>
+          <span className="text-[var(--ts-ink-muted-on-paper)]">{shows.length} shows scored</span>
         </div>
       </div>
 
       {/* ---- Filters + sort ---- */}
-      <div className="px-8 py-3 flex items-center gap-3 border-b border-[var(--brand-border)] bg-[var(--brand-surface)]">
+      <div className="px-8 py-3 flex items-center gap-3 border-b border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]">
         {/* Category pills */}
         <div className="flex-1 flex items-center gap-2 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveCategory("all")}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+            className={`whitespace-nowrap rounded-[var(--ts-radius)] px-3 py-1.5 text-xs font-medium transition-all ${
               activeCategory === "all"
-                ? "bg-[var(--brand-blue)] text-white"
-                : "bg-[var(--brand-surface-elevated)] border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)]/40"
+                ? "bg-[var(--ts-ink-on-paper)] text-[var(--ts-paper)]"
+                : "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
             }`}
           >
             All shows ({shows.length})
@@ -233,10 +233,10 @@ export default function DiscoveryList({ campaign }: DiscoveryListProps) {
             <button
               key={cat}
               onClick={() => setActiveCategory(activeCategory === cat ? "all" : cat)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all capitalize ${
+              className={`whitespace-nowrap rounded-[var(--ts-radius)] px-3 py-1.5 text-xs font-medium capitalize transition-all ${
                 activeCategory === cat
-                  ? "bg-[var(--brand-blue)] text-white"
-                  : "bg-[var(--brand-surface-elevated)] border border-[var(--brand-border)] text-[var(--brand-text-secondary)] hover:border-[var(--brand-blue)]/40"
+                  ? "bg-[var(--ts-ink-on-paper)] text-[var(--ts-paper)]"
+                  : "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
               }`}
             >
               {cat}
@@ -248,7 +248,7 @@ export default function DiscoveryList({ campaign }: DiscoveryListProps) {
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortOption)}
-          className="px-3 py-1.5 rounded-lg border border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] text-xs text-[var(--brand-text-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--brand-blue)]/30"
+          className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-1.5 text-xs text-[var(--ts-ink-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none"
         >
           <option value="best_match">Best match</option>
           <option value="audience_size">Audience size</option>
@@ -258,11 +258,11 @@ export default function DiscoveryList({ campaign }: DiscoveryListProps) {
 
         {/* Select all / clear */}
         <div className="flex items-center gap-2 text-xs">
-          <button onClick={selectAll} className="text-[var(--brand-blue)] hover:underline">
+          <button onClick={selectAll} className="text-[var(--ts-accent)] hover:underline">
             Select all
           </button>
-          <span className="text-[var(--brand-border)]">|</span>
-          <button onClick={clearAll} className="text-[var(--brand-text-muted)] hover:underline">
+          <span className="text-[var(--ts-hairline-on-paper)]">|</span>
+          <button onClick={clearAll} className="text-[var(--ts-ink-muted-on-paper)] hover:underline">
             Clear
           </button>
         </div>
@@ -271,7 +271,7 @@ export default function DiscoveryList({ campaign }: DiscoveryListProps) {
       {/* ---- Show list ---- */}
       <div className="flex-1 overflow-y-auto px-8 py-4">
         {filteredShows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-[var(--brand-text-muted)]">
+          <div className="flex flex-col items-center justify-center py-20 text-[var(--ts-ink-muted-on-paper)]">
             <p className="text-sm">No shows match this filter.</p>
           </div>
         ) : (
@@ -289,32 +289,32 @@ export default function DiscoveryList({ campaign }: DiscoveryListProps) {
       </div>
 
       {/* ---- Plan summary bar ---- */}
-      <div className="px-8 py-4 border-t border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] flex items-center gap-6">
+      <div className="px-8 py-4 border-t border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] flex items-center gap-6">
         <div className="flex items-center gap-6 flex-1">
           <div>
-            <div className="text-xs text-[var(--brand-text-muted)]">Selected</div>
-            <div className="text-lg font-bold text-[var(--brand-text)]">
-              {planSummary.count} <span className="text-sm font-normal text-[var(--brand-text-secondary)]">shows</span>
+            <div className="text-xs text-[var(--ts-ink-muted-on-paper)]">Selected</div>
+            <div className="text-lg font-bold text-[var(--ts-ink-on-paper)]">
+              {planSummary.count} <span className="text-sm font-normal text-[var(--ts-ink-muted-on-paper)]">shows</span>
             </div>
           </div>
-          <div className="w-px h-8 bg-[var(--brand-border)]" />
+          <div className="w-px h-8 bg-[var(--ts-hairline-on-paper)]" />
           <div>
-            <div className="text-xs text-[var(--brand-text-muted)]">Est. Impressions</div>
-            <div className="text-lg font-bold text-[var(--brand-text)]">{formatNumber(planSummary.totalImpressions)}</div>
+            <div className="text-xs text-[var(--ts-ink-muted-on-paper)]">Est. Impressions</div>
+            <div className="text-lg font-bold text-[var(--ts-ink-on-paper)]">{formatNumber(planSummary.totalImpressions)}</div>
           </div>
-          <div className="w-px h-8 bg-[var(--brand-border)]" />
+          <div className="w-px h-8 bg-[var(--ts-hairline-on-paper)]" />
           <div>
-            <div className="text-xs text-[var(--brand-text-muted)]">Est. Spend</div>
-            <div className="text-lg font-bold text-[var(--brand-text)]">{formatCurrency(planSummary.totalSpend)}</div>
+            <div className="text-xs text-[var(--ts-ink-muted-on-paper)]">Est. Spend</div>
+            <div className="text-lg font-bold text-[var(--ts-ink-on-paper)]">{formatCurrency(planSummary.totalSpend)}</div>
           </div>
           {planSummary.totalSpend > campaign.budget_total && (
-            <span className="text-xs text-[var(--brand-warning)] font-medium">Over budget</span>
+            <span className="text-xs font-medium text-[var(--ts-ink-on-paper)]">Over budget</span>
           )}
         </div>
         <button
           onClick={() => router.push(`/campaigns/${campaign.id}/plan`)}
           disabled={planSummary.count === 0}
-          className="px-6 py-2.5 rounded-xl bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-light)] disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all flex items-center gap-2"
+          className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-6 py-2.5 text-sm font-semibold text-[var(--ts-paper)] transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Build media plan
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -342,33 +342,33 @@ function ShowRow({
   return (
     <div
       onClick={onToggle}
-      className={`flex items-center gap-4 px-4 py-3.5 rounded-xl border cursor-pointer transition-all ${
+      className={`flex cursor-pointer items-center gap-4 rounded-[var(--ts-radius)] border px-4 py-3.5 transition-all ${
         isSelected
-          ? "border-[var(--brand-blue)]/50 bg-[var(--brand-blue)]/[0.03]"
-          : "border-[var(--brand-border)] bg-[var(--brand-surface-elevated)] hover:border-[var(--brand-blue)]/30"
+          ? "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-ink-on-paper)]/[0.04]"
+          : "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]"
       }`}
     >
       {/* Checkbox */}
       <div
-        className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 transition-all ${
+        className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-[var(--ts-radius)] transition-all ${
           isSelected
-            ? "bg-[var(--brand-blue)] border-[var(--brand-blue)]"
-            : "border-2 border-[var(--brand-border)]"
+            ? "border border-[var(--ts-ink-on-paper)] bg-[var(--ts-ink-on-paper)]"
+            : "border-2 border-[var(--ts-hairline-on-paper)]"
         }`}
       >
         {isSelected && (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ts-paper)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <path d="M20 6 9 17l-5-5" />
           </svg>
         )}
       </div>
 
       {/* Show image / initials */}
-      <div className="w-10 h-10 rounded-lg flex-shrink-0 overflow-hidden bg-gradient-to-br from-[var(--brand-blue)]/20 to-[var(--brand-teal)]/20 flex items-center justify-center">
+      <div className="w-10 h-10 rounded-[var(--ts-radius)] flex-shrink-0 overflow-hidden border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] flex items-center justify-center">
         {show.imageUrl ? (
           <img src={show.imageUrl} alt="" className="w-full h-full object-cover" />
         ) : (
-          <span className="text-xs font-bold text-[var(--brand-blue)]">
+          <span className="text-xs font-bold text-[var(--ts-ink-on-paper)]">
             {show.name.slice(0, 2).toUpperCase()}
           </span>
         )}
@@ -377,20 +377,20 @@ function ShowRow({
       {/* Name + demographic line */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-[var(--brand-text)] truncate">{show.name}</span>
+          <span className="text-sm font-medium text-[var(--ts-ink-on-paper)] truncate">{show.name}</span>
           {safety && (
             <span className={`text-[10px] ${safety.color}`}>{safety.text}</span>
           )}
         </div>
-        <div className="text-xs text-[var(--brand-text-muted)] truncate mt-0.5">
+        <div className="text-xs text-[var(--ts-ink-muted-on-paper)] truncate mt-0.5">
           {demographicSummary(show)}
         </div>
       </div>
 
       {/* Sponsor count */}
       <div className="text-center w-16 flex-shrink-0">
-        <div className="text-xs text-[var(--brand-text-muted)]">Sponsors</div>
-        <div className="text-sm font-medium text-[var(--brand-text)]">
+        <div className="text-xs text-[var(--ts-ink-muted-on-paper)]">Sponsors</div>
+        <div className="text-sm font-medium text-[var(--ts-ink-on-paper)]">
           {show.sponsorCount > 0 ? show.sponsorCount : "—"}
         </div>
       </div>
@@ -398,29 +398,29 @@ function ShowRow({
       {/* Audience — Podscan estimate */}
       <div className="text-center w-20 flex-shrink-0">
         <div
-          className="text-xs text-[var(--brand-text-muted)]"
+          className="text-xs text-[var(--ts-ink-muted-on-paper)]"
           title="Estimated from Podscan data — confirmed at outreach"
         >
           Audience · est.
         </div>
-        <div className="text-sm font-medium text-[var(--brand-text)]">{formatNumber(show.audienceSize)}</div>
+        <div className="text-sm font-medium text-[var(--ts-ink-on-paper)]">{formatNumber(show.audienceSize)}</div>
       </div>
 
       {/* CPM — Podscan estimate */}
       <div className="text-center w-16 flex-shrink-0">
         <div
-          className="text-xs text-[var(--brand-text-muted)]"
+          className="text-xs text-[var(--ts-ink-muted-on-paper)]"
           title="Estimated from Podscan data — confirmed at outreach"
         >
           CPM · est.
         </div>
-        <div className="text-sm font-medium text-[var(--brand-text)]">${show.estimatedCpm}</div>
+        <div className="text-sm font-medium text-[var(--ts-ink-on-paper)]">${show.estimatedCpm}</div>
       </div>
 
       {/* Ad engagement */}
       <div className="text-center w-20 flex-shrink-0">
-        <div className="text-xs text-[var(--brand-text-muted)]">Ad Eng.</div>
-        <div className="text-sm font-medium text-[var(--brand-text)]">
+        <div className="text-xs text-[var(--ts-ink-muted-on-paper)]">Ad Eng.</div>
+        <div className="text-sm font-medium text-[var(--ts-ink-on-paper)]">
           {show.adEngagementRate != null
             ? `${Math.round(show.adEngagementRate * 100)}%`
             : "—"}
@@ -428,7 +428,7 @@ function ShowRow({
       </div>
 
       {/* Fit score badge */}
-      <div className={`px-2.5 py-1 rounded-full text-xs font-semibold flex-shrink-0 ${fitScoreColor(show.compositeScore)}`}>
+      <div className={`px-2.5 py-1 rounded-[var(--ts-radius)] text-xs font-semibold flex-shrink-0 ${fitScoreColor(show.compositeScore)}`}>
         {show.compositeScore}
       </div>
     </div>
