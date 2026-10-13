@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { resolveManagedDelivery } from "@/lib/email/send";
 import { getAuthenticatedUser, getDealById, getShowById, getIOByDealId, getProfileById, getNextIONumber } from "@/lib/data/queries";
 import { generateIOPdf } from "@/lib/pdf/io-pdf";
 import type { InsertionOrder, IOLineItem, Show, Deal, Profile } from "@/lib/data";
@@ -230,13 +231,31 @@ export async function POST(
     const subject = `Insertion Order ${io.io_number} — ${io.advertiser_name} × ${io.line_items[0]?.show_name ?? "Campaign"}`;
     const html = buildEmailHtml(io, senderName);
 
-    // Send via Resend
+    // The recipient is the agency when one is on the IO, otherwise the brand.
+    const delivery = await resolveManagedDelivery({
+      to: recipientEmail,
+      subject,
+      recipientProfileId: io.agency_contact_email
+        ? (deal.agency_id ?? undefined)
+        : (deal.brand_id ?? undefined),
+    });
+    if (!delivery.ok) {
+      return NextResponse.json(
+        {
+          error:
+            "This brand is managed and MANAGED_ACCOUNT_INBOX is not set, so the email was not sent.",
+        },
+        { status: 409 },
+      );
+    }
+
+    // Send via Resend. Unmanaged sends keep the same from, html, and attachment.
     const resend = new Resend(apiKey);
 
     const { error } = await resend.emails.send({
       from: `${senderName} via Taylslate <io@taylslate.com>`,
-      to: recipientEmail,
-      subject,
+      to: delivery.to,
+      subject: delivery.subject,
       html,
       attachments: [
         {
@@ -255,9 +274,9 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      to: recipientEmail,
+      to: delivery.to,
       toName: recipientName,
-      subject,
+      subject: delivery.subject,
       ioNumber: io.io_number,
       senderName,
       senderEmail,

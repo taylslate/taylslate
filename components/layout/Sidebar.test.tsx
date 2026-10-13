@@ -141,6 +141,9 @@ describe("Sidebar chrome", () => {
     );
 
     expect(
+      screen.getByRole("link", { name: "Managed brands" }),
+    ).toHaveAttribute("href", "/admin/brands");
+    expect(
       screen.getByRole("button", { name: "Log in as Test Brand 1" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "View as show" })).toBeInTheDocument();

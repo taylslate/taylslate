@@ -156,6 +156,7 @@ describe("POST /api/outreach/[token]/accept", () => {
     expect(sendEmail).toHaveBeenCalled();
     const sendArgs = sendEmail.mock.calls[0][0];
     expect(sendArgs.to).toBe("brand@example.com");
+    expect(sendArgs.recipientProfileId).toBe("u1");
     expect(sendArgs.subject).toMatch(/Accepted/);
   });
 

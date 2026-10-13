@@ -217,12 +217,19 @@ export default function Sidebar({
       </nav>
 
       <div className="border-t border-[var(--ts-hairline-on-paper)] px-3 py-4">
-        {isAdmin && testAccounts && testAccounts.length > 0 && (
+        {isAdmin && (
           <div className="mb-3">
             <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">
               Internal
             </div>
-            {testAccounts.map((acct) => (
+            <Link
+              href="/admin/brands"
+              className={`mb-1 text-xs font-medium ${navRow} ${quietRow}`}
+              style={{ borderRadius: tokens.radius }}
+            >
+              Managed brands
+            </Link>
+            {testAccounts?.map((acct) => (
               <button
                 key={acct.key}
                 type="button"

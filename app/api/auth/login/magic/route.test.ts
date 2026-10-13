@@ -59,6 +59,7 @@ describe("POST /api/auth/login/magic", () => {
     const sent = sendEmail.mock.calls[0][0];
     expect(sent.to).toBe("jane@example.com");
     expect(sent.subject).toBe("Log in to Taylslate");
+    expect(sent.bypassManagedReroute).toBe(true);
     expect(sent.from).toBe("Taylslate <auth@taylslate.com>");
     expect(sent.html).toContain("Log in");
     expect(sent.html).toContain("token_hash=tok-hash");

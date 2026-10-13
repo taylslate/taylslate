@@ -253,6 +253,7 @@ export async function applyAndNotify(
     subject: email.subject,
     html: email.html,
     text: email.text,
+    recipientProfileId: args.resolved.brandUser.id,
   }).catch((err) => console.error("[outreach notify] send failed:", err));
 
   // Wave 12: extra "IO ready for signature" email when a deal materialized.
@@ -270,6 +271,7 @@ export async function applyAndNotify(
       subject: ioEmail.subject,
       html: ioEmail.html,
       text: ioEmail.text,
+      recipientProfileId: args.resolved.brandUser.id,
     }).catch((err) => console.error("[io-ready] send failed:", err));
   }
 

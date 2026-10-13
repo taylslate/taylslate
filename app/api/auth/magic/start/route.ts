@@ -77,6 +77,8 @@ export async function POST(request: NextRequest) {
     html: email.html,
     text: email.text,
     from: "Taylslate <auth@taylslate.com>",
+    // Show setup links must reach the real address, including for a managed brand.
+    bypassManagedReroute: true,
   });
 
   return NextResponse.json({ ok: true, email_sent: sendResult.ok, email_reason: sendResult.reason });

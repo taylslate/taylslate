@@ -19,6 +19,8 @@ export interface Profile {
   role: UserRole;
   tier: SubscriptionTier;
   created_at: string;
+  /** Concierge account. Chris runs it. Migration 041. */
+  is_managed?: boolean;
 }
 
 // ---- Shows ----

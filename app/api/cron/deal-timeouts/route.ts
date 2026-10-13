@@ -9,6 +9,7 @@
 // Auth: Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`.
 
 import { NextRequest, NextResponse } from "next/server";
+import { isBrandProfileManaged } from "@/lib/accounts/managed";
 import {
   findDealsToTimeoutCancel,
   findStaleUnsignedDealsForReminder,
@@ -47,12 +48,14 @@ function siteOrigin(): string {
 interface CronResult {
   reminders_sent: number;
   cancellations: number;
+  skipped_managed: number;
   errors: string[];
 }
 
 async function loadBrandContext(deal: Wave12Deal): Promise<{
   brandName: string;
   brandEmail: string | null;
+  brandUserId: string;
 } | null> {
   const { data: bp } = await supabaseAdmin
     .from("brand_profiles")
@@ -69,6 +72,7 @@ async function loadBrandContext(deal: Wave12Deal): Promise<{
   return {
     brandName,
     brandEmail: (brandUser?.email as string | undefined) ?? null,
+    brandUserId: (bp as BrandProfile).user_id,
   };
 }
 
@@ -100,6 +104,7 @@ async function sendReminderForDeal(
     subject: email.subject,
     html: email.html,
     text: email.text,
+    recipientProfileId: ctx.brandUserId,
   });
   if (!sendResult.ok) {
     errors.push(`deal ${deal.id}: reminder send failed (${sendResult.reason})`);
@@ -173,18 +178,32 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const result: CronResult = { reminders_sent: 0, cancellations: 0, errors: [] };
+  const result: CronResult = {
+    reminders_sent: 0,
+    cancellations: 0,
+    skipped_managed: 0,
+    errors: [],
+  };
 
   // Reminders first (they're cheap; failures don't block cancels).
+  // Managed brands are skipped entirely: no reminder, no stamp.
   const stale = await findStaleUnsignedDealsForReminder(REMINDER_DAYS);
   for (const deal of stale) {
+    if (await isBrandProfileManaged(deal.brand_profile_id)) {
+      result.skipped_managed += 1;
+      continue;
+    }
     const ok = await sendReminderForDeal(deal, result.errors);
     if (ok) result.reminders_sent += 1;
   }
 
-  // Cancellations.
+  // Cancellations. A managed brand's deal is left alone — Chris runs it.
   const expired = await findDealsToTimeoutCancel(CANCEL_DAYS);
   for (const deal of expired) {
+    if (await isBrandProfileManaged(deal.brand_profile_id)) {
+      result.skipped_managed += 1;
+      continue;
+    }
     const ok = await cancelTimedOutDeal(deal, result.errors);
     if (ok) result.cancellations += 1;
   }

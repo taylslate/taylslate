@@ -17,7 +17,8 @@
  * /invoices and invoice detail at /invoices/[id], the public
  * pitch page at /outreach/[token], brand settings at /settings,
  * /settings/brand-profile, and /settings/billing, the aircheck
- * review at /admin/airchecks/[ioLineItemId], the onboarding role
+ * review at /admin/airchecks/[ioLineItemId], managed brands at
+ * /admin/brands, the onboarding role
  * picker, /onboarding/brand/*, /shows, and /onboarding/show/*.
  * globals.css still defines --brand-*. No page uses those variables.
  */

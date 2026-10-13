@@ -189,6 +189,7 @@ export async function POST(
     subject: email.subject,
     html: email.html,
     text: email.text,
+    recipientProfileId: user.id,
   }).catch((err) => console.error("[accept-counter email] send failed:", err));
 
   return NextResponse.json({ deal });

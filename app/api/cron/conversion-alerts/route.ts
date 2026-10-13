@@ -47,6 +47,7 @@ interface CronResult {
   candidates: number;
   alerts_sent: number;
   skipped_recently_alerted: number;
+  skipped_managed: number;
   errors: string[];
 }
 
@@ -61,16 +62,18 @@ async function alreadyAlertedRecently(customerId: string): Promise<boolean> {
   return events.length > 0;
 }
 
+type AlertProfile = ConversionAlertProfile & { is_managed?: boolean };
+
 async function loadAlertProfile(
   customerId: string
-): Promise<ConversionAlertProfile | null> {
+): Promise<AlertProfile | null> {
   const { data, error } = await supabaseAdmin
     .from("profiles")
-    .select("id, email, full_name, company_name")
+    .select("id, email, full_name, company_name, is_managed")
     .eq("id", customerId)
     .single();
   if (error || !data) return null;
-  return data as ConversionAlertProfile;
+  return data as AlertProfile;
 }
 
 export async function GET(request: NextRequest) {
@@ -82,6 +85,7 @@ export async function GET(request: NextRequest) {
     candidates: 0,
     alerts_sent: 0,
     skipped_recently_alerted: 0,
+    skipped_managed: 0,
     errors: [],
   };
 
@@ -101,6 +105,11 @@ export async function GET(request: NextRequest) {
       result.errors.push(
         `customer ${candidate.customerId}: profile not found`
       );
+      continue;
+    }
+    // Chris already runs managed accounts. Don't page him to upgrade them.
+    if (profile.is_managed === true) {
+      result.skipped_managed += 1;
       continue;
     }
 

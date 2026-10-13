@@ -98,6 +98,8 @@ export async function POST(request: NextRequest) {
     html: rendered.html,
     text: rendered.text,
     from: "Taylslate <auth@taylslate.com>",
+    // A managed brand still has to be able to sign in.
+    bypassManagedReroute: true,
   });
   if (!sendResult.ok) {
     console.error("[login.magic] send failed:", sendResult.reason, sendResult.error);

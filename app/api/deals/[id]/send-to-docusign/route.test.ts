@@ -149,6 +149,7 @@ function stageHappyPath() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getShowProfileByUserId.mockResolvedValue(null);
   for (const k of Object.keys(supabaseAdmin._builders)) delete supabaseAdmin._builders[k];
 });
 
@@ -169,6 +170,37 @@ describe("POST /api/deals/[id]/send-to-docusign", () => {
     expect(res.status).toBe(403);
     expect(createEnvelope).not.toHaveBeenCalled();
     expect(getBrandSigningUrl).not.toHaveBeenCalled();
+  });
+
+  it("409 when the deal's brand is managed, before any envelope work", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u_brand", email: "brand@x.com" });
+    getBrandProfileByUserId.mockResolvedValue({ id: "bp_1" });
+    getWave12DealById.mockResolvedValue(planningDeal());
+    supabaseAdmin.from("brand_profiles")._setSingle({ user_id: "u_brand" });
+    supabaseAdmin.from("profiles")._setSingle({ is_managed: true, email: "brand@x.com" });
+
+    const res = await POST(req() as never, { params });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toMatch(/managed account/i);
+    expect(createEnvelope).not.toHaveBeenCalled();
+    expect(generateIoPdfFromDeal).not.toHaveBeenCalled();
+    expect(getBrandSigningUrl).not.toHaveBeenCalled();
+  });
+
+  it("409 on the show countersign path when the brand is managed", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u_show", email: "show@x.com" });
+    getShowProfileByUserId.mockResolvedValue({ id: "sp_1", show_name: "The Daily Build" });
+    getWave12DealById.mockResolvedValue(
+      planningDeal({ status: "brand_signed", docusign_envelope_id: "env_1" }),
+    );
+    supabaseAdmin.from("brand_profiles")._setSingle({ user_id: "u_brand" });
+    supabaseAdmin.from("profiles")._setSingle({ is_managed: true, email: "brand@x.com" });
+
+    const res = await POST(req() as never, { params });
+    expect(res.status).toBe(409);
+    expect(getShowSigningUrl).not.toHaveBeenCalled();
+    expect(createEnvelope).not.toHaveBeenCalled();
   });
 
   it("409 when the deal is not in planning status", async () => {

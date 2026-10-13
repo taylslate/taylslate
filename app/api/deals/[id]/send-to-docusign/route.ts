@@ -8,6 +8,7 @@
 // for the publisher (routingOrder=2). No PDF, no new envelope, no deal writes.
 
 import { NextRequest, NextResponse, after } from "next/server";
+import { isBrandProfileManaged } from "@/lib/accounts/managed";
 import {
   getAuthenticatedUser,
   getBrandProfileByUserId,
@@ -38,6 +39,14 @@ function siteOrigin(req: NextRequest): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
   if (envOrigin) return envOrigin.replace(/\/$/, "");
   return new URL(req.url).origin;
+}
+
+const MANAGED_BLOCK =
+  "This brand is a managed account. Taylslate does not send a DocuSign envelope for it.";
+
+async function managedBlock(brandProfileId: string | null): Promise<NextResponse | null> {
+  if (!(await isBrandProfileManaged(brandProfileId))) return null;
+  return NextResponse.json({ error: MANAGED_BLOCK }, { status: 409 });
 }
 
 function brandDisplayName(bp: BrandProfile, fallback: string): string {
@@ -74,6 +83,8 @@ export async function POST(
           { status: 409 }
         );
       }
+      const blocked = await managedBlock(deal.brand_profile_id);
+      if (blocked) return blocked;
       try {
         const signing = await getShowSigningUrl({
           envelopeId: deal.docusign_envelope_id,
@@ -116,6 +127,8 @@ export async function POST(
     }
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  const blocked = await managedBlock(deal.brand_profile_id);
+  if (blocked) return blocked;
   if (deal.status !== "planning") {
     return NextResponse.json(
       { error: `Cannot send for signature in status ${deal.status}` },

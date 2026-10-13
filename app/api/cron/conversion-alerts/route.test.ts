@@ -127,6 +127,29 @@ describe("GET /api/cron/conversion-alerts", () => {
     expect(body.errors.length).toBe(1);
   });
 
+  it("skips a managed brand without sending or recording an alert", async () => {
+    getAllPaygCustomersAboveBreakeven.mockResolvedValueOnce([
+      { customerId: "u-1", monthlyAvgCents: 2_500_000 },
+    ]);
+    adminBuilder.single.mockResolvedValueOnce({
+      data: {
+        id: "u-1",
+        email: "founder@brand.com",
+        full_name: "Jamie Founder",
+        company_name: "Aurora Sleep",
+        is_managed: true,
+      },
+      error: null,
+    });
+    const res = await GET(authedRequest() as never);
+    const body = await res.json();
+    expect(body.alerts_sent).toBe(0);
+    expect(body.skipped_managed).toBe(1);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(recordEvent).not.toHaveBeenCalled();
+    expect(logEvent).not.toHaveBeenCalled();
+  });
+
   it("does nothing when no candidates are above breakeven", async () => {
     getAllPaygCustomersAboveBreakeven.mockResolvedValueOnce([]);
     const res = await GET(authedRequest() as never);

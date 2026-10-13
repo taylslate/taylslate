@@ -19,6 +19,7 @@ const getOutreachById = vi.fn();
 const voidEnvelope = vi.fn().mockResolvedValue({ ok: true });
 const logEvent = vi.fn().mockResolvedValue(null);
 const sendEmail = vi.fn().mockResolvedValue({ ok: true });
+const isBrandProfileManaged = vi.fn().mockResolvedValue(false);
 
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin }));
 vi.mock("@/lib/data/queries", () => ({
@@ -33,6 +34,9 @@ vi.mock("@/lib/docusign/envelope", () => ({
 }));
 vi.mock("@/lib/data/events", () => ({ logEvent: (...a: unknown[]) => logEvent(...a) }));
 vi.mock("@/lib/email/send", () => ({ sendEmail: (...a: unknown[]) => sendEmail(...a) }));
+vi.mock("@/lib/accounts/managed", () => ({
+  isBrandProfileManaged: (...a: unknown[]) => isBrandProfileManaged(...a),
+}));
 
 import { GET } from "./route";
 
@@ -69,6 +73,7 @@ describe("GET /api/cron/deal-timeouts", () => {
       ...patch,
       id,
     }));
+    isBrandProfileManaged.mockResolvedValue(false);
     getOutreachById.mockResolvedValue({ show_name: "Daily Briefing" });
     // brand_profiles + brand user lookups + show_profiles + show user
     adminBuilder.single.mockImplementation(async () => ({
@@ -121,6 +126,23 @@ describe("GET /api/cron/deal-timeouts", () => {
     expect(logEvent).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: "io.timeout_cancelled" })
     );
+  });
+
+  it("skips reminder and cancellation when the brand is managed", async () => {
+    isBrandProfileManaged.mockResolvedValue(true);
+    findStaleUnsignedDealsForReminder.mockResolvedValueOnce([baseDeal]);
+    findDealsToTimeoutCancel.mockResolvedValueOnce([
+      { ...baseDeal, docusign_envelope_id: "env-1" },
+    ]);
+    const res = await GET(authedRequest() as never);
+    const body = await res.json();
+    expect(body.reminders_sent).toBe(0);
+    expect(body.cancellations).toBe(0);
+    expect(body.skipped_managed).toBe(2);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(updateWave12Deal).not.toHaveBeenCalled();
+    expect(voidEnvelope).not.toHaveBeenCalled();
+    expect(logEvent).not.toHaveBeenCalled();
   });
 
   it("is idempotent — empty result sets produce no work", async () => {
