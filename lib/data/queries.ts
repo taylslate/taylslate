@@ -208,7 +208,10 @@ export async function createDeal(deal: Omit<Deal, "id" | "created_at" | "updated
     .insert(deal)
     .select()
     .single();
-  if (error || !data) return null;
+  if (error || !data) {
+    console.error("[createDeal] Supabase error:", error?.message, error?.code, error?.details);
+    return null;
+  }
   return data as Deal;
 }
 
@@ -1075,6 +1078,7 @@ export async function getShowsFiltered(filters: {
   min_audience?: number;
   max_audience?: number;
   agent_id?: string;
+  limit?: number;
 }): Promise<Show[]> {
   const supabase = await createClient();
 
@@ -1115,6 +1119,9 @@ export async function getShowsFiltered(filters: {
   }
   if (filters.max_audience != null) {
     query = query.lte("audience_size", filters.max_audience);
+  }
+  if (filters.limit != null && filters.limit > 0) {
+    query = query.limit(Math.min(100, Math.floor(filters.limit)));
   }
 
   const { data, error } = await query;

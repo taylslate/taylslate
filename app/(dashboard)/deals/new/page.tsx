@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getShowsByAgent } from "@/lib/data";
-import type { Placement, PriceType } from "@/lib/data";
+import type { Placement, PriceType, Show } from "@/lib/data";
 import { tokens } from "@/lib/brand/tokens";
 
 const radiusStyle = { borderRadius: tokens.radius };
@@ -22,12 +21,39 @@ const chipOff =
 const linkClass =
   "mt-2 flex items-center gap-1.5 text-sm font-medium text-[var(--ts-accent)] hover:underline";
 
-const agentId = "user-agent-001";
-const agentShows = getShowsByAgent(agentId);
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="mt-1.5 text-xs text-[var(--ts-accent)]">{message}</p>;
+}
 
 export default function NewDealPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [shows, setShows] = useState<Show[]>([]);
+  const [showsError, setShowsError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/shows?limit=100")
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(data?.error || "Could not load shows");
+        }
+        if (!Array.isArray(data)) throw new Error("Could not load shows");
+        if (!cancelled) setShows(data as Show[]);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setShowsError(err instanceof Error ? err.message : "Could not load shows");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Form state
   const [showId, setShowId] = useState("");
@@ -47,12 +73,12 @@ export default function NewDealPage() {
   const [agencyContact, setAgencyContact] = useState("");
   const [agencyEmail, setAgencyEmail] = useState("");
 
-  const selectedShow = agentShows.find((s) => s.id === showId);
+  const selectedShow = shows.find((s) => s.id === showId);
 
   // Auto-fill CPM from show rate card when show + placement changes
   const handleShowChange = (id: string) => {
     setShowId(id);
-    const show = agentShows.find((s) => s.id === id);
+    const show = shows.find((s) => s.id === id);
     if (show && priceType === "cpm") {
       const rate =
         placement === "pre-roll"
@@ -99,9 +125,57 @@ export default function NewDealPage() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
-    // Simulate creating the deal — will wire to Supabase later
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    router.push("/deals");
+    setFieldErrors({});
+    setSubmitError(null);
+
+    const dates = postDates.filter((d) => d !== "").sort();
+    const noteParts = [
+      brandName.trim() ? `Advertiser: ${brandName.trim()}` : "",
+      showAgency && agencyName.trim()
+        ? `Agency: ${agencyName.trim()}${agencyContact.trim() ? ` (${agencyContact.trim()})` : ""}${agencyEmail.trim() ? ` ${agencyEmail.trim()}` : ""}`
+        : "",
+      notes.trim(),
+    ].filter(Boolean);
+
+    try {
+      const res = await fetch("/api/deals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          show_id: showId,
+          num_episodes: dates.length,
+          placement,
+          ad_format: adType,
+          price_type: priceType,
+          cpm_rate: priceType === "cpm" ? cpmRate : undefined,
+          flat_rate: priceType === "flat_rate" ? flatRate : undefined,
+          guaranteed_downloads: guaranteedDownloads,
+          is_scripted: isScripted,
+          is_personal_experience: isPersonalExperience,
+          reader_type: "host_read",
+          content_type: "evergreen",
+          pixel_required: false,
+          flight_start: dates[0],
+          flight_end: dates[dates.length - 1],
+          notes: noteParts.join("\n") || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 400) {
+        setFieldErrors(data.fields && typeof data.fields === "object" ? data.fields : {});
+        setSubmitError(typeof data.error === "string" ? data.error : "Check the highlighted fields");
+        return;
+      }
+      if (!res.ok || !data.deal?.id) {
+        setSubmitError(typeof data.error === "string" ? data.error : "Failed to create deal");
+        return;
+      }
+      router.push(`/deals/${data.deal.id}`);
+    } catch {
+      setSubmitError("Network error. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -135,13 +209,15 @@ export default function NewDealPage() {
             required
             className={inputClass}
           >
-            <option value="">Select a show</option>
-            {agentShows.map((show) => (
+            <option value="">{showsError ? "Shows unavailable" : "Select a show"}</option>
+            {shows.map((show) => (
               <option key={show.id} value={show.id}>
                 {show.name} — {show.audience_size.toLocaleString()} avg downloads
               </option>
             ))}
           </select>
+          <FieldError message={fieldErrors.show_id} />
+          {showsError && <p className="mt-1.5 text-xs text-[var(--ts-accent)]">{showsError}</p>}
         </div>
 
         {/* Brand Name */}
@@ -291,6 +367,7 @@ export default function NewDealPage() {
                   className="min-w-0 w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] py-2.5 pl-8 pr-4 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none"
                 />
               </div>
+              <FieldError message={fieldErrors.cpm_rate} />
             </div>
           ) : (
             <div>
@@ -307,6 +384,7 @@ export default function NewDealPage() {
                   placeholder="875"
                   className="min-w-0 w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] py-2.5 pl-8 pr-4 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none"
                 />
+                <FieldError message={fieldErrors.flat_rate} />
               </div>
             </div>
           )}
@@ -323,6 +401,7 @@ export default function NewDealPage() {
               className="min-w-0 w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none"
             />
             <p className="text-xs text-[var(--ts-ink-muted-on-paper)] mt-1.5">Per episode</p>
+            <FieldError message={fieldErrors.guaranteed_downloads} />
           </div>
         </div>
 
@@ -411,6 +490,7 @@ export default function NewDealPage() {
           <p className="text-xs text-[var(--ts-ink-muted-on-paper)] mt-1.5">
             Each date is a separate episode/line item on the IO.
           </p>
+          <FieldError message={fieldErrors.flight_start || fieldErrors.flight_end || fieldErrors.num_episodes} />
         </div>
 
         {/* Notes */}
@@ -478,6 +558,9 @@ export default function NewDealPage() {
 
         {/* Submit */}
         <div className="border-t border-[var(--ts-hairline-on-paper)] pt-6">
+          {submitError && (
+            <p className="mb-3 text-sm text-[var(--ts-accent)]">{submitError}</p>
+          )}
           <button
             type="submit"
             disabled={isSubmitting || !showId || !brandName}

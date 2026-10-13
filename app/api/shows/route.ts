@@ -26,7 +26,14 @@ export async function GET(request: NextRequest) {
       ? parseInt(params.get("max_audience")!, 10)
       : undefined;
 
-    const hasFilters = search || platform || category || minAudience || maxAudience;
+    const limitRaw = params.get("limit");
+    const limitParsed = limitRaw ? parseInt(limitRaw, 10) : undefined;
+    const limit =
+      limitParsed != null && Number.isFinite(limitParsed) && limitParsed > 0
+        ? Math.min(100, limitParsed)
+        : undefined;
+
+    const hasFilters = search || platform || category || minAudience || maxAudience || limit;
 
     // If authenticated, check role to scope results
     if (user) {
@@ -41,6 +48,7 @@ export async function GET(request: NextRequest) {
           min_audience: minAudience,
           max_audience: maxAudience,
           agent_id: user.id,
+          limit,
         });
         return NextResponse.json(shows);
       }
@@ -54,6 +62,7 @@ export async function GET(request: NextRequest) {
         category,
         min_audience: minAudience,
         max_audience: maxAudience,
+        limit,
       });
       return NextResponse.json(shows);
     }

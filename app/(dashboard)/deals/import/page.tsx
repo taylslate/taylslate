@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import IOPreview from "@/components/io/IOPreview";
 import type { InsertionOrder, IOLineItem, Placement, PriceType } from "@/lib/data";
+import { dealsFromImportedIO } from "@/lib/deals/import-deals";
 import { tokens } from "@/lib/brand/tokens";
 
 type Step = "choose" | "pdf" | "manual" | "preview" | "confirmed";
@@ -57,6 +58,9 @@ export default function ImportIOPage() {
   const [step, setStep] = useState<Step>("choose");
   const [ioData, setIOData] = useState<Partial<InsertionOrder> | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [savedCount, setSavedCount] = useState(0);
+  const [failedDeals, setFailedDeals] = useState<{ label: string; error: string }[]>([]);
 
   // PDF upload state
   const [isUploading, setIsUploading] = useState(false);
@@ -263,10 +267,52 @@ export default function ImportIOPage() {
   // --- Confirm Import ---
 
   const handleConfirm = async () => {
+    if (!ioData) return;
     setIsConfirming(true);
-    // Simulate save — will wire to Supabase later
-    await new Promise((r) => setTimeout(r, 1200));
+    setConfirmError(null);
+    const drafts = dealsFromImportedIO(ioData);
+    if (drafts.length === 0) {
+      setConfirmError("Nothing to save. Add at least one line item.");
+      setIsConfirming(false);
+      return;
+    }
+
+    const saved: string[] = [];
+    const failed: { label: string; error: string }[] = [];
+    for (const draft of drafts) {
+      try {
+        const res = await fetch("/api/deals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(draft.body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.deal?.id) {
+          const detail =
+            data.fields && typeof data.fields === "object"
+              ? Object.values(data.fields as Record<string, string>).join(" ")
+              : "";
+          failed.push({
+            label: draft.label,
+            error: [data.error, detail].filter(Boolean).join(" ") || "Failed to save",
+          });
+          continue;
+        }
+        saved.push(data.deal.id as string);
+      } catch {
+        failed.push({ label: draft.label, error: "Network error" });
+      }
+    }
+
+    setSavedCount(saved.length);
+    setFailedDeals(failed);
     setIsConfirming(false);
+    if (saved.length === 0) {
+      setConfirmError(
+        failed.map((item) => `${item.label}: ${item.error}`).join(" ") || "Nothing was saved."
+      );
+      return;
+    }
     setStep("confirmed");
   };
 
@@ -847,12 +893,19 @@ export default function ImportIOPage() {
 
       {/* Step 3: Preview */}
       {step === "preview" && ioData && (
-        <IOPreview
-          io={ioData}
-          onEdit={handleEditFromPreview}
-          onConfirm={handleConfirm}
-          isConfirming={isConfirming}
-        />
+        <>
+          {confirmError && (
+            <div className={`mb-4 ${errorClass}`} style={radiusStyle}>
+              <p>{confirmError}</p>
+            </div>
+          )}
+          <IOPreview
+            io={ioData}
+            onEdit={handleEditFromPreview}
+            onConfirm={handleConfirm}
+            isConfirming={isConfirming}
+          />
+        </>
       )}
 
       {/* Step 4: Confirmed */}
@@ -873,7 +926,7 @@ export default function ImportIOPage() {
           <p className={`mb-1 text-sm ${mutedText}`}>
             {ioData?.io_number ?? "IO"} &mdash; {ioData?.advertiser_name ?? "Unknown Advertiser"}
           </p>
-          <p className={`mb-6 text-sm ${mutedText}`}>
+          <p className={`mb-1 text-sm ${mutedText}`}>
             {ioData?.line_items?.length ?? 0} line item{(ioData?.line_items?.length ?? 0) !== 1 ? "s" : ""} &middot; $
             {(ioData?.total_net ?? 0).toLocaleString(undefined, {
               minimumFractionDigits: 2,
@@ -881,6 +934,19 @@ export default function ImportIOPage() {
             })}{" "}
             net
           </p>
+          <p className={`mb-2 text-sm ${inkText}`}>
+            {savedCount} deal{savedCount === 1 ? "" : "s"} saved
+          </p>
+          {failedDeals.length > 0 && (
+            <div className="mb-6 text-sm text-[var(--ts-accent)]">
+              {failedDeals.map((item) => (
+                <p key={item.label}>
+                  {item.label}: {item.error}
+                </p>
+              ))}
+            </div>
+          )}
+          {failedDeals.length === 0 && <div className="mb-6" />}
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={() => router.push("/deals")}

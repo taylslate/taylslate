@@ -94,12 +94,54 @@ const labelClass = "mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper
 const readOnlyClass =
   "w-full cursor-default break-words border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] px-3 py-2 text-sm text-[var(--ts-ink-muted-on-paper)]";
 
+function editorPayload(io: InsertionOrder, sync: boolean) {
+  return {
+    advertiser_name: io.advertiser_name,
+    advertiser_contact_name: io.advertiser_contact_name ?? null,
+    advertiser_contact_email: io.advertiser_contact_email ?? null,
+    publisher_name: io.publisher_name,
+    publisher_contact_name: io.publisher_contact_name,
+    publisher_contact_email: io.publisher_contact_email,
+    agency_name: io.agency_name ?? null,
+    agency_contact_name: io.agency_contact_name ?? null,
+    agency_contact_email: io.agency_contact_email ?? null,
+    payment_terms: io.payment_terms,
+    competitor_exclusion: io.competitor_exclusion,
+    exclusivity_days: io.exclusivity_days,
+    rofr_days: io.rofr_days,
+    cancellation_notice_days: io.cancellation_notice_days,
+    download_tracking_days: io.download_tracking_days,
+    make_good_threshold: io.make_good_threshold,
+    sync_line_items: sync,
+    line_items: io.line_items.map((li) => ({
+      id: li.id,
+      format: li.format,
+      post_date: li.post_date,
+      guaranteed_downloads: li.guaranteed_downloads,
+      show_name: li.show_name,
+      placement: li.placement,
+      is_scripted: li.is_scripted,
+      is_personal_experience: li.is_personal_experience,
+      reader_type: li.reader_type,
+      content_type: li.content_type,
+      pixel_required: li.pixel_required,
+      gross_rate: li.gross_rate,
+      gross_cpm: li.gross_cpm,
+      price_type: li.price_type,
+      net_due: li.net_due,
+      verified: li.verified,
+      make_good_triggered: li.make_good_triggered,
+    })),
+  };
+}
+
 export default function IOGeneratorForm({ deal, show, existingIO, brand, agency, agent }: IOGeneratorFormProps) {
   const router = useRouter();
-  const hasExistingIO = !!existingIO;
+  const [savedIO, setSavedIO] = useState(existingIO);
+  const hasExistingIO = !!savedIO;
   const [isEditing, setIsEditing] = useState(!hasExistingIO);
 
-  const [ioNumber] = useState(existingIO?.io_number ?? generateIONumber());
+  const [ioNumber, setIoNumber] = useState(existingIO?.io_number ?? generateIONumber());
   const [lineItems, setLineItems] = useState<IOLineItem[]>(
     existingIO?.line_items ?? generateLineItems(deal, show)
   );
@@ -127,6 +169,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
   const [agencyEmail, setAgencyEmail] = useState(existingIO?.agency_contact_email ?? agency?.email ?? "");
 
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ success: boolean; to?: string; toName?: string; error?: string } | null>(null);
@@ -185,7 +228,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
 
   // Build the current IO object from form state
   const buildIO = (): InsertionOrder => ({
-    id: existingIO?.id ?? `io-gen-${deal.id}`,
+    id: savedIO?.id ?? `io-gen-${deal.id}`,
     io_number: ioNumber,
     deal_id: deal.id,
     advertiser_name: advCompany,
@@ -208,12 +251,12 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
     cancellation_notice_days: cancellationDays,
     download_tracking_days: trackingDays,
     make_good_threshold: makeGoodThreshold,
-    status: existingIO?.status ?? "draft",
-    sent_at: existingIO?.sent_at,
-    signed_at: existingIO?.signed_at,
-    signed_by_publisher: existingIO?.signed_by_publisher,
-    signed_by_agency: existingIO?.signed_by_agency,
-    created_at: existingIO?.created_at ?? new Date().toISOString(),
+    status: savedIO?.status ?? "draft",
+    sent_at: savedIO?.sent_at,
+    signed_at: savedIO?.signed_at,
+    signed_by_publisher: savedIO?.signed_by_publisher,
+    signed_by_agency: savedIO?.signed_by_agency,
+    created_at: savedIO?.created_at ?? new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
 
@@ -222,9 +265,32 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
 
   const handleSave = async () => {
     setIsSaving(true);
-    await new Promise((r) => setTimeout(r, 1500));
-    setIsSaving(false);
-    if (hasExistingIO) setIsEditing(false);
+    setSaveError(null);
+    try {
+      const io = buildIO();
+      const res = await fetch(`/api/deals/${deal.id}/io`, {
+        method: hasExistingIO ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editorPayload(io, hasExistingIO)),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof data.error === "string" ? data.error : "Failed to save IO");
+      }
+      const saved = data.io as InsertionOrder | undefined;
+      if (saved) {
+        setSavedIO(saved);
+        if (saved.io_number) setIoNumber(saved.io_number);
+        if (saved.line_items) setLineItems(saved.line_items);
+      } else {
+        setSavedIO(io);
+      }
+      setIsEditing(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save IO");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDownloadPdf = async () => {
@@ -300,7 +366,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
   const handleCancelDelivery = (itemId: string) => {
     setDeliveryEditing((prev) => ({ ...prev, [itemId]: false }));
     // Revert local state if this item wasn't previously verified
-    const original = existingIO?.line_items?.find((li) => li.id === itemId);
+    const original = savedIO?.line_items?.find((li) => li.id === itemId);
     if (original && !original.verified) {
       setLineItems((prev) =>
         prev.map((li) =>
@@ -377,14 +443,14 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
   };
 
   const handleGenerateInvoice = async () => {
-    if (!existingIO?.id) return;
+    if (!savedIO?.id) return;
     setIsGeneratingInvoice(true);
     setInvoiceError(null);
     try {
       const res = await fetch("/api/invoices/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ io_id: existingIO.id }),
+        body: JSON.stringify({ io_id: savedIO.id }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -448,18 +514,18 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
             <span className={`text-xs font-medium uppercase tracking-wider ${mutedText}`}>IO Number</span>
             <div className={`mt-0.5 text-lg font-semibold ${inkText}`}>{ioNumber}</div>
           </div>
-          {hasExistingIO && existingIO && (
+          {hasExistingIO && savedIO && (
             <span
               className={`px-2.5 py-1 text-xs font-medium ${
-                existingIO.status === "signed" || existingIO.status === "active"
+                savedIO.status === "signed" || savedIO.status === "active"
                   ? "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]"
-                  : existingIO.status === "completed"
+                  : savedIO.status === "completed"
                     ? "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)]"
                     : "bg-[var(--ts-band-shows)] text-[var(--ts-ink-on-paper)]"
               }`}
               style={radiusStyle}
             >
-              {existingIO.status.charAt(0).toUpperCase() + existingIO.status.slice(1)}
+              {savedIO.status.charAt(0).toUpperCase() + savedIO.status.slice(1)}
             </span>
           )}
         </div>
@@ -995,22 +1061,22 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
       </section>
 
       {/* Signature section (view mode, existing signed IO) */}
-      {!isEditing && hasExistingIO && existingIO?.signed_at && (
+      {!isEditing && hasExistingIO && savedIO?.signed_at && (
         <section className={panelClass} style={radiusStyle}>
           <h2 className={sectionHead}>Signed</h2>
           <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
             <div>
               <span className={mutedText}>Publisher: </span>
-              <span className={`font-medium ${inkText}`}>{existingIO.signed_by_publisher}</span>
+              <span className={`font-medium ${inkText}`}>{savedIO.signed_by_publisher}</span>
             </div>
             <div>
               <span className={mutedText}>Agency: </span>
-              <span className={`font-medium ${inkText}`}>{existingIO.signed_by_agency ?? "\u2014"}</span>
+              <span className={`font-medium ${inkText}`}>{savedIO.signed_by_agency ?? "\u2014"}</span>
             </div>
             <div className="sm:col-span-2">
               <span className={mutedText}>Signed on: </span>
               <span className={`font-medium ${inkText}`}>
-                {new Date(existingIO.signed_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                {new Date(savedIO.signed_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
               </span>
             </div>
           </div>
@@ -1086,6 +1152,12 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
           </button>
         )}
       </div>
+
+      {saveError && (
+        <div className="mt-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-3" style={radiusStyle}>
+          <p className={`text-sm ${accentText}`}>{saveError}</p>
+        </div>
+      )}
 
       {/* Delivery / Invoice error messages */}
       {deliveryError && (
