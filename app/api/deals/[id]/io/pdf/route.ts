@@ -4,23 +4,54 @@ import { generateIOPdf } from "@/lib/pdf/io-pdf";
 import type { InsertionOrder, IOLineItem } from "@/lib/data";
 import { recordEvent } from "@/lib/data/event-log";
 
+// Brand, agent, or agency on the deal. Same rule as io/generate.
+function isDealParty(
+  deal: { agent_id?: string | null; brand_id?: string | null; agency_id?: string | null },
+  userId: string
+): boolean {
+  return deal.agent_id === userId || deal.brand_id === userId || deal.agency_id === userId;
+}
+
 // POST: Generate PDF from provided IO data (for edited IOs)
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const deal = await getDealById(id);
+    if (!deal) {
+      return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
+
+    if (!isDealParty(deal, user.id)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const body = await request.json();
-    const io = body.io as InsertionOrder;
-    if (!io || !io.io_number || !io.line_items) {
+    const io = (body as { io?: InsertionOrder } | null)?.io;
+    if (!io) {
+      return NextResponse.json({ error: "Invalid IO data" }, { status: 400 });
+    }
+    if (io.deal_id !== id) {
+      return NextResponse.json({ error: "io.deal_id does not match the deal" }, { status: 400 });
+    }
+    if (!io.io_number || !io.line_items) {
       return NextResponse.json({ error: "Invalid IO data" }, { status: 400 });
     }
 
     const pdfBuffer = generateIOPdf(io);
     const filename = `${io.io_number.replace(/\s+/g, "_")}.pdf`;
 
-    const user = await getAuthenticatedUser();
     await recordEvent({
-      customerId: user?.id,
+      customerId: user.id,
       operationType: "io_generated",
-      metadata: { deal_id: io.deal_id, mode: "POST" },
+      metadata: { deal_id: id, mode: "POST" },
     });
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
@@ -48,6 +79,10 @@ export async function GET(
     const deal = await getDealById(id);
     if (!deal) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
+
+    if (!isDealParty(deal, user.id)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const show = await getShowById(deal.show_id);
