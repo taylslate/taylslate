@@ -1,5 +1,5 @@
 // POST /api/deals/[id]/cancel
-// Brand-only. Allowed in pre-signature states ('planning' or 'brand_signed').
+// Brand-only. Allowed before the show countersigns ('planning', 'io_sent', or 'brand_signed').
 // If a DocuSign envelope exists, void it. Notify the show.
 
 import { NextRequest, NextResponse } from "next/server";
@@ -17,7 +17,7 @@ import { sendEmail } from "@/lib/email/send";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { ShowProfile, BrandProfile } from "@/lib/data/types";
 
-const CANCELLABLE = new Set(["planning", "brand_signed"]);
+const CANCELLABLE = new Set(["planning", "io_sent", "brand_signed"]);
 
 interface CancelBody {
   reason?: string;

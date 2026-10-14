@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatDateOnly } from "./date-only";
+import { addDaysDateOnly, formatDateOnly, isDateOnly, todayDateOnly } from "./date-only";
 
 // The pitch page (app/outreach/[token]/pitch-client.tsx), the Wave 12 deal view,
 // the legacy deal view, the IO preview, and the outreach email all render flight
@@ -37,6 +37,27 @@ describe("formatDateOnly", () => {
 
   it("passes an unparseable value straight through instead of 'Invalid Date'", () => {
     expect(formatDateOnly("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("date-only arithmetic", () => {
+  it("accepts a real YYYY-MM-DD and rejects rollovers", () => {
+    expect(isDateOnly("2026-07-01")).toBe(true);
+    expect(isDateOnly("2026-02-31")).toBe(false);
+    expect(isDateOnly("07/01/2026")).toBe(false);
+    expect(isDateOnly("2026-07-01T00:00:00Z")).toBe(false);
+  });
+
+  it("reads today as the UTC calendar day", () => {
+    expect(todayDateOnly(new Date("2026-10-15T02:30:00.000Z"))).toBe("2026-10-15");
+    expect(todayDateOnly(new Date("2026-10-14T23:30:00.000Z"))).toBe("2026-10-14");
+  });
+
+  it("adds days in UTC so a US-local setDate cannot shift the stored day", () => {
+    expect(addDaysDateOnly("2026-07-01", 30)).toBe("2026-07-31");
+    expect(addDaysDateOnly("2026-07-01", 7)).toBe("2026-07-08");
+    expect(addDaysDateOnly("2026-01-31", 1)).toBe("2026-02-01");
+    expect(addDaysDateOnly("2026-03-08", 1)).toBe("2026-03-09");
   });
 });
 

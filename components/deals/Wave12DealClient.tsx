@@ -57,6 +57,7 @@ function formatFeePct(pct: number): string {
 
 const STATUS_LABEL: Record<Wave12DealStatus, string> = {
   planning: "Planning",
+  io_sent: "IO Sent",
   brand_signed: "Awaiting show countersignature",
   show_signed: "Both parties signed",
   live: "Live",
@@ -85,6 +86,7 @@ const fieldClass =
 // Quiet paper washes. Same vocabulary as outreach status chips.
 const STATUS_COLOR: Record<Wave12DealStatus, string> = {
   planning: "bg-[var(--ts-band-shows)] text-[var(--ts-ink-muted-on-paper)]",
+  io_sent: "bg-[var(--ts-band-shows)] text-[var(--ts-ink-on-paper)]",
   brand_signed: "bg-[var(--ts-band-shows)] text-[var(--ts-ink-on-paper)]",
   show_signed: "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]",
   live: "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]",
@@ -386,14 +388,17 @@ export default function Wave12DealClient({
       : null;
 
   const isCancellable =
-    viewerRole === "brand" && (deal.status === "planning" || deal.status === "brand_signed");
-  const canSign = viewerRole === "brand" && deal.status === "planning";
+    viewerRole === "brand" &&
+    (deal.status === "planning" || deal.status === "io_sent" || deal.status === "brand_signed");
+  // Envelope created (io_sent) still needs the brand's signature.
+  const canSign = viewerRole === "brand" && (deal.status === "planning" || deal.status === "io_sent");
   // Show countersigns in-app once the brand has signed. Status is the gate
   // (webhook flips it to show_signed); the brand viewer never sees this CTA.
   const canShowSign = viewerRole === "show" && deal.status === "brand_signed";
   // Brand can set the promo code at IO time (before signature). Otherwise the
   // stored code renders read-only — and only if one was actually saved.
-  const canEditPromo = viewerRole === "brand" && deal.status === "planning";
+  const canEditPromo =
+    viewerRole === "brand" && (deal.status === "planning" || deal.status === "io_sent");
   // Gate on brand_signed_at, not status === "brand_signed" — that mirrors the
   // server's own eligibility rule (POST /api/deals/[id]/setup-intent: "IO must be
   // signed"). A sequential brand→show envelope can reach show_signed before the

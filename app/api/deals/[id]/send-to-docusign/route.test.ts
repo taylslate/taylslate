@@ -189,6 +189,7 @@ describe("POST /api/deals/[id]/send-to-docusign", () => {
     expect(createEnvelope).not.toHaveBeenCalled();
     expect(generateIoPdfFromDeal).not.toHaveBeenCalled();
     expect(getBrandSigningUrl).not.toHaveBeenCalled();
+    expect(updateWave12Deal).not.toHaveBeenCalled();
   });
 
   it("409 on the show countersign path when the brand is managed", async () => {
@@ -227,10 +228,10 @@ describe("POST /api/deals/[id]/send-to-docusign", () => {
     expect(body).toEqual({ signing_url: "https://demo.docusign.net/signing/xyz", envelope_id: "env_new" });
 
     expect(createEnvelope).toHaveBeenCalledTimes(1);
-    // Persists the new envelope id and keeps the deal in planning until signature.
+    // The envelope is a real send. The deal leaves planning.
     expect(updateWave12Deal).toHaveBeenCalledWith("deal_1", {
       docusign_envelope_id: "env_new",
-      status: "planning",
+      status: "io_sent",
     });
     // Signing URL requested for the freshly-created envelope, as the embedded brand signer.
     expect(getBrandSigningUrl).toHaveBeenCalledWith(
@@ -238,6 +239,22 @@ describe("POST /api/deals/[id]/send-to-docusign", () => {
         envelopeId: "env_new",
         signer: expect.objectContaining({ email: "brand@x.com", clientUserId: "brand" }),
       })
+    );
+  });
+
+  it("RESUME from io_sent refreshes the signing URL without a new envelope", async () => {
+    stageHappyPath();
+    getWave12DealById.mockResolvedValueOnce(
+      planningDeal({ status: "io_sent", docusign_envelope_id: "env_existing" })
+    );
+
+    const res = await POST(req() as never, { params });
+    expect(res.status).toBe(200);
+    expect((await res.json()).envelope_id).toBe("env_existing");
+    expect(createEnvelope).not.toHaveBeenCalled();
+    expect(updateWave12Deal).not.toHaveBeenCalled();
+    expect(getBrandSigningUrl).toHaveBeenCalledWith(
+      expect.objectContaining({ envelopeId: "env_existing" })
     );
   });
 

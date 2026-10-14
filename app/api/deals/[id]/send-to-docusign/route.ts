@@ -131,7 +131,9 @@ export async function POST(
   }
   const blocked = await managedBlock(deal.brand_profile_id);
   if (blocked) return blocked;
-  if (deal.status !== "planning") {
+  // planning: first send. io_sent: envelope already created; refresh the
+  // signing URL without treating a blocked or abandoned attempt as unsent.
+  if (deal.status !== "planning" && deal.status !== "io_sent") {
     return NextResponse.json(
       { error: `Cannot send for signature in status ${deal.status}` },
       { status: 409 }
@@ -243,7 +245,7 @@ export async function POST(
       envelopeId = env.envelopeId;
       await updateWave12Deal(deal.id, {
         docusign_envelope_id: envelopeId,
-        status: "planning", // remains planning until brand actually signs
+        status: "io_sent",
       });
       await logEvent({
         eventType: "io.sent_for_signature",

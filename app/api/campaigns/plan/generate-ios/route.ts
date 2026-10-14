@@ -8,7 +8,6 @@ import {
   createIO,
   getNextIONumber,
   getShowBySlug,
-  updateDeal,
 } from "@/lib/data/queries";
 import type {
   MediaPlanLineItem,
@@ -18,6 +17,8 @@ import type {
   PlanSpacing,
 } from "@/lib/data/types";
 import { adjustedCpm, spotPrice } from "@/lib/utils/pricing";
+import { addDaysDateOnly } from "@/lib/format/date-only";
+import { resolveDealFlight } from "@/lib/deals/campaign-flight";
 
 const SPACING_DAYS: Record<PlanSpacing, number> = {
   weekly: 7,
@@ -124,9 +125,6 @@ export async function POST(request: NextRequest) {
   }
 
   const spacingDays = SPACING_DAYS[plan.spacing] ?? 7;
-  const flightStart = new Date();
-  flightStart.setDate(flightStart.getDate() + 30);
-  const flightStartIso = flightStart.toISOString().split("T")[0];
 
   const created: { deal_id: string; io_id: string; show_name: string }[] = [];
   const errors: string[] = [];
@@ -148,10 +146,11 @@ export async function POST(request: NextRequest) {
       );
       const totalNet = netPerEpisode * numEpisodes;
 
-      // Flight end = last episode post date.
-      const flightEnd = new Date(flightStart);
-      flightEnd.setDate(flightEnd.getDate() + (numEpisodes - 1) * spacingDays);
-      const flightEndIso = flightEnd.toISOString().split("T")[0];
+      const flight = resolveDealFlight({
+        brief: campaign.brief,
+        numEpisodes,
+        spacingDays,
+      });
 
       const deal = await createDeal({
         campaign_id: campaign.id,
@@ -177,8 +176,8 @@ export async function POST(request: NextRequest) {
         competitor_exclusion: [],
         exclusivity_days: 90,
         rofr_days: 30,
-        flight_start: flightStartIso,
-        flight_end: flightEndIso,
+        flight_start: flight.flight_start,
+        flight_end: flight.flight_end,
       });
 
       if (!deal) {
@@ -189,11 +188,9 @@ export async function POST(request: NextRequest) {
       // Build IO line items — one per episode, spaced by plan spacing.
       const lineItems = [];
       for (let i = 0; i < numEpisodes; i++) {
-        const postDate = new Date(flightStart);
-        postDate.setDate(postDate.getDate() + i * spacingDays);
         lineItems.push({
           format: "podcast" as const,
-          post_date: postDate.toISOString().split("T")[0],
+          post_date: addDaysDateOnly(flight.flight_start, i * spacingDays),
           guaranteed_downloads: scoredShow.audienceSize,
           show_name: show.name,
           placement,
@@ -242,9 +239,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Advance deal to io_sent so the Deals pipeline reflects the new IO.
-      await updateDeal(deal.id, { status: "io_sent" });
-
+      // Draft only. io_sent is set when the IO is emailed or sent to DocuSign.
       created.push({ deal_id: deal.id, io_id: io.id, show_name: show.name });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";

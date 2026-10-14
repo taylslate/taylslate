@@ -6,7 +6,6 @@ import {
   getProfileById,
   getNextIONumber,
   createIO,
-  updateDeal,
   getIOByDealId,
 } from "@/lib/data/queries";
 import { cadenceDays } from "@/lib/io/cadence-days";
@@ -133,7 +132,8 @@ export async function POST(
       status: "draft" as const,
     };
 
-    // Create IO with line items in Supabase
+    // Create IO with line items in Supabase. Stay in planning: a draft is not
+    // a sent IO. io_sent is set by the email send and DocuSign send routes.
     const io = await createIO(ioData, lineItems);
     if (!io) {
       return NextResponse.json(
@@ -141,9 +141,6 @@ export async function POST(
         { status: 500 }
       );
     }
-
-    // Update deal status to io_sent
-    await updateDeal(dealId, { status: "io_sent" });
 
     return NextResponse.json({ io }, { status: 201 });
   } catch (err) {

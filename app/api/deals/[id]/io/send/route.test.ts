@@ -8,6 +8,8 @@ const {
   generateIOPdf,
   resendSend,
   resolveManagedDelivery,
+  updateDeal,
+  markInsertionOrderSent,
 } = vi.hoisted(() => ({
   getAuthenticatedUser: vi.fn(),
   getDealById: vi.fn(),
@@ -16,6 +18,8 @@ const {
   generateIOPdf: vi.fn(),
   resendSend: vi.fn(),
   resolveManagedDelivery: vi.fn(),
+  updateDeal: vi.fn(),
+  markInsertionOrderSent: vi.fn(),
 }));
 
 vi.mock("@/lib/data/queries", () => ({
@@ -25,6 +29,8 @@ vi.mock("@/lib/data/queries", () => ({
   getIOByDealId: (...a: unknown[]) => getIOByDealId(...a),
   getProfileById: vi.fn(),
   getNextIONumber: vi.fn(),
+  updateDeal: (...a: unknown[]) => updateDeal(...a),
+  markInsertionOrderSent: (...a: unknown[]) => markInsertionOrderSent(...a),
 }));
 vi.mock("@/lib/pdf/io-pdf", () => ({
   generateIOPdf: (...a: unknown[]) => generateIOPdf(...a),
@@ -101,7 +107,10 @@ beforeEach(() => {
     id: "deal-1",
     show_id: "show-1",
     brand_id: "brand-1",
+    status: "planning",
   });
+  updateDeal.mockResolvedValue({ id: "deal-1", status: "io_sent" });
+  markInsertionOrderSent.mockResolvedValue(true);
   getShowById.mockResolvedValue({ id: "show-1", name: "Daily Briefing" });
   getIOByDealId.mockResolvedValue(io);
   generateIOPdf.mockReturnValue(pdf);
@@ -144,6 +153,8 @@ describe("POST /api/deals/[id]/io/send", () => {
     expect(sent.attachments).toEqual([
       { filename: "IO-1001.pdf", content: pdf.toString("base64") },
     ]);
+    expect(markInsertionOrderSent).toHaveBeenCalledWith("io-1");
+    expect(updateDeal).toHaveBeenCalledWith("deal-1", { status: "io_sent" });
   });
 
   it("reroutes a managed brand and leaves the html and attachment alone", async () => {
@@ -166,6 +177,8 @@ describe("POST /api/deals/[id]/io/send", () => {
     expect(sent.attachments).toEqual([
       { filename: "IO-1001.pdf", content: pdf.toString("base64") },
     ]);
+    expect(updateDeal).not.toHaveBeenCalled();
+    expect(markInsertionOrderSent).not.toHaveBeenCalled();
   });
 
   it("returns 409 and does not send when the managed inbox is unset", async () => {
@@ -177,5 +190,23 @@ describe("POST /api/deals/[id]/io/send", () => {
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/MANAGED_ACCOUNT_INBOX/);
     expect(resendSend).not.toHaveBeenCalled();
+    expect(updateDeal).not.toHaveBeenCalled();
+    expect(markInsertionOrderSent).not.toHaveBeenCalled();
+  });
+
+  it("does not mark io_sent when Resend rejects the message", async () => {
+    resolveManagedDelivery.mockImplementation(
+      async (input: { to: string; subject: string }) => ({
+        ok: true,
+        to: input.to,
+        subject: input.subject,
+      }),
+    );
+    resendSend.mockResolvedValueOnce({ data: null, error: { message: "blocked" } });
+
+    const res = await POST(post() as never, { params });
+    expect(res.status).toBe(500);
+    expect(updateDeal).not.toHaveBeenCalled();
+    expect(markInsertionOrderSent).not.toHaveBeenCalled();
   });
 });

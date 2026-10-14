@@ -619,6 +619,7 @@ export interface Outreach {
 
 export type Wave12DealStatus =
   | "planning"        // outreach accepted, IO not yet sent for signature
+  | "io_sent"         // IO emailed or DocuSign envelope created; not yet signed
   | "brand_signed"    // brand signed, awaiting show countersignature
   | "show_signed"     // both signed (terminal until delivery starts)
   | "live"            // ad campaign in flight

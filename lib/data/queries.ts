@@ -334,6 +334,22 @@ export async function createIO(
   } as InsertionOrder & { line_items: IOLineItem[] };
 }
 
+/** Stamp an emailed IO. Fail-soft: the caller already sent the mail. */
+export async function markInsertionOrderSent(ioId: string): Promise<boolean> {
+  const { error } = await supabaseAdmin
+    .from("insertion_orders")
+    .update({
+      status: "sent",
+      sent_at: new Date().toISOString(),
+    })
+    .eq("id", ioId);
+  if (error) {
+    console.error("[markInsertionOrderSent]", ioId, error.message);
+    return false;
+  }
+  return true;
+}
+
 export async function getNextIONumber(): Promise<string> {
   // Use admin client: io_number uniqueness is global, but SELECT on
   // insertion_orders is RLS-scoped to deal parties, so an anon-role read
@@ -2132,7 +2148,7 @@ export async function findStaleUnsignedDealsForReminder(
   return (data as Wave12Deal[]) ?? [];
 }
 
-/** Cron helper: deals stuck before show_signed past `daysAgo`, ready to cancel. */
+/** Cron helper: deals stuck before show_signed past `daysAgo`, ready to cancel. Includes io_sent (envelope out, still unsigned). */
 export async function findDealsToTimeoutCancel(
   daysAgo = 14
 ): Promise<Wave12Deal[]> {
@@ -2140,7 +2156,7 @@ export async function findDealsToTimeoutCancel(
   const { data } = await supabaseAdmin
     .from("deals")
     .select("*")
-    .in("status", ["planning", "brand_signed"] as Wave12DealStatus[])
+    .in("status", ["planning", "io_sent", "brand_signed"] as Wave12DealStatus[])
     .not("outreach_id", "is", null)
     .lte("created_at", cutoff);
   return (data as Wave12Deal[]) ?? [];

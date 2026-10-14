@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { ShowRecommendation, YouTubeRecommendation } from "@/lib/data/types";
 import { getAuthenticatedUser, ensureProfile, addDeals, createShow, createCampaign } from "@/lib/data/queries";
+import { resolveDealFlight } from "@/lib/deals/campaign-flight";
 
 export async function POST(request: NextRequest) {
   let body: {
@@ -144,8 +145,7 @@ export async function POST(request: NextRequest) {
       competitor_exclusion: [],
       exclusivity_days: 90,
       rofr_days: 30,
-      flight_start: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
-      flight_end: new Date(Date.now() + 120 * 86400000).toISOString().split("T")[0],
+      ...resolveDealFlight({ brief: body.brief, numEpisodes: rec.num_episodes }),
     });
   }
 
@@ -209,8 +209,7 @@ export async function POST(request: NextRequest) {
       competitor_exclusion: [],
       exclusivity_days: 90,
       rofr_days: 30,
-      flight_start: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
-      flight_end: new Date(Date.now() + 120 * 86400000).toISOString().split("T")[0],
+      ...resolveDealFlight({ brief: body.brief, numEpisodes: rec.num_videos }),
     });
   }
 

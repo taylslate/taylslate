@@ -1,7 +1,7 @@
 // PATCH /api/deals/[id]/promo-code
 // Brand-only. Persists the per-deal promo code captured at IO time
-// (Wave 14 Phase 2D — Layer A). Editable only while the deal is in `planning`
-// (i.e. before signature). An empty/blank body clears the code (stores null).
+// (Wave 14 Phase 2D — Layer A). Editable before signature (`planning` or
+// `io_sent`). An empty/blank body clears the code (stores null).
 //
 // Every write emits a `deal.promo_code_set` domain event so the code becomes
 // future conversion signal — the same fail-soft logEvent path that
@@ -32,7 +32,7 @@ export async function PATCH(
   if (!brandProfile || brandProfile.id !== deal.brand_profile_id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (deal.status !== "planning") {
+  if (deal.status !== "planning" && deal.status !== "io_sent") {
     return NextResponse.json(
       { error: `Cannot edit promo code in status ${deal.status}` },
       { status: 409 }

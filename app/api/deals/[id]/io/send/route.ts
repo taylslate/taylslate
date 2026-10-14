@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { resolveManagedDelivery } from "@/lib/email/send";
-import { getAuthenticatedUser, getDealById, getShowById, getIOByDealId, getProfileById, getNextIONumber } from "@/lib/data/queries";
+import { getAuthenticatedUser, getDealById, getShowById, getIOByDealId, getProfileById, getNextIONumber, updateDeal, markInsertionOrderSent } from "@/lib/data/queries";
 import { generateIOPdf } from "@/lib/pdf/io-pdf";
 import type { InsertionOrder, IOLineItem, Show, Deal, Profile } from "@/lib/data";
 
@@ -270,6 +270,17 @@ export async function POST(
         { error: `Failed to send: ${error.message}` },
         { status: 500 }
       );
+    }
+
+    // A managed reroute or a skipped send is not an IO the brand was sent.
+    // Only a delivery to the original recipient advances the pipeline.
+    const rerouted =
+      delivery.to !== recipientEmail || delivery.subject.startsWith("[managed:");
+    if (!rerouted && deal.status === "planning") {
+      if (existingIO?.id) {
+        await markInsertionOrderSent(existingIO.id);
+      }
+      await updateDeal(deal.id, { status: "io_sent" });
     }
 
     return NextResponse.json({
