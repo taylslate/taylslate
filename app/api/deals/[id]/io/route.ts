@@ -24,16 +24,22 @@ const IO_FIELDS = [
   "agency_address",
   "send_invoices_to",
   "payment_terms",
+  "payment_off_platform",
   "competitor_exclusion",
   "exclusivity_days",
   "rofr_days",
+  "rofr_enabled",
   "cancellation_notice_days",
   "download_tracking_days",
+  "download_tracking_enabled",
   "make_good_threshold",
+  "make_good_enabled",
+  "payer",
 ] as const;
 
 const LINE_FIELDS = [
   "format",
+  "spot_format",
   "post_date",
   "guaranteed_downloads",
   "show_name",
@@ -64,6 +70,13 @@ const LINE_NUMBERS = new Set([
   "actual_downloads",
 ]);
 
+const IO_BOOLS = [
+  "payment_off_platform",
+  "rofr_enabled",
+  "make_good_enabled",
+  "download_tracking_enabled",
+] as const;
+
 function isParty(deal: Deal, userId: string): boolean {
   return deal.agent_id === userId || deal.brand_id === userId || deal.agency_id === userId;
 }
@@ -91,7 +104,27 @@ function lineFields(source: Record<string, unknown>): Record<string, unknown> {
       if (Number.isFinite(n)) fields[key] = n;
     }
   }
+  if (fields.spot_format !== undefined) {
+    const raw = typeof fields.spot_format === "string" ? fields.spot_format.trim() : "";
+    fields.spot_format = raw || null;
+  }
   return fields;
+}
+
+/** Allowlisted header fields, with the new flags checked before they hit the DB. */
+function headerFields(
+  source: Record<string, unknown>
+): { fields: Record<string, unknown> } | { error: string } {
+  const fields = pickFields(source, IO_FIELDS);
+  for (const key of IO_BOOLS) {
+    if (fields[key] !== undefined && typeof fields[key] !== "boolean") {
+      return { error: `${key} must be true or false` };
+    }
+  }
+  if (fields.payer !== undefined && fields.payer !== "brand" && fields.payer !== "agency") {
+    return { error: "payer must be brand or agency" };
+  }
+  return { fields };
 }
 
 async function loadDealForParty(dealId: string, userId: string) {
@@ -172,6 +205,11 @@ export async function POST(
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
+    const header = headerFields(body);
+    if ("error" in header) {
+      return NextResponse.json({ error: header.error }, { status: 400 });
+    }
+
     const advertiserName = typeof body.advertiser_name === "string" ? body.advertiser_name.trim() : "";
     const publisherName = typeof body.publisher_name === "string" ? body.publisher_name.trim() : "";
     if (!advertiserName) {
@@ -221,6 +259,7 @@ export async function POST(
         net_due: Number(fields.net_due) > 0 ? Number(fields.net_due) : gross,
         verified: false,
         make_good_triggered: false,
+        spot_format: typeof fields.spot_format === "string" ? fields.spot_format : null,
       });
     }
 
@@ -248,11 +287,10 @@ export async function POST(
     });
 
     if (result.created) {
-      const header = pickFields(body, IO_FIELDS);
       const { error: headerError } = await supabaseAdmin
         .from("insertion_orders")
         .update({
-          ...header,
+          ...header.fields,
           advertiser_name: advertiserName,
           publisher_name: publisherName,
           status: "draft",
@@ -304,10 +342,15 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
+    const header = headerFields(body);
+    if ("error" in header) {
+      return NextResponse.json({ error: header.error }, { status: 400 });
+    }
+
     const supabase = await createClient();
     const lineItemUpdates = Array.isArray(body.line_items) ? body.line_items : null;
     const syncLineItems = body.sync_line_items === true;
-    const ioUpdates = pickFields(body, IO_FIELDS);
+    const ioUpdates = header.fields;
 
     if (Object.keys(ioUpdates).length > 0) {
       const { error: ioError } = await supabase

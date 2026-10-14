@@ -123,6 +123,7 @@ export async function POST(
       total_net: Math.round(totalNet * 100) / 100,
       // Standard terms from domain knowledge
       payment_terms: "Net 30 EOM",
+      payment_off_platform: brand?.is_managed === true,
       competitor_exclusion: deal.competitor_exclusion ?? [],
       exclusivity_days: deal.exclusivity_days ?? 90,
       rofr_days: deal.rofr_days ?? 30,

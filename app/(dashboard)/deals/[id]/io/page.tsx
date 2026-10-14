@@ -14,6 +14,7 @@ interface DealApiResponse {
   deal: Deal & {
     show_name?: string;
     brand_name?: string;
+    brand_is_managed?: boolean;
     insertion_order?: InsertionOrder & { line_items: InsertionOrder["line_items"] };
   };
 }
@@ -25,7 +26,7 @@ interface IOApiResponse {
 export default function IOPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
-  const [deal, setDeal] = useState<Deal | null>(null);
+  const [deal, setDeal] = useState<DealApiResponse["deal"] | null>(null);
   const [show, setShow] = useState<Show | null>(null);
   const [existingIO, setExistingIO] = useState<InsertionOrder | undefined>(undefined);
   const [brand, setBrand] = useState<Profile | null>(null);
@@ -191,6 +192,7 @@ export default function IOPage({ params }: { params: Promise<{ id: string }> }) 
       brand={brand}
       agency={agency}
       agent={agent}
+      brandIsManaged={deal.brand_is_managed === true}
     />
   );
 }

@@ -15,6 +15,18 @@ import type { DealStatus, BrandProfile, ShowProfile } from "@/lib/data/types";
 
 const VALID_STATUSES: DealStatus[] = ["planning", "io_sent", "live", "completed"];
 
+/** profiles.is_managed for the deal's brand. A lookup failure stays false so the GET still returns. */
+async function brandIsManaged(brandId: unknown): Promise<boolean> {
+  if (typeof brandId !== "string" || !brandId) return false;
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("is_managed")
+    .eq("id", brandId)
+    .single();
+  if (error || !data) return false;
+  return (data as { is_managed?: boolean | null }).is_managed === true;
+}
+
 // Ownership gate for a single deal. These routes read/mutate via the admin
 // client (which bypasses RLS), so authorization MUST be enforced here — without
 // it any authenticated user could read or mutate any deal by UUID. Covers both
@@ -79,7 +91,9 @@ export async function GET(
       console.log(
         `[GET /api/deals/${id}] Found legacy deal: brand_id=${deal.brand_id} agent_id=${deal.agent_id} show=${deal.show_name}`
       );
-      return NextResponse.json({ deal });
+      return NextResponse.json({
+        deal: { ...deal, brand_is_managed: await brandIsManaged(deal.brand_id) },
+      });
     }
 
     // Wave 12 fallback — outreach-driven deals don't join through shows table.
@@ -109,6 +123,9 @@ export async function GET(
           ...wave12,
           show_name: (sp as ShowProfile | null)?.show_name ?? outreach?.show_name ?? "Show",
           brand_name: brandName,
+          brand_is_managed: await brandIsManaged(
+            (wave12 as { brand_id?: unknown }).brand_id
+          ),
           outreach,
         },
       });

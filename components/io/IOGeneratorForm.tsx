@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { tokens } from "@/lib/brand/tokens";
-import type { Deal, Show, InsertionOrder, Profile, IOLineItem, Placement, PriceType } from "@/lib/data/types";
+import type { Deal, Show, InsertionOrder, Profile, IOLineItem, Placement, IoPayer } from "@/lib/data/types";
 
 const radiusStyle = { borderRadius: tokens.radius };
 const inkText = "text-[var(--ts-ink-on-paper)]";
@@ -30,6 +30,8 @@ interface IOGeneratorFormProps {
   brand: Profile;
   agency?: Profile;
   agent?: Profile;
+  /** Used only when this deal has no saved IO yet. A saved false stays off. */
+  brandIsManaged?: boolean;
 }
 
 const PAYMENT_TERMS_OPTIONS = [
@@ -81,6 +83,7 @@ function generateLineItems(deal: Deal, show: Show): IOLineItem[] {
       gross_cpm: deal.gross_cpm ?? deal.cpm_rate,
       price_type: deal.price_type,
       net_due: deal.net_per_episode,
+      spot_format: null,
       verified: false,
       make_good_triggered: false,
     });
@@ -106,12 +109,17 @@ function editorPayload(io: InsertionOrder, sync: boolean) {
     agency_contact_name: io.agency_contact_name ?? null,
     agency_contact_email: io.agency_contact_email ?? null,
     payment_terms: io.payment_terms,
+    payment_off_platform: io.payment_off_platform === true,
     competitor_exclusion: io.competitor_exclusion,
     exclusivity_days: io.exclusivity_days,
     rofr_days: io.rofr_days,
+    rofr_enabled: io.rofr_enabled !== false,
     cancellation_notice_days: io.cancellation_notice_days,
     download_tracking_days: io.download_tracking_days,
+    download_tracking_enabled: io.download_tracking_enabled !== false,
     make_good_threshold: io.make_good_threshold,
+    make_good_enabled: io.make_good_enabled !== false,
+    payer: io.payer === "agency" ? "agency" : "brand",
     sync_line_items: sync,
     line_items: io.line_items.map((li) => ({
       id: li.id,
@@ -129,13 +137,14 @@ function editorPayload(io: InsertionOrder, sync: boolean) {
       gross_cpm: li.gross_cpm,
       price_type: li.price_type,
       net_due: li.net_due,
+      spot_format: li.spot_format?.trim() || null,
       verified: li.verified,
       make_good_triggered: li.make_good_triggered,
     })),
   };
 }
 
-export default function IOGeneratorForm({ deal, show, existingIO, brand, agency, agent }: IOGeneratorFormProps) {
+export default function IOGeneratorForm({ deal, show, existingIO, brand, agency, agent, brandIsManaged }: IOGeneratorFormProps) {
   const router = useRouter();
   const [savedIO, setSavedIO] = useState(existingIO);
   const hasExistingIO = !!savedIO;
@@ -146,11 +155,18 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
     existingIO?.line_items ?? generateLineItems(deal, show)
   );
   const [paymentTerms, setPaymentTerms] = useState(existingIO?.payment_terms ?? "Net 30 EOM");
+  const [paymentOffPlatform, setPaymentOffPlatform] = useState(
+    existingIO ? existingIO.payment_off_platform === true : brandIsManaged === true
+  );
   const [exclusivityDays, setExclusivityDays] = useState(existingIO?.exclusivity_days ?? deal.exclusivity_days);
   const [rofrDays, setRofrDays] = useState(existingIO?.rofr_days ?? deal.rofr_days);
+  const [rofrEnabled, setRofrEnabled] = useState(existingIO?.rofr_enabled !== false);
   const [cancellationDays, setCancellationDays] = useState(existingIO?.cancellation_notice_days ?? 14);
   const [trackingDays, setTrackingDays] = useState(existingIO?.download_tracking_days ?? 45);
+  const [trackingEnabled, setTrackingEnabled] = useState(existingIO?.download_tracking_enabled !== false);
   const [makeGoodThreshold, setMakeGoodThreshold] = useState(existingIO?.make_good_threshold ?? 0.10);
+  const [makeGoodEnabled, setMakeGoodEnabled] = useState(existingIO?.make_good_enabled !== false);
+  const [payer, setPayer] = useState<IoPayer>(existingIO?.payer === "agency" ? "agency" : "brand");
   const [competitorExclusion, setCompetitorExclusion] = useState(
     (existingIO?.competitor_exclusion ?? deal.competitor_exclusion).join(", ")
   );
@@ -215,6 +231,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
         gross_cpm: deal.gross_cpm ?? deal.cpm_rate,
         price_type: deal.price_type,
         net_due: deal.net_per_episode,
+        spot_format: null,
         verified: false,
         make_good_triggered: false,
       },
@@ -245,12 +262,17 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
     total_gross: totalGross,
     total_net: totalNet,
     payment_terms: paymentTerms,
+    payment_off_platform: paymentOffPlatform,
     competitor_exclusion: competitorExclusion.split(",").map((s) => s.trim()).filter(Boolean),
     exclusivity_days: exclusivityDays,
     rofr_days: rofrDays,
+    rofr_enabled: rofrEnabled,
     cancellation_notice_days: cancellationDays,
     download_tracking_days: trackingDays,
+    download_tracking_enabled: trackingEnabled,
     make_good_threshold: makeGoodThreshold,
+    make_good_enabled: makeGoodEnabled,
+    payer,
     status: savedIO?.status ?? "draft",
     sent_at: savedIO?.sent_at,
     signed_at: savedIO?.signed_at,
@@ -614,12 +636,30 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                 <div className={readOnlyClass} style={radiusStyle}>{agencyContact}</div>
               )}
             </div>
-            <div className="sm:col-span-2">
+            <div>
               <label className={labelClass}>Email</label>
               {isEditing ? (
                 <input type="email" value={agencyEmail} onChange={(e) => setAgencyEmail(e.target.value)} className={inputClass} style={radiusStyle} />
               ) : (
                 <div className={readOnlyClass} style={radiusStyle}>{agencyEmail}</div>
+              )}
+            </div>
+            <div>
+              <label className={labelClass}>Payer</label>
+              {isEditing ? (
+                <select
+                  value={payer}
+                  onChange={(e) => setPayer(e.target.value === "agency" ? "agency" : "brand")}
+                  className={inputClass}
+                  style={radiusStyle}
+                >
+                  <option value="brand">Advertiser</option>
+                  <option value="agency">Agency of record</option>
+                </select>
+              ) : (
+                <div className={readOnlyClass} style={radiusStyle}>
+                  {payer === "agency" ? "Agency of record" : "Advertiser"}
+                </div>
               )}
             </div>
           </div>
@@ -806,9 +846,21 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                       <option value="dated">Dated</option>
                     </select>
                   </div>
+                  <div className="sm:col-span-2">
+                    <label className={labelClass}>Format</label>
+                    <input
+                      type="text"
+                      value={item.spot_format ?? ""}
+                      onChange={(e) => updateLineItem(index, "spot_format", e.target.value)}
+                      placeholder="Host-read, produced"
+                      className={inputClass}
+                      style={radiusStyle}
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className={`mt-3 flex flex-wrap items-center gap-4 text-xs ${mutedText}`}>
+                  {item.spot_format ? <span>{item.spot_format}</span> : null}
                   <span>{item.price_type === "cpm" ? `$${item.gross_cpm} CPM` : "Flat rate"}</span>
                   <span>{item.is_scripted ? "Scripted" : "Organic"}</span>
                   <span>{item.is_personal_experience ? "Personal exp." : "Standard"}</span>
@@ -968,16 +1020,36 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
       <section className={panelClass} style={radiusStyle}>
         <h2 className={sectionHead}>Terms &amp; Conditions</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
+          <div className="sm:col-span-2">
             <label className={labelClass}>Payment Terms</label>
             {isEditing ? (
-              <select value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} className={inputClass} style={radiusStyle}>
-                {PAYMENT_TERMS_OPTIONS.map((pt) => (
-                  <option key={pt} value={pt}>{pt}</option>
-                ))}
-              </select>
+              <>
+                <input
+                  type="text"
+                  list="payment-terms-options"
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  className={inputClass}
+                  style={radiusStyle}
+                />
+                <datalist id="payment-terms-options">
+                  {PAYMENT_TERMS_OPTIONS.map((pt) => (
+                    <option key={pt} value={pt} />
+                  ))}
+                </datalist>
+                <label className={`mt-2 flex items-center gap-2 text-sm ${inkText}`}>
+                  <input
+                    type="checkbox"
+                    checked={paymentOffPlatform}
+                    onChange={(e) => setPaymentOffPlatform(e.target.checked)}
+                  />
+                  Paid off-platform
+                </label>
+              </>
             ) : (
-              <div className={readOnlyClass} style={radiusStyle}>{paymentTerms}</div>
+              <div className={readOnlyClass} style={radiusStyle}>
+                {paymentOffPlatform ? `${paymentTerms} (off-platform)` : paymentTerms}
+              </div>
             )}
           </div>
           <div>
@@ -991,13 +1063,19 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
           <div>
             <label className={labelClass}>ROFR (days)</label>
             {isEditing ? (
-              <input type="number" value={rofrDays} onChange={(e) => setRofrDays(Number(e.target.value))} className={inputClass} style={radiusStyle} />
+              <div className="space-y-2">
+                <label className={`flex items-center gap-2 text-sm ${inkText}`}>
+                  <input type="checkbox" aria-label="Include ROFR" checked={rofrEnabled} onChange={(e) => setRofrEnabled(e.target.checked)} />
+                  Include on the IO
+                </label>
+                <input type="number" value={rofrDays} onChange={(e) => setRofrDays(Number(e.target.value))} className={inputClass} style={radiusStyle} />
+              </div>
             ) : (
-              <div className={readOnlyClass} style={radiusStyle}>{rofrDays}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{rofrEnabled ? rofrDays : "Off"}</div>
             )}
           </div>
           <div>
-            <label className={labelClass}>Cancellation Notice (days)</label>
+            <label className={labelClass}>Cancellation Notice (calendar days)</label>
             {isEditing ? (
               <input type="number" value={cancellationDays} onChange={(e) => setCancellationDays(Number(e.target.value))} className={inputClass} style={radiusStyle} />
             ) : (
@@ -1007,27 +1085,39 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
           <div>
             <label className={labelClass}>Download Tracking (days)</label>
             {isEditing ? (
-              <input type="number" value={trackingDays} onChange={(e) => setTrackingDays(Number(e.target.value))} className={inputClass} style={radiusStyle} />
+              <div className="space-y-2">
+                <label className={`flex items-center gap-2 text-sm ${inkText}`}>
+                  <input type="checkbox" aria-label="Include download tracking" checked={trackingEnabled} onChange={(e) => setTrackingEnabled(e.target.checked)} />
+                  Include on the IO
+                </label>
+                <input type="number" value={trackingDays} onChange={(e) => setTrackingDays(Number(e.target.value))} className={inputClass} style={radiusStyle} />
+              </div>
             ) : (
-              <div className={readOnlyClass} style={radiusStyle}>{trackingDays}</div>
+              <div className={readOnlyClass} style={radiusStyle}>{trackingEnabled ? trackingDays : "Off"}</div>
             )}
           </div>
           <div>
             <label className={labelClass}>Make-Good Threshold</label>
             {isEditing ? (
-              <div className="relative">
-                <input
-                  type="number"
-                  value={(makeGoodThreshold * 100).toFixed(0)}
-                  onChange={(e) => setMakeGoodThreshold(Number(e.target.value) / 100)}
-                  className={inputClass} style={radiusStyle}
-                  min={0}
-                  max={100}
-                />
-                <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs ${mutedText}`}>%</span>
+              <div className="space-y-2">
+                <label className={`flex items-center gap-2 text-sm ${inkText}`}>
+                  <input type="checkbox" aria-label="Include make-good" checked={makeGoodEnabled} onChange={(e) => setMakeGoodEnabled(e.target.checked)} />
+                  Include on the IO
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={(makeGoodThreshold * 100).toFixed(0)}
+                    onChange={(e) => setMakeGoodThreshold(Number(e.target.value) / 100)}
+                    className={inputClass} style={radiusStyle}
+                    min={0}
+                    max={100}
+                  />
+                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs ${mutedText}`}>%</span>
+                </div>
               </div>
             ) : (
-              <div className={readOnlyClass} style={radiusStyle}>{(makeGoodThreshold * 100).toFixed(0)}%</div>
+              <div className={readOnlyClass} style={radiusStyle}>{makeGoodEnabled ? `${(makeGoodThreshold * 100).toFixed(0)}%` : "Off"}</div>
             )}
           </div>
         </div>

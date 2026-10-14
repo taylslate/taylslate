@@ -870,6 +870,9 @@ export type IOStatus =
   | "completed"
   | "cancelled";
 
+/** Who pays the IO when an agency of record is named. */
+export type IoPayer = "brand" | "agency";
+
 export interface IOLineItem {
   id: string;
   format: Platform;
@@ -886,6 +889,8 @@ export interface IOLineItem {
   gross_cpm: number; // CPM charged to brand
   price_type: PriceType;
   net_due: number; // what show receives
+  /** Per-line read format (host-read, produced). Null keeps the show default. */
+  spot_format?: string | null;
 
   // Post-delivery tracking
   actual_post_date?: string;
@@ -928,13 +933,23 @@ export interface InsertionOrder {
   total_net: number;
 
   // Terms (standard boilerplate from VeritoneOne template)
-  payment_terms: string; // e.g., "Net 30 EOM"
+  payment_terms: string; // e.g., "Net 30 EOM", or the off-platform sentence
+  /** When true, the PDF prints payment_terms and leaves out Taylslate fee language. */
+  payment_off_platform?: boolean;
   competitor_exclusion: string[];
   exclusivity_days: number;
   rofr_days: number;
-  cancellation_notice_days: number; // typically 14
+  /** When false, the ROFR term is left out of the PDF. Defaults on. */
+  rofr_enabled?: boolean;
+  cancellation_notice_days: number; // calendar days, typically 14
   download_tracking_days: number; // typically 45
+  /** When false, the download-tracking term is left out of the PDF. Defaults on. */
+  download_tracking_enabled?: boolean;
   make_good_threshold: number; // typically 0.10 (10%)
+  /** When false, the make-good term is left out of the PDF. Defaults on. */
+  make_good_enabled?: boolean;
+  /** Who pays when agency_name is set. Defaults to the advertiser. */
+  payer?: IoPayer;
 
   // Status & signature
   status: IOStatus;

@@ -201,3 +201,91 @@ describe("IO route party check", () => {
     expect(getDealById).not.toHaveBeenCalled();
   });
 });
+
+describe("negotiated IO fields", () => {
+  function captureUpdates() {
+    const updates: unknown[] = [];
+    createClient.mockResolvedValueOnce({
+      from: () => {
+        const builder: Record<string, unknown> = {};
+        const self = () => builder;
+        builder.update = vi.fn((payload: unknown) => {
+          updates.push(payload);
+          return builder;
+        });
+        builder.insert = vi.fn(self);
+        builder.delete = vi.fn(self);
+        builder.select = vi.fn(self);
+        builder.eq = vi.fn(self);
+        builder.not = vi.fn(self);
+        builder.then = (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({ data: null, error: null }).then(resolve);
+        return builder;
+      },
+    });
+    return updates;
+  }
+
+  it("PATCH stores off-platform terms, the payer, and the line format", async () => {
+    const updates = captureUpdates();
+    const res = await PATCH(
+      jsonReq("PATCH", {
+        payment_terms: "Net 30 via ACH",
+        payment_off_platform: true,
+        rofr_enabled: false,
+        make_good_enabled: true,
+        download_tracking_enabled: true,
+        payer: "agency",
+        agency_name: "Left Field",
+        line_items: [
+          {
+            ...lineItem,
+            price_type: "flat_rate",
+            placement: "pre-roll",
+            spot_format: "Produced",
+            gross_rate: 2500,
+            net_due: 2500,
+          },
+        ],
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expect(updates[0]).toEqual(
+      expect.objectContaining({
+        payment_terms: "Net 30 via ACH",
+        payment_off_platform: true,
+        rofr_enabled: false,
+        payer: "agency",
+        agency_name: "Left Field",
+      })
+    );
+    expect(updates[1]).toEqual(
+      expect.objectContaining({
+        price_type: "flat_rate",
+        placement: "pre-roll",
+        spot_format: "Produced",
+        gross_rate: 2500,
+        net_due: 2500,
+      })
+    );
+  });
+
+  it("PATCH rejects a payer other than brand or agency", async () => {
+    const res = await PATCH(jsonReq("PATCH", { payer: "show" }) as never, params as never);
+    expect(res.status).toBe(400);
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("PATCH stores a blank spot format as null", async () => {
+    const updates = captureUpdates();
+    const res = await PATCH(
+      jsonReq("PATCH", {
+        line_items: [{ ...lineItem, spot_format: "   " }],
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expect(updates[0]).toEqual(expect.objectContaining({ spot_format: null }));
+  });
+});

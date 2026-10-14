@@ -14,6 +14,7 @@ const {
   getOutreachById,
   getWave12DealById,
   updateWave12Deal,
+  getIOByDealId,
   generateIoPdfFromDeal,
   persistIoForDeal,
   createEnvelope,
@@ -42,6 +43,7 @@ const {
     getShowProfileByUserId: vi.fn().mockResolvedValue(null),
     getOutreachById: vi.fn(),
     getWave12DealById: vi.fn(),
+    getIOByDealId: vi.fn().mockResolvedValue(null),
     updateWave12Deal: vi.fn().mockResolvedValue(null),
     generateIoPdfFromDeal: vi.fn(),
     persistIoForDeal: vi.fn().mockResolvedValue({
@@ -72,6 +74,7 @@ vi.mock("@/lib/data/queries", () => ({
   getShowProfileByUserId: (...a: unknown[]) => getShowProfileByUserId(...a),
   getOutreachById: (...a: unknown[]) => getOutreachById(...a),
   getWave12DealById: (...a: unknown[]) => getWave12DealById(...a),
+  getIOByDealId: (...a: unknown[]) => getIOByDealId(...a),
   updateWave12Deal: (...a: unknown[]) => updateWave12Deal(...a),
 }));
 vi.mock("@/lib/pdf/io-generator", () => ({

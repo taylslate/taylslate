@@ -1,6 +1,14 @@
 import { jsPDF } from "jspdf";
 import type { InsertionOrder } from "@/lib/data/types";
 import { formatDateOnly } from "@/lib/format/date-only";
+import {
+  agencyContactLine,
+  flatPerSpotLabel,
+  isFlatRate,
+  payerLabel,
+  storedTermRows,
+  visibleDownloadTotal,
+} from "@/lib/pdf/io-terms";
 
 // VeritoneOne-style IO PDF generator
 // Professional document layout: header, parties, line items table, terms, signature blocks
@@ -132,19 +140,20 @@ export function generateIOPdf(io: InsertionOrder): Buffer {
   const pubBottom = drawPartyBlock("Publisher", pubFields, MARGIN + colWidth + 20, colWidth);
   y = Math.max(advBottom, pubBottom) + 8;
 
-  // Agency (if applicable)
+  // Agency of record stays in the parties block. It does not replace
+  // the advertiser signature line.
   if (io.agency_name) {
     drawLine(y);
     y += 14;
     const agencyFields: [string, string][] = [
       ["Company", io.agency_name],
-      ["Contact", io.agency_contact_name ?? ""],
-      ["Email", io.agency_contact_email ?? ""],
+      ["Contact", agencyContactLine(io.agency_contact_name, io.agency_contact_email)],
       ["Billing", io.agency_billing_contact ?? ""],
       ["Address", io.agency_address ?? ""],
       ["Invoices To", io.send_invoices_to ?? ""],
+      ["Payer", payerLabel(io.payer)],
     ];
-    const agencyBottom = drawPartyBlock("Agency", agencyFields, MARGIN, CONTENT_WIDTH);
+    const agencyBottom = drawPartyBlock("Agency of Record", agencyFields, MARGIN, CONTENT_WIDTH);
     y = agencyBottom + 8;
   }
 
@@ -207,14 +216,15 @@ export function generateIOPdf(io: InsertionOrder): Buffer {
 
     doc.setTextColor(...TEXT);
     x = MARGIN + 4;
+    const flat = isFlatRate(li.price_type);
     const rowData = [
       String(i + 1),
       li.show_name.length > 18 ? li.show_name.slice(0, 16) + "..." : li.show_name,
       formatDateOnly(li.post_date),
       capitalize(li.placement),
-      li.guaranteed_downloads.toLocaleString(),
-      li.price_type === "cpm" ? "CPM" : "Flat",
-      `$${fmt(li.gross_cpm)}`,
+      flat ? "" : li.guaranteed_downloads.toLocaleString(),
+      flat ? "" : li.price_type === "cpm" ? "CPM" : "Flat",
+      flat ? "" : `$${fmt(li.gross_cpm)}`,
       `$${fmt(li.gross_rate)}`,
       `$${fmt(li.net_due)}`,
     ];
@@ -239,12 +249,13 @@ export function generateIOPdf(io: InsertionOrder): Buffer {
   for (const li of io.line_items) {
     checkPage(12);
     const details = [
-      li.format === "youtube" ? "YouTube" : "Podcast",
-      capitalize(li.reader_type),
+      li.spot_format?.trim() || (li.format === "youtube" ? "YouTube" : "Podcast"),
+      li.spot_format?.trim() ? "" : capitalize(li.reader_type),
       li.is_scripted ? "Scripted" : "Organic",
       li.is_personal_experience ? "Personal Exp." : "Standard",
       capitalize(li.content_type),
       li.pixel_required ? "Pixel Required" : "",
+      isFlatRate(li.price_type) ? flatPerSpotLabel(li.gross_rate) : "",
     ]
       .filter(Boolean)
       .join("  |  ");
@@ -267,8 +278,9 @@ export function generateIOPdf(io: InsertionOrder): Buffer {
 
   doc.text("Total Downloads:", totalsX, y + 2);
   doc.setTextColor(...WHITE);
-  let tw = doc.getTextWidth(io.total_downloads.toLocaleString());
-  doc.text(io.total_downloads.toLocaleString(), totalsValX - tw, y + 2);
+  const shownDownloads = visibleDownloadTotal(io.line_items);
+  let tw = doc.getTextWidth(shownDownloads.toLocaleString());
+  doc.text(shownDownloads.toLocaleString(), totalsValX - tw, y + 2);
 
   doc.setTextColor(180, 190, 210);
   doc.text("Total Gross:", totalsX, y + 14);
@@ -303,17 +315,7 @@ export function generateIOPdf(io: InsertionOrder): Buffer {
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...TEXT);
 
-  const terms: [string, string][] = [
-    ["Payment", io.payment_terms],
-    ["Exclusivity", `${io.exclusivity_days} days competitor exclusivity from first air date`],
-    ["ROFR", `${io.rofr_days}-day right of first refusal on renewed placements`],
-    ["Cancellation", `${io.cancellation_notice_days} business days written notice required`],
-    ["Download Tracking", `${io.download_tracking_days}-day tracking window from original post date`],
-    [
-      "Make-Good",
-      `If actual downloads fall more than ${(io.make_good_threshold * 100).toFixed(0)}% below guaranteed downloads, publisher will provide a make-good episode at no additional cost`,
-    ],
-  ];
+  const terms = storedTermRows(io);
 
   for (const [label, value] of terms) {
     checkPage(30);
@@ -433,27 +435,18 @@ export function generateIOPdf(io: InsertionOrder): Buffer {
     doc.text("Print Name & Title", startX, nameLineY + 10);
   }
 
-  // Publisher signature on left
+  // Publisher and advertiser both sign. An agency of record is named in
+  // the parties block and does not take the advertiser's signature line.
   drawSignatureBlock(
     "Publisher / Talent Representative",
     io.signed_by_publisher,
     MARGIN
   );
-
-  // Agency or Advertiser on right
-  if (io.agency_name) {
-    drawSignatureBlock(
-      "Agency",
-      io.signed_by_agency,
-      MARGIN + sigColWidth + 20
-    );
-  } else {
-    drawSignatureBlock(
-      "Advertiser",
-      undefined,
-      MARGIN + sigColWidth + 20
-    );
-  }
+  drawSignatureBlock(
+    "Advertiser",
+    undefined,
+    MARGIN + sigColWidth + 20
+  );
 
   y += 100;
 
@@ -467,7 +460,9 @@ export function generateIOPdf(io: InsertionOrder): Buffer {
     doc.setFontSize(7);
     doc.setTextColor(...GRAY);
     doc.text(
-      `${io.io_number}  |  Page ${i} of ${pageCount}  |  Generated by Taylslate`,
+      io.payment_off_platform
+        ? `${io.io_number}  |  Page ${i} of ${pageCount}`
+        : `${io.io_number}  |  Page ${i} of ${pageCount}  |  Generated by Taylslate`,
       MARGIN,
       782
     );

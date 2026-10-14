@@ -7,11 +7,13 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getAuthenticatedUser,
   getBrandProfileByUserId,
+  getIOByDealId,
   getOutreachById,
   getShowProfileByUserId,
   getWave12DealById,
 } from "@/lib/data/queries";
 import { generateIoPdfFromDeal } from "@/lib/pdf/io-generator";
+import { ioToSaved } from "@/lib/pdf/io-terms";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { BrandProfile, ShowProfile } from "@/lib/data/types";
 
@@ -78,6 +80,7 @@ export async function GET(
     .eq("id", (sp as ShowProfile).user_id)
     .single();
 
+  const savedIo = await getIOByDealId(deal.id);
   const rendered = generateIoPdfFromDeal({
     deal,
     brandProfile: bp as BrandProfile,
@@ -85,6 +88,7 @@ export async function GET(
     outreach,
     brandSigningEmail: (brandUser?.email as string) ?? "",
     showSigningEmail: (showUser?.email as string) ?? "",
+    saved: savedIo ? ioToSaved(savedIo) : undefined,
   });
 
   return new NextResponse(new Uint8Array(rendered.pdfBuffer), {

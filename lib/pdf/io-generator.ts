@@ -1,6 +1,9 @@
-// Wave 12 IO PDF generator — driven entirely by a Wave12 Deal + its related
-// brand_profile / show_profile / outreach. VeritoneOne-style layout. No agency
-// involvement: Taylslate is the bill-to entity in the pay-as-delivers model.
+// Wave 12 IO PDF generator — driven by a Wave12 Deal plus, when an insertion
+// order has been saved, that order's negotiated terms and line items.
+// VeritoneOne-style layout. Pay-as-delivers is the default. An off-platform
+// order prints the free-text payment term and leaves Taylslate out of the
+// commercial language. An agency of record is a parties line, not a third
+// signature: Advertiser and Publisher anchors stay where DocuSign expects them.
 //
 // Deterministic: same inputs → same PDF. No timestamps embedded other than the
 // dates already in the deal.
@@ -20,6 +23,15 @@ import { CADENCE_DAYS, DEFAULT_CADENCE_DAYS } from "@/lib/io/cadence-days";
 import { dealIoNumber } from "@/lib/io/io-number";
 import { SIGNATURE_ANCHORS } from "@/lib/docusign/anchors";
 import { brandNameFromProfile } from "@/lib/brand/display-name";
+import {
+  agencyContactLine,
+  dealTermRows,
+  flatPerSpotLabel,
+  isFlatRate,
+  payerLabel,
+  visibleDownloadTotal,
+  type IoPdfSaved,
+} from "@/lib/pdf/io-terms";
 
 // ---- Visual constants (mirror lib/pdf/io-pdf.ts) ----
 
@@ -131,6 +143,11 @@ export interface IoPdfInput {
   showSigningEmail: string;
   /** Optional Taylslate IO number for display. */
   ioNumber?: string;
+  /**
+   * Saved insertion-order terms and lines. Omitted fields keep today's
+   * deal-derived document. Signature anchors are not read from here.
+   */
+  saved?: IoPdfSaved;
 }
 
 /**
@@ -158,6 +175,8 @@ export interface RenderedIo {
 
 export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   const { deal, brandProfile, showProfile, outreach } = input;
+  const saved = input.saved;
+  const offPlatform = saved?.payment_off_platform === true;
   const ioNumber = input.ioNumber ?? dealIoNumber(deal.id);
   const advertiserName = brandDisplayName(brandProfile);
   const publisherName = showProfile.show_name ?? outreach.show_name ?? "Publisher";
@@ -169,7 +188,7 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   // same figure. The brand's card is charged this rate plus the fee.
   const grossPerEp = Math.round((audience / 1000) * cpm * 100) / 100;
 
-  const postDates = derivePostDates(
+  const derivedDates = derivePostDates(
     deal.agreed_flight_start,
     deal.agreed_flight_end,
     deal.agreed_episode_count,
@@ -179,40 +198,43 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   // The single source of truth: the PDF table renders from this array and the
   // caller persists exactly this array to io_line_items. Reader flags mirror
   // what the details line prints (readerTypeLabel) so the DB row never
-  // contradicts the signed document.
+  // contradicts the signed document. A saved order replaces the deal-derived
+  // rows so a flat rate, a placement, or a format edited on the IO is the
+  // document that gets signed.
   const adReadTypes = showProfile.ad_read_types ?? [];
-  const lineItems: IoLineItemDraft[] = [];
-  for (let i = 0; i < deal.agreed_episode_count; i++) {
-    lineItems.push({
-      format: showProfile.platform === "youtube" ? "youtube" : "podcast",
-      post_date: postDates[i] ?? null,
-      guaranteed_downloads: audience,
-      show_name: publisherName,
-      placement: deal.agreed_placement,
-      is_scripted: adReadTypes.includes("scripted"),
-      is_personal_experience: adReadTypes.includes("personal_experience"),
-      reader_type: "host_read",
-      content_type: "evergreen",
-      pixel_required: false,
-      gross_rate: grossPerEp,
-      gross_cpm: cpm,
-      // Wave12 deals are always CPM-priced (createWave12Deal writes 'cpm');
-      // the Wave12Deal type carries no price_type field to read from.
-      price_type: "cpm",
-      net_due: grossPerEp, // show is paid the IO rate; the brand's fee is on top of it
-      verified: false,
-      make_good_triggered: false,
-    });
-  }
+  const lineItems: IoLineItemDraft[] =
+    saved?.lineItems && saved.lineItems.length > 0
+      ? saved.lineItems
+      : Array.from({ length: deal.agreed_episode_count }, (_, i) => ({
+          format: showProfile.platform === "youtube" ? "youtube" : "podcast",
+          post_date: derivedDates[i] ?? null,
+          guaranteed_downloads: audience,
+          show_name: publisherName,
+          placement: deal.agreed_placement,
+          is_scripted: adReadTypes.includes("scripted"),
+          is_personal_experience: adReadTypes.includes("personal_experience"),
+          reader_type: "host_read" as const,
+          content_type: "evergreen" as const,
+          pixel_required: false,
+          gross_rate: grossPerEp,
+          gross_cpm: cpm,
+          // Wave12 deals are always CPM-priced (createWave12Deal writes 'cpm');
+          // the Wave12Deal type carries no price_type field to read from.
+          price_type: "cpm" as const,
+          net_due: grossPerEp, // show is paid the IO rate; the brand's fee is on top of it
+          verified: false,
+          make_good_triggered: false,
+        }));
+
+  const postDates = lineItems.map((li) => li.post_date).filter((d): d is string => !!d);
 
   const totalGross =
     Math.round(lineItems.reduce((s, li) => s + li.gross_rate, 0) * 100) / 100;
   const totalNet =
     Math.round(lineItems.reduce((s, li) => s + li.net_due, 0) * 100) / 100;
-  const totalDownloads = lineItems.reduce(
-    (s, li) => s + li.guaranteed_downloads,
-    0
-  );
+  // Flat lines leave the downloads column blank, so they do not add to the
+  // total the reader can see. Money totals still include the flat rate.
+  const totalDownloads = visibleDownloadTotal(lineItems);
 
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   let y = MARGIN;
@@ -298,20 +320,37 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   const pubBottom = drawPartyBlock("Publisher", pubFields, MARGIN + colWidth + 20, colWidth);
   y = Math.max(advBottom, pubBottom) + 10;
 
+  const agencyName = saved?.agency_name?.trim() ?? "";
+  if (agencyName) {
+    drawLine(y);
+    y += 14;
+    const agencyFields: [string, string][] = [
+      ["Company", agencyName],
+      ["Contact", agencyContactLine(saved?.agency_contact_name, saved?.agency_contact_email)],
+      ["Payer", payerLabel(saved?.payer)],
+    ];
+    const agencyBottom = drawPartyBlock("Agency of Record", agencyFields, MARGIN, CONTENT_WIDTH);
+    y = agencyBottom + 10;
+  }
+
   drawLine(y);
   y += 14;
 
-  // Bill-To: Taylslate is the billing entity for pay-as-delivers
-  const billToFields: [string, string][] = [
-    ["Company", "Taylslate"],
-    ["Role", "Billing entity (pay-as-delivers)"],
-    ["Invoices to", "billing@taylslate.com"],
-  ];
-  const billBottom = drawPartyBlock("Bill To / Agency", billToFields, MARGIN, CONTENT_WIDTH);
-  y = billBottom + 10;
-
-  drawLine(y);
-  y += 20;
+  // Bill-To stays on the pay-as-delivers document. An off-platform order
+  // does not name Taylslate as the billing entity.
+  if (!offPlatform) {
+    const billToFields: [string, string][] = [
+      ["Company", "Taylslate"],
+      ["Role", "Billing entity (pay-as-delivers)"],
+      ["Invoices to", "billing@taylslate.com"],
+    ];
+    const billBottom = drawPartyBlock("Bill To / Agency", billToFields, MARGIN, CONTENT_WIDTH);
+    y = billBottom + 10;
+    drawLine(y);
+    y += 20;
+  } else {
+    y += 6;
+  }
 
   // ---- Line items table ----
   doc.setFont("helvetica", "bold");
@@ -359,13 +398,14 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     }
     doc.setTextColor(...TEXT);
     x = MARGIN + 4;
+    const flat = isFlatRate(li.price_type);
     const rowData = [
       String(i + 1),
       li.show_name.length > 22 ? li.show_name.slice(0, 20) + "..." : li.show_name,
       li.post_date ? formatDateOnly(li.post_date) : "TBD",
       placementLabel(li.placement),
-      li.guaranteed_downloads.toLocaleString(),
-      `$${money(li.gross_cpm)}`,
+      flat ? "" : li.guaranteed_downloads.toLocaleString(),
+      flat ? "" : `$${money(li.gross_cpm)}`,
       `$${money(li.gross_rate)}`,
       `$${money(li.net_due)}`,
     ];
@@ -390,15 +430,32 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     !showProfile.ad_formats.includes("host_read_baked")
       ? "Dynamic insertion"
       : "Host-read baked-in";
-  const detailsLine = [
-    showProfile.platform === "youtube" ? "YouTube" : "Podcast",
-    formatLabel,
-    readerTypeLabel(showProfile.ad_read_types),
-    "Evergreen",
-    "No pixel required",
-  ].join("  |  ");
-  doc.text(detailsLine, MARGIN + 4, y);
-  y += 14;
+  const customLineDetail = lineItems.some(
+    (li) => isFlatRate(li.price_type) || !!li.spot_format?.trim()
+  );
+  if (!customLineDetail) {
+    const detailsLine = [
+      showProfile.platform === "youtube" ? "YouTube" : "Podcast",
+      formatLabel,
+      readerTypeLabel(showProfile.ad_read_types),
+      "Evergreen",
+      "No pixel required",
+    ].join("  |  ");
+    doc.text(detailsLine, MARGIN + 4, y);
+    y += 14;
+  } else {
+    for (const li of lineItems) {
+      checkPage(12);
+      const parts = [
+        li.spot_format?.trim() || formatLabel,
+        placementLabel(li.placement),
+        isFlatRate(li.price_type) ? flatPerSpotLabel(li.gross_rate) : null,
+      ].filter((part): part is string => !!part);
+      doc.text(parts.join("  |  "), MARGIN + 4, y);
+      y += 12;
+    }
+    y += 2;
+  }
 
   // ---- Totals ----
   checkPage(50);
@@ -447,14 +504,7 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...TEXT);
 
-  const terms: [string, string][] = [
-    ["Payment", "Pay-as-delivers via Taylslate. Each verified episode charges the brand the rate on this IO plus the platform fee on top. The show is paid the full rate on this IO."],
-    ["Exclusivity", "90 days competitor exclusivity from first air date in the brand's stated category."],
-    ["ROFR", "30-day right of first refusal on renewed placements at the same CPM."],
-    ["Cancellation", "14 business days written notice required prior to next scheduled post date."],
-    ["Download Tracking", "45-day tracking window from original post date for verification and make-good calculation."],
-    ["Make-Good", "If actual downloads fall more than 10% below the guaranteed downloads above, publisher will provide a make-good episode at no additional cost."],
-  ];
+  const terms = dealTermRows(saved ?? {});
   for (const [label, value] of terms) {
     checkPage(36);
     doc.setFont("helvetica", "bold");
@@ -601,7 +651,9 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     doc.setFontSize(7);
     doc.setTextColor(...GRAY);
     doc.text(
-      `Generated by Taylslate · ${ioNumber} · Page ${p} of ${lastPage}`,
+      offPlatform
+        ? `${ioNumber} · Page ${p} of ${lastPage}`
+        : `Generated by Taylslate · ${ioNumber} · Page ${p} of ${lastPage}`,
       MARGIN,
       772
     );

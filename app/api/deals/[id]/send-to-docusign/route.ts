@@ -12,12 +12,14 @@ import { isBrandProfileManaged } from "@/lib/accounts/managed";
 import {
   getAuthenticatedUser,
   getBrandProfileByUserId,
+  getIOByDealId,
   getOutreachById,
   getShowProfileByUserId,
   getWave12DealById,
   updateWave12Deal,
 } from "@/lib/data/queries";
 import { generateIoPdfFromDeal } from "@/lib/pdf/io-generator";
+import { ioToSaved } from "@/lib/pdf/io-terms";
 import { persistIoForDeal } from "@/lib/io/persist-io";
 import {
   createEnvelope,
@@ -175,7 +177,9 @@ export async function POST(
   const brandSigningEmail = user.email ?? "";
   const showSigningEmail = (showUser?.email as string) ?? outreach.sent_to_email;
 
-  // Generate the IO PDF — also fires io.generated event.
+  // Generate the IO PDF — also fires io.generated event. A saved order
+  // supplies the negotiated terms and lines; otherwise the deal defaults stand.
+  const savedIo = await getIOByDealId(deal.id);
   const rendered = generateIoPdfFromDeal({
     deal,
     brandProfile,
@@ -183,6 +187,7 @@ export async function POST(
     outreach,
     brandSigningEmail,
     showSigningEmail,
+    saved: savedIo ? ioToSaved(savedIo) : undefined,
   });
   await logEvent({
     eventType: "io.generated",
