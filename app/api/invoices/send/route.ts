@@ -2,112 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { getAuthenticatedUser, getInvoiceById, getIOById, getDealById, getProfileById } from "@/lib/data/queries";
 import { generateInvoicePdf } from "@/lib/pdf/invoice-pdf";
+import { EMAIL_ADDRESS_INVOICES, viaTaylslateFrom } from "@/lib/email/addresses";
+import { renderInvoiceNotice } from "@/lib/email/templates/invoice-notice";
 import type { Invoice } from "@/lib/data";
-
-function fmt(n: number): string {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function fmtDate(dateStr: string): string {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function buildEmailHtml(invoice: Invoice, senderName: string): string {
-  const lineItemRows = invoice.line_items
-    .map(
-      (li, i) => `
-      <tr style="border-bottom: 1px solid #e2e5ea;">
-        <td style="padding: 8px 12px; font-size: 13px; color: #1a1f27;">${i + 1}</td>
-        <td style="padding: 8px 12px; font-size: 13px; color: #1a1f27;">${li.show_name}</td>
-        <td style="padding: 8px 12px; font-size: 13px; color: #1a1f27;">${fmtDate(li.post_date)}</td>
-        <td style="padding: 8px 12px; font-size: 13px; color: #1a1f27;">${li.description}</td>
-        <td style="padding: 8px 12px; font-size: 13px; color: #1a1f27; text-align: right;">$${fmt(li.rate)}</td>
-      </tr>`
-    )
-    .join("");
-
-  const adjustmentRow =
-    invoice.adjustments !== 0
-      ? `<tr>
-          <td style="padding: 4px 0;"><strong style="color: #1a1f27;">Adjustments:</strong></td>
-          <td style="text-align: right; color: #f59e0b;">-$${fmt(Math.abs(invoice.adjustments))}</td>
-        </tr>`
-      : "";
-
-  return `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; color: #1a1f27;">
-      <div style="background: #0f1b2d; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <h1 style="margin: 0; font-size: 20px; color: #ffffff; font-weight: 600;">Invoice</h1>
-        <p style="margin: 6px 0 0; font-size: 13px; color: #b4beda;">${invoice.invoice_number}</p>
-      </div>
-      <div style="background: #ffffff; padding: 24px 32px; border: 1px solid #e2e5ea; border-top: none;">
-        <p style="font-size: 14px; color: #5a6370; line-height: 1.6; margin-top: 0;">
-          Hi ${invoice.bill_to_name},
-        </p>
-        <p style="font-size: 14px; color: #5a6370; line-height: 1.6;">
-          Please find the attached invoice for <strong style="color: #1a1f27;">${invoice.advertiser_name}</strong> — ${invoice.campaign_period}.
-        </p>
-
-        <div style="margin: 20px 0; padding: 16px; background: #f7f8fa; border-radius: 8px; border: 1px solid #e2e5ea;">
-          <table style="width: 100%; font-size: 13px; color: #5a6370;">
-            <tr>
-              <td style="padding: 4px 0;"><strong style="color: #1a1f27;">IO Reference:</strong></td>
-              <td style="text-align: right;">${invoice.io_number}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px 0;"><strong style="color: #1a1f27;">Line Items:</strong></td>
-              <td style="text-align: right;">${invoice.line_items.length}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px 0;"><strong style="color: #1a1f27;">Subtotal:</strong></td>
-              <td style="text-align: right;">$${fmt(invoice.subtotal)}</td>
-            </tr>
-            ${adjustmentRow}
-            <tr>
-              <td style="padding: 4px 0;"><strong style="color: #1a1f27;">Total Due:</strong></td>
-              <td style="text-align: right; color: #2e7de8; font-weight: 600;">$${fmt(invoice.total_due)}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px 0;"><strong style="color: #1a1f27;">Due Date:</strong></td>
-              <td style="text-align: right;">${fmtDate(invoice.due_date)}</td>
-            </tr>
-          </table>
-        </div>
-
-        <h3 style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #8b95a3; margin-bottom: 8px;">Line Items</h3>
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid #e2e5ea; border-radius: 8px; overflow: hidden;">
-          <thead>
-            <tr style="background: #0f1b2d;">
-              <th style="padding: 8px 12px; font-size: 11px; color: #ffffff; text-align: left;">#</th>
-              <th style="padding: 8px 12px; font-size: 11px; color: #ffffff; text-align: left;">Show</th>
-              <th style="padding: 8px 12px; font-size: 11px; color: #ffffff; text-align: left;">Date</th>
-              <th style="padding: 8px 12px; font-size: 11px; color: #ffffff; text-align: left;">Description</th>
-              <th style="padding: 8px 12px; font-size: 11px; color: #ffffff; text-align: right;">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${lineItemRows}
-          </tbody>
-        </table>
-
-        <p style="font-size: 14px; color: #5a6370; line-height: 1.6; margin-top: 24px;">
-          The full invoice document is attached as a PDF. Payment is due by <strong style="color: #1a1f27;">${fmtDate(invoice.due_date)}</strong>.
-        </p>
-        <p style="font-size: 14px; color: #5a6370; line-height: 1.6;">
-          Best,<br/>
-          <strong style="color: #1a1f27;">${senderName}</strong>
-        </p>
-      </div>
-      <div style="padding: 16px 32px; font-size: 11px; color: #8b95a3; text-align: center; border: 1px solid #e2e5ea; border-top: none; border-radius: 0 0 12px 12px; background: #f7f8fa;">
-        Sent via Taylslate &mdash; the infrastructure layer for creator sponsorship advertising
-      </div>
-    </div>`;
-}
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.RESEND_API_KEY;
@@ -174,16 +71,18 @@ export async function POST(request: NextRequest) {
 
     // Build email
     const subject = `Invoice ${invoice.invoice_number} — ${invoice.advertiser_name} — ${invoice.campaign_period}`;
-    const html = buildEmailHtml(invoice, senderName);
+    const rendered = renderInvoiceNotice(invoice, senderName);
 
-    // Send via Resend
+    // Send via Resend. This path does not use sendEmail, so managed-account
+    // reroute does not apply — same recipients as before.
     const resend = new Resend(apiKey);
 
     const { error } = await resend.emails.send({
-      from: `${senderName} via Taylslate <invoices@taylslate.com>`,
+      from: viaTaylslateFrom(senderName, EMAIL_ADDRESS_INVOICES),
       to: recipientEmail,
       subject,
-      html,
+      html: rendered.html,
+      text: rendered.text,
       attachments: [
         {
           filename,

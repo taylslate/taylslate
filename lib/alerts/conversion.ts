@@ -14,6 +14,12 @@ import {
   getPlan,
   type PlanRecord,
 } from "@/lib/billing/plans";
+import {
+  emailDetailTable,
+  emailParagraph,
+  escapeHtml,
+  renderEmailLayout,
+} from "@/lib/email/layout";
 
 export interface ConversionAlertProfile {
   id: string;
@@ -44,15 +50,6 @@ function fmtUsd(cents: number): string {
     currency: "USD",
     maximumFractionDigits: 0,
   });
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function customerLabel(profile: ConversionAlertProfile): string {
@@ -109,59 +106,9 @@ export function buildConversionAlertPayload(
 
   const label = customerLabel(profile);
   const subject = `Conversion alert: ${label} crossed Operator breakeven`;
-
-  const html = `
-<!DOCTYPE html>
-<html>
-  <body style="margin:0;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-    <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
-      <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:24px 28px;">
-        <h1 style="font-size:18px;font-weight:600;color:#111827;margin:0 0 12px;">
-          Operator conversion opportunity
-        </h1>
-        <p style="font-size:14px;color:#1f2937;line-height:1.6;margin:0 0 14px;">
-          <strong>${escapeHtml(label)}</strong> (profile id <code>${escapeHtml(profile.id)}</code>)
-          has trailing-90 monthly average GMV of <strong>${fmtUsd(monthlyAvgCents)}/mo</strong>,
-          above the Operator breakeven of ${fmtUsd(operatorBreakevenCents)}/mo.
-          Starter and Operator are both priced against Free below. Time for
-          the upgrade conversation.
-        </p>
-        <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:13px;color:#1f2937;">
-          <tr>
-            <td style="padding:6px 0;color:#6b7280;">Current monthly spend</td>
-            <td style="padding:6px 0;text-align:right;font-weight:600;">${fmtUsd(monthlyAvgCents)}</td>
-          </tr>
-          <tr>
-            <td style="padding:6px 0;color:#6b7280;">Current ${escapeHtml(free.label)} annual cost</td>
-            <td style="padding:6px 0;text-align:right;">${fmtUsd(freeAnnualCents)}</td>
-          </tr>
-          <tr>
-            <td style="padding:6px 0;color:#6b7280;">${escapeHtml(starter.label)} annual cost (${planRateLabel(starter)})</td>
-            <td style="padding:6px 0;text-align:right;">${fmtUsd(starterAnnualCents)}</td>
-          </tr>
-          <tr>
-            <td style="padding:6px 0;color:#15803d;font-weight:600;">Annual savings on ${escapeHtml(starter.label)}</td>
-            <td style="padding:6px 0;text-align:right;color:#15803d;font-weight:600;">${fmtUsd(starterSavings.annualCents)}</td>
-          </tr>
-          <tr>
-            <td style="padding:6px 0;color:#6b7280;">${escapeHtml(operator.label)} annual cost (${planRateLabel(operator)})</td>
-            <td style="padding:6px 0;text-align:right;">${fmtUsd(operatorAnnualCents)}</td>
-          </tr>
-          <tr>
-            <td style="padding:6px 0;color:#15803d;font-weight:600;">Annual savings on ${escapeHtml(operator.label)}</td>
-            <td style="padding:6px 0;text-align:right;color:#15803d;font-weight:600;">${fmtUsd(operatorSavings.annualCents)}</td>
-          </tr>
-        </table>
-        <p style="font-size:12px;color:#6b7280;margin-top:18px;line-height:1.55;">
-          Conversion is sales-led, not automated. Reach out personally — this is
-          a relationship moment per the PRICING_DECISIONS conversion mechanic.
-        </p>
-      </div>
-    </div>
-  </body>
-</html>`.trim();
-
-  const text = [
+  const intro = `${label} (profile id ${profile.id}) has trailing-90 monthly average GMV of ${fmtUsd(monthlyAvgCents)}/mo, above the Operator breakeven of ${fmtUsd(operatorBreakevenCents)}/mo. Starter and Operator are both priced against Free below.`;
+  const close = "Conversion is sales-led. Reach out personally.";
+  const textBody = [
     `${label} (id ${profile.id}) crossed the Operator breakeven of ${fmtUsd(operatorBreakevenCents)}/mo.`,
     "",
     `Current monthly spend:       ${fmtUsd(monthlyAvgCents)}`,
@@ -171,13 +118,42 @@ export function buildConversionAlertPayload(
     `${operator.label} annual cost:        ${fmtUsd(operatorAnnualCents)} (${planRateLabel(operator)})`,
     `Annual savings on ${operator.label}:  ${fmtUsd(operatorSavings.annualCents)}`,
     "",
-    `Conversion is sales-led — reach out personally.`,
+    close,
   ].join("\n");
+
+  const laid = renderEmailLayout({
+    preheader: `${label} crossed the Operator breakeven.`,
+    headline: "Operator conversion opportunity",
+    bodyHtml:
+      emailParagraph(escapeHtml(intro)) +
+      emailDetailTable([
+        ["Current monthly spend", escapeHtml(fmtUsd(monthlyAvgCents))],
+        [`Current ${free.label} annual cost`, escapeHtml(fmtUsd(freeAnnualCents))],
+        [
+          `${starter.label} annual cost (${planRateLabel(starter)})`,
+          escapeHtml(fmtUsd(starterAnnualCents)),
+        ],
+        [
+          `Annual savings on ${starter.label}`,
+          escapeHtml(fmtUsd(starterSavings.annualCents)),
+        ],
+        [
+          `${operator.label} annual cost (${planRateLabel(operator)})`,
+          escapeHtml(fmtUsd(operatorAnnualCents)),
+        ],
+        [
+          `Annual savings on ${operator.label}`,
+          escapeHtml(fmtUsd(operatorSavings.annualCents)),
+        ],
+      ]) +
+      emailParagraph(escapeHtml(close)),
+    text: textBody,
+  });
 
   return {
     subject,
-    html,
-    text,
+    html: laid.html,
+    text: laid.text,
     operatorSavingsAnnualCents: operatorSavings.annualCents,
     starterSavingsAnnualCents: starterSavings.annualCents,
   };

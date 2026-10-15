@@ -18,6 +18,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logEvent } from "@/lib/data/events";
+import { EMAIL_FROM_AUTH } from "@/lib/email/addresses";
 import { sendEmail } from "@/lib/email/send";
 import { renderLoginMagicEmail } from "@/lib/email/templates/login-magic";
 import {
@@ -152,7 +153,7 @@ async function sendHandoffMagicLink(email: string, origin: string): Promise<bool
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
-    from: "Taylslate <auth@taylslate.com>",
+    from: EMAIL_FROM_AUTH,
     bypassManagedReroute: true,
   });
   if (!sent.ok) {

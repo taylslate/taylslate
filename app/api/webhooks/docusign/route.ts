@@ -27,6 +27,7 @@ import {
 import {
   renderDealCancelledShow,
 } from "@/lib/email/templates/deal-cancelled-show";
+import { brandNameFromProfile } from "@/lib/brand/display-name";
 import { sendEmail } from "@/lib/email/send";
 import { createSetupIntentForBrand } from "@/lib/stripe/setup-intent";
 import type { BrandProfile, ShowProfile } from "@/lib/data/types";
@@ -169,7 +170,7 @@ async function notifyShowOfBrandSignature(dealId: string): Promise<void> {
   const outreach = await getOutreachById(deal.outreach_id);
   const { data: bp } = await supabaseAdmin
     .from("brand_profiles")
-    .select("brand_identity, brand_website")
+    .select("brand_name, brand_identity, brand_website")
     .eq("id", deal.brand_profile_id)
     .single();
   // An envelope only exists after send-to-docusign, which requires a non-null
@@ -190,9 +191,7 @@ async function notifyShowOfBrandSignature(dealId: string): Promise<void> {
   if (!showUser?.email) return;
 
   const brandName =
-    (bp as BrandProfile | null)?.brand_identity?.split(/[.,—–-]/)[0]?.trim() ||
-    (bp as BrandProfile | null)?.brand_website ||
-    "The brand";
+    brandNameFromProfile((bp ?? {}) as BrandProfile) || "The brand";
 
   const email = renderShowCountersignatureRequest({
     brand_name: brandName,
@@ -222,7 +221,7 @@ async function notifyShowOfCancellation(
   const outreach = await getOutreachById(deal.outreach_id);
   const { data: bp } = await supabaseAdmin
     .from("brand_profiles")
-    .select("brand_identity, brand_website")
+    .select("brand_name, brand_identity, brand_website")
     .eq("id", deal.brand_profile_id)
     .single();
   // Unreachable with null (a cancellation webhook implies an envelope, which
@@ -241,9 +240,7 @@ async function notifyShowOfCancellation(
     .single();
   if (!showUser?.email) return;
   const brandName =
-    (bp as BrandProfile | null)?.brand_identity?.split(/[.,—–-]/)[0]?.trim() ||
-    (bp as BrandProfile | null)?.brand_website ||
-    "The brand";
+    brandNameFromProfile((bp ?? {}) as BrandProfile) || "The brand";
 
   const email = renderDealCancelledShow({
     brand_name: brandName,

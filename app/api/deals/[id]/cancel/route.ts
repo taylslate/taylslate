@@ -12,10 +12,11 @@ import {
 } from "@/lib/data/queries";
 import { voidEnvelope } from "@/lib/docusign/envelope";
 import { logEvent } from "@/lib/data/events";
+import { brandNameFromProfile } from "@/lib/brand/display-name";
 import { renderDealCancelledShow } from "@/lib/email/templates/deal-cancelled-show";
 import { sendEmail } from "@/lib/email/send";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import type { ShowProfile, BrandProfile } from "@/lib/data/types";
+import type { ShowProfile } from "@/lib/data/types";
 
 const CANCELLABLE = new Set(["planning", "io_sent", "brand_signed"]);
 
@@ -101,10 +102,7 @@ export async function POST(
       .eq("id", (sp as ShowProfile).user_id)
       .single();
     const outreach = await getOutreachById(deal.outreach_id);
-    const brandName =
-      brandProfile.brand_identity?.split(/[.,—–-]/)[0]?.trim() ||
-      (brandProfile as BrandProfile).brand_website ||
-      "The brand";
+    const brandName = brandNameFromProfile(brandProfile) || "The brand";
     const email = renderDealCancelledShow({
       brand_name: brandName,
       show_name: outreach?.show_name ?? "your show",

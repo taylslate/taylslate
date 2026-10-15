@@ -1,5 +1,12 @@
-// Sent to the show after the brand signs but before DocuSign emails the show.
-// Heads-up email — DocuSign will follow with its own ceremonial signing email.
+// Heads-up to the show after the brand signs. DocuSign sends the
+// countersignature request in a separate email.
+
+import {
+  emailDetailTable,
+  emailParagraph,
+  escapeHtml,
+  renderEmailLayout,
+} from "@/lib/email/layout";
 
 export interface ShowCountersignInput {
   brand_name: string;
@@ -14,50 +21,30 @@ export interface RenderedShowCountersign {
   text: string;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 export function renderShowCountersignatureRequest(
-  input: ShowCountersignInput
+  input: ShowCountersignInput,
 ): RenderedShowCountersign {
   const subject = `${input.brand_name} signed — your IO is on the way`;
-  const html = `
-<!DOCTYPE html>
-<html>
-  <body style="margin:0;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-    <div style="max-width:560px;margin:0 auto;padding:32px 16px;">
-      <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:24px 28px;">
-        <h1 style="font-size:18px;font-weight:600;color:#111827;margin:0 0 12px;">
-          ${escapeHtml(input.brand_name)} signed your IO
-        </h1>
-        <p style="font-size:14px;color:#1f2937;line-height:1.6;margin:0 0 14px;">
-          DocuSign is sending the IO directly to you in a separate email — look out for it
-          in the next few minutes. Once you sign, the deal is locked and we'll send a
-          confirmation with delivery dates.
-        </p>
-        <p style="font-size:13px;color:#374151;background:#f3f4f6;border-radius:8px;padding:12px 14px;line-height:1.55;">
-          Agreed terms: <strong>$${input.agreed_cpm.toFixed(2)} CPM</strong>
-          × <strong>${input.agreed_episode_count}</strong> episode${input.agreed_episode_count === 1 ? "" : "s"}.
-        </p>
-        <p style="font-size:12px;color:#6b7280;margin-top:14px;">
-          The DocuSign email will come from dse@docusign.net — that's normal.
-        </p>
-      </div>
-    </div>
-  </body>
-</html>`.trim();
-  const text = [
-    `${input.brand_name} signed the IO. DocuSign is sending it to you for countersignature in a separate email.`,
-    "",
-    `Agreed terms: $${input.agreed_cpm.toFixed(2)} CPM × ${input.agreed_episode_count} episodes.`,
-    "",
-    `The DocuSign email will come from dse@docusign.net — that's normal.`,
-  ].join("\n");
-  return { subject, html, text };
+  const episodes = `${input.agreed_episode_count} episode${input.agreed_episode_count === 1 ? "" : "s"}`;
+  const cpm = `$${input.agreed_cpm.toFixed(2)}`;
+  const sentence = `${input.brand_name} signed the insertion order for ${input.show_name}. DocuSign will email you a separate link to countersign. That message comes from dse@docusign.net. After you sign, the deal is set.`;
+  const laid = renderEmailLayout({
+    preheader: `${input.brand_name} signed. DocuSign will send the countersign link.`,
+    headline: `${input.brand_name} signed the IO`,
+    bodyHtml:
+      emailParagraph(escapeHtml(sentence)) +
+      emailDetailTable([
+        ["CPM", escapeHtml(cpm)],
+        ["Episodes", escapeHtml(episodes)],
+      ]),
+    note: "The DocuSign email comes from dse@docusign.net.",
+    text: [
+      sentence,
+      "",
+      `Agreed terms: ${cpm} CPM × ${input.agreed_episode_count} episodes.`,
+      "",
+      "The DocuSign email comes from dse@docusign.net.",
+    ].join("\n"),
+  });
+  return { subject, html: laid.html, text: laid.text };
 }

@@ -1,10 +1,12 @@
-// Sent to the show when a deal is cancelled — by the brand or by 14-day timeout.
+// Sent to the show when a deal is cancelled by the brand or by the 14-day timeout.
+
+import { emailParagraph, escapeHtml, renderEmailLayout } from "@/lib/email/layout";
 
 export interface DealCancelledInput {
   brand_name: string;
   show_name: string;
   reason?: string | null;
-  /** "timeout" gets a different friendlier framing than brand-initiated cancels. */
+  /** "timeout" is the 14-day close. "brand_cancelled" is a brand action. */
   cause: "brand_cancelled" | "timeout";
 }
 
@@ -14,59 +16,28 @@ export interface RenderedDealCancelled {
   text: string;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 export function renderDealCancelledShow(
-  input: DealCancelledInput
+  input: DealCancelledInput,
 ): RenderedDealCancelled {
-  const subject =
-    input.cause === "timeout"
-      ? `This opportunity has closed`
-      : `${input.brand_name} cancelled the deal`;
+  const timeout = input.cause === "timeout";
+  const subject = timeout
+    ? "This opportunity has closed"
+    : `${input.brand_name} cancelled the deal`;
+  const headline = timeout
+    ? `The ${input.brand_name} opportunity has closed`
+    : `${input.brand_name} cancelled the deal`;
+  const reason = input.reason?.trim();
+  const body = timeout
+    ? `More than 14 days passed without a signed insertion order, so the deal for ${input.show_name} is closed. ${input.brand_name} can reach out again later. Your show stays available.`
+    : `${input.brand_name} cancelled the deal for ${input.show_name} before it was fully signed.${
+        reason ? ` Reason: ${reason}` : ""
+      } Your show stays available.`;
 
-  const headline =
-    input.cause === "timeout"
-      ? `The ${escapeHtml(input.brand_name)} opportunity has closed`
-      : `${escapeHtml(input.brand_name)} cancelled the deal`;
-
-  const body =
-    input.cause === "timeout"
-      ? `It's been more than two weeks without a signed IO, so we've closed this one out to keep your inventory available for other brands. ${escapeHtml(input.brand_name)} can still reach out again later.`
-      : `${escapeHtml(input.brand_name)} cancelled before sending the IO for signature.${
-          input.reason ? ` Reason: <em>${escapeHtml(input.reason)}</em>` : ""
-        }`;
-
-  const html = `
-<!DOCTYPE html>
-<html>
-  <body style="margin:0;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-    <div style="max-width:520px;margin:0 auto;padding:32px 16px;">
-      <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:24px 28px;">
-        <h1 style="font-size:18px;font-weight:600;color:#111827;margin:0 0 12px;">${headline}</h1>
-        <p style="font-size:14px;color:#1f2937;line-height:1.6;margin:0 0 12px;">${body}</p>
-        <p style="font-size:13px;color:#374151;line-height:1.55;">
-          Nothing you need to do — your show stays open for new brands. We'll be in touch when the next one comes through.
-        </p>
-      </div>
-      <div style="font-size:11px;color:#9ca3af;text-align:center;margin-top:16px;">Taylslate</div>
-    </div>
-  </body>
-</html>`.trim();
-  const text = [
+  const laid = renderEmailLayout({
+    preheader: headline,
     headline,
-    "",
-    input.cause === "timeout"
-      ? `It's been more than two weeks without a signed IO, so we've closed this one out.`
-      : `${input.brand_name} cancelled before sending the IO for signature.${input.reason ? ` Reason: ${input.reason}` : ""}`,
-    "",
-    `Your show stays open for new brands.`,
-  ].join("\n");
-  return { subject, html, text };
+    bodyHtml: emailParagraph(escapeHtml(body)),
+    text: body,
+  });
+  return { subject, html: laid.html, text: laid.text };
 }

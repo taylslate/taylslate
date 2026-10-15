@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { EMAIL_ADDRESS_IO, viaTaylslateFrom } from "@/lib/email/addresses";
+import { renderIoAttachmentEmail } from "@/lib/email/templates/io-attachment";
 import { resolveManagedDelivery } from "@/lib/email/send";
 import { getAuthenticatedUser, getDealById, getShowById, getIOByDealId, getProfileById, getNextIONumber, updateDeal, markInsertionOrderSent } from "@/lib/data/queries";
 import { generateIOPdf } from "@/lib/pdf/io-pdf";
@@ -74,91 +76,6 @@ function buildIOFromDeal(
   return { io, brand, agency, agent };
 }
 
-function fmt(n: number): string {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function buildEmailHtml(io: InsertionOrder, senderName: string): string {
-  const lineItemRows = io.line_items
-    .map(
-      (li, i) => `
-      <tr style="border-bottom: 1px solid #e2e5ea;">
-        <td style="padding: 8px 12px; font-size: 13px; color: #1a1f27;">${i + 1}</td>
-        <td style="padding: 8px 12px; font-size: 13px; color: #1a1f27;">${li.show_name}</td>
-        <td style="padding: 8px 12px; font-size: 13px; color: #1a1f27;">${new Date(li.post_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</td>
-        <td style="padding: 8px 12px; font-size: 13px; color: #1a1f27;">${li.placement}</td>
-        <td style="padding: 8px 12px; font-size: 13px; color: #1a1f27; text-align: right;">${li.guaranteed_downloads.toLocaleString()}</td>
-        <td style="padding: 8px 12px; font-size: 13px; color: #1a1f27; text-align: right;">$${fmt(li.net_due)}</td>
-      </tr>`
-    )
-    .join("");
-
-  return `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; color: #1a1f27;">
-      <div style="background: #0f1b2d; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <h1 style="margin: 0; font-size: 20px; color: #ffffff; font-weight: 600;">Insertion Order</h1>
-        <p style="margin: 6px 0 0; font-size: 13px; color: #b4beda;">${io.io_number}</p>
-      </div>
-      <div style="background: #ffffff; padding: 24px 32px; border: 1px solid #e2e5ea; border-top: none;">
-        <p style="font-size: 14px; color: #5a6370; line-height: 1.6; margin-top: 0;">
-          Hi${io.agency_name ? ` ${io.agency_contact_name ?? ""}` : ` ${io.advertiser_contact_name ?? ""}`},
-        </p>
-        <p style="font-size: 14px; color: #5a6370; line-height: 1.6;">
-          Please find the attached insertion order for <strong style="color: #1a1f27;">${io.line_items[0]?.show_name ?? "your campaign"}</strong> on behalf of <strong style="color: #1a1f27;">${io.advertiser_name}</strong>.
-        </p>
-
-        <div style="margin: 20px 0; padding: 16px; background: #f7f8fa; border-radius: 8px; border: 1px solid #e2e5ea;">
-          <table style="width: 100%; font-size: 13px; color: #5a6370;">
-            <tr>
-              <td style="padding: 4px 0;"><strong style="color: #1a1f27;">Advertiser:</strong></td>
-              <td style="text-align: right;">${io.advertiser_name}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px 0;"><strong style="color: #1a1f27;">Episodes:</strong></td>
-              <td style="text-align: right;">${io.line_items.length}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px 0;"><strong style="color: #1a1f27;">Total Net:</strong></td>
-              <td style="text-align: right; color: #2e7de8; font-weight: 600;">$${fmt(io.total_net)}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px 0;"><strong style="color: #1a1f27;">Payment Terms:</strong></td>
-              <td style="text-align: right;">${io.payment_terms}</td>
-            </tr>
-          </table>
-        </div>
-
-        <h3 style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #8b95a3; margin-bottom: 8px;">Line Items</h3>
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid #e2e5ea; border-radius: 8px; overflow: hidden;">
-          <thead>
-            <tr style="background: #0f1b2d;">
-              <th style="padding: 8px 12px; font-size: 11px; color: #ffffff; text-align: left;">#</th>
-              <th style="padding: 8px 12px; font-size: 11px; color: #ffffff; text-align: left;">Show</th>
-              <th style="padding: 8px 12px; font-size: 11px; color: #ffffff; text-align: left;">Date</th>
-              <th style="padding: 8px 12px; font-size: 11px; color: #ffffff; text-align: left;">Placement</th>
-              <th style="padding: 8px 12px; font-size: 11px; color: #ffffff; text-align: right;">DLs</th>
-              <th style="padding: 8px 12px; font-size: 11px; color: #ffffff; text-align: right;">Net Due</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${lineItemRows}
-          </tbody>
-        </table>
-
-        <p style="font-size: 14px; color: #5a6370; line-height: 1.6; margin-top: 24px;">
-          The full IO document with terms and signature blocks is attached as a PDF. Please review and return a signed copy at your earliest convenience.
-        </p>
-        <p style="font-size: 14px; color: #5a6370; line-height: 1.6;">
-          Best,<br/>
-          <strong style="color: #1a1f27;">${senderName}</strong>
-        </p>
-      </div>
-      <div style="padding: 16px 32px; font-size: 11px; color: #8b95a3; text-align: center; border: 1px solid #e2e5ea; border-top: none; border-radius: 0 0 12px 12px; background: #f7f8fa;">
-        Sent via Taylslate &mdash; the infrastructure layer for creator sponsorship advertising
-      </div>
-    </div>`;
-}
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -229,7 +146,7 @@ export async function POST(
 
     // Build email
     const subject = `Insertion Order ${io.io_number} — ${io.advertiser_name} × ${io.line_items[0]?.show_name ?? "Campaign"}`;
-    const html = buildEmailHtml(io, senderName);
+    const rendered = renderIoAttachmentEmail(io, senderName);
 
     // The recipient is the agency when one is on the IO, otherwise the brand.
     const delivery = await resolveManagedDelivery({
@@ -253,10 +170,11 @@ export async function POST(
     const resend = new Resend(apiKey);
 
     const { error } = await resend.emails.send({
-      from: `${senderName} via Taylslate <io@taylslate.com>`,
+      from: viaTaylslateFrom(senderName, EMAIL_ADDRESS_IO),
       to: delivery.to,
       subject: delivery.subject,
-      html,
+      html: rendered.html,
+      text: rendered.text,
       attachments: [
         {
           filename,

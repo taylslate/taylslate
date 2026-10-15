@@ -149,7 +149,8 @@ describe("POST /api/deals/[id]/io/send", () => {
       "Insertion Order IO-1001 — SaunaBox × Daily Briefing",
     );
     expect(sent.html).toContain("Please find the attached insertion order");
-    expect(sent.text).toBeUndefined();
+    expect(sent.text).toContain("Please find the attached insertion order");
+    expect(sent.text).toContain("https://www.taylslate.com");
     expect(sent.attachments).toEqual([
       { filename: "IO-1001.pdf", content: pdf.toString("base64") },
     ]);

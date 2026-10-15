@@ -7,6 +7,7 @@
 // bypassManagedReroute so Chris can still sign in as the brand.
 
 import { Resend } from "resend";
+import { EMAIL_FROM_NOTIFICATIONS } from "@/lib/email/addresses";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export interface SendEmailInput {
@@ -37,7 +38,7 @@ export type ManagedDelivery =
   | { ok: true; to: string; subject: string }
   | { ok: false; reason: "managed_inbox_unset" };
 
-const DEFAULT_FROM = "Taylslate <notifications@taylslate.com>";
+const DEFAULT_FROM = EMAIL_FROM_NOTIFICATIONS;
 
 interface ManagedHit {
   email: string | null;

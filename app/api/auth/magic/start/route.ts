@@ -3,8 +3,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { signMagicLinkToken, verifyOutreachToken } from "@/lib/io/tokens";
+import { EMAIL_FROM_AUTH } from "@/lib/email/addresses";
 import { renderMagicLinkEmail } from "@/lib/email/templates/magic-link";
 import { sendEmail } from "@/lib/email/send";
+import { brandNameFromProfile } from "@/lib/brand/display-name";
 import { getOutreachById } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { BrandProfile } from "@/lib/data/types";
@@ -55,14 +57,12 @@ export async function POST(request: NextRequest) {
   // Look up brand name for the email subject.
   const { data: bp } = await supabaseAdmin
     .from("brand_profiles")
-    .select("brand_identity, brand_website")
+    .select("brand_name, brand_identity, brand_website")
     .eq("id", outreach.brand_profile_id)
     .single();
   const brandProfile = bp as Partial<BrandProfile> | null;
   const brandName =
-    brandProfile?.brand_identity?.split(/[.,—–-]/)[0]?.trim() ||
-    brandProfile?.brand_website?.replace(/^https?:\/\/(www\.)?/, "").split("/")[0] ||
-    "A brand";
+    brandNameFromProfile((brandProfile ?? {}) as BrandProfile) || "A brand";
 
   const email = renderMagicLinkEmail({
     to_email: body.email,
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     subject: email.subject,
     html: email.html,
     text: email.text,
-    from: "Taylslate <auth@taylslate.com>",
+    from: EMAIL_FROM_AUTH,
     // Show setup links must reach the real address, including for a managed brand.
     bypassManagedReroute: true,
   });

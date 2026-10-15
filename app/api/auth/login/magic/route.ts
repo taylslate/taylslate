@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { EMAIL_FROM_AUTH } from "@/lib/email/addresses";
 import { sendEmail } from "@/lib/email/send";
 import { renderLoginMagicEmail } from "@/lib/email/templates/login-magic";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
-    from: "Taylslate <auth@taylslate.com>",
+    from: EMAIL_FROM_AUTH,
     // A managed brand still has to be able to sign in.
     bypassManagedReroute: true,
   });
