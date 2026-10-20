@@ -1,6 +1,7 @@
 // POST /api/auth/login/otp — email a 6-digit sign-in code to a show.
 // Brands stay on the magic-link path. Unknown emails are not created
-// unless the body carries a valid outreach token (show setup from a pitch).
+// unless the body carries a valid outreach token AND the address matches
+// that outreach's show contact email (sent_to_email).
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest) {
 
   const outreachToken =
     typeof body.outreach_token === "string" ? body.outreach_token : "";
+  let outreachContactEmail = "";
   if (outreachToken) {
     const tokenPayload = verifyOutreachToken(outreachToken);
     if (!tokenPayload) {
@@ -67,6 +69,7 @@ export async function POST(request: NextRequest) {
     if (!outreach) {
       return NextResponse.json({ error: "Outreach not found" }, { status: 404 });
     }
+    outreachContactEmail = normalizeLoginEmail(outreach.sent_to_email);
   }
 
   const { data: existing, error: lookupError } = await supabaseAdmin
@@ -82,10 +85,14 @@ export async function POST(request: NextRequest) {
   if (profile && profile.role !== "show") {
     return NextResponse.json({ error: LOGIN_OTP_NOT_SHOW }, { status: 403 });
   }
-  if (!profile && !outreachToken) {
+  // A pitch token is not a blank check. Only the show contact on that
+  // outreach may be turned into an account.
+  if (!profile && outreachContactEmail !== email) {
     return NextResponse.json({ error: LOGIN_OTP_NO_ACCOUNT }, { status: 404 });
   }
 
+  // In-memory only: each serverless instance has its own bucket, so this 60s
+  // resend cooldown is not shared across instances. Keep the 60s window.
   const limit = checkRateLimit(
     `login-otp:${email}`,
     1,

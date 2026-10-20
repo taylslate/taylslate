@@ -163,10 +163,14 @@ describe("POST /api/auth/login/otp", () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 
-  it("creates a show from a valid outreach token, then emails the code", async () => {
+  it("creates a show when the email matches the outreach contact", async () => {
     profile = null;
     verifyOutreachToken.mockReturnValue({ outreach_id: "out-1", iat: 1, v: 1 });
-    getOutreachById.mockResolvedValue({ id: "out-1", show_name: "Daily" });
+    getOutreachById.mockResolvedValue({
+      id: "out-1",
+      show_name: "Daily",
+      sent_to_email: " New@Example.com ",
+    });
     const res = await POST(
       req({ email: "new@example.com", outreach_token: "pitch-token" }),
     );
@@ -187,5 +191,23 @@ describe("POST /api/auth/login/otp", () => {
     });
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("returns no_account when the outreach contact email does not match", async () => {
+    profile = null;
+    verifyOutreachToken.mockReturnValue({ outreach_id: "out-1", iat: 1, v: 1 });
+    getOutreachById.mockResolvedValue({
+      id: "out-1",
+      show_name: "Daily",
+      sent_to_email: "host@example.com",
+    });
+    const res = await POST(
+      req({ email: "other@example.com", outreach_token: "pitch-token" }),
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "no_account" });
+    expect(createUser).not.toHaveBeenCalled();
+    expect(generateLink).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 });
