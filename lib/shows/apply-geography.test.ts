@@ -135,7 +135,6 @@ describe("audience geography ties", () => {
     const ok = await applyAudienceGeographyToShow({
       id: "prof-imposter",
       user_id: "user-imposter",
-      podscan_id: null,
       audience_geography: { uk: 99 },
     });
     expect(ok).toBe(true);
@@ -163,16 +162,35 @@ describe("audience geography ties", () => {
     ).toBe(false);
   });
 
-  it("writes geography when the profile shares the catalog podscan id", async () => {
+  it("does not write geography when the profile only shares a podscan id", async () => {
     db.show_profiles[0].podscan_id = "pd_smartless";
     const ok = await applyAudienceGeographyToShow({
       id: "prof-imposter",
       user_id: "user-imposter",
-      podscan_id: "pd_smartless",
       audience_geography: { uk: 99 },
     });
     expect(ok).toBe(true);
-    expect(db.shows[0].demographics).toEqual({ male: 55, uk: 99 });
+    expect(db.shows[0].demographics).toEqual({ us: 70, male: 55 });
+    expect(
+      filtersSeen.some(
+        (call) =>
+          call.table === "shows" &&
+          call.filters.some((filter) => filter.column === "podscan_id")
+      )
+    ).toBe(false);
+
+    const rows = await getVerifiedAudienceGeography([
+      {
+        showId: CATALOG_ID,
+        podscanId: "pd_smartless",
+        contactEmail: "host@smartless.com",
+        dataSources: ["podscan"],
+      },
+    ]);
+    expect(rows).toEqual([]);
+    expect(
+      filtersSeen.some((call) => call.filters.some((filter) => filter.column === "podscan_id"))
+    ).toBe(false);
   });
 
   it("writes geography when a deal links the profile to the catalog show", async () => {

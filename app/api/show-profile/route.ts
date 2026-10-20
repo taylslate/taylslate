@@ -235,8 +235,9 @@ export async function PUT(request: NextRequest) {
   }
 
   // Copy parsed country shares onto a shows row only when a verified
-  // tie exists (podscan id, deal, or show_owner email). A miss is fine —
-  // the profile still holds the parse. Failures here must not fail the save.
+  // tie exists (a deal, or a show_owner email). A client-supplied
+  // podscan_id is not a tie. A miss is fine — the profile still holds
+  // the parse. Failures here must not fail the save.
   if ("media_kit_text" in patch) {
     await applyAudienceGeographyToShow(result);
   }

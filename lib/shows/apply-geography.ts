@@ -3,12 +3,17 @@
 //
 // show_profiles holds the kit. Discovery scores `shows`. A profile
 // may copy country shares onto a catalog row only through a verified
-// tie — the same three user_owns_show uses:
-//   1. show_profiles.podscan_id = shows.podscan_id
-//   2. a deal whose show_profile_id is this profile and whose show_id
+// tie:
+//   1. a deal whose show_profile_id is this profile and whose show_id
 //      is the catalog row
-//   3. the private show_owner row (data_sources contains show_owner)
+//   2. the private show_owner row (data_sources contains show_owner)
 //      whose contact_email matches the profile owner's login
+//
+// show_profiles.podscan_id is not a tie. PUT /api/show-profile copies
+// a client-supplied id, onboarding echoes the lookup response back
+// through that PUT, and a user can update their own row directly.
+// Nothing records a verified claim of that id, so a matching
+// podscan_id must not write or score another show.
 //
 // show_slug / generateSlug(show_name) is display-only. A profile
 // named after a catalog show must not write that show's demographics.
@@ -26,7 +31,7 @@ import {
   mergeGeographyIntoDemographics,
 } from "@/lib/shows/media-kit-geo";
 
-type GeoProfile = Pick<ShowProfile, "id" | "user_id" | "podscan_id" | "audience_geography">;
+type GeoProfile = Pick<ShowProfile, "id" | "user_id" | "audience_geography">;
 
 interface GeoShow {
   id: string;
@@ -37,13 +42,16 @@ interface GeoShow {
 export interface ShowGeoIdentity {
   /** Catalog `shows.id` from the stored row. Never a discovery candidate id. */
   showId?: string;
+  /**
+   * Present on discovery candidates. Not a geography tie: the matching
+   * show_profiles.podscan_id can be set by the client.
+   */
   podscanId?: string;
   contactEmail?: string;
   dataSources?: string[];
 }
 
 export interface VerifiedGeography {
-  podscanId?: string;
   showId?: string;
   geography: AudienceGeography;
 }
@@ -88,24 +96,6 @@ export async function getVerifiedAudienceGeography(
 ): Promise<VerifiedGeography[]> {
   const out: VerifiedGeography[] = [];
   try {
-    const podscanIds = unique(identities.map((row) => row.podscanId));
-    if (podscanIds.length > 0) {
-      const { data, error } = await supabaseAdmin
-        .from("show_profiles")
-        .select("podscan_id, audience_geography")
-        .in("podscan_id", podscanIds);
-      if (error) {
-        console.warn("[getVerifiedAudienceGeography] podscan read failed:", error.message);
-      } else {
-        for (const row of data ?? []) {
-          const podscanId = text(row.podscan_id);
-          const geography = row.audience_geography as AudienceGeography | null;
-          if (!podscanId || !hasAudienceGeography(geography)) continue;
-          out.push({ podscanId, geography });
-        }
-      }
-    }
-
     const showIds = unique(identities.map((row) => row.showId));
     if (showIds.length > 0) {
       const { data: deals, error } = await supabaseAdmin
@@ -174,20 +164,14 @@ export async function getVerifiedAudienceGeography(
   return out;
 }
 
-/** First verified geography for this identity. Podscan tie, then show id. */
+/** Geography tied to this catalog show id. A podscan id is not a tie. */
 export function geographyForIdentity(
   identity: ShowGeoIdentity,
   rows: VerifiedGeography[]
 ): AudienceGeography | null {
-  if (identity.podscanId) {
-    const hit = rows.find((row) => row.podscanId === identity.podscanId);
-    if (hit) return hit.geography;
-  }
-  if (identity.showId) {
-    const hit = rows.find((row) => row.showId === identity.showId);
-    if (hit) return hit.geography;
-  }
-  return null;
+  if (!identity.showId) return null;
+  const hit = rows.find((row) => row.showId === identity.showId);
+  return hit?.geography ?? null;
 }
 
 async function findTiedShows(profile: GeoProfile): Promise<GeoShow[]> {
@@ -198,23 +182,9 @@ async function findTiedShows(profile: GeoProfile): Promise<GeoShow[]> {
     }
   };
 
-  const podscanId = profile.podscan_id?.trim();
-  if (podscanId) add(await showsByPodscanId(podscanId));
   if (profile.id) add(await showsByDeal(profile.id));
   if (profile.user_id) add(await showsByOwner(profile.user_id));
   return [...found.values()];
-}
-
-async function showsByPodscanId(podscanId: string): Promise<GeoShow[]> {
-  const { data, error } = await supabaseAdmin
-    .from("shows")
-    .select("id, demographics")
-    .eq("podscan_id", podscanId);
-  if (error) {
-    console.warn("[applyAudienceGeographyToShow] podscan lookup failed:", error.message);
-    return [];
-  }
-  return (data ?? []) as GeoShow[];
 }
 
 async function showsByDeal(showProfileId: string): Promise<GeoShow[]> {

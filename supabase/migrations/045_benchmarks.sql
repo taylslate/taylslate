@@ -9,7 +9,8 @@
 -- show_profiles gains the media-kit text a show pasted or uploaded,
 -- the country shares parsed from it, and a display slug. Geography
 -- is copied onto a catalog show only through a verified tie
--- (podscan id, a deal, or a show_owner contact email) — never by slug.
+-- (a deal, or a show_owner contact email). A client-supplied
+-- podscan_id and a shared slug are not ties.
 -- show_profiles is a pre-020 table; these columns inherit its grants.
 -- No new grant block for them.
 --

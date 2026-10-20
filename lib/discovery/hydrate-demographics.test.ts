@@ -298,15 +298,42 @@ describe("hydrateCandidateDemographics", () => {
     expect(candidate.demographics.uk).toBeUndefined();
   });
 
-  it("fills missing country shares when a verified podscan tie returns geography", async () => {
+  it("does not copy geography from a profile that only shares a podscan id", async () => {
     const candidate = makeShow({
       name: "Recovery Lab",
       podscan_id: "pd_recovery",
       demographics: { male: 60, us: 80 },
     });
     const { deps } = makeDeps({});
+    deps.lookupGeography = async (identities) => {
+      expect(identities[0]?.podscanId).toBe("pd_recovery");
+      return [{ geography: { uk: 99 } }];
+    };
+    await hydrateCandidateDemographics([candidate], deps);
+    expect(candidate.demographics.uk).toBeUndefined();
+    expect(candidate.demographics.us).toBe(80);
+  });
+
+  it("fills missing country shares when a deal or owner tie returns geography", async () => {
+    const candidate = makeShow({
+      name: "Recovery Lab",
+      podscan_id: "pd_recovery",
+      demographics: { male: 60, us: 80 },
+    });
+    const { deps } = makeDeps({
+      rows: [
+        {
+          ...makeShow({
+            id: "cat-recovery",
+            name: "Recovery Lab",
+            demographics: { male: 60, us: 80 },
+          }),
+          slug: "recovery-lab",
+        },
+      ],
+    });
     deps.lookupGeography = async () => [
-      { podscanId: "pd_recovery", geography: { us: 10, uk: 9 } },
+      { showId: "cat-recovery", geography: { us: 10, uk: 9 } },
     ];
     await hydrateCandidateDemographics([candidate], deps);
     expect(candidate.demographics.male).toBe(60);
