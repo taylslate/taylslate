@@ -41,6 +41,12 @@ describe("proxy public-route allowlist (signed out)", () => {
     expect(redirectedToLogin(res)).toBe(true);
     expect(res.headers.get("location")).toContain("next=%2Fdashboard");
   });
+
+  it("keeps the design preview signed-in only", async () => {
+    const res = await run("/design-preview");
+    expect(redirectedToLogin(res)).toBe(true);
+    expect(res.headers.get("location")).toContain("next=%2Fdesign-preview");
+  });
 });
 
 describe("proxy passes authenticated users through to protected routes", () => {
