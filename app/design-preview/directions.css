@@ -1,0 +1,147 @@
+/* Direction token sets for /design-preview. One attribute swaps the whole theme.
+   Slack: Dark aubergine sidebar, white canvas, one cobalt accent.
+   Patreon: Warm light field, coral accent, soft rounded cards.
+   HubSpot: Crisp white cards, persimmon accent, strong type contrast.
+   Colors are ours. They are not the reference brands' hex values. */
+
+:is(html[data-design-preview], [data-design-preview]) {
+  --font-display: var(--font-preview-display), Georgia, "Iowan Old Style", serif;
+  --font-body: var(--font-preview-sans), Figtree, sans-serif;
+  --shell-pad: 1.75rem;
+  --shell-gap: 1.5rem;
+  --shell-heading-weight: 560;
+  --shell-active-bar: 0 0 0 0 transparent;
+  --shell-nav-radius: var(--radius-control);
+}
+
+:is(html[data-design-preview="slack"], [data-design-preview="slack"]) {
+  --background: oklch(99.2% 0.002 260);
+  --surface: oklch(100% 0 0);
+  --surface-raised: oklch(100% 0 0);
+  --surface-muted: oklch(96.4% 0.006 260);
+  --foreground: oklch(24% 0.02 270);
+  --text-secondary: oklch(42% 0.02 270);
+  --text-muted: oklch(52% 0.015 270);
+  --border: oklch(91% 0.008 260);
+  --border-subtle: oklch(94.5% 0.006 260);
+  --border-strong: oklch(78% 0.03 262);
+  --accent: oklch(55% 0.2 262);
+  --accent-strong: oklch(46% 0.19 262);
+  --accent-subtle: oklch(55% 0.2 262 / 0.14);
+  --accent-foreground: oklch(99% 0.004 260);
+  --shadow-resting: 0 1px 2px oklch(26% 0.03 270 / 0.06);
+  --shadow-raised: 0 12px 32px oklch(26% 0.04 270 / 0.08);
+  --radius-control: 0.7rem;
+  --radius-panel: 1rem;
+  --radius-surface: 1.2rem;
+  --shell-sidebar: oklch(27% 0.032 318);
+  --shell-sidebar-fg: oklch(97% 0.008 318);
+  --shell-sidebar-muted: oklch(78% 0.02 318);
+  --shell-sidebar-active: oklch(36% 0.05 318);
+  --shell-sidebar-active-fg: oklch(98% 0.008 318);
+  --shell-sidebar-border: oklch(32% 0.03 318);
+  --shell-canvas: oklch(98.2% 0.004 260);
+  --shell-nav-radius: 0.65rem;
+  --shell-heading-weight: 560;
+}
+
+:is(html[data-design-preview="patreon"], [data-design-preview="patreon"]) {
+  --background: oklch(98.5% 0.014 58);
+  --surface: oklch(99.6% 0.006 75);
+  --surface-raised: oklch(99.7% 0.008 65);
+  --surface-muted: oklch(95.2% 0.024 52);
+  --foreground: oklch(31% 0.032 42);
+  --text-secondary: oklch(45% 0.03 42);
+  --text-muted: oklch(53% 0.025 48);
+  --border: oklch(90% 0.022 52);
+  --border-subtle: oklch(94% 0.016 58);
+  --border-strong: oklch(78% 0.045 40);
+  --accent: oklch(67% 0.145 34);
+  --accent-strong: oklch(52% 0.13 32);
+  --accent-subtle: oklch(67% 0.145 34 / 0.18);
+  --accent-foreground: oklch(25% 0.045 34);
+  --shadow-resting: 0 1px 2px oklch(52% 0.04 42 / 0.05);
+  --shadow-raised: 0 18px 40px oklch(55% 0.05 42 / 0.12);
+  --radius-control: 1.2rem;
+  --radius-panel: 1.75rem;
+  --radius-surface: 2rem;
+  --shell-sidebar: oklch(96.4% 0.024 50);
+  --shell-sidebar-fg: oklch(31% 0.032 42);
+  --shell-sidebar-muted: oklch(46% 0.03 42);
+  --shell-sidebar-active: oklch(92% 0.045 42);
+  --shell-sidebar-active-fg: oklch(34% 0.07 32);
+  --shell-sidebar-border: oklch(91% 0.025 52);
+  --shell-canvas: oklch(97.5% 0.018 58);
+  --shell-pad: 2.15rem;
+  --shell-gap: 1.75rem;
+  --shell-nav-radius: 999px;
+  --shell-heading-weight: 560;
+}
+
+:is(html[data-design-preview="hubspot"], [data-design-preview="hubspot"]) {
+  --background: oklch(97% 0.006 250);
+  --surface: oklch(100% 0 0);
+  --surface-raised: oklch(100% 0 0);
+  --surface-muted: oklch(95.2% 0.008 250);
+  --foreground: oklch(17% 0.032 265);
+  --text-secondary: oklch(29% 0.025 265);
+  --text-muted: oklch(40% 0.018 265);
+  --border: oklch(86% 0.012 255);
+  --border-subtle: oklch(92% 0.008 255);
+  --border-strong: oklch(24% 0.03 265);
+  --accent: oklch(59% 0.185 42);
+  --accent-strong: oklch(46% 0.16 40);
+  --accent-subtle: oklch(59% 0.185 42 / 0.14);
+  --accent-foreground: oklch(99% 0.012 95);
+  --shadow-resting: none;
+  --shadow-raised: none;
+  --radius-control: 0.35rem;
+  --radius-panel: 0.5rem;
+  --radius-surface: 0.6rem;
+  --shell-sidebar: oklch(100% 0 0);
+  --shell-sidebar-fg: oklch(16% 0.03 265);
+  --shell-sidebar-muted: oklch(34% 0.02 265);
+  --shell-sidebar-active: oklch(96.2% 0.025 55);
+  --shell-sidebar-active-fg: oklch(38% 0.12 42);
+  --shell-sidebar-border: oklch(88% 0.01 255);
+  --shell-canvas: oklch(96.2% 0.007 250);
+  --shell-pad: 1.45rem;
+  --shell-gap: 1.1rem;
+  --shell-nav-radius: 0.35rem;
+  --shell-heading-weight: 640;
+  --shell-active-bar: 3px 0 0 var(--accent);
+  --tracking-display: -0.045em;
+}
+
+[data-cover] {
+  background-image: linear-gradient(145deg, var(--cover-a), var(--cover-b));
+}
+
+[data-cover="1"] {
+  --cover-a: color-mix(in oklab, var(--accent) 78%, white);
+  --cover-b: color-mix(in oklab, var(--accent) 42%, var(--foreground));
+}
+[data-cover="2"] {
+  --cover-a: color-mix(in oklab, var(--accent) 35%, #d7c4a8);
+  --cover-b: color-mix(in oklab, var(--foreground) 55%, var(--accent));
+}
+[data-cover="3"] {
+  --cover-a: color-mix(in oklab, var(--accent) 55%, #8ea4b8);
+  --cover-b: color-mix(in oklab, var(--accent) 20%, #1d2430);
+}
+[data-cover="4"] {
+  --cover-a: color-mix(in oklab, var(--accent) 25%, #f3e6d4);
+  --cover-b: color-mix(in oklab, var(--accent) 70%, #5c3b32);
+}
+[data-cover="5"] {
+  --cover-a: color-mix(in oklab, var(--accent) 60%, #c46b4a);
+  --cover-b: color-mix(in oklab, var(--foreground) 70%, #2a211c);
+}
+[data-cover="6"] {
+  --cover-a: color-mix(in oklab, var(--accent) 40%, #efe7dc);
+  --cover-b: color-mix(in oklab, var(--accent) 80%, #243028);
+}
+[data-cover="7"] {
+  --cover-a: color-mix(in oklab, var(--accent) 22%, #d5d0ea);
+  --cover-b: color-mix(in oklab, var(--foreground) 65%, var(--accent));
+}
