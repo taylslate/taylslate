@@ -1,13 +1,19 @@
 // Load the facts a discovery card's market signals can state.
 //
-// Reads only rows that already exist: show_profiles.brand_history (through
-// the same verified ties as media-kit geography), shows.current_sponsors /
-// past_sponsors, show_sponsors, and deals. A failed read leaves that fact
-// unknown. The returned map has one entry per requested show — nothing is
-// dropped because a signal is missing or unfavorable.
+// Host-reported brand history and expected CPM come from show_profiles only
+// through getVerifiedProfileTies: a deal link, or a show_owner row whose
+// contact email matches the profile owner. show_profiles.podscan_id is
+// user-writable and is not a tie. Catalog columns on shows (podscan_id,
+// current_sponsors, past_sponsors) are read as stored. A failed read leaves
+// that fact unknown. The returned map has one entry per requested show.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { CostBasis, ShowBrandHistoryEntry, ShowRateCard } from "@/lib/data/types";
+import {
+  getVerifiedProfileTies,
+  type ShowGeoIdentity,
+  type VerifiedProfileTie,
+} from "@/lib/shows/apply-geography";
 import type { TieredShow } from "./tiered-universe";
 import {
   BOOKED_DEAL_STATUSES,
@@ -40,8 +46,6 @@ export interface MarketSignalShowRef {
 
 interface ProfileRow {
   id: string;
-  podscanId: string | null;
-  userId: string | null;
   brandHistory: unknown;
   expectedCpm: number | null;
 }
@@ -65,10 +69,9 @@ interface SponsorRow {
 }
 
 export interface MarketSignalDeps {
-  showProfilesByPodscanIds(ids: string[]): Promise<ProfileRow[] | null>;
+  /** Deal link or show_owner email. A podscan id match is not a tie. */
+  lookupProfileTies(identities: ShowGeoIdentity[]): Promise<VerifiedProfileTie[] | null>;
   showProfilesByIds(ids: string[]): Promise<ProfileRow[] | null>;
-  showProfileByUserId(userId: string): Promise<ProfileRow | null>;
-  profileIdByEmail(email: string): Promise<string | null>;
   dealsForShowIds(ids: string[]): Promise<DealRow[] | null>;
   showSponsorsForShowIds(ids: string[]): Promise<SponsorRow[] | null>;
   brandNamesByProfileIds(ids: string[]): Promise<Map<string, string> | null>;
@@ -144,24 +147,22 @@ async function loadInner(
   const facts = new Map<string, ShowFacts>();
   for (const show of shows) facts.set(show.showId, emptyFacts());
 
-  const podscanIds = unique(shows.map((show) => clean(show.podscanId)));
   const showIds = unique(shows.map((show) => (isUuid(show.showId) ? show.showId : null)));
+  const identities = shows.map(identityFor);
 
-  const [profilesByPodscan, deals, sponsors] = await Promise.all([
-    podscanIds.length > 0 ? deps.showProfilesByPodscanIds(podscanIds) : Promise.resolve([]),
+  const [ties, deals, sponsors] = await Promise.all([
+    deps.lookupProfileTies(identities),
     showIds.length > 0 ? deps.dealsForShowIds(showIds) : Promise.resolve([]),
     showIds.length > 0 ? deps.showSponsorsForShowIds(showIds) : Promise.resolve([]),
   ]);
 
-  const profilesById = new Map<string, ProfileRow>();
-  if (profilesByPodscan) {
-    for (const profile of profilesByPodscan) {
-      profilesById.set(profile.id, profile);
-      const podscanId = clean(profile.podscanId);
-      if (!podscanId) continue;
-      for (const show of shows) {
-        if (clean(show.podscanId) !== podscanId) continue;
-        attachProfile(facts.get(show.showId), profile);
+  if (ties && ties.length > 0) {
+    const profiles = await deps.showProfilesByIds(unique(ties.map((tie) => tie.profileId)));
+    const byId = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+    if (profiles) {
+      for (const tie of ties) {
+        const profile = byId.get(tie.profileId);
+        if (profile) attachProfile(facts.get(tie.showId), profile);
       }
     }
   }
@@ -174,20 +175,6 @@ async function loadInner(
       // the read ran, which is different from a failed read (null).
       bag.deals = deals.filter((deal) => deal.showId === show.showId);
     }
-    const profileIds = unique(
-      deals.map((deal) => deal.showProfileId).filter((id) => id && !profilesById.has(id))
-    );
-    if (profileIds.length > 0) {
-      const linked = await deps.showProfilesByIds(profileIds);
-      if (linked) {
-        for (const profile of linked) profilesById.set(profile.id, profile);
-      }
-    }
-    for (const deal of deals) {
-      const profile = deal.showProfileId ? profilesById.get(deal.showProfileId) : undefined;
-      if (!profile) continue;
-      attachProfile(facts.get(deal.showId), profile);
-    }
   }
 
   if (sponsors) {
@@ -197,8 +184,6 @@ async function loadInner(
       if (bag && name) bag.extraSponsorNames.push(name);
     }
   }
-
-  await attachOwnerProfiles(shows, facts, deps);
 
   const brandProfileIds = unique(
     [...facts.values()].flatMap((bag) =>
@@ -294,29 +279,12 @@ function attachProfile(bag: ShowFacts | undefined, profile: ProfileRow): void {
   }
 }
 
-async function attachOwnerProfiles(
-  shows: MarketSignalShowRef[],
-  facts: Map<string, ShowFacts>,
-  deps: MarketSignalDeps
-): Promise<void> {
-  const owners = shows.filter(
-    (show) =>
-      isUuid(show.showId) &&
-      Array.isArray(show.dataSources) &&
-      show.dataSources.includes("show_owner") &&
-      clean(show.contactEmail)
-  );
-  await Promise.all(
-    owners.map(async (show) => {
-      const email = clean(show.contactEmail);
-      if (!email) return;
-      const userId = await deps.profileIdByEmail(email);
-      if (!userId) return;
-      const profile = await deps.showProfileByUserId(userId);
-      if (!profile) return;
-      attachProfile(facts.get(show.showId), profile);
-    })
-  );
+function identityFor(show: MarketSignalShowRef): ShowGeoIdentity {
+  return {
+    showId: isUuid(show.showId) ? show.showId : undefined,
+    contactEmail: clean(show.contactEmail) ?? undefined,
+    dataSources: show.dataSources ?? undefined,
+  };
 }
 
 function isBooked(deal: DealRow): boolean {
@@ -328,35 +296,9 @@ function isCancelled(status: string): boolean {
 }
 
 const defaultDeps: MarketSignalDeps = {
-  async showProfilesByPodscanIds(ids) {
-    return readProfiles("podscan_id", ids);
-  },
+  lookupProfileTies: getVerifiedProfileTies,
   async showProfilesByIds(ids) {
-    return readProfiles("id", ids);
-  },
-  async showProfileByUserId(userId) {
-    const { data, error } = await supabaseAdmin
-      .from("show_profiles")
-      .select("id, user_id, podscan_id, brand_history, expected_cpm")
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (error) {
-      console.warn("[market-signals] owner profile read failed:", error.message);
-      return null;
-    }
-    return data ? toProfile(data as RawProfile) : null;
-  },
-  async profileIdByEmail(email) {
-    const { data, error } = await supabaseAdmin
-      .from("profiles")
-      .select("id, email")
-      .ilike("email", escapeIlike(email))
-      .maybeSingle();
-    if (error || !data) return null;
-    const row = data as { id?: string; email?: string };
-    if (!row.id || !row.email) return null;
-    if (row.email.trim().toLowerCase() !== email.trim().toLowerCase()) return null;
-    return row.id;
+    return readProfiles(ids);
   },
   async dealsForShowIds(ids) {
     const { data, error } = await supabaseAdmin
@@ -407,8 +349,6 @@ const defaultDeps: MarketSignalDeps = {
 
 interface RawProfile {
   id?: string;
-  user_id?: string | null;
-  podscan_id?: string | null;
   brand_history?: unknown;
   expected_cpm?: number | string | null;
 }
@@ -426,14 +366,14 @@ interface RawDeal {
   gross_per_episode?: number | string | null;
 }
 
-async function readProfiles(column: "podscan_id" | "id", ids: string[]): Promise<ProfileRow[] | null> {
+async function readProfiles(ids: string[]): Promise<ProfileRow[] | null> {
   if (ids.length === 0) return [];
   const { data, error } = await supabaseAdmin
     .from("show_profiles")
-    .select("id, user_id, podscan_id, brand_history, expected_cpm")
-    .in(column, ids);
+    .select("id, brand_history, expected_cpm")
+    .in("id", ids);
   if (error) {
-    console.warn(`[market-signals] show_profiles by ${column} failed:`, error.message);
+    console.warn("[market-signals] show_profiles read failed:", error.message);
     return null;
   }
   return (data ?? []).map((row) => toProfile(row as RawProfile)).filter((row) => row.id);
@@ -442,8 +382,6 @@ async function readProfiles(column: "podscan_id" | "id", ids: string[]): Promise
 function toProfile(row: RawProfile): ProfileRow {
   return {
     id: row.id ?? "",
-    podscanId: row.podscan_id ?? null,
-    userId: row.user_id ?? null,
     brandHistory: row.brand_history,
     expectedCpm: asMoney(row.expected_cpm),
   };
@@ -490,7 +428,7 @@ function clean(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
-function unique(values: Array<string | null>): string[] {
+function unique(values: Array<string | null | undefined>): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const value of values) {
@@ -499,8 +437,4 @@ function unique(values: Array<string | null>): string[] {
     out.push(value);
   }
   return out;
-}
-
-function escapeIlike(value: string): string {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }

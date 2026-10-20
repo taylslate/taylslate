@@ -29,10 +29,8 @@ function ref(over: Partial<MarketSignalShowRef> = {}): MarketSignalShowRef {
 
 function deps(over: Partial<MarketSignalDeps> = {}): MarketSignalDeps {
   return {
-    showProfilesByPodscanIds: async () => [],
+    lookupProfileTies: async () => [],
     showProfilesByIds: async () => [],
-    showProfileByUserId: async () => null,
-    profileIdByEmail: async () => null,
     dealsForShowIds: async () => [],
     showSponsorsForShowIds: async () => [],
     brandNamesByProfileIds: async () => new Map(),
@@ -61,30 +59,31 @@ describe("loadMarketSignalsForShows", () => {
     );
   });
 
-  it("uses brand history only through a podscan or deal tie, not a shared name", async () => {
+  it("does not attach brand history from a podscan id match", async () => {
+    const fetchProfiles = vi.fn(async () => [
+      {
+        id: "profile-1",
+        brandHistory: [{ brand_name: "LMNT", category: "Electrolytes", deal_type: "annual" }],
+        expectedCpm: 26,
+      },
+    ]);
     const result = await loadMarketSignalsForShows(
       [ref(), ref({ showId: OTHER, podscanId: "pd_unrelated" })],
       { productCategory: "Electrolytes", exclusions: null, exclusionText: "LMNT" },
       deps({
-        showProfilesByPodscanIds: async (ids) => {
-          expect(ids).toContain("pd_lab");
-          return [
-            {
-              id: "profile-1",
-              podscanId: "pd_lab",
-              userId: "user-1",
-              brandHistory: [{ brand_name: "LMNT", category: "Electrolytes", deal_type: "annual" }],
-              expectedCpm: 26,
-            },
-          ];
+        lookupProfileTies: async (identities) => {
+          expect(identities.map((row) => row.showId)).toEqual([SHOW, OTHER]);
+          expect(identities.every((row) => row.podscanId == null)).toBe(true);
+          return [];
         },
+        showProfilesByIds: fetchProfiles,
       })
     );
 
-    expect(value(result[SHOW], "advertisers")).toContain("Similar (Electrolytes): LMNT");
-    expect(value(result[SHOW], "competitor_saturation")).toContain("LMNT");
-    expect(value(result[SHOW], "renewal")).toBe("Annual on file: LMNT");
-    expect(value(result[SHOW], "pricing")).toContain("$26 CPM");
+    expect(fetchProfiles).not.toHaveBeenCalled();
+    expect(value(result[SHOW], "advertisers")).toBe("unknown");
+    expect(value(result[SHOW], "pricing")).toBe("unknown");
+    expect(value(result[SHOW], "renewal")).not.toContain("Annual");
     expect(value(result[OTHER], "advertisers")).toBe("unknown");
     expect(value(result[OTHER], "renewal")).toBe("No repeat Taylslate deal is on file");
   });
@@ -94,6 +93,7 @@ describe("loadMarketSignalsForShows", () => {
       [ref({ podscanId: null })],
       { productCategory: null, exclusions: null, exclusionText: null },
       deps({
+        lookupProfileTies: async () => [{ showId: SHOW, profileId: "profile-9" }],
         dealsForShowIds: async () => [
           {
             showId: SHOW,
@@ -113,8 +113,6 @@ describe("loadMarketSignalsForShows", () => {
           return [
             {
               id: "profile-9",
-              podscanId: null,
-              userId: null,
               brandHistory: [{ brand_name: "Whoop", category: "Wearables", deal_type: "one-off" }],
               expectedCpm: null,
             },
@@ -200,7 +198,7 @@ describe("loadMarketSignalsForShows", () => {
       [ref({ currentSponsors: ["LMNT"] })],
       { productCategory: null, exclusions: null, exclusionText: null },
       deps({
-        showProfilesByPodscanIds: async () => null,
+        lookupProfileTies: async () => null,
         dealsForShowIds: async () => null,
       })
     );
@@ -213,7 +211,7 @@ describe("loadMarketSignalsForShows", () => {
       [ref(), ref({ showId: OTHER })],
       { productCategory: null, exclusions: null, exclusionText: null },
       deps({
-        showProfilesByPodscanIds: async () => {
+        lookupProfileTies: async () => {
           throw new Error("down");
         },
       })

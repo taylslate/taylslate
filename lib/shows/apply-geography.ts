@@ -56,6 +56,16 @@ export interface VerifiedGeography {
   geography: AudienceGeography;
 }
 
+/**
+ * A show profile tied to a catalog show by a deal (`deals.show_profile_id`)
+ * or by the private show_owner row whose contact email matches the profile
+ * owner's login. `show_profiles.podscan_id` is not a tie: the host can type it.
+ */
+export interface VerifiedProfileTie {
+  showId: string;
+  profileId: string;
+}
+
 export async function applyAudienceGeographyToShow(profile: GeoProfile): Promise<boolean> {
   try {
     const rows = await findTiedShows(profile);
@@ -96,6 +106,57 @@ export async function getVerifiedAudienceGeography(
 ): Promise<VerifiedGeography[]> {
   const out: VerifiedGeography[] = [];
   try {
+    const ties = await getVerifiedProfileTies(identities);
+    const profileIds = unique(ties.map((tie) => tie.profileId));
+    if (profileIds.length > 0) {
+      const { data: profiles, error: profileError } = await supabaseAdmin
+        .from("show_profiles")
+        .select("id, audience_geography")
+        .in("id", profileIds);
+      if (profileError) {
+        console.warn(
+          "[getVerifiedAudienceGeography] tied profile read failed:",
+          profileError.message
+        );
+      } else {
+        const geoByProfile = new Map<string, AudienceGeography>();
+        for (const profile of profiles ?? []) {
+          const id = text(profile.id);
+          const geography = profile.audience_geography as AudienceGeography | null;
+          if (id && hasAudienceGeography(geography)) geoByProfile.set(id, geography);
+        }
+        for (const tie of ties) {
+          const geography = geoByProfile.get(tie.profileId);
+          if (geography) out.push({ showId: tie.showId, geography });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(
+      "[getVerifiedAudienceGeography] threw:",
+      err instanceof Error ? err.message : err
+    );
+  }
+  return out;
+}
+
+/**
+ * Profile ids tied to these catalog shows. A deal link or a show_owner
+ * contact email counts. A podscan id on the profile does not.
+ * Fail-soft: a read error yields whatever ties were found, or none.
+ */
+export async function getVerifiedProfileTies(
+  identities: ShowGeoIdentity[]
+): Promise<VerifiedProfileTie[]> {
+  const out: VerifiedProfileTie[] = [];
+  const seen = new Set<string>();
+  const add = (showId: string | undefined, profileId: string | undefined) => {
+    if (!showId || !profileId || seen.has(`${showId}:${profileId}`)) return;
+    seen.add(`${showId}:${profileId}`);
+    out.push({ showId, profileId });
+  };
+
+  try {
     const showIds = unique(identities.map((row) => row.showId));
     if (showIds.length > 0) {
       const { data: deals, error } = await supabaseAdmin
@@ -103,34 +164,10 @@ export async function getVerifiedAudienceGeography(
         .select("show_id, show_profile_id")
         .in("show_id", showIds);
       if (error) {
-        console.warn("[getVerifiedAudienceGeography] deal read failed:", error.message);
+        console.warn("[getVerifiedProfileTies] deal read failed:", error.message);
       } else {
-        const profileIds = unique(
-          (deals ?? []).map((row) => text(row.show_profile_id))
-        );
-        if (profileIds.length > 0) {
-          const { data: profiles, error: profileError } = await supabaseAdmin
-            .from("show_profiles")
-            .select("id, audience_geography")
-            .in("id", profileIds);
-          if (profileError) {
-            console.warn(
-              "[getVerifiedAudienceGeography] deal profile read failed:",
-              profileError.message
-            );
-          } else {
-            const geoByProfile = new Map<string, AudienceGeography>();
-            for (const profile of profiles ?? []) {
-              const id = text(profile.id);
-              const geography = profile.audience_geography as AudienceGeography | null;
-              if (id && hasAudienceGeography(geography)) geoByProfile.set(id, geography);
-            }
-            for (const deal of deals ?? []) {
-              const showId = text(deal.show_id);
-              const geography = geoByProfile.get(text(deal.show_profile_id) ?? "");
-              if (showId && geography) out.push({ showId, geography });
-            }
-          }
+        for (const deal of deals ?? []) {
+          add(text(deal.show_id), text(deal.show_profile_id));
         }
       }
     }
@@ -143,21 +180,18 @@ export async function getVerifiedAudienceGeography(
       if (!owner) continue;
       const { data, error } = await supabaseAdmin
         .from("show_profiles")
-        .select("audience_geography")
+        .select("id")
         .eq("user_id", owner.id)
         .maybeSingle();
       if (error) {
-        console.warn("[getVerifiedAudienceGeography] owner read failed:", error.message);
+        console.warn("[getVerifiedProfileTies] owner profile read failed:", error.message);
         continue;
       }
-      const geography = data?.audience_geography as AudienceGeography | null;
-      if (hasAudienceGeography(geography)) {
-        out.push({ showId: identity.showId, geography });
-      }
+      add(identity.showId, text(data?.id));
     }
   } catch (err) {
     console.warn(
-      "[getVerifiedAudienceGeography] threw:",
+      "[getVerifiedProfileTies] threw:",
       err instanceof Error ? err.message : err
     );
   }
