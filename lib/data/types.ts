@@ -142,7 +142,7 @@ export interface Show {
   last_api_refresh?: string;
 
   /**
-   * Simulcast surfaces (migrations 026 / 043). Populated only when a podcast
+   * Simulcast surfaces (migration 026). Populated only when a podcast
    * and a long-form YouTube record for the same show are merged into one
    * record (lib/discovery mergeSimulcasts). Each surface carries that
    * medium's audience, CPM range, and links. Null/undefined for a show that
@@ -151,7 +151,7 @@ export interface Show {
    */
   surfaces?: ShowSurfaces;
   /**
-   * Medium-specific priors (migrations 026 / 043): CPM range, engagement
+   * Medium-specific priors (migration 026): CPM range, engagement
    * weight, frequency. Written for every discovered show. Launch engagement
    * weight is 1 — the number is recorded, and discovery does not filter or
    * reweight on it. Scores guide; medium does not gate.
