@@ -286,6 +286,19 @@ function asBrand() {
   getShowProfileByUserId.mockResolvedValue(null);
 }
 
+function asShow() {
+  getAuthenticatedUser.mockResolvedValue({ id: "u_show", email: "show@x.com" });
+  getBrandProfileByUserId.mockResolvedValue(null);
+  getShowProfileByUserId.mockResolvedValue({ id: "sp_1" });
+}
+
+function asParty() {
+  tables.deals[0].agent_id = "u_agent";
+  getAuthenticatedUser.mockResolvedValue({ id: "u_agent", email: "agent@x.com" });
+  getBrandProfileByUserId.mockResolvedValue(null);
+  getShowProfileByUserId.mockResolvedValue(null);
+}
+
 beforeEach(() => {
   reset();
   seedDeal();
@@ -328,18 +341,33 @@ describe("make-good approval", () => {
   });
 
   it("403 when the show on the deal tries to approve", async () => {
-    getAuthenticatedUser.mockResolvedValue({ id: "u_show", email: "show@x.com" });
-    getBrandProfileByUserId.mockResolvedValue(null);
-    getShowProfileByUserId.mockResolvedValue({ id: "sp_1" });
+    asShow();
     seedProposal();
 
     const res = await approve(jsonReq("https://www.taylslate.com/approve", { option: "replacement_spot" }) as never, {
       params: decisionParams,
     });
     expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toMatch(/brand on this deal/i);
     expect(writes).toEqual([]);
     expect(tables.make_goods[0].status).toBe("proposed");
     expect(tables.io_line_items).toHaveLength(1);
+  });
+
+  it("403 when a party on the deal tries to approve", async () => {
+    asParty();
+    seedProposal();
+
+    const res = await approve(jsonReq("https://www.taylslate.com/approve", { option: "replacement_spot" }) as never, {
+      params: decisionParams,
+    });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toMatch(/brand on this deal/i);
+    expect(writes).toEqual([]);
+    expect(tables.make_goods[0].status).toBe("proposed");
+    expect(logEvent).not.toHaveBeenCalled();
   });
 
   it("404 and does not write when the make-good belongs to another deal", async () => {
@@ -442,6 +470,37 @@ describe("make-good approval", () => {
     expect(res.status).toBe(403);
     expect(writes).toEqual([]);
     expect(tables.make_goods[0].status).toBe("proposed");
+  });
+
+  it("403 when the show on the deal tries to decline", async () => {
+    asShow();
+    seedProposal();
+
+    const res = await decline(jsonReq("https://www.taylslate.com/decline") as never, {
+      params: decisionParams,
+    });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toMatch(/brand on this deal/i);
+    expect(writes).toEqual([]);
+    expect(tables.make_goods[0].status).toBe("proposed");
+    expect(tables.deals[0].status).toBe("completed");
+  });
+
+  it("403 when a party on the deal tries to decline", async () => {
+    asParty();
+    seedProposal();
+
+    const res = await decline(jsonReq("https://www.taylslate.com/decline") as never, {
+      params: decisionParams,
+    });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toMatch(/brand on this deal/i);
+    expect(writes).toEqual([]);
+    expect(tables.make_goods[0].status).toBe("proposed");
+    expect(tables.deals[0].status).toBe("completed");
+    expect(logEvent).not.toHaveBeenCalled();
   });
 });
 

@@ -31,9 +31,11 @@
 --     from pg_policy
 --    where polrelid = 'public.make_goods'::regclass
 --    order by polname;
---   Expected: no grant to anon. authenticated and service_role
---   have select, insert, update, delete. RLS enabled. Brand can
---   select and update. Show can select. Service role can do all.
+--   Expected: no grant to anon. authenticated has SELECT only
+--   (no insert, update, or delete). service_role has select,
+--   insert, update, and delete. RLS enabled. Brand can select.
+--   Show can select. No authenticated update policy. Service role
+--   can do all. Writes go through service_role routes.
 -- ============================================================
 
 create table if not exists public.make_goods (
@@ -98,10 +100,13 @@ create index if not exists idx_make_goods_deal on public.make_goods(deal_id);
 create index if not exists idx_make_goods_status on public.make_goods(status);
 
 -- Data API grants. No anon. Grants are the table gate; RLS filters rows.
+-- ASSERT: authenticated has no write grant on public.make_goods (SELECT only).
+-- A brand must not INSERT, UPDATE, or DELETE make_goods through the Data API
+-- and skip decide.ts. Approval and decline run as service_role.
 revoke all on public.make_goods from anon;
 revoke all on public.make_goods from authenticated;
 grant select, insert, update, delete on public.make_goods to service_role;
-grant select, insert, update, delete on public.make_goods to authenticated;
+grant select on public.make_goods to authenticated;
 
 alter table public.make_goods enable row level security;
 
@@ -111,7 +116,8 @@ create policy "Service role manages make_goods"
   using (true) with check (true);
 
 -- Brand of the deal: deals.brand_id or the user on deals.brand_profile_id.
--- Update is approval and decline. A show has no update policy.
+-- Read only. The brand update policy is dropped and not recreated so a
+-- re-run removes it. Writes are service_role routes only.
 drop policy if exists "Brand reads make-goods on own deals" on public.make_goods;
 create policy "Brand reads make-goods on own deals"
   on public.make_goods for select to authenticated
@@ -126,26 +132,6 @@ create policy "Brand reads make-goods on own deals"
   );
 
 drop policy if exists "Brand updates make-goods on own deals" on public.make_goods;
-create policy "Brand updates make-goods on own deals"
-  on public.make_goods for update to authenticated
-  using (
-    exists (
-      select 1
-      from public.deals d
-      left join public.brand_profiles bp on bp.id = d.brand_profile_id
-      where d.id = make_goods.deal_id
-        and (d.brand_id = auth.uid() or bp.user_id = auth.uid())
-    )
-  )
-  with check (
-    exists (
-      select 1
-      from public.deals d
-      left join public.brand_profiles bp on bp.id = d.brand_profile_id
-      where d.id = make_goods.deal_id
-        and (d.brand_id = auth.uid() or bp.user_id = auth.uid())
-    )
-  );
 
 -- Show reads through deals.show_profile_id. Not show_profiles.podscan_id.
 drop policy if exists "Show reads make-goods on own deals" on public.make_goods;
