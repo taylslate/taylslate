@@ -219,6 +219,12 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
           <p className="text-sm text-[var(--ts-ink-muted-on-paper)] mt-1">
             ${campaign.budget_total.toLocaleString()} budget · {allShowIds.length} shows recommended
           </p>
+          <Link
+            href={`/campaigns/${campaign.id}/learning`}
+            className="mt-2 inline-block text-sm text-[var(--ts-ink-muted-on-paper)] underline hover:text-[var(--ts-ink-on-paper)]"
+          >
+            What we learned
+          </Link>
         </div>
         <div className="flex items-center gap-3">
           <button className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-muted-on-paper)] transition-colors hover:bg-[var(--ts-ink-on-paper)]/5">Export CSV</button>

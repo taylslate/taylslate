@@ -852,7 +852,11 @@ export type DomainEventType =
   // Managed brand handed to its owner. The auth user id does not change;
   // deals, campaigns, and IOs stay on that id. Payload: actor_email,
   // brand_user_id, old_email, new_email, timestamp.
-  | "account.handoff";
+  | "account.handoff"
+  // Learning review — a brand or rep note, or a brand-reported count.
+  | "learning.override_saved"
+  | "learning.conversion_reported"
+  | "learning.conversion_cleared";
 
 export type DomainEntityType =
   | "deal"

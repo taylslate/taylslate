@@ -429,3 +429,67 @@ describe("getTieredUniverse — Layer 5 effective placement + override-aware rea
     expect(atOne.test[0].threeSpotCents).toBe(700_000); // one spot, $7,000
   });
 });
+
+describe("getTieredUniverse — post-air lift", () => {
+  it("raises a converting show and keeps the other show on the list", async () => {
+    const rows = [
+      makeRow({
+        show_id: "plain",
+        composite_score: 80,
+        tier: "test",
+        show: makeShow({ id: "plain", name: "Plain" }),
+      }),
+      makeRow({
+        show_id: "lifted",
+        composite_score: 74,
+        tier: "test",
+        show: makeShow({ id: "lifted", name: "Lifted" }),
+      }),
+    ];
+    const deps = makeDeps(rows);
+    deps.loadPostAirByShow = async () => new Map([["lifted", 3]]);
+    const universe = await getTieredUniverse(PATTERN, deps);
+
+    expect(universe.test.map((show) => show.showId)).toEqual(["lifted", "plain"]);
+    expect(universe.test[0].composite).toBe(74);
+    expect(universe.test[0].postAirAdjusted).toBe(82);
+    expect(universe.test[0].postAirReasoning).toBe(
+      "Post-air: 3 reported conversions. Score lifted +8."
+    );
+    expect(universe.test[1].postAirReasoning).toBeNull();
+    expect(universe.test[1].composite).toBe(80);
+  });
+
+  it("does not drop a show or invent a score when the count is zero or the composite is missing", async () => {
+    const rows = [
+      makeRow({
+        show_id: "zero",
+        composite_score: 55,
+        tier: "test",
+        show: makeShow({ id: "zero" }),
+      }),
+      makeRow({
+        show_id: "blank",
+        composite_score: null,
+        tier: "test",
+        show: makeShow({ id: "blank" }),
+      }),
+    ];
+    const deps = makeDeps(rows);
+    deps.loadPostAirByShow = async () => new Map<string, number>([
+      ["zero", 0],
+      ["blank", 4],
+    ]);
+    const universe = await getTieredUniverse(PATTERN, deps);
+    const ids = universe.test.map((show) => show.showId);
+    expect(ids).toEqual(expect.arrayContaining(["zero", "blank"]));
+    expect(ids).toHaveLength(2);
+    const zero = universe.test.find((show) => show.showId === "zero");
+    const blank = universe.test.find((show) => show.showId === "blank");
+    expect(zero?.postAirDelta).toBe(0);
+    expect(zero?.postAirReasoning).toBeNull();
+    expect(blank?.postAirAdjusted).toBeNull();
+    expect(blank?.postAirReasoning).toBeNull();
+    expect(blank?.composite).toBeNull();
+  });
+});
