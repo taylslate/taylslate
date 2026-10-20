@@ -5,7 +5,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { persistIoForDeal } from "@/lib/io/persist-io";
 import type { IoLineItemDraft } from "@/lib/pdf/io-generator";
 import type { Deal } from "@/lib/data/types";
-import { parseShowSurfaceId } from "@/lib/shows/surfaces";
+import { fetchSurfaceAttachment } from "@/lib/data/show-surfaces";
+import { parseShowSurfaceId, surfacesEligibleForDeal } from "@/lib/shows/surfaces";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -132,6 +133,38 @@ function headerFields(
   return { fields };
 }
 
+function requestedSurfaceIds(items: unknown): string[] {
+  if (!Array.isArray(items)) return [];
+  const ids: string[] = [];
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object") continue;
+    const id = parseShowSurfaceId((raw as { show_surface_id?: unknown }).show_surface_id);
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+/** 400 before any insert when a surface is missing, unpublished, or on another show. */
+async function rejectInvalidSurfaces(
+  dealShowId: string | null | undefined,
+  items: unknown
+): Promise<NextResponse | null> {
+  const ids = requestedSurfaceIds(items);
+  if (ids.length === 0) return null;
+  const invalid = NextResponse.json({ error: "invalid_surface" }, { status: 400 });
+  if (!dealShowId) return invalid;
+  const fetched = await fetchSurfaceAttachment(dealShowId, ids);
+  if (!fetched.ok) return invalid;
+  const verdict = surfacesEligibleForDeal({
+    dealShowId,
+    shows: fetched.shows,
+    surfaces: fetched.surfaces,
+    requestedIds: ids,
+  });
+  if (!verdict.ok) return invalid;
+  return null;
+}
+
 async function loadDealForParty(dealId: string, userId: string) {
   const deal = await getDealById(dealId);
   if (!deal) {
@@ -228,6 +261,9 @@ export async function POST(
     if (rawItems.length === 0) {
       return NextResponse.json({ error: "At least one line item is required" }, { status: 400 });
     }
+
+    const surfaceError = await rejectInvalidSurfaces(loaded.deal.show_id, rawItems);
+    if (surfaceError) return surfaceError;
 
     const drafts: IoLineItemDraft[] = [];
     for (let i = 0; i < rawItems.length; i++) {
@@ -355,8 +391,11 @@ export async function PATCH(
       return NextResponse.json({ error: header.error }, { status: 400 });
     }
 
-    const supabase = await createClient();
     const lineItemUpdates = Array.isArray(body.line_items) ? body.line_items : null;
+    const surfaceError = await rejectInvalidSurfaces(loaded.deal.show_id, lineItemUpdates);
+    if (surfaceError) return surfaceError;
+
+    const supabase = await createClient();
     const syncLineItems = body.sync_line_items === true;
     const ioUpdates = header.fields;
 

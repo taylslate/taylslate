@@ -19,8 +19,13 @@ import type {
 import { adjustedCpm, spotPrice } from "@/lib/utils/pricing";
 import { addDaysDateOnly } from "@/lib/format/date-only";
 import { resolveDealFlight } from "@/lib/deals/campaign-flight";
-import { listPublishedSurfacesForShows } from "@/lib/data/show-surfaces";
-import { buildSurfaceAddonLines, type SellableSurface } from "@/lib/shows/surfaces";
+import { fetchSurfaceAttachment } from "@/lib/data/show-surfaces";
+import {
+  buildSurfaceAddonLines,
+  sanitizeAddonSurfaceIds,
+  surfacesEligibleForDeal,
+  type SellableSurface,
+} from "@/lib/shows/surfaces";
 
 const SPACING_DAYS: Record<PlanSpacing, number> = {
   weekly: 7,
@@ -128,23 +133,55 @@ export async function POST(request: NextRequest) {
 
   const spacingDays = SPACING_DAYS[plan.spacing] ?? 7;
 
-  const addonShowIds = items
-    .filter(({ lineItem }) => (lineItem.addon_surface_ids?.length ?? 0) > 0)
-    .map(({ scoredShow }) => scoredShow.podcastId);
-  const surfacesByShow =
-    addonShowIds.length > 0 ? await listPublishedSurfacesForShows(addonShowIds) : {};
-
   const created: { deal_id: string; io_id: string; show_name: string }[] = [];
   const errors: string[] = [];
 
-  for (const { scoredShow, lineItem } of items) {
-    try {
-      const show = await persistScoredShow(scoredShow);
-      if (!show) {
-        errors.push(`Could not persist show "${scoredShow.name}"`);
-        continue;
-      }
+  // Resolve every show and its add-ons before creating a deal. A surface that
+  // is missing, unpublished, or on another show aborts with nothing written.
+  const ready: {
+    scoredShow: ScoredShowRecord;
+    lineItem: MediaPlanLineItem;
+    show: Show;
+    surfaces: SellableSurface[];
+  }[] = [];
 
+  for (const { scoredShow, lineItem } of items) {
+    let show: Show | null = null;
+    try {
+      show = await persistScoredShow(scoredShow);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      errors.push(`"${scoredShow.name}": ${msg}`);
+      console.error(`[plan/generate-ios] Failed on "${scoredShow.name}":`, msg);
+      continue;
+    }
+    if (!show) {
+      errors.push(`Could not persist show "${scoredShow.name}"`);
+      continue;
+    }
+
+    const selected = sanitizeAddonSurfaceIds(lineItem.addon_surface_ids);
+    let surfaces: SellableSurface[] = [];
+    if (selected.length > 0) {
+      const fetched = await fetchSurfaceAttachment(show.id, selected);
+      const verdict = fetched.ok
+        ? surfacesEligibleForDeal({
+            dealShowId: show.id,
+            shows: fetched.shows,
+            surfaces: fetched.surfaces,
+            requestedIds: selected,
+          })
+        : { ok: false as const, error: "invalid_surface" as const };
+      if (!verdict.ok) {
+        return NextResponse.json({ error: "invalid_surface" }, { status: 400 });
+      }
+      surfaces = verdict.surfaces;
+    }
+    ready.push({ scoredShow, lineItem, show, surfaces });
+  }
+
+  for (const { scoredShow, lineItem, show, surfaces } of ready) {
+    try {
       const placement: Placement = lineItem.placement;
       const numEpisodes = Math.max(1, Math.round(lineItem.num_episodes));
       const baseCpm = scoredShow.estimatedCpm;
@@ -181,17 +218,6 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      let surfaces: SellableSurface[] = surfacesByShow[scoredShow.podcastId] ?? [];
-      if (
-        (lineItem.addon_surface_ids?.length ?? 0) > 0 &&
-        show.id !== scoredShow.podcastId
-      ) {
-        const extra = await listPublishedSurfacesForShows([show.id]);
-        const seen = new Set(surfaces.map((row) => row.id));
-        for (const row of extra[show.id] ?? []) {
-          if (!seen.has(row.id)) surfaces = [...surfaces, row];
-        }
-      }
       const addons = buildSurfaceAddonLines({
         surfaces,
         selectedIds: lineItem.addon_surface_ids,

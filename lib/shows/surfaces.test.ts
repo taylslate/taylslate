@@ -6,11 +6,13 @@ import {
   formatSurfaceSummary,
   groupPublishedSurfaces,
   ioLineSurfaceCaption,
+  isSimulcastTwin,
   parseShowSurfaceId,
   sanitizeAddonSurfaceIds,
   sanitizeShowSurfaceDrafts,
   surfaceAddonDecision,
   surfaceSpotFormat,
+  surfacesEligibleForDeal,
   type SellableSurface,
 } from "./surfaces";
 
@@ -211,6 +213,71 @@ describe("IO add-on lines", () => {
       [SURFACE_ID, "22222222-2222-4222-8222-222222222222"]
     );
     expect(spend).toBe(500);
+  });
+});
+
+describe("surfacesEligibleForDeal", () => {
+  const dealShow = { id: "show-1", name: "Oddvice", platform: "podcast" };
+  const row = {
+    id: SURFACE_ID,
+    show_id: "show-1",
+    published: true,
+  };
+
+  it("accepts a published surface on the deal show", () => {
+    const verdict = surfacesEligibleForDeal({
+      dealShowId: "show-1",
+      shows: [dealShow],
+      surfaces: [row],
+      requestedIds: [SURFACE_ID],
+    });
+    expect(verdict.ok).toBe(true);
+    if (verdict.ok) expect(verdict.surfaces).toEqual([row]);
+  });
+
+  it("accepts the same show's YouTube simulcast twin", () => {
+    const twin = { id: "show-yt", name: "Oddvice!", platform: "youtube" };
+    const verdict = surfacesEligibleForDeal({
+      dealShowId: "show-1",
+      shows: [dealShow, twin],
+      surfaces: [{ ...row, show_id: "show-yt" }],
+      requestedIds: [SURFACE_ID],
+    });
+    expect(verdict).toEqual({
+      ok: true,
+      surfaces: [{ ...row, show_id: "show-yt" }],
+    });
+    expect(isSimulcastTwin(dealShow, twin)).toBe(true);
+  });
+
+  it("rejects a surface on a different show", () => {
+    const verdict = surfacesEligibleForDeal({
+      dealShowId: "show-1",
+      shows: [dealShow, { id: "show-2", name: "Other Show", platform: "podcast" }],
+      surfaces: [{ ...row, show_id: "show-2" }],
+      requestedIds: [SURFACE_ID],
+    });
+    expect(verdict).toEqual({ ok: false, error: "invalid_surface" });
+  });
+
+  it("rejects an unpublished surface on the deal show", () => {
+    const verdict = surfacesEligibleForDeal({
+      dealShowId: "show-1",
+      shows: [dealShow],
+      surfaces: [{ ...row, published: false }],
+      requestedIds: [SURFACE_ID],
+    });
+    expect(verdict).toEqual({ ok: false, error: "invalid_surface" });
+  });
+
+  it("rejects when any requested id is missing", () => {
+    const verdict = surfacesEligibleForDeal({
+      dealShowId: "show-1",
+      shows: [dealShow],
+      surfaces: [row],
+      requestedIds: [SURFACE_ID, "33333333-3333-4333-8333-333333333333"],
+    });
+    expect(verdict).toEqual({ ok: false, error: "invalid_surface" });
   });
 });
 

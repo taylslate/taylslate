@@ -268,6 +268,76 @@ export function surfaceSpotFormat(
   return parts.join(" · ");
 }
 
+/**
+ * Same normalization discovery uses when it folds a podcast and a YouTube
+ * record of one show. Kept here so an IO can accept the twin's add-on
+ * without importing the discovery merge.
+ */
+export function normalizeSimulcastName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** Podcast + YouTube records of the same show. Same platform is not a twin. */
+export function isSimulcastTwin(
+  dealShow: { name: string; platform: string },
+  other: { name: string; platform: string }
+): boolean {
+  if (dealShow.platform === other.platform) return false;
+  const platforms = new Set([dealShow.platform, other.platform]);
+  if (!platforms.has("podcast") || !platforms.has("youtube")) return false;
+  const left = normalizeSimulcastName(dealShow.name);
+  const right = normalizeSimulcastName(other.name);
+  return left.length > 0 && left === right;
+}
+
+export interface SurfaceAttachmentRow {
+  id: string;
+  show_id: string;
+  published: boolean;
+}
+
+/**
+ * Every requested id must be a published surface on the deal's show, or on
+ * that show's simulcast twin. One miss rejects the whole set.
+ */
+export function surfacesEligibleForDeal<T extends SurfaceAttachmentRow>(input: {
+  dealShowId: string;
+  shows: Array<{ id: string; name: string; platform: string }>;
+  surfaces: T[];
+  requestedIds: string[];
+}): { ok: true; surfaces: T[] } | { ok: false; error: "invalid_surface" } {
+  const requested = [...new Set(input.requestedIds.map((id) => id.toLowerCase()))];
+  if (requested.length === 0) return { ok: true, surfaces: [] };
+
+  const byId = new Map(input.surfaces.map((surface) => [surface.id.toLowerCase(), surface]));
+  const showsById = new Map(input.shows.map((show) => [show.id, show]));
+  const dealShow = showsById.get(input.dealShowId);
+  const accepted: T[] = [];
+
+  for (const id of requested) {
+    const surface = byId.get(id);
+    if (!surface || surface.published !== true) {
+      return { ok: false, error: "invalid_surface" };
+    }
+    if (surface.show_id === input.dealShowId) {
+      accepted.push(surface);
+      continue;
+    }
+    const other = showsById.get(surface.show_id);
+    if (dealShow && other && isSimulcastTwin(dealShow, other)) {
+      accepted.push(surface);
+      continue;
+    }
+    return { ok: false, error: "invalid_surface" };
+  }
+
+  return { ok: true, surfaces: accepted };
+}
+
 /** Caption for a line that references a surface. Episode lines return null. */
 export function ioLineSurfaceCaption(line: {
   show_surface_id?: string | null;

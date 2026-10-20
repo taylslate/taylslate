@@ -13,6 +13,12 @@ import {
   type ShowSurfaceDraft,
 } from "@/lib/shows/surfaces";
 
+export interface SurfaceShowIdentity {
+  id: string;
+  name: string;
+  platform: string;
+}
+
 interface SurfaceRow {
   id: string;
   show_id: string;
@@ -207,6 +213,51 @@ async function resolveOwnerShowId(
     is_discoverable: false,
   });
   return created?.id ?? null;
+}
+
+/**
+ * Rows for an IO attachment check. Unpublished rows are included on purpose:
+ * the caller must reject them instead of treating "not in a published-only
+ * query" as a skip. A lookup failure is fail-closed (`ok: false`).
+ */
+export async function fetchSurfaceAttachment(
+  dealShowId: string,
+  surfaceIds: string[]
+): Promise<
+  | { ok: true; surfaces: SellableSurface[]; shows: SurfaceShowIdentity[] }
+  | { ok: false }
+> {
+  const ids = [...new Set(surfaceIds.filter((id) => id.length > 0))];
+  if (!dealShowId || ids.length === 0) return { ok: false };
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("show_surfaces")
+      .select(
+        "id, show_id, type, audience_size, format, min_buy, creative_constraints, lead_time_days, posting_owner, price, notes, published"
+      )
+      .in("id", ids);
+    if (error || !data) return { ok: false };
+
+    const surfaces = (data as SurfaceRow[]).map(toSellable);
+    const showIds = [...new Set([dealShowId, ...surfaces.map((surface) => surface.show_id)])];
+    const { data: showRows, error: showError } = await supabaseAdmin
+      .from("shows")
+      .select("id, name, platform")
+      .in("id", showIds);
+    if (showError || !showRows) return { ok: false };
+
+    const shows = (showRows as { id: string; name: string | null; platform: string | null }[]).map(
+      (row) => ({
+        id: row.id,
+        name: row.name ?? "",
+        platform: row.platform ?? "",
+      })
+    );
+    return { ok: true, surfaces, shows };
+  } catch (err) {
+    console.error("[fetchSurfaceAttachment]", err);
+    return { ok: false };
+  }
 }
 
 /** Replace the creator's whole surface list. Empty drafts clear it. */

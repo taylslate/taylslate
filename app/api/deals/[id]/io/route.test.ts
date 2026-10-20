@@ -8,6 +8,7 @@ const {
   persistIoForDeal,
   createClient,
   supabaseAdmin,
+  fetchSurfaceAttachment,
 } = vi.hoisted(() => {
   const chain = () => {
     const builder: Record<string, unknown> = {};
@@ -30,6 +31,7 @@ const {
     persistIoForDeal: vi.fn(),
     createClient: vi.fn(async () => ({ from: () => chain() })),
     supabaseAdmin: { from: vi.fn(() => chain()) },
+    fetchSurfaceAttachment: vi.fn(),
   };
 });
 
@@ -46,8 +48,45 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient,
 }));
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin }));
+vi.mock("@/lib/data/show-surfaces", () => ({
+  fetchSurfaceAttachment: (...a: unknown[]) => fetchSurfaceAttachment(...a),
+}));
 
 import { PATCH, POST } from "./route";
+
+const SURFACE_ID = "22222222-2222-4222-8222-222222222222";
+
+function attachment(over: { showId?: string; published?: boolean; platform?: string; name?: string } = {}) {
+  const showId = over.showId ?? "show-1";
+  const shows = [{ id: "show-1", name: "Oddvice", platform: "podcast" }];
+  if (showId !== "show-1") {
+    shows.push({
+      id: showId,
+      name: over.name ?? "Other Show",
+      platform: over.platform ?? "podcast",
+    });
+  }
+  return {
+    ok: true as const,
+    surfaces: [
+      {
+        id: SURFACE_ID,
+        show_id: showId,
+        type: "newsletter" as const,
+        audience_size: 1000,
+        format: null,
+        min_buy: null,
+        creative_constraints: null,
+        lead_time_days: null,
+        posting_owner: "creator" as const,
+        price: 500,
+        notes: null,
+        published: over.published ?? true,
+      },
+    ],
+    shows,
+  };
+}
 
 const USER_ID = "user-brand";
 const params = { params: Promise.resolve({ id: "deal-1" }) };
@@ -278,8 +317,9 @@ describe("negotiated IO fields", () => {
   });
 
   it("PATCH stores a surface id on the line and drops one that is not a uuid", async () => {
+    fetchSurfaceAttachment.mockResolvedValue(attachment());
     const updates = captureUpdates();
-    const surfaceId = "22222222-2222-4222-8222-222222222222";
+    const surfaceId = SURFACE_ID;
     const res = await PATCH(
       jsonReq("PATCH", {
         line_items: [
@@ -313,6 +353,114 @@ describe("negotiated IO fields", () => {
     );
     expect(bad.status).toBe(200);
     expect(dropped[0]).toEqual(expect.objectContaining({ show_surface_id: null }));
+    expect(fetchSurfaceAttachment).toHaveBeenCalledTimes(1);
+  });
+
+  it("PATCH rejects a surface on another show and writes nothing", async () => {
+    fetchSurfaceAttachment.mockResolvedValue(attachment({ showId: "show-2" }));
+    const res = await PATCH(
+      jsonReq("PATCH", {
+        payment_terms: "Should not save",
+        line_items: [{ ...lineItem, show_surface_id: SURFACE_ID }],
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_surface" });
+    expect(createClient).not.toHaveBeenCalled();
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+  });
+
+  it("PATCH rejects an unpublished surface and writes nothing", async () => {
+    fetchSurfaceAttachment.mockResolvedValue(attachment({ published: false }));
+    const res = await PATCH(
+      jsonReq("PATCH", {
+        payment_terms: "Should not save",
+        line_items: [{ ...lineItem, show_surface_id: SURFACE_ID }],
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_surface" });
+    expect(createClient).not.toHaveBeenCalled();
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+  });
+
+  it("PATCH accepts a published surface on the YouTube simulcast twin", async () => {
+    fetchSurfaceAttachment.mockResolvedValue(
+      attachment({ showId: "show-yt", name: "Oddvice", platform: "youtube" })
+    );
+    const updates = captureUpdates();
+    const res = await PATCH(
+      jsonReq("PATCH", {
+        line_items: [{ ...lineItem, show_surface_id: SURFACE_ID }],
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expect(updates[0]).toEqual(expect.objectContaining({ show_surface_id: SURFACE_ID }));
+  });
+
+  it("POST stores a published surface on the deal show", async () => {
+    fetchSurfaceAttachment.mockResolvedValue(attachment());
+    getIOByDealId.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: "io-new",
+      io_number: "IO-2026-0008",
+      line_items: [],
+    });
+    const res = await POST(
+      jsonReq("POST", {
+        advertiser_name: "SaunaBox",
+        publisher_name: "Oddvice",
+        line_items: [
+          {
+            ...lineItem,
+            show_surface_id: SURFACE_ID,
+            price_type: "flat_rate",
+            gross_rate: 500,
+            net_due: 500,
+          },
+        ],
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(201);
+    const drafts = persistIoForDeal.mock.calls[0][0].rendered.lineItems;
+    expect(drafts[0].show_surface_id).toBe(SURFACE_ID);
+  });
+
+  it("POST rejects a surface on another show and does not persist", async () => {
+    fetchSurfaceAttachment.mockResolvedValue(attachment({ showId: "show-2" }));
+    getIOByDealId.mockResolvedValueOnce(null);
+    const res = await POST(
+      jsonReq("POST", {
+        advertiser_name: "SaunaBox",
+        publisher_name: "Oddvice",
+        line_items: [{ ...lineItem, show_surface_id: SURFACE_ID }],
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_surface" });
+    expect(persistIoForDeal).not.toHaveBeenCalled();
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+  });
+
+  it("POST rejects an unpublished surface and does not persist", async () => {
+    fetchSurfaceAttachment.mockResolvedValue(attachment({ published: false }));
+    getIOByDealId.mockResolvedValueOnce(null);
+    const res = await POST(
+      jsonReq("POST", {
+        advertiser_name: "SaunaBox",
+        publisher_name: "Oddvice",
+        line_items: [{ ...lineItem, show_surface_id: SURFACE_ID }],
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_surface" });
+    expect(persistIoForDeal).not.toHaveBeenCalled();
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
   });
 
   it("PATCH stores a blank spot format as null", async () => {
