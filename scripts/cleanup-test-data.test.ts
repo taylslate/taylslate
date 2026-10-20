@@ -304,7 +304,7 @@ describe("planCleanup", () => {
     expect(plan.excluded).toEqual([]);
   });
 
-  it("excludes the proof deal and any other deal owned by the proof account", () => {
+  it("deletes an unsent io_sent deal on the proof account and keeps the proof deal", () => {
     const snapshot = emptySnapshot();
     snapshot.deals.push(
       deal({
@@ -312,6 +312,20 @@ describe("planCleanup", () => {
         brand_id: PROOF.id,
         status: "io_sent",
         created_at: "2026-01-15T00:00:00.000Z",
+      }),
+      deal({
+        id: "stale-proof",
+        brand_id: PROOF.id,
+        status: "io_sent",
+        created_at: "2026-01-16T00:00:00.000Z",
+      }),
+      deal({
+        id: "enveloped-proof",
+        brand_id: PROOF.id,
+        status: "brand_signed",
+        docusign_envelope_id: "env-live",
+        show_id: "seed-show",
+        created_at: "2026-01-17T00:00:00.000Z",
       })
     );
     snapshot.shows.push({
@@ -321,18 +335,63 @@ describe("planCleanup", () => {
       data_sources: ["seed"],
       created_at: "2026-01-10T00:00:00.000Z",
     });
+    snapshot.insertionOrders.push(
+      {
+        id: "io-proof",
+        deal_id: PROOF_DEAL_ID,
+        sent_at: null,
+        status: "draft",
+        created_at: "2026-01-15T01:00:00.000Z",
+      },
+      {
+        id: "io-stale",
+        deal_id: "stale-proof",
+        sent_at: null,
+        status: "draft",
+        created_at: "2026-01-16T01:00:00.000Z",
+      }
+    );
+    snapshot.lineItems.push(
+      {
+        id: "line-proof",
+        io_id: "io-proof",
+        created_at: "2026-01-15T02:00:00.000Z",
+      },
+      {
+        id: "line-stale",
+        io_id: "io-stale",
+        created_at: "2026-01-16T02:00:00.000Z",
+      }
+    );
+    snapshot.payments.push(
+      payment({
+        id: "pay-proof-charge",
+        deal_id: "charged-proof",
+        stripe_payment_intent_id: "pi_proof",
+      })
+    );
     snapshot.deals.push(
       deal({
-        id: "other-proof",
+        id: "charged-proof",
         brand_id: PROOF.id,
-        show_id: "seed-show",
-        created_at: "2026-01-16T00:00:00.000Z",
+        status: "io_sent",
+        created_at: "2026-01-18T00:00:00.000Z",
       })
     );
 
     const plan = planCleanup(snapshot);
-    expect(plan.delete.map((row) => row.id)).not.toContain(PROOF_DEAL_ID);
-    expect(plan.delete.map((row) => row.id)).not.toContain("other-proof");
+    expect(idsOf(plan, "deal")).toEqual(["stale-proof"]);
+    expect(idsOf(plan, "insertion_order")).toEqual(["io-stale"]);
+    expect(idsOf(plan, "io_line_item")).toEqual(["line-stale"]);
+    for (const id of [PROOF_DEAL_ID, "io-proof", "line-proof", "enveloped-proof", "charged-proof"]) {
+      expect(plan.delete.map((row) => row.id)).not.toContain(id);
+    }
+    expect(plan.delete.find((row) => row.id === "stale-proof")?.reasons).toEqual(
+      expect.arrayContaining(["stale_io_sent", "proof_account_deal"])
+    );
+    expect(plan.delete.find((row) => row.id === "stale-proof")?.owner).toBe(
+      PROOF_ACCOUNT_EMAIL
+    );
     expect(plan.excluded).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -341,15 +400,18 @@ describe("planCleanup", () => {
           matched: expect.arrayContaining(["stale_io_sent"]),
         }),
         expect.objectContaining({
-          id: "other-proof",
-          excludedBecause: "proof_account",
-          matched: expect.arrayContaining(["seeded_deal"]),
+          id: "enveloped-proof",
+          excludedBecause: "docusign_envelope",
+        }),
+        expect.objectContaining({
+          id: "charged-proof",
+          excludedBecause: "stripe_charge",
         }),
       ])
     );
   });
 
-  it("excludes a seeded deal whose brand_id is the proof user even if that profile row is missing", () => {
+  it("deletes a no-envelope proof-account deal when the profile row is missing", () => {
     const snapshot = emptySnapshot();
     snapshot.profiles = snapshot.profiles.filter((row) => row.id !== PROOF.id);
     snapshot.deals.push(
@@ -357,6 +419,7 @@ describe("planCleanup", () => {
         id: "missing-proof",
         brand_id: PROOF_ACCOUNT_USER_ID,
         show_id: "seed-show",
+        status: "io_sent",
       })
     );
     snapshot.shows.push({
@@ -368,15 +431,8 @@ describe("planCleanup", () => {
     });
 
     const plan = planCleanup(snapshot);
-    expect(idsOf(plan, "deal")).not.toContain("missing-proof");
-    expect(plan.excluded).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "missing-proof",
-          excludedBecause: "proof_account",
-        }),
-      ])
-    );
+    expect(idsOf(plan, "deal")).toEqual(["missing-proof"]);
+    expect(plan.delete.map((row) => row.id)).not.toContain(PROOF_DEAL_ID);
   });
 
   it("deletes a deal recorded on deal.seeded when the owner profile is gone", () => {
@@ -853,6 +909,8 @@ describe("migration 043", () => {
     expect(sql).toContain(PROOF_DEAL_ID);
     expect(sql).toContain(PROOF_ACCOUNT_EMAIL);
     expect(sql).toContain(PROOF_ACCOUNT_USER_ID);
+    expect(sql).toContain("refusing a child of the proof deal");
+    expect(sql).toContain("refusing proof-account deal with a docusign envelope");
     expect(sql).toContain("security invoker");
     expect(sql).not.toMatch(/delete from public\.profiles/i);
     expect(sql).not.toMatch(/delete from public\.payouts/i);

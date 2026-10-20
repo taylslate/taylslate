@@ -6,11 +6,13 @@
 -- given, children before parents, and writes one domain_events row per
 -- non-empty batch. A raise aborts the whole transaction.
 --
--- It does not delete auth.users, profiles, or payouts. It refuses the
--- managed proof account (chris+brand1@taylslate.com /
--- 052f916b-e4a1-4f3e-8816-3cd53dbf7ccc), deal
--- ccb7db74-08bb-41d7-aa3a-dbc37daa9b55, any non-test owner, any Stripe
--- charge, any payout, and any sent or paid invoice.
+-- It does not delete auth.users, profiles, or payouts. It refuses deal
+-- ccb7db74-08bb-41d7-aa3a-dbc37daa9b55 and that deal's children. Other
+-- deals owned by chris+brand1@taylslate.com
+-- (052f916b-e4a1-4f3e-8816-3cd53dbf7ccc) are allowed when they have no
+-- DocuSign envelope. A Stripe charge, a payout, a sent or paid invoice,
+-- or a non-test owner still refuses the delete. Campaigns and outreaches
+-- owned by that account stay refused so the account row is untouched.
 --
 -- SECURITY INVOKER. Execute is granted to service_role only.
 -- Do not apply from this repo's tooling — paste into the SQL editor.
@@ -170,7 +172,58 @@ begin
     raise exception 'cleanup_test_data: refusing proof deal %', proof_deal;
   end if;
 
+  -- The proof deal's children stay even when other deals on the same account go.
+  if exists (
+    select 1 from public.insertion_orders io
+    where io.deal_id = proof_deal and io.id = any(p_io_ids)
+  ) or exists (
+    select 1
+    from public.io_line_items li
+    join public.insertion_orders io on io.id = li.io_id
+    where io.deal_id = proof_deal and li.id = any(p_line_item_ids)
+  ) or exists (
+    select 1
+    from public.invoices i
+    join public.insertion_orders io on io.id = i.io_id
+    where io.deal_id = proof_deal and i.id = any(p_invoice_ids)
+  ) or exists (
+    select 1
+    from public.invoice_line_items ili
+    join public.io_line_items li on li.id = ili.io_line_item_id
+    join public.insertion_orders io on io.id = li.io_id
+    where io.deal_id = proof_deal and ili.id = any(p_invoice_line_item_ids)
+  ) or exists (
+    select 1
+    from public.payments p
+    where p.id = any(p_payment_ids)
+      and (
+        p.deal_id = proof_deal
+        or p.io_line_item_id in (
+          select li.id
+          from public.io_line_items li
+          join public.insertion_orders io on io.id = li.io_id
+          where io.deal_id = proof_deal
+        )
+        or p.invoice_id in (
+          select i.id
+          from public.invoices i
+          join public.insertion_orders io on io.id = i.io_id
+          where io.deal_id = proof_deal
+        )
+      )
+  ) or exists (
+    select 1
+    from public.airchecks a
+    join public.io_line_items li on li.id = a.io_line_item_id
+    join public.insertion_orders io on io.id = li.io_id
+    where io.deal_id = proof_deal and a.id = any(p_aircheck_ids)
+  ) then
+    raise exception 'cleanup_test_data: refusing a child of the proof deal';
+  end if;
+
   -- Brand-side owners only. The show on a test deal is not an owner.
+  -- The proof account's email matches the house-test pattern, so it is not
+  -- a non-test owner. Deals on that account are allowed here.
   if exists (
     select 1
     from public.deals d
@@ -183,6 +236,30 @@ begin
     left join public.profiles bp_user on bp_user.id = bp.user_id
     where d.id = any(p_deal_ids)
       and (
+        (brand.id is distinct from proof_user and lower(btrim(brand.email)) is distinct from proof_email and brand.email is not null and brand.email !~* test_email)
+        or (agent.id is distinct from proof_user and lower(btrim(agent.email)) is distinct from proof_email and agent.email is not null and agent.email !~* test_email)
+        or (agency.id is distinct from proof_user and lower(btrim(agency.email)) is distinct from proof_email and agency.email is not null and agency.email !~* test_email)
+        or (camp_owner.id is distinct from proof_user and lower(btrim(camp_owner.email)) is distinct from proof_email and camp_owner.email is not null and camp_owner.email !~* test_email)
+        or (bp_user.id is distinct from proof_user and lower(btrim(bp_user.email)) is distinct from proof_email and bp_user.email is not null and bp_user.email !~* test_email)
+      )
+  ) then
+    raise exception 'cleanup_test_data: refusing deal owned by a non-test profile';
+  end if;
+
+  -- Other proof-account deals are eligible only with no DocuSign envelope.
+  if exists (
+    select 1
+    from public.deals d
+    left join public.campaigns c on c.id = d.campaign_id
+    left join public.profiles brand on brand.id = d.brand_id
+    left join public.profiles agent on agent.id = d.agent_id
+    left join public.profiles agency on agency.id = d.agency_id
+    left join public.profiles camp_owner on camp_owner.id = c.user_id
+    left join public.brand_profiles bp on bp.id = d.brand_profile_id
+    left join public.profiles bp_user on bp_user.id = bp.user_id
+    where d.id = any(p_deal_ids)
+      and nullif(btrim(d.docusign_envelope_id), '') is not null
+      and (
         d.brand_id = proof_user
         or d.agent_id = proof_user
         or d.agency_id = proof_user
@@ -193,14 +270,9 @@ begin
         or lower(btrim(agency.email)) = proof_email
         or lower(btrim(camp_owner.email)) = proof_email
         or lower(btrim(bp_user.email)) = proof_email
-        or (brand.email is not null and brand.email !~* test_email)
-        or (agent.email is not null and agent.email !~* test_email)
-        or (agency.email is not null and agency.email !~* test_email)
-        or (camp_owner.email is not null and camp_owner.email !~* test_email)
-        or (bp_user.email is not null and bp_user.email !~* test_email)
       )
   ) then
-    raise exception 'cleanup_test_data: refusing deal owned by a non-test or proof profile';
+    raise exception 'cleanup_test_data: refusing proof-account deal with a docusign envelope';
   end if;
 
   if exists (

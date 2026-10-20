@@ -15,14 +15,16 @@
 // supabase/migrations/043_cleanup_test_data.sql before the first --execute.
 //
 // Never deletes auth.users or profiles. Never calls Stripe, Resend, or
-// DocuSign. A payout row, a Stripe charge, a sent/paid invoice, a non-test
-// owner, chris+brand1@taylslate.com, and deal
-// ccb7db74-08bb-41d7-aa3a-dbc37daa9b55 stay.
+// DocuSign. A payout row, a Stripe charge, a sent or paid invoice, and a
+// non-test owner stay. The profile for chris+brand1@taylslate.com stays.
+// Deal ccb7db74-08bb-41d7-aa3a-dbc37daa9b55 and its children stay. Other deals
+// on that account are included when they have no DocuSign envelope, no Stripe
+// charge, no payout, and no sent or paid invoice.
 //
-// Test profiles are chris+…@taylslate.com except that proof account. Shows are
-// removed only when the name starts with [SEED] or the row was materialized
-// for an outreach already in the plan. Podscan catalog rows tagged
-// data_sources seed are left in place.
+// Test profiles are other chris+…@taylslate.com aliases. Shows are removed
+// only when the name starts with [SEED] or the row was materialized for an
+// outreach already in the plan. Podscan catalog rows tagged data_sources
+// seed are left in place.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
@@ -507,16 +509,6 @@ export function planCleanup(snapshot: CleanupSnapshot): CleanupPlan {
   for (const deal of snapshot.deals) {
     const ctx = dealContext(deal);
     const reasons: string[] = [];
-    if (isSeededDeal(deal, ctx, seedDealIds, seedOutreachIds, seedShowIds, seedCampaignIds)) {
-      reasons.push("seeded_deal");
-    }
-    if (isStaleIoSent(deal, ctx.ios)) reasons.push("stale_io_sent");
-    const allTest = ctx.owners.length > 0 && ctx.owners.every(isTestOrSeedProfile);
-    if (allTest) reasons.push("test_or_seed_profile");
-    if (reasons.length === 0 && deal.id !== PROOF_DEAL_ID) continue;
-
-    const matched = reasons.length > 0 ? reasons : ["protected_proof_deal"];
-    const owner = ownerLabel(ctx.owners, deal.brand_id);
     const payments = paymentsTouching(deal.id, ctx.lineIds, ctx.invoiceIds);
     const money = blockForPayments(payments);
     const settled = ctx.invoices.some(invoiceBlocksDeletion);
@@ -525,23 +517,48 @@ export function planCleanup(snapshot: CleanupSnapshot): CleanupPlan {
       const invoice = invoicesById.get(line.invoice_id);
       return !invoice || !ctx.ioIds.has(invoice.io_id);
     });
+    const ownedByProof =
+      ctx.ownerIds.includes(PROOF_ACCOUNT_USER_ID) ||
+      ctx.owners.some(isProofAccount);
+    const hasEnvelope = present(deal.docusign_envelope_id);
+    if (isSeededDeal(deal, ctx, seedDealIds, seedOutreachIds, seedShowIds, seedCampaignIds)) {
+      reasons.push("seeded_deal");
+    }
+    if (isStaleIoSent(deal, ctx.ios)) reasons.push("stale_io_sent");
+    const allTest = ctx.owners.length > 0 && ctx.owners.every(isTestOrSeedProfile);
+    if (allTest) reasons.push("test_or_seed_profile");
+    // The proof account is not a test profile, so its other deals match here.
+    // The protected deal id is handled below and never gains this reason.
+    if (
+      ownedByProof &&
+      deal.id !== PROOF_DEAL_ID &&
+      !hasEnvelope &&
+      !money &&
+      !settled &&
+      !externalInvoiceLine
+    ) {
+      reasons.push("proof_account_deal");
+    }
+    if (reasons.length === 0 && deal.id !== PROOF_DEAL_ID) continue;
+
+    const matched = reasons.length > 0 ? reasons : ["protected_proof_deal"];
+    const owner = ownerLabel(ctx.owners, deal.brand_id);
     const nonTest = ctx.owners.some(
       (profile) => !isProofAccount(profile) && !isTestOrSeedProfile(profile)
     );
 
     let excludedBecause: string | null = null;
     if (deal.id === PROOF_DEAL_ID) excludedBecause = "proof_deal";
-    else if (
-      ctx.ownerIds.includes(PROOF_ACCOUNT_USER_ID) ||
-      ctx.owners.some(isProofAccount)
-    ) {
-      excludedBecause = "proof_account";
-    }
     else if (money) excludedBecause = money;
     else if (settled) excludedBecause = "settled_invoice";
+    else if (ownedByProof && hasEnvelope) excludedBecause = "docusign_envelope";
     else if (externalInvoiceLine) excludedBecause = "external_invoice_line";
     else if (nonTest) excludedBecause = "non_test_profile";
-    else if (!allTest && !reasons.includes("seeded_deal")) {
+    else if (
+      !allTest &&
+      !reasons.includes("seeded_deal") &&
+      !reasons.includes("proof_account_deal")
+    ) {
       excludedBecause = "unresolved_owner";
     }
 
@@ -807,15 +824,10 @@ export function planCleanup(snapshot: CleanupSnapshot): CleanupPlan {
   }
 
   const deleteRows = [...deleteMap.values()].sort(compareRows);
+  const proofChildren = proofDealChildIds(snapshot);
   for (const row of deleteRows) {
-    if (row.id === PROOF_DEAL_ID) {
+    if (row.id === PROOF_DEAL_ID || proofChildren.has(row.id)) {
       throw new Error("refusing to plan deletion of the proof deal");
-    }
-    if (
-      row.ownerProfileId === PROOF_ACCOUNT_USER_ID ||
-      row.owner.trim().toLowerCase() === PROOF_ACCOUNT_EMAIL
-    ) {
-      throw new Error("refusing to plan deletion of the proof account's rows");
     }
   }
 
@@ -870,7 +882,10 @@ export function formatCleanupReport(plan: CleanupPlan): string {
     "Profiles and auth users are not deleted. Stripe charges, payouts, sent or paid invoices,"
   );
   lines.push(
-    `non-test owners, ${PROOF_ACCOUNT_EMAIL}, and deal ${PROOF_DEAL_ID} are excluded.`
+    `and non-test owners stay. ${PROOF_ACCOUNT_EMAIL} stays as a profile. Deal ${PROOF_DEAL_ID} and its children stay.`
+  );
+  lines.push(
+    "Other deals on that account are included when they have no DocuSign envelope, Stripe charge, payout, or sent or paid invoice."
   );
   lines.push(
     "Shows are included only when the name starts with [SEED] or the show was materialized for an outreach in this plan."
@@ -1058,6 +1073,46 @@ function ownerLabel(owners: ProfileRow[], fallbackId: string): string {
   const withEmail = owners.find((profile) => profile.email);
   if (withEmail?.email) return withEmail.email;
   return fallbackId || "none";
+}
+
+function proofDealChildIds(snapshot: CleanupSnapshot): Set<string> {
+  const ids = new Set<string>();
+  const ioIds = new Set(
+    snapshot.insertionOrders
+      .filter((io) => io.deal_id === PROOF_DEAL_ID)
+      .map((io) => io.id)
+  );
+  for (const id of ioIds) ids.add(id);
+  const lineIds = new Set<string>();
+  for (const line of snapshot.lineItems) {
+    if (!ioIds.has(line.io_id)) continue;
+    ids.add(line.id);
+    lineIds.add(line.id);
+  }
+  const invoiceIds = new Set<string>();
+  for (const invoice of snapshot.invoices) {
+    if (!ioIds.has(invoice.io_id)) continue;
+    ids.add(invoice.id);
+    invoiceIds.add(invoice.id);
+  }
+  for (const line of snapshot.invoiceLineItems) {
+    if (invoiceIds.has(line.invoice_id) || lineIds.has(line.io_line_item_id)) {
+      ids.add(line.id);
+    }
+  }
+  for (const payment of snapshot.payments) {
+    if (
+      payment.deal_id === PROOF_DEAL_ID ||
+      (payment.io_line_item_id !== null && lineIds.has(payment.io_line_item_id)) ||
+      (payment.invoice_id !== null && invoiceIds.has(payment.invoice_id))
+    ) {
+      ids.add(payment.id);
+    }
+  }
+  for (const aircheck of snapshot.airchecks) {
+    if (lineIds.has(aircheck.io_line_item_id)) ids.add(aircheck.id);
+  }
+  return ids;
 }
 
 function present(value: string | null | undefined): boolean {
