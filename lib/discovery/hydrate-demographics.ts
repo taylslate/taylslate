@@ -55,8 +55,10 @@ export interface HydrateDemographicsDeps {
   /**
    * Media-kit country shares from show_profiles that have a verified tie
    * to a catalog show (a deal, or a show_owner email). Omitted → skip.
-   * A shared name or a client-supplied podscan id is not a tie. Fills
-   * country keys the candidate doesn't already have.
+   * A shared name or show_profiles.podscan_id is not a tie. The podscanId
+   * on the identity is the catalog shows.podscan_id, used for the Podscan
+   * demographics fetch, and is not a profile join. Fills country keys the
+   * candidate doesn't already have.
    */
   lookupGeography?: (identities: ShowGeoIdentity[]) => Promise<VerifiedGeography[]>;
 }
