@@ -23,9 +23,14 @@
 // the conviction.scored event) so the spend is a reported number.
 // ============================================================
 
-import type { AudienceGeography, Show, ShowDemographics } from "@/lib/data/types";
+import type { Show, ShowDemographics } from "@/lib/data/types";
 import { generateSlug, getShowsBySlugs } from "@/lib/data/queries";
-import { getAudienceGeographyBySlugs } from "@/lib/shows/apply-geography";
+import {
+  geographyForIdentity,
+  getVerifiedAudienceGeography,
+  type ShowGeoIdentity,
+  type VerifiedGeography,
+} from "@/lib/shows/apply-geography";
 import {
   hasAudienceGeography,
   mergeGeographyIntoDemographics,
@@ -48,12 +53,12 @@ export interface HydrateDemographicsDeps {
    */
   fetchDemographics: (podscanId: string) => Promise<PodscanDemographics | null>;
   /**
-   * Media-kit country shares saved on show_profiles, keyed by show slug.
-   * Omitted → skip. Fills country keys the candidate doesn't already have.
+   * Media-kit country shares from show_profiles that have a verified tie
+   * to a catalog identity (podscan id, deal, or show_owner email).
+   * Omitted → skip. A shared name is not a tie. Fills country keys the
+   * candidate doesn't already have.
    */
-  lookupGeography?: (
-    slugs: string[]
-  ) => Promise<Array<{ slug: string; geography: AudienceGeography }>>;
+  lookupGeography?: (identities: ShowGeoIdentity[]) => Promise<VerifiedGeography[]>;
 }
 
 const defaultDeps: HydrateDemographicsDeps = {
@@ -63,7 +68,7 @@ const defaultDeps: HydrateDemographicsDeps = {
     if (!client) return null;
     return client.getPodcastDemographics(podscanId);
   },
-  lookupGeography: getAudienceGeographyBySlugs,
+  lookupGeography: getVerifiedAudienceGeography,
 };
 
 export interface HydrateDemographicsResult {
@@ -198,10 +203,19 @@ export async function hydrateCandidateDemographics(
 
   if (deps.lookupGeography) {
     try {
-      const geoRows = await deps.lookupGeography([...new Set(slugOf.values())]);
-      const geoBySlug = new Map(geoRows.map((row) => [row.slug, row.geography]));
+      const identityOf = new Map<Show, ShowGeoIdentity>();
       for (const candidate of candidates) {
-        const geography = geoBySlug.get(slugOf.get(candidate)!);
+        const row = rowBySlug.get(slugOf.get(candidate)!);
+        identityOf.set(candidate, {
+          showId: row?.id,
+          podscanId: candidate.podscan_id || row?.podscan_id || undefined,
+          contactEmail: row?.contact?.email || undefined,
+          dataSources: row?.data_sources,
+        });
+      }
+      const geoRows = await deps.lookupGeography([...identityOf.values()]);
+      for (const candidate of candidates) {
+        const geography = geographyForIdentity(identityOf.get(candidate)!, geoRows);
         if (!hasAudienceGeography(geography)) continue;
         // onlyMissing: a share already on the show (DB or an earlier kit
         // write) wins over the profile copy.

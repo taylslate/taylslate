@@ -263,14 +263,50 @@ describe("hydrateCandidateDemographics", () => {
     expect(result.fromApi).toBe(1);
   });
 
-  it("fills missing country shares from a media-kit lookup and keeps age or gender", async () => {
+  it("does not copy geography from a same-name profile with no verified tie", async () => {
     const candidate = makeShow({
       name: "Recovery Lab",
       demographics: { male: 60, us: 80 },
     });
+    const { deps } = makeDeps({
+      rows: [
+        {
+          ...makeShow({
+            id: "cat-recovery",
+            name: "Recovery Lab",
+            demographics: { male: 60, us: 80 },
+            contact: { name: "Host", email: "host@recovery.test", method: "email" },
+            data_sources: ["podscan"],
+          }),
+          slug: "recovery-lab",
+        },
+      ],
+    });
+    deps.lookupGeography = async (identities) => {
+      expect(identities).toEqual([
+        expect.objectContaining({
+          showId: "cat-recovery",
+          contactEmail: "host@recovery.test",
+        }),
+      ]);
+      expect(identities.some((row) => "slug" in row)).toBe(false);
+      return [{ geography: { uk: 99 } }];
+    };
+    await hydrateCandidateDemographics([candidate], deps);
+    expect(candidate.demographics.male).toBe(60);
+    expect(candidate.demographics.us).toBe(80);
+    expect(candidate.demographics.uk).toBeUndefined();
+  });
+
+  it("fills missing country shares when a verified podscan tie returns geography", async () => {
+    const candidate = makeShow({
+      name: "Recovery Lab",
+      podscan_id: "pd_recovery",
+      demographics: { male: 60, us: 80 },
+    });
     const { deps } = makeDeps({});
     deps.lookupGeography = async () => [
-      { slug: "recovery-lab", geography: { us: 10, uk: 9 } },
+      { podscanId: "pd_recovery", geography: { us: 10, uk: 9 } },
     ];
     await hydrateCandidateDemographics([candidate], deps);
     expect(candidate.demographics.male).toBe(60);

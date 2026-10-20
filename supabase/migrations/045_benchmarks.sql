@@ -7,9 +7,11 @@
 -- is inserted — this migration seeds nothing.
 --
 -- show_profiles gains the media-kit text a show pasted or uploaded,
--- the country shares parsed from it, and a slug so discovery can
--- find that geography. show_profiles is a pre-020 table; these
--- columns inherit its grants. No new grant block for them.
+-- the country shares parsed from it, and a display slug. Geography
+-- is copied onto a catalog show only through a verified tie
+-- (podscan id, a deal, or a show_owner contact email) — never by slug.
+-- show_profiles is a pre-020 table; these columns inherit its grants.
+-- No new grant block for them.
 --
 -- Idempotent. Safe to re-run. Do not apply from the app.
 --
@@ -31,9 +33,10 @@
 --      and column_name in ('media_kit_text', 'audience_geography', 'show_slug')
 --    order by column_name;
 --   Expected benchmarks columns: id, genre, metric, value, source,
---   as_of, created_at. Expected grants: authenticated and
---   service_role only (no anon). Expected policies: authenticated
---   SELECT, service_role ALL. Expected row count: 0.
+--   as_of, created_at. Expected grants: authenticated SELECT only,
+--   service_role SELECT/INSERT/UPDATE/DELETE (no anon). Expected
+--   policies: authenticated SELECT, service_role ALL. Expected row
+--   count: 0.
 -- ============================================================
 
 create table if not exists public.benchmarks (
@@ -80,13 +83,14 @@ comment on column public.benchmarks.as_of is
   'Date the cited figure applies to.';
 
 -- Data API grants. Revoke first so default privileges cannot leave
--- anon (or PUBLIC) with access. Authenticated may read; RLS below
+-- anon (or PUBLIC) with access, and so a re-run drops any earlier
+-- write grant on authenticated. Authenticated may read; RLS below
 -- is what makes the read succeed. service_role manages rows.
 revoke all on table public.benchmarks from public;
 revoke all on table public.benchmarks from anon;
 revoke all on table public.benchmarks from authenticated;
 grant select, insert, update, delete on public.benchmarks to service_role;
-grant select, insert, update, delete on public.benchmarks to authenticated;
+grant select on public.benchmarks to authenticated;
 
 alter table public.benchmarks enable row level security;
 
@@ -129,4 +133,4 @@ comment on column public.show_profiles.audience_geography is
   'Country shares parsed from media_kit_text: us, uk, canada, australia, each 0-100. Guidance for scoring, not a filter.';
 
 comment on column public.show_profiles.show_slug is
-  'generateSlug(show_name). Lets discovery attach audience_geography to the matching shows row.';
+  'generateSlug(show_name). Display only. Do not attach audience_geography to a catalog show by this slug.';

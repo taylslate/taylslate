@@ -218,8 +218,9 @@ export async function PUT(request: NextRequest) {
 
   const existing = await getShowProfileByUserId(user.id);
   const patch = sanitizeShowProfilePatch(body);
-  // show_slug is a migration-045 column. Write it only with the kit so
-  // the rest of onboarding keeps saving if that migration is not applied yet.
+  // show_slug is a migration-045 column, display-only. Write it only
+  // with the kit so the rest of onboarding keeps saving if that
+  // migration is not applied yet. It is not a catalog tie.
   if ("media_kit_text" in patch) {
     const nameForSlug =
       patch.show_name !== undefined ? patch.show_name : existing?.show_name ?? null;
@@ -233,9 +234,9 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Failed to save show profile" }, { status: 500 });
   }
 
-  // Copy parsed country shares onto the shows row when one exists.
-  // A miss is fine — the profile still holds the parse. Failures here
-  // must not fail the profile save.
+  // Copy parsed country shares onto a shows row only when a verified
+  // tie exists (podscan id, deal, or show_owner email). A miss is fine —
+  // the profile still holds the parse. Failures here must not fail the save.
   if ("media_kit_text" in patch) {
     await applyAudienceGeographyToShow(result);
   }

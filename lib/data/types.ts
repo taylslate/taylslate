@@ -513,7 +513,8 @@ export interface ShowProfile {
   audience_size?: number | null;
 
   // Media kit (migration 045). Pasted or uploaded text, the country
-  // shares parsed from it, and the slug discovery uses to find them.
+  // shares parsed from it, and a display slug. Scoring attaches those
+  // shares only through a verified show tie, never through the slug.
   media_kit_text?: string | null;
   audience_geography?: AudienceGeography | null;
   show_slug?: string | null;
