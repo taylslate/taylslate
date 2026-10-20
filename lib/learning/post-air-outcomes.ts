@@ -1,6 +1,9 @@
-// Reported conversions keyed by catalog show id (deals.show_id).
-// Fail-soft: a missing table or a query error returns an empty map so
-// discovery keeps the original scores. Never reads show_profiles.
+// Reported conversions keyed by catalog show id (deals.show_id), for one
+// brand. Fail-soft: a missing table or a query error returns an empty map
+// so discovery keeps the original scores. Never reads show_profiles.
+//
+// The sum is this brand's campaigns only (campaigns.user_id). Another
+// brand's report on the same catalog show does not lift it here.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
@@ -10,6 +13,7 @@ interface DealShowRow {
   id: string;
   show_id: string | null;
   status: string | null;
+  campaigns: { user_id: string | null } | { user_id: string | null }[] | null;
 }
 
 interface ReportRow {
@@ -18,24 +22,48 @@ interface ReportRow {
 }
 
 /**
- * Sum of brand-reported conversions per catalog show, across campaigns.
- * Cancelled deals are skipped. A show with no report is absent from the map.
+ * The campaign owner's user id. Null when the campaign is missing.
+ * Fail-soft. This is the brand the post-air lift is scoped to.
+ */
+export async function loadCampaignBrandUserId(
+  campaignId: string
+): Promise<string | null> {
+  const id = campaignId.trim();
+  if (!id) return null;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("campaigns")
+      .select("user_id")
+      .eq("id", id)
+      .maybeSingle<{ user_id: string | null }>();
+    if (error || !data?.user_id?.trim()) return null;
+    return data.user_id.trim();
+  } catch (err) {
+    console.warn(
+      "[learning] campaign brand unavailable:",
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+/**
+ * Sum of this brand's reported conversions per catalog show.
+ * `brandUserId` is campaigns.user_id for the brand who is looking.
+ * Other brands' campaigns are not included. A blank id returns an empty
+ * map — there is no unscoped total. Cancelled deals are skipped. A show
+ * with no report from this brand is absent from the map.
  */
 export async function loadPostAirConversionsByShow(
-  showIds: string[]
+  showIds: string[],
+  brandUserId: string
 ): Promise<Map<string, number>> {
   const ids = [...new Set(showIds.filter(Boolean))];
-  if (ids.length === 0) return new Map();
+  const brandId = brandUserId.trim();
+  if (ids.length === 0 || !brandId) return new Map();
   try {
-    const deals = await selectIn<DealShowRow>(
-      "deals",
-      "show_id",
-      ids,
-      "id, show_id, status"
-    );
-    const live = deals.filter(
-      (deal) => deal.show_id && deal.status !== "cancelled"
-    );
+    const deals = await selectBrandDeals(ids, brandId);
+    const live = deals.filter((deal) => deal.show_id && deal.status !== "cancelled");
     if (live.length === 0) return new Map();
     const reports = await selectIn<ReportRow>(
       "deal_conversion_reports",
@@ -68,6 +96,35 @@ export async function loadPostAirConversionsByShow(
     );
     return new Map();
   }
+}
+
+/** Deals on these catalog shows whose campaign owner is this brand. */
+async function selectBrandDeals(
+  showIds: string[],
+  brandUserId: string
+): Promise<DealShowRow[]> {
+  const out: DealShowRow[] = [];
+  for (let i = 0; i < showIds.length; i += CHUNK) {
+    const slice = showIds.slice(i, i + CHUNK);
+    const { data, error } = await supabaseAdmin
+      .from("deals")
+      .select("id, show_id, status, campaigns!inner(user_id)")
+      .in("show_id", slice)
+      .eq("campaigns.user_id", brandUserId);
+    if (error) throw new Error(error.message);
+    for (const row of (data ?? []) as DealShowRow[]) {
+      if (campaignUserId(row) !== brandUserId) continue;
+      out.push(row);
+    }
+  }
+  return out;
+}
+
+function campaignUserId(row: DealShowRow): string | null {
+  const embedded = row.campaigns;
+  const campaign = Array.isArray(embedded) ? embedded[0] : embedded;
+  const userId = campaign?.user_id?.trim();
+  return userId || null;
 }
 
 async function selectIn<T>(

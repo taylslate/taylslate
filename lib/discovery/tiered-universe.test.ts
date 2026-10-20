@@ -6,6 +6,8 @@ import { describe, it, expect } from "vitest";
 import { vi } from "vitest";
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { loadPostAirConversionsByShow } from "@/lib/learning/post-air-outcomes";
 import {
   getTieredUniverse,
   type TieredUniverseDeps,
@@ -105,6 +107,98 @@ function makeDeps(
             testPlacement: null,
           },
   };
+}
+
+interface FakeCampaign {
+  id: string;
+  user_id: string;
+}
+
+interface FakeDeal {
+  id: string;
+  show_id: string;
+  status: string;
+  campaign_id: string;
+}
+
+interface FakeReport {
+  deal_id: string;
+  reported_conversions: number | null;
+}
+
+interface QueryFilter {
+  column: string;
+  value: unknown;
+}
+
+/**
+ * In-memory stand-in for the post-air reads. A deals query is scoped only
+ * when it filters campaigns.user_id. Without that filter every brand's
+ * deals come back, which is the leak this test is here to catch.
+ */
+function fakePostAirAdmin(db: {
+  campaigns: FakeCampaign[];
+  deals: FakeDeal[];
+  reports: FakeReport[];
+}): {
+  admin: (table: string) => unknown;
+  queries: { table: string; filters: QueryFilter[] }[];
+} {
+  const queries: { table: string; filters: QueryFilter[] }[] = [];
+  const admin = (table: string) => {
+    const filters: QueryFilter[] = [];
+    queries.push({ table, filters });
+    const run = () => {
+      if (table === "deals") {
+        const userFilter = filters.find((filter) => filter.column === "campaigns.user_id");
+        const showFilter = filters.find((filter) => filter.column === "show_id");
+        const showIds = new Set((showFilter?.value as string[] | undefined) ?? []);
+        const rows = db.deals
+          .filter((deal) => showIds.size === 0 || showIds.has(deal.show_id))
+          .filter((deal) => {
+            if (!userFilter) return true;
+            const campaign = db.campaigns.find((row) => row.id === deal.campaign_id);
+            return campaign?.user_id === userFilter.value;
+          })
+          .map((deal) => ({
+            ...deal,
+            campaigns: db.campaigns.find((row) => row.id === deal.campaign_id) ?? null,
+          }));
+        return { data: rows, error: null };
+      }
+      if (table === "deal_conversion_reports") {
+        const dealFilter = filters.find((filter) => filter.column === "deal_id");
+        const dealIds = new Set((dealFilter?.value as string[] | undefined) ?? []);
+        const rows = db.reports.filter(
+          (report) => dealIds.size === 0 || dealIds.has(report.deal_id)
+        );
+        return { data: rows, error: null };
+      }
+      return { data: null, error: { message: `unexpected table ${table}` } };
+    };
+    const builder: {
+      select: () => typeof builder;
+      in: (column: string, value: unknown) => typeof builder;
+      eq: (column: string, value: unknown) => typeof builder;
+      then: (
+        resolve: (value: { data: unknown; error: { message: string } | null }) => unknown,
+        reject?: (reason: unknown) => unknown
+      ) => Promise<unknown>;
+    } = {
+      select: () => builder,
+      in: (column, value) => {
+        filters.push({ column, value });
+        return builder;
+      },
+      eq: (column, value) => {
+        filters.push({ column, value });
+        return builder;
+      },
+      then: (resolve, reject) => Promise.resolve(run()).then(resolve, reject),
+    };
+    return builder;
+  };
+  return { admin, queries };
 }
 
 // ---- Tests ----
@@ -447,6 +541,7 @@ describe("getTieredUniverse — post-air lift", () => {
       }),
     ];
     const deps = makeDeps(rows);
+    deps.loadBrandUserId = async () => "brand-a";
     deps.loadPostAirByShow = async () => new Map([["lifted", 3]]);
     const universe = await getTieredUniverse(PATTERN, deps);
 
@@ -476,6 +571,7 @@ describe("getTieredUniverse — post-air lift", () => {
       }),
     ];
     const deps = makeDeps(rows);
+    deps.loadBrandUserId = async () => "brand-a";
     deps.loadPostAirByShow = async () => new Map<string, number>([
       ["zero", 0],
       ["blank", 4],
@@ -491,5 +587,80 @@ describe("getTieredUniverse — post-air lift", () => {
     expect(blank?.postAirAdjusted).toBeNull();
     expect(blank?.postAirReasoning).toBeNull();
     expect(blank?.composite).toBeNull();
+  });
+
+  it("does not lift a show for brand B when only brand A reported conversions", async () => {
+    const rows = [
+      makeRow({
+        show_id: "show-1",
+        composite_score: 70,
+        tier: "test",
+        show: makeShow({ id: "show-1", name: "Shared Show" }),
+      }),
+    ];
+    const { admin, queries } = fakePostAirAdmin({
+      campaigns: [
+        { id: "camp-a", user_id: "brand-a" },
+        { id: "camp-a2", user_id: "brand-a" },
+        { id: "camp-b", user_id: "brand-b" },
+      ],
+      deals: [
+        { id: "deal-a", show_id: "show-1", status: "completed", campaign_id: "camp-a" },
+        { id: "deal-a2", show_id: "show-1", status: "delivering", campaign_id: "camp-a2" },
+        { id: "deal-b", show_id: "show-1", status: "completed", campaign_id: "camp-b" },
+        {
+          id: "deal-cancelled",
+          show_id: "show-1",
+          status: "cancelled",
+          campaign_id: "camp-a",
+        },
+      ],
+      reports: [
+        { deal_id: "deal-a", reported_conversions: 4 },
+        { deal_id: "deal-a2", reported_conversions: 2 },
+        { deal_id: "deal-cancelled", reported_conversions: 9 },
+      ],
+    });
+    vi.mocked(supabaseAdmin.from).mockImplementation(admin as never);
+
+    const asBrand = async (brandUserId: string) => {
+      const deps = makeDeps(rows);
+      deps.loadBrandUserId = async () => brandUserId;
+      deps.loadPostAirByShow = loadPostAirConversionsByShow;
+      return getTieredUniverse(PATTERN, deps);
+    };
+
+    const brandB = await asBrand("brand-b");
+    const brandA = await asBrand("brand-a");
+
+    expect(brandB.test).toHaveLength(1);
+    expect(brandB.test[0].showId).toBe("show-1");
+    expect(brandB.test[0].composite).toBe(70);
+    expect(brandB.test[0].postAirDelta).toBe(0);
+    expect(brandB.test[0].postAirAdjusted).toBe(70);
+    expect(brandB.test[0].postAirReasoning).toBeNull();
+
+    expect(brandA.test[0].postAirAdjusted).toBe(78);
+    expect(brandA.test[0].postAirReasoning).toBe(
+      "Post-air: 6 reported conversions. Score lifted +8."
+    );
+    expect(
+      queries.some(
+        (query) =>
+          query.table === "deals" &&
+          query.filters.some(
+            (filter) => filter.column === "campaigns.user_id" && filter.value === "brand-b"
+          )
+      )
+    ).toBe(true);
+    expect(
+      queries.some(
+        (query) =>
+          query.table === "deals" &&
+          query.filters.some(
+            (filter) => filter.column === "campaigns.user_id" && filter.value === "brand-a"
+          )
+      )
+    ).toBe(true);
   });
 });

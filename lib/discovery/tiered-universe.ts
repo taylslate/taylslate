@@ -51,7 +51,10 @@ import {
   type Placement,
 } from "./spot-cost";
 import { applyPostAirLift } from "@/lib/scoring/post-air-lift";
-import { loadPostAirConversionsByShow } from "@/lib/learning/post-air-outcomes";
+import {
+  loadCampaignBrandUserId,
+  loadPostAirConversionsByShow,
+} from "@/lib/learning/post-air-outcomes";
 
 /** One show in a tier partition: the 2B conviction read + the per-show cost
  *  (persisted, or computed on read) the Layer 4 card renders. */
@@ -121,10 +124,20 @@ export interface TieredUniverseDeps {
     campaignPatternId: string
   ) => Promise<CampaignContextForPattern | null>;
   /**
-   * Reported conversions keyed by catalog show id. Omitted → no lift
-   * (tests). The default loader is fail-soft.
+   * This brand's reported conversions, keyed by catalog show id.
+   * The second argument is campaigns.user_id for the brand who is
+   * looking. Omitted → no lift (tests). The default loader is fail-soft
+   * and does not read another brand's reports.
    */
-  loadPostAirByShow?: (showIds: string[]) => Promise<Map<string, number>>;
+  loadPostAirByShow?: (
+    showIds: string[],
+    brandUserId: string
+  ) => Promise<Map<string, number>>;
+  /**
+   * Owner of the campaign being viewed (campaigns.user_id). Omitted
+   * together with the loader → no lift. The default reads that column.
+   */
+  loadBrandUserId?: (campaignId: string) => Promise<string | null>;
 }
 
 const defaultDeps: TieredUniverseDeps = {
@@ -132,6 +145,7 @@ const defaultDeps: TieredUniverseDeps = {
   loadConfirmedRings: getConfirmedRings,
   loadCampaignCtx: getCampaignContextForPattern,
   loadPostAirByShow: loadPostAirConversionsByShow,
+  loadBrandUserId: loadCampaignBrandUserId,
 };
 
 function emptyUniverse(): TieredUniverse {
@@ -208,14 +222,26 @@ export async function getTieredUniverse(
     }
   }
 
-  // Post-air lift is a sort guide. A loader failure leaves every score as
-  // it was scored. Shows are not filtered on the result.
+  // Post-air lift is a sort guide for this brand only. Another brand's
+  // report is not loaded. A missing brand id or a loader failure leaves
+  // every score as it was scored. Shows are not filtered on the result.
   let reportedByShow = new Map<string, number>();
-  if (deps.loadPostAirByShow) {
+  if (deps.loadPostAirByShow && ctx?.campaignId && deps.loadBrandUserId) {
+    let brandUserId: string | null = null;
     try {
-      reportedByShow = await deps.loadPostAirByShow([...showById.keys()]);
+      brandUserId = (await deps.loadBrandUserId(ctx.campaignId))?.trim() || null;
     } catch {
-      reportedByShow = new Map();
+      brandUserId = null;
+    }
+    if (brandUserId) {
+      try {
+        reportedByShow = await deps.loadPostAirByShow(
+          [...showById.keys()],
+          brandUserId
+        );
+      } catch {
+        reportedByShow = new Map();
+      }
     }
   }
 
