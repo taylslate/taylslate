@@ -496,6 +496,11 @@ export interface MediaPlanLineItem {
   podcast_id: string;      // references ScoredShowRecord.podcastId
   placement: Placement;
   num_episodes: number;
+  /**
+   * Published creator surfaces (newsletter, social, community) the brand
+   * added onto this show. Omitted when none are selected. Not a score input.
+   */
+  addon_surface_ids?: string[];
 }
 
 export interface MediaPlan {
@@ -896,6 +901,11 @@ export interface IOLineItem {
   net_due: number; // what show receives
   /** Per-line read format (host-read, produced). Null keeps the show default. */
   spot_format?: string | null;
+  /**
+   * Creator-attached add-on bought on this IO (show_surfaces.id).
+   * Null on a normal episode line. Does not change the platform fee.
+   */
+  show_surface_id?: string | null;
 
   // Post-delivery tracking
   actual_post_date?: string;

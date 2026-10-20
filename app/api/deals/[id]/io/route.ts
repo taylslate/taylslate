@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { persistIoForDeal } from "@/lib/io/persist-io";
 import type { IoLineItemDraft } from "@/lib/pdf/io-generator";
 import type { Deal } from "@/lib/data/types";
+import { parseShowSurfaceId } from "@/lib/shows/surfaces";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,6 +41,7 @@ const IO_FIELDS = [
 const LINE_FIELDS = [
   "format",
   "spot_format",
+  "show_surface_id",
   "post_date",
   "guaranteed_downloads",
   "show_name",
@@ -107,6 +109,9 @@ function lineFields(source: Record<string, unknown>): Record<string, unknown> {
   if (fields.spot_format !== undefined) {
     const raw = typeof fields.spot_format === "string" ? fields.spot_format.trim() : "";
     fields.spot_format = raw || null;
+  }
+  if (fields.show_surface_id !== undefined) {
+    fields.show_surface_id = parseShowSurfaceId(fields.show_surface_id);
   }
   return fields;
 }
@@ -260,6 +265,9 @@ export async function POST(
         verified: false,
         make_good_triggered: false,
         spot_format: typeof fields.spot_format === "string" ? fields.spot_format : null,
+        ...(typeof fields.show_surface_id === "string"
+          ? { show_surface_id: fields.show_surface_id }
+          : {}),
       });
     }
 

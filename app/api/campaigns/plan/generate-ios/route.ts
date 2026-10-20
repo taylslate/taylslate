@@ -19,6 +19,8 @@ import type {
 import { adjustedCpm, spotPrice } from "@/lib/utils/pricing";
 import { addDaysDateOnly } from "@/lib/format/date-only";
 import { resolveDealFlight } from "@/lib/deals/campaign-flight";
+import { listPublishedSurfacesForShows } from "@/lib/data/show-surfaces";
+import { buildSurfaceAddonLines, type SellableSurface } from "@/lib/shows/surfaces";
 
 const SPACING_DAYS: Record<PlanSpacing, number> = {
   weekly: 7,
@@ -126,6 +128,12 @@ export async function POST(request: NextRequest) {
 
   const spacingDays = SPACING_DAYS[plan.spacing] ?? 7;
 
+  const addonShowIds = items
+    .filter(({ lineItem }) => (lineItem.addon_surface_ids?.length ?? 0) > 0)
+    .map(({ scoredShow }) => scoredShow.podcastId);
+  const surfacesByShow =
+    addonShowIds.length > 0 ? await listPublishedSurfacesForShows(addonShowIds) : {};
+
   const created: { deal_id: string; io_id: string; show_name: string }[] = [];
   const errors: string[] = [];
 
@@ -144,7 +152,6 @@ export async function POST(request: NextRequest) {
       const netPerEpisode = Math.round(
         spotPrice(scoredShow.audienceSize, baseCpm, placement)
       );
-      const totalNet = netPerEpisode * numEpisodes;
 
       const flight = resolveDealFlight({
         brief: campaign.brief,
@@ -152,43 +159,9 @@ export async function POST(request: NextRequest) {
         spacingDays,
       });
 
-      const deal = await createDeal({
-        campaign_id: campaign.id,
-        show_id: show.id,
-        brand_id: profile.id,
-        status: "planning",
-        num_episodes: numEpisodes,
-        placement,
-        ad_format: "host_read",
-        price_type: "cpm",
-        cpm_rate: Math.round(adjCpm * 100) / 100,
-        gross_cpm: Math.round(adjCpm * 100) / 100,
-        guaranteed_downloads: scoredShow.audienceSize,
-        net_per_episode: netPerEpisode,
-        gross_per_episode: netPerEpisode,
-        total_net: totalNet,
-        total_gross: totalNet,
-        is_scripted: false,
-        is_personal_experience: true,
-        reader_type: "host_read",
-        content_type: "evergreen",
-        pixel_required: false,
-        competitor_exclusion: [],
-        exclusivity_days: 90,
-        rofr_days: 30,
-        flight_start: flight.flight_start,
-        flight_end: flight.flight_end,
-      });
-
-      if (!deal) {
-        errors.push(`Deal creation failed for "${scoredShow.name}"`);
-        continue;
-      }
-
-      // Build IO line items — one per episode, spaced by plan spacing.
-      const lineItems = [];
+      const episodeLines = [];
       for (let i = 0; i < numEpisodes; i++) {
-        lineItems.push({
+        episodeLines.push({
           format: "podcast" as const,
           post_date: addDaysDateOnly(flight.flight_start, i * spacingDays),
           guaranteed_downloads: scoredShow.audienceSize,
@@ -208,6 +181,69 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      let surfaces: SellableSurface[] = surfacesByShow[scoredShow.podcastId] ?? [];
+      if (
+        (lineItem.addon_surface_ids?.length ?? 0) > 0 &&
+        show.id !== scoredShow.podcastId
+      ) {
+        const extra = await listPublishedSurfacesForShows([show.id]);
+        const seen = new Set(surfaces.map((row) => row.id));
+        for (const row of extra[show.id] ?? []) {
+          if (!seen.has(row.id)) surfaces = [...surfaces, row];
+        }
+      }
+      const addons = buildSurfaceAddonLines({
+        surfaces,
+        selectedIds: lineItem.addon_surface_ids,
+        showName: show.name,
+        placement,
+        postDate: episodeLines[0]?.post_date ?? flight.flight_start,
+        format: "podcast",
+      });
+      for (const name of addons.unpriced) {
+        errors.push(
+          `"${scoredShow.name}": ${name} needs a price before it can go on the IO`
+        );
+      }
+      const lineItems = [...episodeLines, ...addons.lines];
+      const totalNet =
+        Math.round(lineItems.reduce((sum, li) => sum + li.net_due, 0) * 100) / 100;
+      const totalGross =
+        Math.round(lineItems.reduce((sum, li) => sum + li.gross_rate, 0) * 100) / 100;
+
+      const deal = await createDeal({
+        campaign_id: campaign.id,
+        show_id: show.id,
+        brand_id: profile.id,
+        status: "planning",
+        num_episodes: numEpisodes,
+        placement,
+        ad_format: "host_read",
+        price_type: "cpm",
+        cpm_rate: Math.round(adjCpm * 100) / 100,
+        gross_cpm: Math.round(adjCpm * 100) / 100,
+        guaranteed_downloads: scoredShow.audienceSize,
+        net_per_episode: netPerEpisode,
+        gross_per_episode: netPerEpisode,
+        total_net: totalNet,
+        total_gross: totalGross,
+        is_scripted: false,
+        is_personal_experience: true,
+        reader_type: "host_read",
+        content_type: "evergreen",
+        pixel_required: false,
+        competitor_exclusion: [],
+        exclusivity_days: 90,
+        rofr_days: 30,
+        flight_start: flight.flight_start,
+        flight_end: flight.flight_end,
+      });
+
+      if (!deal) {
+        errors.push(`Deal creation failed for "${scoredShow.name}"`);
+        continue;
+      }
+
       const ioNumber = await getNextIONumber();
       const io = await createIO(
         {
@@ -220,8 +256,8 @@ export async function POST(request: NextRequest) {
           publisher_contact_name: show.contact?.name ?? "",
           publisher_contact_email: show.contact?.email ?? "",
           total_downloads: scoredShow.audienceSize * numEpisodes,
-          total_gross: Math.round(totalNet * 100) / 100,
-          total_net: Math.round(totalNet * 100) / 100,
+          total_gross: totalGross,
+          total_net: totalNet,
           payment_terms: "Net 30 EOM",
           competitor_exclusion: [],
           exclusivity_days: 90,

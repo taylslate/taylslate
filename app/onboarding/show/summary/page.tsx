@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getAuthenticatedUser, getShowProfileByUserId } from "@/lib/data/queries";
+import { listOwnerSurfaces } from "@/lib/data/show-surfaces";
 import SummaryClient from "./summary-client";
 
 export default async function ShowSummaryPage() {
@@ -11,5 +12,6 @@ export default async function ShowSummaryPage() {
     redirect("/onboarding/show/welcome");
   }
 
-  return <SummaryClient profile={profile} />;
+  const surfaces = await listOwnerSurfaces(user.id);
+  return <SummaryClient profile={profile} surfaces={surfaces} />;
 }

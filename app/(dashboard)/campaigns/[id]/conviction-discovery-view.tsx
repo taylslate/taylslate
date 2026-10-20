@@ -44,6 +44,8 @@
 //     meter's hard sum — the number is a placeholder, not a defensible quote.
 
 import {
+  createContext,
+  useContext,
   useState,
   useMemo,
   useCallback,
@@ -51,6 +53,8 @@ import {
   useEffect,
   useTransition,
 } from "react";
+import SurfaceAddons from "@/components/shows/SurfaceAddons";
+import type { SellableSurface } from "@/lib/shows/surfaces";
 import { useRouter } from "next/navigation";
 import type {
   ConvictionBand,
@@ -206,6 +210,14 @@ interface ConvictionDiscoveryViewProps {
   /** Phase 2D Layer 1: founder annotations keyed by show id (admin-only; empty
    *  for brands). Threaded to the cards via FounderAnnotationsProvider. */
   annotationsByShow?: Record<string, FounderAnnotationRow[]>;
+  /** Published creator add-ons keyed by show id. Display only — not a score. */
+  surfacesByShowId?: Record<string, SellableSurface[]>;
+}
+
+const SellableSurfacesContext = createContext<Record<string, SellableSurface[]>>({});
+
+function useSellableSurfaces(showId: string): SellableSurface[] {
+  return useContext(SellableSurfacesContext)[showId] ?? [];
 }
 
 type RingFilter = "all" | string;
@@ -225,6 +237,7 @@ export default function ConvictionDiscoveryView({
   testPlacement,
   isAdmin = false,
   annotationsByShow = {},
+  surfacesByShowId = {},
 }: ConvictionDiscoveryViewProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -365,6 +378,7 @@ export default function ConvictionDiscoveryView({
   // The Provider threads isAdmin + annotations to the deeply-nested cards (Phase
   // 2D Layer 1) without prop-drilling through tiered/section/card layers.
   return (
+    <SellableSurfacesContext.Provider value={surfacesByShowId}>
     <FounderAnnotationsProvider
       isAdmin={isAdmin}
       annotationsByShow={annotationsByShow}
@@ -383,6 +397,7 @@ export default function ConvictionDiscoveryView({
         router={router}
       />
     </FounderAnnotationsProvider>
+    </SellableSurfacesContext.Provider>
   );
 }
 
@@ -1219,6 +1234,7 @@ function TestShowCard({
   onPlacementOverride: (showId: string, placement: Placement) => void;
   recomputing: boolean;
 }) {
+  const surfaces = useSellableSurfaces(entry.showId);
   const { show } = entry;
   const band = entry.band ?? "low";
   const meta = BAND_META[band];
@@ -1300,6 +1316,8 @@ function TestShowCard({
 
       {safety && <BrandSafetyNotice flag={safety} />}
 
+      <SurfaceAddons surfaces={surfaces} />
+
       <ShowAnnotations showId={entry.showId} />
     </label>
   );
@@ -1328,6 +1346,7 @@ function ScaleShowCard({
   onPlacementOverride: (showId: string, placement: Placement) => void;
   recomputing: boolean;
 }) {
+  const surfaces = useSellableSurfaces(entry.showId);
   const { show } = entry;
   const band = entry.band ?? "low";
   const meta = BAND_META[band];
@@ -1415,6 +1434,8 @@ function ScaleShowCard({
         recomputing={recomputing}
       />
 
+      <SurfaceAddons surfaces={surfaces} />
+
       <ShowAnnotations showId={entry.showId} />
     </label>
   );
@@ -1427,6 +1448,7 @@ function BenchShowCard({
   entry: TieredShow;
   ringLabel: string | null;
 }) {
+  const surfaces = useSellableSurfaces(entry.showId);
   const { show } = entry;
   const band = entry.band ?? "speculative";
   const meta = BAND_META[band];
@@ -1469,6 +1491,8 @@ function BenchShowCard({
           )}
         </div>
       </div>
+
+      <SurfaceAddons surfaces={surfaces} />
 
       <ShowAnnotations showId={entry.showId} />
     </div>

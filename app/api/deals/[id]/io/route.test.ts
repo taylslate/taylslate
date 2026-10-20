@@ -277,6 +277,44 @@ describe("negotiated IO fields", () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
+  it("PATCH stores a surface id on the line and drops one that is not a uuid", async () => {
+    const updates = captureUpdates();
+    const surfaceId = "22222222-2222-4222-8222-222222222222";
+    const res = await PATCH(
+      jsonReq("PATCH", {
+        line_items: [
+          {
+            ...lineItem,
+            show_surface_id: surfaceId,
+            spot_format: "Newsletter mention · creator posts",
+            price_type: "flat_rate",
+            gross_rate: 500,
+            net_due: 500,
+          },
+        ],
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expect(updates[0]).toEqual(
+      expect.objectContaining({
+        show_surface_id: surfaceId,
+        spot_format: "Newsletter mention · creator posts",
+        price_type: "flat_rate",
+      })
+    );
+
+    const dropped = captureUpdates();
+    const bad = await PATCH(
+      jsonReq("PATCH", {
+        line_items: [{ ...lineItem, show_surface_id: "not-a-surface" }],
+      }) as never,
+      params as never
+    );
+    expect(bad.status).toBe(200);
+    expect(dropped[0]).toEqual(expect.objectContaining({ show_surface_id: null }));
+  });
+
   it("PATCH stores a blank spot format as null", async () => {
     const updates = captureUpdates();
     const res = await PATCH(

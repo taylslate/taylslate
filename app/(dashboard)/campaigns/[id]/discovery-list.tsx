@@ -4,6 +4,8 @@ import { useState, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { Campaign, ScoredShowRecord } from "@/lib/data/types";
 import { isBriefV2 } from "@/lib/data/types";
+import SurfaceAddons from "@/components/shows/SurfaceAddons";
+import type { SellableSurface } from "@/lib/shows/surfaces";
 
 // ---- Types ----
 
@@ -11,6 +13,7 @@ type SortOption = "best_match" | "audience_size" | "lowest_cpm" | "ad_engagement
 
 interface DiscoveryListProps {
   campaign: Campaign;
+  surfacesByShowId?: Record<string, SellableSurface[]>;
 }
 
 // ---- Helpers ----
@@ -59,7 +62,7 @@ function demographicSummary(show: ScoredShowRecord): string {
 
 // ---- Component ----
 
-export default function DiscoveryList({ campaign }: DiscoveryListProps) {
+export default function DiscoveryList({ campaign, surfacesByShowId = {} }: DiscoveryListProps) {
   const router = useRouter();
   const shows = (campaign.scored_shows ?? []) as ScoredShowRecord[];
   const initialSelections = new Set(campaign.selected_show_ids ?? []);
@@ -282,6 +285,7 @@ export default function DiscoveryList({ campaign }: DiscoveryListProps) {
                 show={show}
                 isSelected={selectedIds.has(show.podcastId)}
                 onToggle={() => toggleShow(show.podcastId)}
+                surfaces={surfacesByShowId[show.podcastId] ?? []}
               />
             ))}
           </div>
@@ -332,10 +336,12 @@ function ShowRow({
   show,
   isSelected,
   onToggle,
+  surfaces,
 }: {
   show: ScoredShowRecord;
   isSelected: boolean;
   onToggle: () => void;
+  surfaces: SellableSurface[];
 }) {
   const safety = show.brandSafety ? riskBadge(show.brandSafety.maxRiskLevel) : null;
 
@@ -385,6 +391,7 @@ function ShowRow({
         <div className="text-xs text-[var(--ts-ink-muted-on-paper)] truncate mt-0.5">
           {demographicSummary(show)}
         </div>
+        <SurfaceAddons surfaces={surfaces} />
       </div>
 
       {/* Sponsor count */}

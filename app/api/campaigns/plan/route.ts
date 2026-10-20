@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser, updateCampaignMediaPlan } from "@/lib/data/queries";
 import type { MediaPlan, MediaPlanLineItem, Placement, PlanSpacing } from "@/lib/data/types";
+import { sanitizeAddonSurfaceIds } from "@/lib/shows/surfaces";
 
 const ALLOWED_PLACEMENTS: Placement[] = ["pre-roll", "mid-roll", "post-roll"];
 const ALLOWED_SPACINGS: PlanSpacing[] = ["weekly", "biweekly", "monthly"];
@@ -38,11 +39,16 @@ export async function PUT(request: NextRequest) {
   const lineItems: MediaPlanLineItem[] = Array.isArray(plan.line_items)
     ? plan.line_items
         .filter((li): li is MediaPlanLineItem => typeof li?.podcast_id === "string")
-        .map((li) => ({
-          podcast_id: li.podcast_id,
-          placement: ALLOWED_PLACEMENTS.includes(li.placement) ? li.placement : defaultPlacement,
-          num_episodes: Math.max(1, Math.min(6, Math.round(Number(li.num_episodes) || defaultEpisodes))),
-        }))
+        .map((li) => {
+          const item: MediaPlanLineItem = {
+            podcast_id: li.podcast_id,
+            placement: ALLOWED_PLACEMENTS.includes(li.placement) ? li.placement : defaultPlacement,
+            num_episodes: Math.max(1, Math.min(6, Math.round(Number(li.num_episodes) || defaultEpisodes))),
+          };
+          const addonIds = sanitizeAddonSurfaceIds(li.addon_surface_ids);
+          if (addonIds.length > 0) item.addon_surface_ids = addonIds;
+          return item;
+        })
     : [];
 
   const sanitized: MediaPlan = {

@@ -10,6 +10,7 @@ const {
   getNextIONumber,
   getShowBySlug,
   updateDeal,
+  listPublishedSurfacesForShows,
 } = vi.hoisted(() => ({
   getAuthenticatedUser: vi.fn(),
   ensureProfile: vi.fn(),
@@ -20,6 +21,11 @@ const {
   getNextIONumber: vi.fn(),
   getShowBySlug: vi.fn(),
   updateDeal: vi.fn(),
+  listPublishedSurfacesForShows: vi.fn(),
+}));
+
+vi.mock("@/lib/data/show-surfaces", () => ({
+  listPublishedSurfacesForShows: (...a: unknown[]) => listPublishedSurfacesForShows(...a),
 }));
 
 vi.mock("@/lib/data/queries", () => ({
@@ -92,6 +98,7 @@ beforeEach(() => {
   createDeal.mockImplementation(async (row: { id?: string }) => ({ id: "deal-1", ...row }));
   getNextIONumber.mockResolvedValue("IO-2026-0009");
   createIO.mockResolvedValue({ id: "io-1" });
+  listPublishedSurfacesForShows.mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -137,5 +144,70 @@ describe("POST /api/campaigns/plan/generate-ios", () => {
     expect(deal.status).toBe("planning");
     expect(createIO.mock.calls[0][0].status).toBe("draft");
     expect(updateDeal).not.toHaveBeenCalled();
+  });
+
+  it("adds a priced surface onto the same IO and leaves an unpriced one off", async () => {
+    const surfaceId = "11111111-1111-4111-8111-111111111111";
+    const quoteId = "22222222-2222-4222-8222-222222222222";
+    listPublishedSurfacesForShows.mockResolvedValue({
+      "pod-1": [
+        {
+          id: surfaceId,
+          show_id: "show-1",
+          type: "newsletter",
+          audience_size: 4000,
+          format: "Friday send",
+          min_buy: 20000,
+          creative_constraints: null,
+          lead_time_days: 7,
+          posting_owner: "creator",
+          price: 500,
+          notes: null,
+          published: true,
+        },
+        {
+          id: quoteId,
+          show_id: "show-1",
+          type: "x",
+          audience_size: null,
+          format: null,
+          min_buy: null,
+          creative_constraints: null,
+          lead_time_days: null,
+          posting_owner: "brand",
+          price: null,
+          notes: null,
+          published: true,
+        },
+      ],
+    });
+    const row = campaign({ version: 2, flight: { mode: "dates", start_date: "2026-09-01", end_date: "2026-10-15" } });
+    row.media_plan.line_items = [
+      {
+        podcast_id: "pod-1",
+        placement: "mid-roll",
+        num_episodes: 3,
+        addon_surface_ids: [surfaceId, quoteId],
+      } as (typeof row.media_plan.line_items)[number] & { addon_surface_ids: string[] },
+    ];
+    getCampaignById.mockResolvedValue(row);
+
+    const res = await POST(post() as never);
+    expect(res.status).toBe(200);
+    const [, lineItems] = createIO.mock.calls[0];
+    expect(lineItems).toHaveLength(4);
+    expect(lineItems[3]).toEqual(
+      expect.objectContaining({
+        show_surface_id: surfaceId,
+        price_type: "flat_rate",
+        gross_rate: 500,
+        spot_format: expect.stringContaining("Newsletter mention"),
+      })
+    );
+    expect(lineItems.map((li: { show_surface_id?: string }) => li.show_surface_id).filter(Boolean)).toEqual([
+      surfaceId,
+    ]);
+    const body = await res.json();
+    expect(body.errors.join(" ")).toContain("X post needs a price");
   });
 });

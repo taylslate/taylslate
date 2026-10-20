@@ -105,6 +105,27 @@ describe("negotiated IO terms on the editor PDF", () => {
     expect(text).not.toContain("40.00");
   });
 
+  it("prints a surface add-on on the same IO as the episode", () => {
+    const text = textOf(
+      order({}, [
+        line(),
+        line({
+          id: "line-addon",
+          show_surface_id: "11111111-1111-4111-8111-111111111111",
+          spot_format: "Newsletter mention · creator posts",
+          price_type: "flat_rate",
+          gross_rate: 500,
+          net_due: 500,
+          gross_cpm: 0,
+          guaranteed_downloads: 8000,
+        }),
+      ])
+    );
+    expect(text).toContain("Add-on: Newsletter mention");
+    expect(text).toContain("Flat, $500.00 per spot");
+    expect(text).toContain("Mid-Roll");
+  });
+
   it("uses each line's placement and format", () => {
     const text = textOf(
       order({}, [

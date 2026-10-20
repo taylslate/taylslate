@@ -155,6 +155,26 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {(role === "show" || role === "agent") && (
+        <Link
+          href="/settings/show-surfaces"
+          className={`mb-6 block p-5 ${panelClass} hover:bg-[var(--ts-band-shows)]`}
+          style={radiusStyle}
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className={`font-semibold ${inkText}`}>Sellable surfaces</h2>
+              <p className={`mt-0.5 text-sm ${mutedText}`}>
+                Newsletter, social, and community add-ons a brand can buy on the same IO.
+              </p>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${mutedText}`}>
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </div>
+        </Link>
+      )}
+
       {role === "brand" && (
         <Link
           href="/settings/brand-profile"
