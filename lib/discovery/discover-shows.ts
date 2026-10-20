@@ -12,11 +12,16 @@
 // 4. Claude scores the final fit using brand context + keywords
 // ============================================================
 
-import type { Show, ShowSurfaces } from "@/lib/data/types";
+import type { Show, ShowSurface } from "@/lib/data/types";
 import { getPodscanClientSafe, type PodscanPodcast } from "@/lib/enrichment/podscan";
 import { getYouTubeClientSafe } from "@/lib/enrichment/youtube";
 import { buildYouTubeQuery, buildDiscoveryQueries } from "./category-mapping";
 import { podscanPodcastToShow, youtubeChannelToShow } from "./format-discovered-show";
+import {
+  mediumPriorsForShow,
+  podcastSurfaceFromShow,
+  youtubeSurfaceFromShow,
+} from "./show-surfaces";
 
 export interface DiscoveryBrief {
   target_interests: string[];
@@ -326,27 +331,42 @@ export function excludeDeadYouTube(shows: Show[]): Show[] {
 }
 
 // ============================================================
-// SIMULCAST MERGE (Wave 14 Phase 2B Layer 3)
+// SIMULCAST MERGE
 //
-// A simulcast is one show published on both podcast and long-form YouTube
-// (same audience, same reads). Discovery may surface both surfaces as separate
-// Show records; we fold them into ONE record so the universe doesn't
-// double-list. Light by design: identity is matched by normalized name, the
-// podcast record stays primary (podcast is the launch focus and carries CPM
-// rate cards), and both surfaces are attached to `surfaces`. Scoring math
-// stays medium-agnostic for launch — medium-differentiated scoring is deferred.
+// A simulcast is one show published on both podcast and long-form YouTube.
+// Discovery may return both as separate Show records; this folds them into
+// ONE record so the universe doesn't double-list or double-count reach.
 //
-// INERT until YouTube discovery lands: 2A briefs are podcast-only, so there is
-// no YouTube record to fold. Ships now so the discovery layer is not re-touched
-// when YouTube discovery arrives (forward-compat; the minimal medium fold-in).
+// Identity is the normalized name (a trailing "podcast" / "youtube" /
+// "channel" is ignored). The podcast record stays primary — it carries the
+// CPM rate card scoring already uses. The YouTube record is dropped as its
+// own row and attached under surfaces.youtube. show.audience_size stays the
+// podcast audience. The YouTube audience lives on the surface and is not
+// added in.
+//
+// Single-medium shows do not get a surfaces object. Every emitted show gets
+// medium_priors for the mediums it occupies. The prior's engagement weight
+// is 1 and is not a score.
 // ============================================================
 
-function normalizeShowName(name: string): string {
-  return name
+/** Match key for simulcast identity. Exported for tests. */
+export function normalizeShowName(name: string): string {
+  let spaced = name
     .toLowerCase()
     .replace(/&/g, "and")
     .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
+  let prev = "";
+  while (spaced !== prev) {
+    prev = spaced;
+    spaced = spaced.replace(/ (podcast|youtube|yt|channel)$/, "").trim();
+  }
+  return spaced;
+}
+
+function withPriors(show: Show): Show {
+  return { ...show, medium_priors: mediumPriorsForShow(show, show.surfaces) };
 }
 
 export function mergeSimulcasts(shows: Show[]): Show[] {
@@ -358,48 +378,49 @@ export function mergeSimulcasts(shows: Show[]): Show[] {
     if (key && !podcastByName.has(key)) podcastByName.set(key, s);
   }
 
-  // Map each podcast primary's id → the YouTube surface to attach, and track
-  // which YouTube records get folded so they aren't emitted standalone.
-  const youtubeSurfaceFor = new Map<string, NonNullable<ShowSurfaces["youtube"]>>();
+  // First matching YouTube record wins. Later duplicates are folded away so
+  // they are not emitted as a second show, and they do not replace the
+  // surface already attached.
+  const youtubeSurfaceFor = new Map<string, ShowSurface>();
+  const youtubeChannelFor = new Map<string, string | undefined>();
   const foldedYoutubeIds = new Set<string>();
   for (const s of shows) {
     if (s.platform !== "youtube") continue;
     const key = normalizeShowName(s.name);
     const primary = key ? podcastByName.get(key) : undefined;
     if (!primary) continue;
-    youtubeSurfaceFor.set(primary.id, {
-      youtube_channel_id: s.youtube_channel_id,
-      audience_size: s.audience_size,
-      rate_card: s.rate_card,
-    });
     foldedYoutubeIds.add(s.id);
+    if (youtubeSurfaceFor.has(primary.id)) continue;
+    youtubeSurfaceFor.set(primary.id, youtubeSurfaceFromShow(s));
+    youtubeChannelFor.set(primary.id, s.youtube_channel_id);
   }
 
   const out: Show[] = [];
   for (const s of shows) {
     if (s.platform === "youtube") {
-      if (foldedYoutubeIds.has(s.id)) continue; // folded into a podcast primary
-      out.push(s);
+      if (foldedYoutubeIds.has(s.id)) continue;
+      out.push(withPriors(s));
       continue;
     }
     const yt = youtubeSurfaceFor.get(s.id);
     if (!yt) {
-      out.push(s);
+      out.push(withPriors(s));
       continue;
     }
     // Shallow-clone the primary so we never mutate the caller's array.
-    out.push({
-      ...s,
-      surfaces: {
-        ...(s.surfaces ?? {}),
-        podcast: s.surfaces?.podcast ?? {
-          rss_url: s.rss_url,
-          audience_size: s.audience_size,
-          rate_card: s.rate_card,
-        },
-        youtube: yt,
-      },
-    });
+    // Podcast audience stays on the row. YouTube audience stays on the surface.
+    const surfaces = {
+      ...(s.surfaces ?? {}),
+      podcast: s.surfaces?.podcast ?? podcastSurfaceFromShow(s),
+      youtube: yt,
+    };
+    out.push(
+      withPriors({
+        ...s,
+        youtube_channel_id: s.youtube_channel_id ?? youtubeChannelFor.get(s.id),
+        surfaces,
+      })
+    );
   }
   return out;
 }

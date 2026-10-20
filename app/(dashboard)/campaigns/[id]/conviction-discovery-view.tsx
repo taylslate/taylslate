@@ -695,18 +695,30 @@ function TieredScoredUniverse({
     [callWatchlist, persistSelection]
   );
 
-  // ---- Budget meter (selected derived/rate_card 3-spot vs test budget) ----
-  const selectedCostCents = useMemo(() => {
+  // ---- Budget meter (selected 3-spot vs test budget) ----
+  // flat_fee is a quote-to-confirm point estimate. The media plan prices that
+  // same number (back-computed CPM that reproduces per-spot × spots), so the
+  // meter sums it too. Leaving it out showed a spend the plan then exceeded.
+  // The over-budget line is a warning. It does not uncheck the show.
+  const { selectedCostCents, includesQuoteFee } = useMemo(() => {
     let sum = 0;
+    let quote = false;
     for (const s of allShows) {
       if (!selectedIds.has(s.showId)) continue;
-      // flat_fee (untrusted) is shown but never summed; null basis can't price.
-      if (s.costBasis !== "derived" && s.costBasis !== "rate_card") continue;
+      // null basis can't price (needs-quote). derived, rate_card, and flat_fee can.
+      if (
+        s.costBasis !== "derived" &&
+        s.costBasis !== "rate_card" &&
+        s.costBasis !== "flat_fee"
+      ) {
+        continue;
+      }
       if (s.threeSpotCents != null && Number.isFinite(s.threeSpotCents)) {
         sum += s.threeSpotCents;
+        if (s.costBasis === "flat_fee") quote = true;
       }
     }
-    return sum;
+    return { selectedCostCents: sum, includesQuoteFee: quote };
   }, [allShows, selectedIds]);
   const overBudget =
     tiered.testBudgetCents > 0 && selectedCostCents > tiered.testBudgetCents;
@@ -921,6 +933,7 @@ function TieredScoredUniverse({
           budgetCents={tiered.testBudgetCents}
           selectedCount={selectedIds.size}
           overBudget={overBudget}
+          includesQuoteFee={includesQuoteFee}
         />
         <div className="ml-auto flex items-center gap-3">
           {ctaError && (
@@ -1768,11 +1781,13 @@ function BudgetMeter({
   budgetCents,
   selectedCount,
   overBudget,
+  includesQuoteFee,
 }: {
   spentCents: number;
   budgetCents: number;
   selectedCount: number;
   overBudget: boolean;
+  includesQuoteFee: boolean;
 }) {
   const pct =
     budgetCents > 0 ? Math.min(100, (spentCents / budgetCents) * 100) : 0;
@@ -1786,6 +1801,14 @@ function BudgetMeter({
           </span>{" "}
           of {formatMoneyCents(budgetCents)}
         </span>
+        {includesQuoteFee && (
+          <span
+            data-testid="budget-quote-note"
+            className={`font-medium ${mutedText}`}
+          >
+            includes a quote-to-confirm fee
+          </span>
+        )}
         {overBudget && (
           <span
             data-testid="budget-warning"

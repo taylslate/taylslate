@@ -41,6 +41,7 @@ import { logEvent, type LogEventInput } from "@/lib/data/events";
 // Type-only import — erased at compile time, so there is no runtime circular
 // dependency with conviction-discovery (which imports this module's function).
 import type { ScoredRingGroup, ScoredShowEntry } from "./conviction-discovery";
+import { describeShowMedium } from "./show-surfaces";
 
 // ---- Tunables ----
 
@@ -393,7 +394,11 @@ function formatShowForPrompt(entry: ScoredShowEntry): string {
     .filter((s) => typeof s === "string" && s.trim())
     .slice(0, SPONSORS_MAX_ITEMS);
 
-  const lines = [`- id: ${show.id}`, `  name: ${show.name}`];
+  const lines = [
+    `- id: ${show.id}`,
+    `  name: ${show.name}`,
+    `  medium: ${describeShowMedium(show)}`,
+  ];
   // Omitted (not "(none)") when empty so the model never remarks on a gap.
   if (description) lines.push(`  description: ${description}`);
   if (sponsors.length > 0) {
@@ -507,10 +512,13 @@ export function templateReasoning(entry: ScoredShowEntry): string {
   }
 
   const lead = BAND_LEAD[score?.band] ?? "Match";
+  // Name the medium so the brand knows which buy the sentence is about.
+  // A simulcast names both. The label does not change the score.
+  const medium = describeShowMedium(entry.show ?? { platform: "podcast" });
   if (clauses.length === 0) {
-    return `${lead} — limited signal to score this show on the available data.`;
+    return `${lead} as a ${medium} buy — limited signal to score this show on the available data.`;
   }
-  return `${lead} — ${clauses.join(", ")}.`;
+  return `${lead} as a ${medium} buy — ${clauses.join(", ")}.`;
 }
 
 /** Human label for a purchase-power sub-score. Deliberately avoids demographic
