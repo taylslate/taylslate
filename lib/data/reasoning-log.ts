@@ -708,6 +708,38 @@ export async function getLatestCampaignPatternForCustomer(
 }
 
 /**
+ * How many campaign_patterns this customer has on campaigns other than
+ * `excludeCampaignId`. 0 means a first-time brand. null means the read
+ * failed — callers must not treat that as first-time. Fail-soft.
+ */
+export async function countOtherCampaignPatterns(
+  customerId: string,
+  excludeCampaignId: string
+): Promise<number | null> {
+  try {
+    const { count, error } = await supabaseAdmin
+      .from("campaign_patterns")
+      .select("id", { count: "exact", head: true })
+      .eq("customer_id", customerId)
+      .neq("campaign_id", excludeCampaignId);
+    if (error) {
+      console.warn(
+        "[reasoning-log.countOtherCampaignPatterns] read failed:",
+        error.message
+      );
+      return null;
+    }
+    return count ?? 0;
+  } catch (err) {
+    console.warn(
+      "[reasoning-log.countOtherCampaignPatterns] threw:",
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+/**
  * Most recent campaign_patterns row for a campaign, or null. Fail-soft.
  * The interpret endpoint's idempotency guard: a pattern row created after
  * the brief's submitted_at means interpretation already ran for this brief

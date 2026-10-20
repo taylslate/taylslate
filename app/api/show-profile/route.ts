@@ -4,6 +4,7 @@ import {
   ensureProfile,
   getShowProfileByUserId,
   upsertShowProfile,
+  generateSlug,
 } from "@/lib/data/queries";
 import type {
   ShowAdFormat,
@@ -15,6 +16,8 @@ import type {
   ShowProfile,
   ShowProfilePlatform,
 } from "@/lib/data/types";
+import { parseMediaKitGeography, hasAudienceGeography } from "@/lib/shows/media-kit-geo";
+import { applyAudienceGeographyToShow } from "@/lib/shows/apply-geography";
 
 const ALLOWED_PLATFORMS: ShowProfilePlatform[] = ["podcast", "youtube", "both"];
 const ALLOWED_CADENCES: ShowEpisodeCadence[] = [
@@ -50,6 +53,7 @@ const BRAND_HISTORY_MAX_ENTRIES = 10; // backstop; onboarding UI soft-limits to 
 const BRAND_NAME_MAX = 100;
 const BRAND_CATEGORY_MAX = 80;
 const BRAND_NOTES_MAX = 500;
+const MEDIA_KIT_MAX = 20_000;
 
 /**
  * Validate a single brand_history element into a fresh, key-whitelisted object.
@@ -166,6 +170,16 @@ export function sanitizeShowProfilePatch(
     patch.brand_history = cleaned;
   }
 
+  // Geography is parsed here from the kit text. A client-supplied
+  // audience_geography object is ignored so the stored shares match
+  // the text. Empty text clears both.
+  if (typeof body.media_kit_text === "string") {
+    const text = body.media_kit_text.trim().slice(0, MEDIA_KIT_MAX);
+    patch.media_kit_text = text || null;
+    const geography = parseMediaKitGeography(text);
+    patch.audience_geography = hasAudienceGeography(geography) ? geography : null;
+  }
+
   return patch;
 }
 
@@ -202,10 +216,28 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Failed to initialize profile" }, { status: 500 });
   }
 
+  const existing = await getShowProfileByUserId(user.id);
   const patch = sanitizeShowProfilePatch(body);
+  // show_slug is a migration-045 column. Write it only with the kit so
+  // the rest of onboarding keeps saving if that migration is not applied yet.
+  if ("media_kit_text" in patch) {
+    const nameForSlug =
+      patch.show_name !== undefined ? patch.show_name : existing?.show_name ?? null;
+    if (typeof nameForSlug === "string" && nameForSlug.trim()) {
+      patch.show_slug = generateSlug(nameForSlug);
+    }
+  }
+
   const result = await upsertShowProfile(user.id, patch);
   if (!result) {
     return NextResponse.json({ error: "Failed to save show profile" }, { status: 500 });
+  }
+
+  // Copy parsed country shares onto the shows row when one exists.
+  // A miss is fine — the profile still holds the parse. Failures here
+  // must not fail the profile save.
+  if ("media_kit_text" in patch) {
+    await applyAudienceGeographyToShow(result);
   }
 
   return NextResponse.json({ show_profile: result });

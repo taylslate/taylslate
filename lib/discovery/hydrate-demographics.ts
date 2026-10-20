@@ -23,8 +23,13 @@
 // the conviction.scored event) so the spend is a reported number.
 // ============================================================
 
-import type { Show, ShowDemographics } from "@/lib/data/types";
+import type { AudienceGeography, Show, ShowDemographics } from "@/lib/data/types";
 import { generateSlug, getShowsBySlugs } from "@/lib/data/queries";
+import { getAudienceGeographyBySlugs } from "@/lib/shows/apply-geography";
+import {
+  hasAudienceGeography,
+  mergeGeographyIntoDemographics,
+} from "@/lib/shows/media-kit-geo";
 import {
   getPodscanClientSafe,
   PodscanError,
@@ -42,6 +47,13 @@ export interface HydrateDemographicsDeps {
    * Podscan 404 = podcast has no demographics) — a skip, not an error.
    */
   fetchDemographics: (podscanId: string) => Promise<PodscanDemographics | null>;
+  /**
+   * Media-kit country shares saved on show_profiles, keyed by show slug.
+   * Omitted → skip. Fills country keys the candidate doesn't already have.
+   */
+  lookupGeography?: (
+    slugs: string[]
+  ) => Promise<Array<{ slug: string; geography: AudienceGeography }>>;
 }
 
 const defaultDeps: HydrateDemographicsDeps = {
@@ -51,6 +63,7 @@ const defaultDeps: HydrateDemographicsDeps = {
     if (!client) return null;
     return client.getPodcastDemographics(podscanId);
   },
+  lookupGeography: getAudienceGeographyBySlugs,
 };
 
 export interface HydrateDemographicsResult {
@@ -181,6 +194,28 @@ export async function hydrateCandidateDemographics(
     result.errors.push(
       `Demographics fetch failed for ${failCount} podcast(s) (first: ${firstFailure}).`
     );
+  }
+
+  if (deps.lookupGeography) {
+    try {
+      const geoRows = await deps.lookupGeography([...new Set(slugOf.values())]);
+      const geoBySlug = new Map(geoRows.map((row) => [row.slug, row.geography]));
+      for (const candidate of candidates) {
+        const geography = geoBySlug.get(slugOf.get(candidate)!);
+        if (!hasAudienceGeography(geography)) continue;
+        // onlyMissing: a share already on the show (DB or an earlier kit
+        // write) wins over the profile copy.
+        candidate.demographics = mergeGeographyIntoDemographics(
+          candidate.demographics,
+          geography,
+          { onlyMissing: true }
+        );
+      }
+    } catch (err) {
+      result.errors.push(
+        `Audience geography lookup failed (${errMsg(err)}) — scoring without media-kit country shares.`
+      );
+    }
   }
 
   result.skipped = candidates.filter(

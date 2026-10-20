@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { importShows, getUserProfile } from "@/lib/data/queries";
+import type { AudienceGeography, ShowDemographics } from "@/lib/data/types";
+import {
+  GEO_KEYS,
+  hasAudienceGeography,
+  parseMediaKitGeography,
+} from "@/lib/shows/media-kit-geo";
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,7 +67,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function parseCSVToShows(text: string) {
+export function parseCSVToShows(text: string) {
   const rows = text.split(/\r?\n/).filter(r => r.trim());
   if (rows.length < 2) return [];
 
@@ -76,6 +82,7 @@ function parseCSVToShows(text: string) {
     price_type?: "cpm" | "flat_rate";
     episode_cadence?: string;
     ad_formats?: string[];
+    demographics?: ShowDemographics;
   }> = [];
 
   for (let i = 1; i < rows.length; i++) {
@@ -104,6 +111,11 @@ function parseCSVToShows(text: string) {
     const cpm = parseNum(get(["cpm", "rate", "cost"]));
     const flatRate = parseNum(get(["flat rate", "price per spot", "price", "spot rate"]));
     const category = get(["category", "genre", "niche"]);
+    const kit = get(["media kit", "audience geography", "geography"]);
+    const geography: AudienceGeography = {
+      ...parseMediaKitGeography(kit),
+      ...explicitCountryShares(headerCols, cols),
+    };
 
     const rate_card: Record<string, number> = {};
     if (platform === "youtube" && flatRate > 0) {
@@ -124,6 +136,7 @@ function parseCSVToShows(text: string) {
       price_type: platform === "youtube" ? "flat_rate" : "cpm",
       episode_cadence: "weekly",
       ad_formats: platform === "podcast" ? ["host_read"] : ["integration"],
+      demographics: hasAudienceGeography(geography) ? geography : undefined,
     });
   }
 
@@ -149,6 +162,32 @@ function parseCSVLine(line: string): string[] {
   }
   cols.push(current);
   return cols;
+}
+
+const COUNTRY_HEADERS: Record<string, (typeof GEO_KEYS)[number]> = {
+  us: "us",
+  "us %": "us",
+  usa: "us",
+  "united states": "us",
+  uk: "uk",
+  "uk %": "uk",
+  "united kingdom": "uk",
+  canada: "canada",
+  "canada %": "canada",
+  australia: "australia",
+  "australia %": "australia",
+};
+
+/** Exact header match so a column named "audience" is not read as "us". */
+function explicitCountryShares(headerCols: string[], cols: string[]): AudienceGeography {
+  const geo: AudienceGeography = {};
+  headerCols.forEach((header, idx) => {
+    const key = COUNTRY_HEADERS[header.toLowerCase().trim()];
+    if (!key) return;
+    const n = parseNum(cols[idx] ?? "");
+    if (n > 0 && n <= 100) geo[key] = n;
+  });
+  return geo;
 }
 
 function parseNum(str: string): number {

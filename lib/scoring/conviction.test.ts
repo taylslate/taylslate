@@ -6,6 +6,8 @@ import {
   type ConvictionScore,
 } from "./conviction";
 import { getEffectiveWeights } from "./weights";
+import { TRUSTED_HOST_NOTE } from "./trusted-host";
+import type { GenreBenchmark } from "./benchmarks";
 import type {
   Show,
   RingHypothesisRow,
@@ -409,5 +411,121 @@ describe("speculative ring caps band at speculative", () => {
     expect(result.composite).toBeGreaterThanOrEqual(75);
     // ...but the speculative ring caps it.
     expect(result.band).toBe<ConvictionBand>("speculative");
+  });
+});
+
+describe("geography guides audience fit and never removes the show", () => {
+  it("leaves the score unchanged when geography is quoted but the brief has no target", () => {
+    const without = scoreShowConviction(
+      makeShow({ demographics: demoFor(80) }),
+      makeRing(),
+      patternWithTarget("high")
+    );
+    const withGeo = scoreShowConviction(
+      makeShow({ demographics: { ...demoFor(80), us: 70, uk: 10 } }),
+      makeRing(),
+      patternWithTarget("high")
+    );
+    expect(withGeo.audienceFit).toBe(without.audienceFit);
+    expect(withGeo.composite).toBe(without.composite);
+    expect(withGeo.guidanceLines?.[0]).toMatch(/Audience geography: US 70%, UK 10%/);
+  });
+
+  it("averages a target-market overlap into audience fit", () => {
+    const result = scoreShowConviction(
+      makeShow({
+        demographics: { ...demoFor(90), us: 0, uk: 50, canada: 50 },
+      }),
+      makeRing(),
+      makePattern("high", {
+        target_audience: MEN_30_60,
+        target_geography: "US",
+      })
+    );
+    // age 90, gender 90, geo overlap 0 → 60. The show still has a score.
+    expect(result.audienceFit).toBe(60);
+    expect(result.guidanceLines?.join(" ")).toMatch(/target market \(US\)/);
+    expect(result.composite).toBeGreaterThan(0);
+  });
+});
+
+describe("genre benchmarks and trusted hosts", () => {
+  const cited: GenreBenchmark[] = [
+    { genre: "True Crime", metric: "purchase_rate", value: 0.04, source: "Cited study", as_of: "2024-06-01" },
+    { genre: "Comedy", metric: "purchase_rate", value: 0.01, source: "Cited study", as_of: "2024-06-01" },
+  ];
+
+  it("quotes a benchmark and applies the comparison nudge to purchase power", () => {
+    const show = makeShow({
+      categories: ["True Crime"],
+      audience_purchase_power: 50,
+    });
+    const plain = scoreShowConviction(show, makeRing(), makePattern("high"));
+    const guided = scoreShowConviction(show, makeRing(), makePattern("high"), {
+      benchmarks: cited,
+    });
+    expect(guided.purchasePower).toBe(plain.purchasePower + 4);
+    expect(guided.guidanceLines?.join("\n")).toMatch(/purchase-rate benchmark: 4%/);
+    expect(guided.guidanceLines?.join("\n")).toMatch(/Guidance only/);
+  });
+
+  it("does not treat an empty benchmark value as a number", () => {
+    const show = makeShow({ categories: ["True Crime"], audience_purchase_power: 50 });
+    const plain = scoreShowConviction(show, makeRing(), makePattern("high"));
+    const empty = scoreShowConviction(show, makeRing(), makePattern("high"), {
+      benchmarks: [{ genre: "True Crime", metric: "purchase_rate", value: null }],
+    });
+    expect(empty.purchasePower).toBe(plain.purchasePower);
+    expect(empty.composite).toBe(plain.composite);
+    expect(empty.guidanceLines ?? []).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/benchmark/i)])
+    );
+  });
+
+  it("adds a small bump and a note for a trusted host when the brand is buying its first campaign", () => {
+    const show = makeShow({
+      categories: ["Recovery"],
+      demographics: demoFor(80),
+      audience_purchase_power: 20,
+      is_verified: true,
+    });
+    const returning = scoreShowConviction(show, makeRing(), patternWithTarget("high"));
+    const first = scoreShowConviction(show, makeRing(), patternWithTarget("high"), {
+      firstTimeBrand: true,
+    });
+    expect(returning.composite).toBe(71);
+    expect(first.composite).toBe(73);
+    expect(first.band).toBe<ConvictionBand>("medium");
+    expect(first.guidanceLines).toContain(TRUSTED_HOST_NOTE);
+    expect(returning.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
+  });
+
+  it("does not bump an untrusted host for a first-time brand", () => {
+    const show = makeShow({
+      categories: ["Recovery"],
+      demographics: demoFor(80),
+      audience_purchase_power: 20,
+      is_verified: false,
+      current_sponsors: [],
+    });
+    const result = scoreShowConviction(show, makeRing(), patternWithTarget("high"), {
+      firstTimeBrand: true,
+    });
+    expect(result.composite).toBe(71);
+    expect(result.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
+  });
+
+  it("treats a recorded sponsor as a trusted host", () => {
+    const show = makeShow({
+      categories: ["Recovery"],
+      demographics: demoFor(80),
+      audience_purchase_power: 20,
+      current_sponsors: ["LMNT"],
+    });
+    const result = scoreShowConviction(show, makeRing(), patternWithTarget("high"), {
+      firstTimeBrand: true,
+    });
+    expect(result.composite).toBe(73);
+    expect(result.guidanceLines).toContain(TRUSTED_HOST_NOTE);
   });
 });

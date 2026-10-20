@@ -263,6 +263,21 @@ describe("hydrateCandidateDemographics", () => {
     expect(result.fromApi).toBe(1);
   });
 
+  it("fills missing country shares from a media-kit lookup and keeps age or gender", async () => {
+    const candidate = makeShow({
+      name: "Recovery Lab",
+      demographics: { male: 60, us: 80 },
+    });
+    const { deps } = makeDeps({});
+    deps.lookupGeography = async () => [
+      { slug: "recovery-lab", geography: { us: 10, uk: 9 } },
+    ];
+    await hydrateCandidateDemographics([candidate], deps);
+    expect(candidate.demographics.male).toBe(60);
+    expect(candidate.demographics.us).toBe(80);
+    expect(candidate.demographics.uk).toBe(9);
+  });
+
   it("empty candidate pool is a clean no-op", async () => {
     const { deps, fetchCalls } = makeDeps({});
     const result = await hydrateCandidateDemographics([], deps);
