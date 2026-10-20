@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Outreach } from "@/lib/data/types";
 import { formatDateOnly } from "@/lib/format/date-only";
 import { tokens } from "@/lib/brand/tokens";
+import { ShowEmailCode } from "@/components/auth/show-email-code";
 
 const radiusStyle = { borderRadius: tokens.radius };
 const inkText = "text-[var(--ts-ink-on-paper)]";
@@ -264,6 +265,7 @@ function UnonboardedActions({
 }: UnonboardedActionsProps) {
   const [email, setEmail] = useState<string>(defaultEmail);
   const [magicSent, setMagicSent] = useState<boolean>(false);
+  const [codeMode, setCodeMode] = useState<boolean>(false);
 
   const startMagic = async () => {
     setError(null);
@@ -310,6 +312,31 @@ function UnonboardedActions({
     }
   };
 
+  if (codeMode) {
+    return (
+      <div className={`p-5 ${panelClass}`} style={radiusStyle}>
+        <div className={`mb-3 text-sm font-semibold ${inkText}`}>
+          Sign in with a code
+        </div>
+        <ShowEmailCode
+          defaultEmail={email}
+          outreachToken={token}
+          nextPath="/onboarding/show"
+          onVerified={() => {
+            window.location.assign("/onboarding/show");
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => setCodeMode(false)}
+          className={`mt-4 text-xs underline ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
+        >
+          Use the email link instead
+        </button>
+      </div>
+    );
+  }
+
   if (magicSent) {
     return (
       <div className={`p-5 ${panelClass}`} style={radiusStyle}>
@@ -319,6 +346,13 @@ function UnonboardedActions({
           your show profile (about three minutes), then come right back here to
           accept or counter the offer.
         </p>
+        <button
+          type="button"
+          onClick={() => setCodeMode(true)}
+          className={`mt-3 text-xs underline ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
+        >
+          Email me a code instead
+        </button>
       </div>
     );
   }
@@ -351,6 +385,13 @@ function UnonboardedActions({
             {submitting ? "Sending…" : "Set up my account"}
           </button>
         </div>
+        <button
+          type="button"
+          onClick={() => setCodeMode(true)}
+          className={`mt-3 block text-xs underline ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
+        >
+          Email me a code instead
+        </button>
         <button
           onClick={decline}
           disabled={submitting}
