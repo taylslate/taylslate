@@ -12,6 +12,11 @@ import {
   type TieredUniverse,
 } from "@/lib/discovery/tiered-universe";
 import { isBriefV2, type FounderAnnotationRow } from "@/lib/data/types";
+import { readMarketSignalContext, type MarketSignal } from "@/lib/discovery/market-signals";
+import {
+  loadMarketSignalsForShows,
+  showRefFromTiered,
+} from "@/lib/discovery/load-market-signals";
 import { notFound } from "next/navigation";
 import CampaignDetail from "./campaign-detail";
 import DiscoveryList from "./discovery-list";
@@ -64,17 +69,27 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     // the INTERNAL_ADMIN_EMAILS allowlist so a brand never loads them. Batched
     // across every rendered (test/scale/bench) show id in one round trip.
     const isAdmin = isInternalAdmin(user?.email);
-    let annotationsByShow: Record<string, FounderAnnotationRow[]> = {};
-    if (isAdmin && tiered) {
-      const showIds = Array.from(
-        new Set(
-          [...tiered.test, ...tiered.scale, ...tiered.bench].map((s) => s.showId)
-        )
-      );
-      if (showIds.length > 0) {
-        annotationsByShow = await getFounderAnnotationsForShows(showIds);
-      }
-    }
+    const tieredShows = tiered
+      ? [...tiered.test, ...tiered.scale, ...tiered.bench]
+      : [];
+    const brief = isBriefV2(campaign.brief) ? campaign.brief : null;
+    const signalContext = readMarketSignalContext({
+      productAttributes: pattern?.product_attributes ?? null,
+      productCategory: brief?.product?.category ?? null,
+      exclusionsText: brief?.exclusions_text ?? null,
+    });
+    // Signals and annotations are independent reads. Neither one decides
+    // which shows stay in the list.
+    const [annotationsByShow, marketSignalsByShow] = await Promise.all([
+      (async (): Promise<Record<string, FounderAnnotationRow[]>> => {
+        if (!isAdmin || tieredShows.length === 0) return {};
+        const showIds = Array.from(new Set(tieredShows.map((s) => s.showId)));
+        return getFounderAnnotationsForShows(showIds);
+      })(),
+      tieredShows.length > 0
+        ? loadMarketSignalsForShows(tieredShows.map(showRefFromTiered), signalContext)
+        : Promise.resolve({} as Record<string, MarketSignal[]>),
+    ]);
 
     const surfaceIds = tiered
       ? [...tiered.test, ...tiered.scale, ...tiered.bench].map((show) => show.showId)
@@ -95,6 +110,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         isAdmin={isAdmin}
         annotationsByShow={annotationsByShow}
         surfacesByShowId={surfacesByShowId}
+        marketSignalsByShow={marketSignalsByShow}
       />
     );
   }
