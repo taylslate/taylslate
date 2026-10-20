@@ -856,7 +856,12 @@ export type DomainEventType =
   // Learning review — a brand or rep note, or a brand-reported count.
   | "learning.override_saved"
   | "learning.conversion_reported"
-  | "learning.conversion_cleared";
+  | "learning.conversion_cleared"
+  // Make-good from an aircheck. detected proposes options. approved and
+  // declined are the brand on the deal. No DocuSign and no charge.
+  | "make_good.detected"
+  | "make_good.approved"
+  | "make_good.declined";
 
 export type DomainEntityType =
   | "deal"
@@ -873,6 +878,8 @@ export type DomainEntityType =
   | "io_line_item"
   // Aircheck review decision, one row per IO line.
   | "aircheck"
+  // Make-good proposal and the brand's decision.
+  | "make_good"
   // Wave 14 Phase 2A — brief derivation/interpretation events hang off campaigns
   | "campaign";
 
