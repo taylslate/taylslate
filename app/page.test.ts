@@ -25,15 +25,15 @@ function asRedirect(error: unknown) {
 }
 
 describe("home /?for=shows", () => {
-  it("308-redirects /?for=shows to /#shows", async () => {
+  it("308-redirects /?for=shows to /for-shows", async () => {
     const error = asRedirect(await redirectFrom("shows"));
-    expect(getURLFromRedirectError(error)).toBe("/#shows");
+    expect(getURLFromRedirectError(error)).toBe("/for-shows");
     expect(getRedirectStatusCodeFromError(error)).toBe(308);
   });
 
   it("308-redirects a repeated for=shows param", async () => {
     const error = asRedirect(await redirectFrom(["shows", "brands"]));
-    expect(getURLFromRedirectError(error)).toBe("/#shows");
+    expect(getURLFromRedirectError(error)).toBe("/for-shows");
     expect(getRedirectStatusCodeFromError(error)).toBe(308);
   });
 

@@ -6,6 +6,11 @@ vi.mock("next/font/google", () => ({
   Fraunces: () => ({ variable: "--font-app-display", className: "font-display" }),
   Figtree: () => ({ variable: "--font-app-sans", className: "font-body" }),
 }));
+
+const push = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push }),
+}));
 import { act, render, screen, cleanup, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
@@ -96,7 +101,7 @@ describe("LaunchHome", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "For shows" })).toHaveAttribute(
       "href",
-      "#shows",
+      "/for-shows",
     );
     const shows = document.getElementById("shows");
     expect(shows).not.toBeNull();
@@ -138,8 +143,7 @@ describe("LaunchHome", () => {
       addEventListener: () => {},
       removeEventListener: () => {},
     }) as unknown as typeof window.matchMedia;
-    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
-    Element.prototype.scrollIntoView = vi.fn();
+    push.mockClear();
 
     render(<LaunchHome />);
     const open = screen.getByRole("button", { name: "Switch to shows" });
@@ -165,18 +169,10 @@ describe("LaunchHome", () => {
       await vi.advanceTimersByTimeAsync(300);
     });
 
-    const closed = screen.getByRole("button", { name: "Switch to brands" });
-    expect(closed).toBeInTheDocument();
-    expect(closed).not.toHaveClass("is-clapping");
-    expect(closed.querySelector(".ts-clap-stick")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "For brands" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-    expect(screen.getByRole("button", { name: "For shows" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(push).toHaveBeenCalledWith("/for-shows");
+    const slate = screen.getByRole("button", { name: "Switch to shows" });
+    expect(slate).not.toHaveClass("is-clapping");
+    expect(slate.querySelector(".ts-clap-stick")).not.toBeNull();
     vi.useRealTimers();
   });
 
@@ -187,18 +183,14 @@ describe("LaunchHome", () => {
       addEventListener: () => {},
       removeEventListener: () => {},
     }) as unknown as typeof window.matchMedia;
-    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
-    Element.prototype.scrollIntoView = vi.fn();
+    push.mockClear();
 
     render(<LaunchHome />);
     fireEvent.click(screen.getByRole("button", { name: "Switch to shows" }));
-    const slate = screen.getByRole("button", { name: "Switch to brands" });
+    const slate = screen.getByRole("button", { name: "Switch to shows" });
     expect(slate.querySelector(".ts-clap-stick")).not.toBeNull();
     expect(slate).not.toHaveClass("is-clapping");
-    expect(screen.getByRole("button", { name: "For shows" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(push).toHaveBeenCalledWith("/for-shows");
   });
 
   it("has no em dashes in the rendered copy", () => {

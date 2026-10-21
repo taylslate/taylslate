@@ -31,6 +31,7 @@ describe("proxy public-route allowlist (signed out)", () => {
     "/forgot-password",
     "/reset-password",
     "/",
+    "/for-shows",
     "/sitemap.xml",
     "/robots.txt",
     "/opengraph-image",

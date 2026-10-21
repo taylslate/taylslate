@@ -25,6 +25,15 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
     pageFile: "app/page.tsx",
   },
   {
+    path: "/for-shows",
+    title: "Get the brief, the IO, and paid when the episode runs. | Taylslate",
+    description:
+      "A brand reaches out with a real offer. You review terms, countersign, deliver, and the payout follows the charge.",
+    marketing: true,
+    metadataFile: "app/for-shows/page.tsx",
+    pageFile: "app/for-shows/page.tsx",
+  },
+  {
     path: "/login",
     title: "Log in | Taylslate",
     description: "Log in to Taylslate.",

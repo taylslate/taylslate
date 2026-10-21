@@ -23,6 +23,7 @@ describe("public page metadata", () => {
   it("gives every public shell page an absolute www canonical", () => {
     expect(PUBLIC_PAGES.map((page) => page.path)).toEqual([
       "/",
+      "/for-shows",
       "/login",
       "/signup",
       "/forgot-password",
@@ -46,7 +47,7 @@ describe("public page metadata", () => {
 
   it("server-renders marketing pages with Open Graph tags and a sitemap entry", () => {
     const pages = marketingPages();
-    expect(pages.map((page) => page.path)).toEqual(["/"]);
+    expect(pages.map((page) => page.path)).toEqual(["/", "/for-shows"]);
 
     for (const page of pages) {
       expect(isClientModule(read(page.pageFile))).toBe(false);
@@ -69,13 +70,16 @@ describe("public page metadata", () => {
     expect(isClientModule(read("components/marketing/launch-home.tsx"))).toBe(
       false,
     );
+    expect(isClientModule(read("components/marketing/shows-home.tsx"))).toBe(
+      false,
+    );
     expect(isClientModule(read("components/marketing/product-shot.tsx"))).toBe(
       false,
     );
 
     const urls = sitemap().map((entry) => entry.url);
     expect(urls).toEqual(pages.map((page) => absoluteUrl(page.path)));
-    expect(urls).toEqual([SITE_ORIGIN]);
+    expect(urls).toEqual([SITE_ORIGIN, `${SITE_ORIGIN}/for-shows`]);
     const home = pages[0];
     expect(home?.description).not.toMatch(/January 2027/);
     expect(publicMetadata("/").description).toBe(
