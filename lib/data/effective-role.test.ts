@@ -140,7 +140,7 @@ describe("getEffectiveRole — integration with cookies + DB", () => {
     expect(r!.staleViewAs).toBe(true);
   });
 
-  it("dual profile + show cookie → flips to show, canSwitchTo=show", async () => {
+  it("brand base viewing as show offers a return to brand", async () => {
     arrange({
       profileRole: "brand",
       hasBrandProfile: true,
@@ -150,7 +150,7 @@ describe("getEffectiveRole — integration with cookies + DB", () => {
     const r = await getEffectiveRole("u1");
 
     expect(r!.effectiveRole).toBe("show");
-    expect(r!.canSwitchTo).toBe("show");
+    expect(r!.canSwitchTo).toBe("brand");
     expect(r!.staleViewAs).toBe(false);
     expect(getNavItemsForRole(r!.effectiveRole).map((n) => n.href)).toContain("/shows");
   });
@@ -167,6 +167,21 @@ describe("getEffectiveRole — integration with cookies + DB", () => {
     expect(r!.effectiveRole).toBe("brand");
     expect(r!.canSwitchTo).toBe("show");
     expect(r!.staleViewAs).toBe(false);
+  });
+
+  it("show base viewing as brand offers a return to show", async () => {
+    arrange({
+      profileRole: "show",
+      hasBrandProfile: true,
+      hasShowProfile: true,
+      viewAsCookie: "brand",
+    });
+    const r = await getEffectiveRole("u1");
+
+    expect(r!.effectiveRole).toBe("brand");
+    expect(r!.canSwitchTo).toBe("show");
+    expect(r!.staleViewAs).toBe(false);
+    expect(getNavItemsForRole(r!.effectiveRole).map((n) => n.href)).toContain("/campaigns");
   });
 
   it("no profile row at all → null", async () => {
