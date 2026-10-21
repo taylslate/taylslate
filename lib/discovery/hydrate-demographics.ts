@@ -26,6 +26,16 @@
 import type { Show, ShowDemographics } from "@/lib/data/types";
 import { generateSlug, getShowsBySlugs } from "@/lib/data/queries";
 import {
+  geographyForIdentity,
+  getVerifiedAudienceGeography,
+  type ShowGeoIdentity,
+  type VerifiedGeography,
+} from "@/lib/shows/apply-geography";
+import {
+  hasAudienceGeography,
+  mergeGeographyIntoDemographics,
+} from "@/lib/shows/media-kit-geo";
+import {
   getPodscanClientSafe,
   PodscanError,
   type PodscanDemographics,
@@ -42,6 +52,13 @@ export interface HydrateDemographicsDeps {
    * Podscan 404 = podcast has no demographics) — a skip, not an error.
    */
   fetchDemographics: (podscanId: string) => Promise<PodscanDemographics | null>;
+  /**
+   * Media-kit country shares from show_profiles that have a verified tie
+   * to a catalog show (a deal, or a show_owner email). Omitted → skip.
+   * A shared name or a client-supplied podscan id is not a tie. Fills
+   * country keys the candidate doesn't already have.
+   */
+  lookupGeography?: (identities: ShowGeoIdentity[]) => Promise<VerifiedGeography[]>;
 }
 
 const defaultDeps: HydrateDemographicsDeps = {
@@ -51,6 +68,7 @@ const defaultDeps: HydrateDemographicsDeps = {
     if (!client) return null;
     return client.getPodcastDemographics(podscanId);
   },
+  lookupGeography: getVerifiedAudienceGeography,
 };
 
 export interface HydrateDemographicsResult {
@@ -75,6 +93,14 @@ export function hasDemographics(d: ShowDemographics | undefined | null): boolean
 // Half the Podscan Premium concurrent-request cap (10) — leaves headroom for
 // anything else talking to Podscan while a discovery run is in flight.
 const FETCH_CONCURRENCY = 5;
+
+/** Catalog `shows.id`. Discovery ids (`discovered-podscan-…`) are not ties. */
+const CATALOG_SHOW_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function catalogShowId(id: string | undefined): string | undefined {
+  return id && CATALOG_SHOW_ID.test(id) ? id : undefined;
+}
 
 /**
  * Fill candidate demographics in place (mirrors fillPurchasePower's
@@ -181,6 +207,38 @@ export async function hydrateCandidateDemographics(
     result.errors.push(
       `Demographics fetch failed for ${failCount} podcast(s) (first: ${firstFailure}).`
     );
+  }
+
+  if (deps.lookupGeography) {
+    try {
+      const identityOf = new Map<Show, ShowGeoIdentity>();
+      for (const candidate of candidates) {
+        // The catalog id is the candidate's own id when this show is already
+        // a shows row. A slug from the name is not a tie.
+        identityOf.set(candidate, {
+          showId: catalogShowId(candidate.id),
+          podscanId: candidate.podscan_id || undefined,
+          contactEmail: candidate.contact?.email || undefined,
+          dataSources: candidate.data_sources,
+        });
+      }
+      const geoRows = await deps.lookupGeography([...identityOf.values()]);
+      for (const candidate of candidates) {
+        const geography = geographyForIdentity(identityOf.get(candidate)!, geoRows);
+        if (!hasAudienceGeography(geography)) continue;
+        // onlyMissing: a share already on the show (DB or an earlier kit
+        // write) wins over the profile copy.
+        candidate.demographics = mergeGeographyIntoDemographics(
+          candidate.demographics,
+          geography,
+          { onlyMissing: true }
+        );
+      }
+    } catch (err) {
+      result.errors.push(
+        `Audience geography lookup failed (${errMsg(err)}) — scoring without media-kit country shares.`
+      );
+    }
   }
 
   result.skipped = candidates.filter(

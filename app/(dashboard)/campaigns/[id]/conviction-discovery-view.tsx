@@ -1313,7 +1313,7 @@ function TestShowCard({
       </div>
 
       {entry.reasoning && (
-        <p className={`mt-3 text-sm leading-snug ${mutedText}`}>
+        <p className={`mt-3 whitespace-pre-line text-sm leading-snug ${mutedText}`}>
           {entry.reasoning}
         </p>
       )}
@@ -1391,7 +1391,7 @@ function ScaleShowCard({
             {ringLabel && <RingTag label={ringLabel} />}
           </div>
           {entry.reasoning && (
-            <p className={`mt-1.5 text-sm leading-snug ${mutedText}`}>
+            <p className={`mt-1.5 whitespace-pre-line text-sm leading-snug ${mutedText}`}>
               {entry.reasoning}
             </p>
           )}

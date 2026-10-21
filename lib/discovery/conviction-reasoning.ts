@@ -183,7 +183,10 @@ async function generateRingReasoning(
   const tail = entries.slice(d.topN);
   // The tail always templates — it is never sent to the model.
   for (const entry of tail) {
-    entry.reasoning = templateReasoning(entry);
+    entry.reasoning = appendGuidanceLines(
+      templateReasoning(entry),
+      entry.score.guidanceLines
+    );
   }
 
   // Call the model for the head. Any throw is swallowed → prose stays null →
@@ -222,9 +225,12 @@ async function generateRingReasoning(
   for (const entry of head) {
     const fromLLM = prose ? prose[entry.show.id] : undefined;
     if (typeof fromLLM === "string" && fromLLM.trim()) {
-      entry.reasoning = fromLLM.trim();
+      entry.reasoning = appendGuidanceLines(fromLLM.trim(), entry.score.guidanceLines);
     } else {
-      entry.reasoning = templateReasoning(entry);
+      entry.reasoning = appendGuidanceLines(
+        templateReasoning(entry),
+        entry.score.guidanceLines
+      );
       if (prose !== null) missingKeys += 1;
     }
   }
@@ -405,7 +411,26 @@ function formatShowForPrompt(entry: ScoredShowEntry): string {
     lines.push(`  sponsors detected: ${sponsors.join(", ")}`);
   }
   lines.push(`  categories: ${catStr}`, `  scores: ${topical}; ${pp}; ${audience}`);
+  const guidance = (score.guidanceLines ?? []).map((line) => line.trim()).filter(Boolean);
+  if (guidance.length > 0) {
+    lines.push(`  guidance: ${guidance.join(" | ")}`);
+  }
   return lines.join("\n");
+}
+
+/**
+ * Keep geography, benchmark, and trusted-host lines on the prose the brand
+ * sees. A line already present (the model copied it, or the template
+ * included it) is not repeated.
+ */
+export function appendGuidanceLines(
+  prose: string,
+  lines: string[] | undefined
+): string {
+  const extra = (lines ?? []).map((line) => line.trim()).filter(Boolean);
+  const missing = extra.filter((line) => !prose.includes(line));
+  if (missing.length === 0) return prose;
+  return `${prose}\n${missing.join("\n")}`;
 }
 
 /**

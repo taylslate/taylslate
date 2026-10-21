@@ -471,6 +471,23 @@ describe("scoreCandidatesAgainstRings (pure)", () => {
       expect(comps[i]).toBeLessThanOrEqual(comps[i - 1]);
     }
   });
+
+  it("keeps a show whose geography barely overlaps the target market", () => {
+    const weak = makeShow({
+      id: "discovered-podscan-weak-geo",
+      name: "Mostly Elsewhere",
+      categories: ["Cooking"],
+      demographics: { us: 2, uk: 70, canada: 20, australia: 8 },
+    });
+    const groups = scoreCandidatesAgainstRings(
+      [weak],
+      [makeRing()],
+      makePattern("mid", { target_geography: "US" })
+    );
+    expect(groups[0].shows).toHaveLength(1);
+    expect(groups[0].shows[0].show.id).toBe("discovered-podscan-weak-geo");
+    expect(groups[0].shows[0].score.guidanceLines?.join(" ")).toMatch(/Audience geography/);
+  });
 });
 
 describe("buildDiscoveryBrief", () => {

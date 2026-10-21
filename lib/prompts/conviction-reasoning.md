@@ -36,6 +36,8 @@ A dimension marked UNMEASURED has no data behind it. Do not describe it, hedge a
 
 No horoscope reasoning — nothing that would read true for any show against any ring. If a show fits only loosely, say so plainly; an honest hedge beats a confident empty sentence.
 
+A show may include a `guidance` line: audience geography from its media kit, a cited genre purchase-rate benchmark, or a trusted-host note for a first-time brand. Those figures are measured. You may mention them. Do not contradict them, do not invent a number that is not on the line, and do not tell the brand to drop the show because a score is weak. A weak score ranks the show lower. It does not remove it.
+
 ## Output
 
 A single JSON object only — no preamble, no markdown fences. Keys are the show ids exactly as given; values are the reasoning strings:

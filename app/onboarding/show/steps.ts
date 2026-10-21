@@ -14,6 +14,7 @@ export const SHOW_ONBOARDING_STEPS = [
   { slug: "exclusions", label: "Exclusions" },
   { slug: "brand-history", label: "Brand history" },
   { slug: "surfaces", label: "Surfaces" },
+  { slug: "geography", label: "Geography" },
   { slug: "contacts", label: "Contacts" },
   { slug: "summary", label: "Review" },
 ] as const;

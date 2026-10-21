@@ -16,6 +16,7 @@ import type {
 } from "@/lib/data/types";
 import { SHOW_ONBOARDING_STEPS, TOTAL_STEPS, stepIndexOf } from "../steps";
 import { getCpmBenchmark, spotPrice } from "@/lib/utils/cpm-benchmark";
+import { formatAudienceGeography } from "@/lib/shows/media-kit-geo";
 import { formatSurfaceSummary, type SellableSurface } from "@/lib/shows/surfaces";
 
 const PLATFORM_LABELS: Record<ShowProfilePlatform, string> = {
@@ -203,6 +204,13 @@ export default function SummaryClient({
               value={formatSurfaceSummary(surfaces)}
               editSlug="surfaces"
               emptyLabel="None listed"
+              placeholderAsEmpty
+            />
+            <Row
+              label="Audience geography"
+              value={formatAudienceGeography(profile.audience_geography)}
+              editSlug="geography"
+              emptyLabel="Not added"
               placeholderAsEmpty
             />
             <Row

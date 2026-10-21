@@ -12,6 +12,7 @@ import {
   generateGroupReasoning,
   buildReasoningUserContent,
   templateReasoning,
+  appendGuidanceLines,
   cleanDescription,
   REASONING_TOP_N,
   DESCRIPTION_MAX_CHARS,
@@ -256,6 +257,25 @@ describe("templateReasoning", () => {
 // Description cleaner (pure)
 // ============================================================
 
+describe("appendGuidanceLines", () => {
+  it("adds geography, benchmark, and trusted-host lines the prose does not already contain", () => {
+    const out = appendGuidanceLines("Probable fit — strong topical overlap with this ring.", [
+      "Audience geography: 68% US, 8% UK.",
+      "True Crime purchase-rate benchmark: 4% (Cited study, as of 2024-06-01). Guidance only.",
+      "Trusted host, weighted a little higher because this brand is buying its first campaign.",
+    ]);
+    expect(out).toContain("Probable fit");
+    expect(out).toContain("Audience geography: 68% US, 8% UK.");
+    expect(out).toContain("purchase-rate benchmark: 4%");
+    expect(out).toContain("Trusted host,");
+  });
+
+  it("does not repeat a line the prose already includes", () => {
+    const line = "Audience geography: 68% US.";
+    expect(appendGuidanceLines(`Probable fit.\n${line}`, [line])).toBe(`Probable fit.\n${line}`);
+  });
+});
+
 describe("cleanDescription", () => {
   it("strips HTML tags and decodes common entities", () => {
     const out = cleanDescription(
@@ -414,6 +434,23 @@ describe("generateGroupReasoning", () => {
     expect(entries[0].reasoning).toBe("Strong fit for a — covers recovery.");
     expect(entries[1].reasoning).toBe("Strong fit for b — covers recovery.");
     expect(entries[2].reasoning).toBe("Strong fit for c — covers recovery.");
+  });
+
+  it("appends guidance lines the model did not write, and puts them in the prompt", async () => {
+    const entry = makeEntry(
+      "a",
+      makeScore({ guidanceLines: ["Audience geography: 68% US, 8% UK."] })
+    );
+    const group = makeGroup(makeRing(), [entry]);
+    const { deps, calls } = makeDeps({
+      llm: async () => llmMessage(sharpResponse(["a"])),
+    });
+
+    await generateGroupReasoning("camp-1", [group], makePattern(), deps);
+
+    expect(entry.reasoning).toContain("Strong fit for a — covers recovery.");
+    expect(entry.reasoning).toContain("Audience geography: 68% US, 8% UK.");
+    expect(calls[0].userContent).toContain("guidance: Audience geography: 68% US, 8% UK.");
   });
 
   it("calls the LLM once PER RING, not per show", async () => {

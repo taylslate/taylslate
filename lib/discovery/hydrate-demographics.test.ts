@@ -263,6 +263,87 @@ describe("hydrateCandidateDemographics", () => {
     expect(result.fromApi).toBe(1);
   });
 
+  it("does not copy geography from a same-name profile with no verified tie", async () => {
+    const candidate = makeShow({
+      name: "Recovery Lab",
+      demographics: { male: 60, us: 80 },
+    });
+    const { deps } = makeDeps({
+      rows: [
+        {
+          ...makeShow({
+            id: "cat-recovery",
+            name: "Recovery Lab",
+            demographics: { male: 60, us: 80 },
+            contact: { name: "Host", email: "host@recovery.test", method: "email" },
+            data_sources: ["podscan"],
+          }),
+          slug: "recovery-lab",
+        },
+      ],
+    });
+    deps.lookupGeography = async (identities) => {
+      expect(identities).toEqual([
+        expect.objectContaining({
+          podscanId: undefined,
+        }),
+      ]);
+      expect(identities[0]?.showId).toBeUndefined();
+      expect(identities.some((row) => "slug" in row)).toBe(false);
+      return [{ showId: "cat-recovery", geography: { uk: 99 } }];
+    };
+    await hydrateCandidateDemographics([candidate], deps);
+    expect(candidate.demographics.male).toBe(60);
+    expect(candidate.demographics.us).toBe(80);
+    expect(candidate.demographics.uk).toBeUndefined();
+  });
+
+  it("does not copy geography from a profile that only shares a podscan id", async () => {
+    const candidate = makeShow({
+      name: "Recovery Lab",
+      podscan_id: "pd_recovery",
+      demographics: { male: 60, us: 80 },
+    });
+    const { deps } = makeDeps({});
+    deps.lookupGeography = async (identities) => {
+      expect(identities[0]?.podscanId).toBe("pd_recovery");
+      return [{ geography: { uk: 99 } }];
+    };
+    await hydrateCandidateDemographics([candidate], deps);
+    expect(candidate.demographics.uk).toBeUndefined();
+    expect(candidate.demographics.us).toBe(80);
+  });
+
+  it("fills missing country shares when the candidate id is the catalog show", async () => {
+    const catalogId = "11111111-1111-4111-8111-111111111111";
+    const candidate = makeShow({
+      id: catalogId,
+      name: "Recovery Lab",
+      podscan_id: "pd_recovery",
+      demographics: { male: 60, us: 80 },
+    });
+    const { deps } = makeDeps({
+      rows: [
+        {
+          ...makeShow({
+            id: "22222222-2222-4222-8222-222222222222",
+            name: "Recovery Lab",
+            demographics: { male: 60, us: 80 },
+          }),
+          slug: "recovery-lab",
+        },
+      ],
+    });
+    deps.lookupGeography = async (identities) => {
+      expect(identities[0]?.showId).toBe(catalogId);
+      return [{ showId: catalogId, geography: { us: 10, uk: 9 } }];
+    };
+    await hydrateCandidateDemographics([candidate], deps);
+    expect(candidate.demographics.male).toBe(60);
+    expect(candidate.demographics.us).toBe(80);
+    expect(candidate.demographics.uk).toBe(9);
+  });
+
   it("empty candidate pool is a clean no-op", async () => {
     const { deps, fetchCalls } = makeDeps({});
     const result = await hydrateCandidateDemographics([], deps);

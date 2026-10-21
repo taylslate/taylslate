@@ -7,6 +7,7 @@ const upsertShowProfile = vi.fn();
 const completeShowProfile = vi.fn();
 const lookupShowByUrl = vi.fn();
 const getPodscanClientSafe = vi.fn();
+const applyAudienceGeographyToShow = vi.fn();
 
 vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: (...args: unknown[]) => getAuthenticatedUser(...args),
@@ -14,6 +15,12 @@ vi.mock("@/lib/data/queries", () => ({
   getShowProfileByUserId: (...args: unknown[]) => getShowProfileByUserId(...args),
   upsertShowProfile: (...args: unknown[]) => upsertShowProfile(...args),
   completeShowProfile: (...args: unknown[]) => completeShowProfile(...args),
+  generateSlug: (name: string) =>
+    name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+}));
+
+vi.mock("@/lib/shows/apply-geography", () => ({
+  applyAudienceGeographyToShow: (...args: unknown[]) => applyAudienceGeographyToShow(...args),
 }));
 
 vi.mock("@/lib/podscan", () => ({
@@ -201,6 +208,20 @@ describe("sanitizeShowProfilePatch", () => {
       expect(sanitizeShowProfilePatch({}).brand_history).toBeUndefined();
     });
 
+    it("parses media-kit geography and ignores a client-supplied share", () => {
+      const patch = sanitizeShowProfilePatch({
+        media_kit_text: "United States: 62%\nCanada 8%",
+        audience_geography: { us: 99, uk: 99 },
+      } as Record<string, unknown>);
+      expect(patch.audience_geography).toEqual({ us: 62, canada: 8 });
+    });
+
+    it("clears geography when the kit text is blank", () => {
+      const patch = sanitizeShowProfilePatch({ media_kit_text: "   " });
+      expect(patch.media_kit_text).toBeNull();
+      expect(patch.audience_geography).toBeNull();
+    });
+
     it("writes an empty array when all entries are junk (skip semantics)", () => {
       const patch = sanitizeShowProfilePatch({
         brand_history: [{ category: "no name" }, null],
@@ -257,6 +278,32 @@ describe("PUT /api/show-profile", () => {
     const call = upsertShowProfile.mock.calls[0];
     expect(call[0]).toBe("u1");
     expect(call[1]).toEqual({ show_name: "Saunas", audience_size: 12000 });
+    expect(applyAudienceGeographyToShow).not.toHaveBeenCalled();
+  });
+
+  it("parses a media kit into country shares and copies them onto the show", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u1", email: "u@x.co" });
+    ensureProfile.mockResolvedValue({});
+    getShowProfileByUserId.mockResolvedValue({ show_name: "Saunas" });
+    upsertShowProfile.mockResolvedValue({
+      id: "sp1",
+      show_name: "Saunas",
+      audience_geography: { us: 62, uk: 11 },
+    });
+
+    const res = await PUT(
+      jsonRequest({
+        media_kit_text: "United States 62%\nUnited Kingdom 11%",
+        audience_geography: { us: 1 },
+      }) as never
+    );
+
+    expect(res.status).toBe(200);
+    const saved = upsertShowProfile.mock.calls[0][1];
+    expect(saved.media_kit_text).toBe("United States 62%\nUnited Kingdom 11%");
+    expect(saved.audience_geography).toEqual({ us: 62, uk: 11 });
+    expect(saved.show_slug).toBe("saunas");
+    expect(applyAudienceGeographyToShow).toHaveBeenCalledTimes(1);
   });
 });
 

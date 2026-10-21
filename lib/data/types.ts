@@ -60,6 +60,17 @@ export interface ShowDemographics {
   hhi_100k_plus?: number;
 }
 
+/**
+ * Country shares parsed from a media kit. Each value is a percent
+ * 0–100. Absent keys were not in the kit.
+ */
+export interface AudienceGeography {
+  us?: number;
+  uk?: number;
+  canada?: number;
+  australia?: number;
+}
+
 export interface ShowRateCard {
   preroll_cpm?: number;
   midroll_cpm?: number;
@@ -500,6 +511,13 @@ export interface ShowProfile {
 
   // Step 5
   audience_size?: number | null;
+
+  // Media kit (migration 045). Pasted or uploaded text, the country
+  // shares parsed from it, and a display slug. Scoring attaches those
+  // shares only through a verified show tie, never through the slug.
+  media_kit_text?: string | null;
+  audience_geography?: AudienceGeography | null;
+  show_slug?: string | null;
 
   // Step 6
   expected_cpm?: number | null;
@@ -1252,6 +1270,21 @@ export interface AnalogMatchRow {
   similarity_score: number | null;
   /** FK to the campaign_patterns row the analog came from (migration 022). */
   analog_pattern_id: string | null;
+  created_at: string;
+}
+
+/**
+ * Cited genre benchmark (migration 045). `value` is null until a
+ * source is recorded — scoring must not treat that as zero.
+ * purchase_rate is a fraction (0.024 = 2.4%).
+ */
+export interface BenchmarkRow {
+  id: string;
+  genre: string;
+  metric: string;
+  value: number | null;
+  source: string | null;
+  as_of: string | null;
   created_at: string;
 }
 

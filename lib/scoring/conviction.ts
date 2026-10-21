@@ -42,6 +42,13 @@ import type {
   AovBucket,
 } from "@/lib/data/types";
 import { getEffectiveWeights, type ScoringWeights } from "./weights";
+import { geographyGuidance } from "./geo-guidance";
+import { purchaseRateGuidance, type GenreBenchmark } from "./benchmarks";
+import {
+  isTrustedHost,
+  TRUSTED_HOST_COMPOSITE_BUMP,
+  TRUSTED_HOST_NOTE,
+} from "./trusted-host";
 
 // ---- Tunable constants (first-pass; calibrate against real campaigns) ----
 
@@ -83,6 +90,16 @@ export interface ConvictionWeights {
   purchasePower: number;
 }
 
+/**
+ * Optional scoring context. Absent fields leave today's score unchanged.
+ * Benchmarks and geography guide the number; they never drop a show.
+ * `firstTimeBrand` turns on the small trusted-host bump.
+ */
+export interface ConvictionScoringContext {
+  benchmarks?: GenreBenchmark[];
+  firstTimeBrand?: boolean;
+}
+
 export interface ConvictionScore {
   /** 0-100 each. */
   audienceFit: number;
@@ -100,6 +117,12 @@ export interface ConvictionScore {
     topicalRelevance: { degraded: boolean };
     purchasePower: { degraded: boolean; source: "column" | "absent" };
   };
+  /**
+   * Geography, cited benchmark, and trusted-host lines. Empty when those
+   * signals are absent. Appended to the show's reasoning so they stay
+   * visible. Optional on hand-built fixtures.
+   */
+  guidanceLines?: string[];
 }
 
 // ============================================================
@@ -146,18 +169,32 @@ export function convictionWeights(
 export function scoreShowConviction(
   show: Show,
   ring: RingHypothesisRow,
-  campaignPattern: CampaignPatternRow
+  campaignPattern: CampaignPatternRow,
+  context?: ConvictionScoringContext
 ): ConvictionScore {
-  const audience = scoreAudienceFit(show, campaignPattern);
+  const geo = geographyGuidance(show, campaignPattern);
+  const audience = scoreAudienceFit(show, campaignPattern, geo.score);
   const topical = scoreTopicalRelevance(show, ring, campaignPattern);
   const purchase = scorePurchasePower(show);
+  const benchmark = purchaseRateGuidance(show.categories, context?.benchmarks);
+  // A cited comparison nudges purchase power. The degraded flag stays on
+  // the column read — a benchmark is not a measured purchase-power column.
+  const purchaseScore = score100(purchase.score + benchmark.delta);
 
   const weights = convictionWeights(campaignPattern.aov_bucket);
-  const composite = score100(
+  let composite = score100(
     weights.audienceFit * audience.score +
       weights.topicalRelevance * topical.score +
-      weights.purchasePower * purchase.score
+      weights.purchasePower * purchaseScore
   );
+
+  const guidanceLines: string[] = [];
+  if (geo.line) guidanceLines.push(geo.line);
+  if (benchmark.line) guidanceLines.push(benchmark.line);
+  if (context?.firstTimeBrand && isTrustedHost(show)) {
+    composite = score100(composite + TRUSTED_HOST_COMPOSITE_BUMP);
+    guidanceLines.push(TRUSTED_HOST_NOTE);
+  }
 
   const degradedCount =
     (audience.degraded ? 1 : 0) +
@@ -166,7 +203,7 @@ export function scoreShowConviction(
 
   const band = deriveBand({
     composite,
-    dims: [audience.score, topical.score, purchase.score],
+    dims: [audience.score, topical.score, purchaseScore],
     ringConfidence: ring.confidence,
     degradedCount,
   });
@@ -174,10 +211,11 @@ export function scoreShowConviction(
   return {
     audienceFit: audience.score,
     topicalRelevance: topical.score,
-    purchasePower: purchase.score,
+    purchasePower: purchaseScore,
     composite,
     band,
     weights,
+    guidanceLines,
     drivers: {
       audienceFit: { degraded: audience.degraded, coverage: audience.coverage },
       topicalRelevance: { degraded: topical.degraded },
@@ -232,7 +270,8 @@ interface AudienceResult {
 
 function scoreAudienceFit(
   show: Show,
-  pattern: CampaignPatternRow
+  pattern: CampaignPatternRow,
+  geoScore: number | null = null
 ): AudienceResult {
   const target = readTargetAudience(pattern);
   const demo = (show.demographics ?? {}) as ShowDemographics;
@@ -247,17 +286,23 @@ function scoreAudienceFit(
   const genderScore = scoreGender(demo, target);
   if (genderScore !== null) signals.push(genderScore);
 
+  // Geography: only when a media-kit share and a scoreable target market
+  // both exist. A quoted-only breakdown passes null and does not move
+  // the average.
+  if (geoScore !== null) signals.push(geoScore);
+
   if (signals.length === 0) {
     // No matchable demographic signal — neutral, flagged degraded so the band
     // cap can treat the dimension as unscored. (Launch-common case.)
     return { score: NEUTRAL_DEGRADED_SCORE, degraded: true, coverage: 0 };
   }
 
+  const attempted = 2 + (geoScore !== null ? 1 : 0);
   const avg = signals.reduce((s, v) => s + v, 0) / signals.length;
   return {
     score: score100(avg),
     degraded: false,
-    coverage: signals.length / 2,
+    coverage: signals.length / attempted,
   };
 }
 

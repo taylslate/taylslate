@@ -43,7 +43,11 @@ import {
   type DiscoveryBrief,
   type DiscoveryResult,
 } from "./discover-shows";
-import { scoreShowConviction, type ConvictionScore } from "@/lib/scoring/conviction";
+import {
+  scoreShowConviction,
+  type ConvictionScore,
+  type ConvictionScoringContext,
+} from "@/lib/scoring/conviction";
 import { generateGroupReasoning } from "./conviction-reasoning";
 import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
 import {
@@ -62,8 +66,10 @@ import {
   getConfirmedRings,
   clearConvictionScores,
   recordConvictionScore,
+  countOtherCampaignPatterns,
   type RecordConvictionScoreInput,
 } from "@/lib/data/reasoning-log";
+import { listBenchmarks } from "@/lib/data/benchmarks";
 import { logEvent, type LogEventInput } from "@/lib/data/events";
 import {
   tierCampaignPortfolio,
@@ -150,6 +156,19 @@ export interface ConvictionDiscoveryDeps {
       medium_priors?: Show["medium_priors"];
     }
   ) => Promise<boolean>;
+  /**
+   * Cited genre benchmarks. Missing dep or a failed read means no
+   * benchmark guidance this run — scores match the no-benchmark path.
+   */
+  loadBenchmarks?: () => Promise<ConvictionScoringContext["benchmarks"]>;
+  /**
+   * How many other campaign_patterns this customer has. 0 → first-time
+   * brand (trusted-host note). null → unknown, so the bump stays off.
+   */
+  loadPriorCampaignCount?: (
+    customerId: string,
+    excludeCampaignId: string
+  ) => Promise<number | null>;
 }
 
 const defaultDeps: ConvictionDiscoveryDeps = {
@@ -166,6 +185,8 @@ const defaultDeps: ConvictionDiscoveryDeps = {
   hydrateDemographics: (candidates) => hydrateCandidateDemographics(candidates),
   backfillShowPodscanData,
   backfillShowMediumFields,
+  loadBenchmarks: listBenchmarks,
+  loadPriorCampaignCount: countOtherCampaignPatterns,
 };
 
 // ---- Band helpers ----
@@ -226,12 +247,13 @@ export function fillPurchasePower(shows: Show[]): void {
 export function scoreCandidatesAgainstRings(
   candidates: Show[],
   rings: RingHypothesisRow[],
-  pattern: CampaignPatternRow
+  pattern: CampaignPatternRow,
+  context?: ConvictionScoringContext
 ): ScoredRingGroup[] {
   return rings.map((ring) => {
     const shows: ScoredShowEntry[] = [];
     for (const show of candidates) {
-      const raw = scoreShowConviction(show, ring, pattern);
+      const raw = scoreShowConviction(show, ring, pattern, context);
       // Apply the (no-op) DAI seam to the composite. With modifier 1.0 the
       // composite and band are unchanged; see daiModifier() for the contract
       // when a real value lands.
@@ -326,7 +348,22 @@ export async function runConvictionDiscovery(
   if (hydration?.errors.length) errors.push(...hydration.errors);
   fillPurchasePower(candidates);
 
-  const groups = scoreCandidatesAgainstRings(candidates, rings, pattern);
+  const benchmarks = deps.loadBenchmarks
+    ? ((await callSafe("loadBenchmarks", () => deps.loadBenchmarks!())) ?? [])
+    : [];
+  let firstTimeBrand = false;
+  if (deps.loadPriorCampaignCount && pattern.customer_id) {
+    const prior = await callSafe("loadPriorCampaignCount", () =>
+      deps.loadPriorCampaignCount!(pattern.customer_id as string, campaignId)
+    );
+    // A failed read is null — leave the bump off rather than guess.
+    firstTimeBrand = prior === 0;
+  }
+
+  const groups = scoreCandidatesAgainstRings(candidates, rings, pattern, {
+    benchmarks,
+    firstTimeBrand,
+  });
 
   // Layer 4: attach reasoning prose to each kept entry IN PASS — the in-memory
   // groups carry the Layer 2 drivers + full Show objects (neither persisted),
