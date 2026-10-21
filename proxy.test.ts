@@ -30,6 +30,10 @@ describe("proxy public-route allowlist (signed out)", () => {
     "/callback",
     "/forgot-password",
     "/reset-password",
+    "/",
+    "/sitemap.xml",
+    "/robots.txt",
+    "/opengraph-image",
   ]) {
     it(`allows ${path} without bouncing to /login`, async () => {
       const res = await run(path);
