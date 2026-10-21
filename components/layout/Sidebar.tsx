@@ -8,6 +8,7 @@ import SignOutButton from "@/components/auth/SignOutButton";
 import {
   getNavItemsForRole,
   getPrimaryCtaForRole,
+  isBrandSide,
   type IconKey,
 } from "@/lib/nav/items";
 import type { UserRole } from "@/lib/data/types";
@@ -171,7 +172,7 @@ export default function Sidebar({
     "text-[var(--ts-ink-muted-on-paper)] hover:bg-[var(--ts-band-shows)] hover:text-[var(--ts-ink-on-paper)]";
 
   return (
-    <aside className="fixed left-0 top-0 flex h-screen w-[240px] flex-col border-r border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
+    <aside className="fixed left-0 top-0 flex h-screen w-[240px] flex-col overflow-hidden border-r border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
       <div className="flex items-center gap-2.5 border-b border-[var(--ts-hairline-on-paper)] px-5 py-5">
         <Link href="/dashboard" className="flex items-center gap-2.5">
           <Image
@@ -199,7 +200,7 @@ export default function Sidebar({
         </Link>
       </div>
 
-      <nav className="flex-1 px-3 py-2">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           return (
@@ -230,7 +231,30 @@ export default function Sidebar({
         </SignOutButton>
       </nav>
 
-      <div className="border-t border-[var(--ts-hairline-on-paper)] px-3 py-4">
+      <div className="shrink-0 border-t border-[var(--ts-hairline-on-paper)] px-3 py-4">
+        {canSwitchTo && (
+          <button
+            type="button"
+            onClick={handleSwitch}
+            disabled={switching}
+            aria-label={switching ? "Switching…" : `View as ${canSwitchTo}`}
+            className="mb-3 flex w-full items-center gap-2 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] px-3 py-2.5 text-left text-xs font-medium text-[var(--ts-ink-on-paper)] disabled:opacity-50"
+            style={{ borderRadius: tokens.radius }}
+          >
+            <svg className="shrink-0 text-[var(--ts-gold)]" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M17 1l4 4-4 4" />
+              <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+              <path d="M7 23l-4-4 4-4" />
+              <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+            </svg>
+            <span className="min-w-0">
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ts-accent-text)]">
+                {isBrandSide(role) ? "Brands" : "Shows"}
+              </span>
+              {switching ? "Switching…" : `View as ${canSwitchTo}`}
+            </span>
+          </button>
+        )}
         {isAdmin && (
           <div className="mb-3">
             <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">
@@ -261,23 +285,6 @@ export default function Sidebar({
               </button>
             ))}
           </div>
-        )}
-        {canSwitchTo && (
-          <button
-            type="button"
-            onClick={handleSwitch}
-            disabled={switching}
-            className={`mb-2 w-full text-left text-xs font-medium disabled:opacity-50 ${navRow} ${quietRow}`}
-            style={{ borderRadius: tokens.radius }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 1l4 4-4 4" />
-              <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-              <path d="M7 23l-4-4 4-4" />
-              <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-            </svg>
-            {switching ? "Switching…" : `View as ${canSwitchTo}`}
-          </button>
         )}
         <div className="flex items-center gap-3 px-3 py-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--ts-ink-on-paper)]/10">
