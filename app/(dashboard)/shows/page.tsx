@@ -1,5 +1,11 @@
 import { redirect } from "next/navigation";
-import { getAuthenticatedUser, getEffectiveRole } from "@/lib/data/queries";
+import {
+  getAllShows,
+  getAuthenticatedUser,
+  getEffectiveRole,
+  getShowsFiltered,
+  getUserProfile,
+} from "@/lib/data/queries";
 import { isRouteAllowedForRole } from "@/lib/nav/items";
 import ShowsClient from "./shows-client";
 
@@ -7,11 +13,19 @@ export default async function ShowsPage() {
   const user = await getAuthenticatedUser();
   if (!user) redirect("/login");
 
-  const eff = await getEffectiveRole(user.id);
+  const [eff, profile] = await Promise.all([
+    getEffectiveRole(user.id),
+    getUserProfile(user.id),
+  ]);
   if (!eff) redirect("/onboarding");
   if (!isRouteAllowedForRole("/shows", eff.effectiveRole)) {
     redirect("/dashboard");
   }
 
-  return <ShowsClient />;
+  const shows =
+    profile?.role === "agent"
+      ? await getShowsFiltered({ agent_id: user.id })
+      : await getAllShows();
+
+  return <ShowsClient initialShows={shows} />;
 }

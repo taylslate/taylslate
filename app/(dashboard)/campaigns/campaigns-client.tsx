@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import type { Campaign, CampaignStatus } from "@/lib/data/types";
 import { tokens } from "@/lib/brand/tokens";
 
 type BadgeTone = "ink" | "muted" | "accent";
+type StatusFilter = "all" | CampaignStatus;
+type SortKey = "newest" | "oldest" | "name" | "budget";
 
 const statusBadge: Record<CampaignStatus, { tone: BadgeTone; label: string }> = {
   draft: { tone: "muted", label: "Draft" },
@@ -21,12 +23,23 @@ const badgeColor: Record<BadgeTone, string> = {
   accent: "var(--ts-accent)",
 };
 
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  { value: "draft", label: "Drafts" },
+  { value: "planned", label: "Planned only" },
+  { value: "active", label: "Active only" },
+  { value: "completed", label: "Completed only" },
+  { value: "archived", label: "Archived only" },
+];
+
 const cardClass =
   "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const inkBtnClass =
   "inline-flex items-center gap-2 bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
 const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
+const fieldClass =
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)]";
 
 function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -41,17 +54,70 @@ function statusFor(status: string): { tone: BadgeTone; label: string } {
   return { tone: "muted", label: status };
 }
 
-export default function CampaignsClient() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
+function badgeClass(status: string): string {
+  const base = "flex-shrink-0 border px-2 py-0.5 text-[10px] font-semibold";
+  if (status === "draft") {
+    return `${base} border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]`;
+  }
+  if (status === "planned") {
+    return `${base} border-[var(--ts-ink-on-paper)] bg-[var(--ts-ink-on-paper)]`;
+  }
+  return `${base} border-[var(--ts-hairline-on-paper)]`;
+}
+
+function badgeStyle(status: string): React.CSSProperties {
+  if (status === "planned") {
+    return {
+      borderRadius: tokens.radius,
+      color: "var(--ts-paper)",
+      backgroundColor: "var(--ts-ink-on-paper)",
+    };
+  }
+  const badge = statusFor(status);
+  return {
+    borderRadius: tokens.radius,
+    color: badgeColor[badge.tone],
+    backgroundColor: status === "draft" ? "transparent" : undefined,
+  };
+}
+
+export default function CampaignsClient({
+  initialCampaigns,
+}: {
+  initialCampaigns?: Campaign[];
+}) {
+  const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns ?? []);
+  const [loading, setLoading] = useState(initialCampaigns === undefined);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [sort, setSort] = useState<SortKey>("newest");
 
   useEffect(() => {
+    if (initialCampaigns !== undefined) return;
     fetch("/api/campaigns")
       .then((res) => res.json())
       .then((data) => setCampaigns(data.campaigns ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [initialCampaigns]);
+
+  const visible = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const rows = campaigns.filter((campaign) => {
+      if (status !== "all" && campaign.status !== status) return false;
+      if (query && !campaign.name.toLowerCase().includes(query)) return false;
+      return true;
+    });
+    const sorted = [...rows];
+    sorted.sort((a, b) => {
+      if (sort === "name") return a.name.localeCompare(b.name);
+      if (sort === "budget") return (b.budget_total ?? 0) - (a.budget_total ?? 0);
+      const aTime = new Date(a.created_at).getTime();
+      const bTime = new Date(b.created_at).getTime();
+      return sort === "oldest" ? aTime - bTime : bTime - aTime;
+    });
+    return sorted;
+  }, [campaigns, search, status, sort]);
 
   if (loading) {
     return (
@@ -75,7 +141,7 @@ export default function CampaignsClient() {
   }
 
   return (
-    <div className="p-4 sm:p-8">
+    <div className="w-full p-4 sm:p-8">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0 w-full sm:w-auto">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
@@ -99,71 +165,148 @@ export default function CampaignsClient() {
       </div>
 
       {campaigns.length > 0 ? (
-        <div
-          className={`${cardClass} divide-y divide-[var(--ts-hairline-on-paper)]`}
-          style={{ borderRadius: tokens.radius }}
-        >
-          {campaigns.map((campaign) => {
-            const recs = Array.isArray(campaign.recommendations) ? campaign.recommendations : [];
-            const ytRecs = Array.isArray(campaign.youtube_recommendations) ? campaign.youtube_recommendations : [];
-            const totalShows = recs.length + ytRecs.length;
-            const platforms = (campaign.platforms ?? []).join(" + ");
-            const meta = [
-              fmtDate(campaign.created_at),
-              platforms,
-              `${totalShows} shows`,
-            ].filter(Boolean).join(" · ");
-            const badge = statusFor(campaign.status);
+        <>
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <label className="sr-only" htmlFor="campaign-search">Search campaigns</label>
+            <input
+              id="campaign-search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search campaigns"
+              className={`${fieldClass} min-w-[12rem] flex-1`}
+              style={{ borderRadius: tokens.radius }}
+            />
+            <label className="sr-only" htmlFor="campaign-status">Filter by status</label>
+            <select
+              id="campaign-status"
+              value={status}
+              onChange={(event) => setStatus(event.target.value as StatusFilter)}
+              className={fieldClass}
+              style={{ borderRadius: tokens.radius }}
+            >
+              {STATUS_FILTERS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <label className="sr-only" htmlFor="campaign-sort">Sort campaigns</label>
+            <select
+              id="campaign-sort"
+              value={sort}
+              onChange={(event) => setSort(event.target.value as SortKey)}
+              className={fieldClass}
+              style={{ borderRadius: tokens.radius }}
+            >
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="name">Name</option>
+              <option value="budget">Budget</option>
+            </select>
+          </div>
 
-            return (
-              <Link
-                key={campaign.id}
-                href={`/campaigns/${campaign.id}`}
-                className="flex flex-col gap-2 px-4 py-4 hover:bg-[var(--ts-band-shows)] sm:flex-row sm:items-center sm:gap-4 sm:px-5"
-              >
-                <div className="min-w-0 sm:flex-1">
-                  <div className="truncate text-sm font-medium">{campaign.name}</div>
-                  <div className={`text-xs break-words ${mutedText}`}>{meta}</div>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-3 sm:contents">
-                  <div className="sm:text-right">
-                    <div className="text-sm font-medium">
-                      ${(campaign.budget_total ?? 0).toLocaleString()}
-                    </div>
-                    <div className={`text-xs ${mutedText}`}>budget</div>
-                  </div>
-                  <span
-                    className="flex-shrink-0 border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold"
-                    style={{
-                      borderRadius: tokens.radius,
-                      color: badgeColor[badge.tone],
-                    }}
+          {visible.length > 0 ? (
+            <div
+              className={`${cardClass} divide-y divide-[var(--ts-hairline-on-paper)]`}
+              style={{ borderRadius: tokens.radius }}
+            >
+              {visible.map((campaign) => {
+                const recs = Array.isArray(campaign.recommendations) ? campaign.recommendations : [];
+                const ytRecs = Array.isArray(campaign.youtube_recommendations) ? campaign.youtube_recommendations : [];
+                const totalShows = recs.length + ytRecs.length;
+                const platforms = (campaign.platforms ?? []).join(" + ");
+                const meta = [
+                  fmtDate(campaign.created_at),
+                  platforms,
+                  `${totalShows} shows`,
+                ].filter(Boolean).join(" · ");
+                const badge = statusFor(campaign.status);
+
+                return (
+                  <Link
+                    key={campaign.id}
+                    href={`/campaigns/${campaign.id}`}
+                    className="flex flex-col gap-2 px-4 py-4 hover:bg-[var(--ts-band-shows)] sm:flex-row sm:items-center sm:gap-4 sm:px-5"
                   >
-                    {badge.label}
-                  </span>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+                    <div className="min-w-0 sm:flex-1">
+                      <div className="truncate text-sm font-medium">{campaign.name}</div>
+                      <div className={`text-xs break-words ${mutedText}`}>{meta}</div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 sm:contents">
+                      <div className="sm:text-right">
+                        <div className="text-sm font-medium">
+                          ${(campaign.budget_total ?? 0).toLocaleString()}
+                        </div>
+                        <div className={`text-xs ${mutedText}`}>budget</div>
+                      </div>
+                      <span className={badgeClass(campaign.status)} style={badgeStyle(campaign.status)}>
+                        {badge.label}
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className={`${cardClass} px-6 py-10 text-center`} style={{ borderRadius: tokens.radius }}>
+              <p className="text-sm font-medium">No campaigns match</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setStatus("all");
+                  setSort("newest");
+                }}
+                className={`${inkBtnClass} mt-4`}
+                style={{ borderRadius: tokens.radius }}
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
+        </>
       ) : (
-        <div
-          className={`${cardClass} px-6 py-16 text-center`}
-          style={{ borderRadius: tokens.radius }}
-        >
-          <h2 className="text-lg font-semibold">No campaigns yet</h2>
-          <p className={`mx-auto mt-2 max-w-sm text-sm ${mutedText}`}>
-            Tell us what you sell. We come back with a short list of shows worth testing.
-          </p>
-          <Link
-            href="/campaigns/new"
-            className={`${inkBtnClass} mt-6`}
-            style={{ borderRadius: tokens.radius }}
-          >
-            New campaign
-          </Link>
+        <div className={cardClass} style={{ borderRadius: tokens.radius }}>
+          <div aria-hidden="true" className="pointer-events-none divide-y divide-[var(--ts-hairline-on-paper)] opacity-40">
+            <PreviewRow name="Spring test" meta="Mar 2, 2026 · podcast · 6 shows" budget="$25,000" badge="Planned" />
+            <PreviewRow name="Follow-up flight" meta="Apr 1, 2026 · podcast + youtube · 4 shows" budget="$12,000" badge="Active" />
+          </div>
+          <div className="border-t border-[var(--ts-hairline-on-paper)] px-6 py-10 text-center">
+            <h2 className="text-lg font-semibold">No campaigns yet</h2>
+            <p className={`mx-auto mt-2 max-w-sm text-sm ${mutedText}`}>
+              Tell us what you sell. We come back with a short list of shows worth testing.
+            </p>
+            <Link
+              href="/campaigns/new"
+              className={`${inkBtnClass} mt-6`}
+              style={{ borderRadius: tokens.radius }}
+            >
+              New campaign
+            </Link>
+          </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PreviewRow({
+  name,
+  meta,
+  budget,
+  badge,
+}: {
+  name: string;
+  meta: string;
+  budget: string;
+  badge: string;
+}) {
+  return (
+    <div className="flex items-center gap-4 px-5 py-4">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{name}</div>
+        <div className={`text-xs ${mutedText}`}>{meta}</div>
+      </div>
+      <div className="text-sm font-medium">{budget}</div>
+      <span className="border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold">{badge}</span>
     </div>
   );
 }

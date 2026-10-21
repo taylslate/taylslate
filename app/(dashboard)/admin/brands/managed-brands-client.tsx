@@ -126,7 +126,7 @@ export default function ManagedBrandsClient({
   }
 
   return (
-    <div className="max-w-2xl p-4 sm:p-8">
+    <div className="w-full p-4 sm:p-8">
       <p className="text-xs font-medium uppercase tracking-wide text-[var(--ts-accent)]">
         Internal
       </p>
@@ -183,10 +183,11 @@ export default function ManagedBrandsClient({
                       type="button"
                       onClick={() => toggle(row)}
                       disabled={pendingId !== null}
+                      aria-pressed={row.isManaged}
                       className={row.isManaged ? inkBtn : ghostBtn}
                       style={radiusStyle}
                     >
-                      {pending ? "Saving…" : row.isManaged ? "Managed" : "Mark managed"}
+                      {pending ? "Saving…" : row.isManaged ? "Managed" : "Not managed"}
                     </button>
                   </div>
                 </div>

@@ -1,7 +1,10 @@
+import { cache } from "react";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-export async function createClient() {
+// One client per request. Layout, page, and nested loaders were each building
+// a client and reading cookies before their first query.
+export const createClient = cache(async function createClient() {
   const cookieStore = await cookies();
 
   return createServerClient(
@@ -24,4 +27,4 @@ export async function createClient() {
       },
     }
   );
-}
+});

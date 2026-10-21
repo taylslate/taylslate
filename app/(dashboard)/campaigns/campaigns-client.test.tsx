@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 
 vi.mock("next/link", () => ({
@@ -171,6 +172,61 @@ describe("CampaignsClient", () => {
     expect(container.innerHTML).not.toMatch(/border-dashed|rounded-2xl/);
     expect(container.innerHTML).not.toContain(FLAG_PATH);
     expect(container.innerHTML).not.toMatch(BANNED);
+  });
+
+  it("filters by search and status, and sorts by budget", async () => {
+    const user = userEvent.setup();
+    stubCampaigns([
+      {
+        id: "camp-1",
+        name: "Sauna Box Spring",
+        budget_total: 25000,
+        platforms: ["podcast"],
+        status: "planned",
+        recommendations: [],
+        created_at: "2026-09-01T15:00:00.000Z",
+      },
+      {
+        id: "camp-2",
+        name: "Quiet Draft",
+        budget_total: 1000,
+        platforms: ["podcast"],
+        status: "draft",
+        recommendations: [],
+        created_at: "2026-08-01T15:00:00.000Z",
+      },
+    ]);
+
+    render(<CampaignsClient />);
+    await screen.findByText("Sauna Box Spring");
+
+    const planned = screen.getByText("Planned");
+    const draft = screen.getByText("Draft");
+    expect(planned).toHaveStyle({
+      color: "var(--ts-paper)",
+      backgroundColor: "var(--ts-ink-on-paper)",
+    });
+    expect(draft).toHaveStyle({ color: "var(--ts-ink-muted-on-paper)" });
+    expect(planned.className).toContain("bg-[var(--ts-ink-on-paper)]");
+    expect(draft.className).toContain("bg-[var(--ts-paper)]");
+    expect(planned.className).not.toBe(draft.className);
+
+    await user.type(screen.getByLabelText("Search campaigns"), "quiet");
+    expect(screen.queryByText("Sauna Box Spring")).toBeNull();
+    expect(screen.getByText("Quiet Draft")).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText("Search campaigns"));
+    await user.selectOptions(screen.getByLabelText("Filter by status"), "Planned only");
+    expect(screen.getByText("Sauna Box Spring")).toBeInTheDocument();
+    expect(screen.queryByText("Quiet Draft")).toBeNull();
+
+    await user.selectOptions(screen.getByLabelText("Filter by status"), "all");
+    await user.selectOptions(screen.getByLabelText("Sort campaigns"), "budget");
+    const names = screen.getAllByRole("link").map((link) => link.textContent ?? "");
+    const spring = names.findIndex((text) => text.includes("Sauna Box Spring"));
+    const quiet = names.findIndex((text) => text.includes("Quiet Draft"));
+    expect(spring).toBeGreaterThanOrEqual(0);
+    expect(quiet).toBeGreaterThan(spring);
   });
 
   it("pulses while loading instead of a blue spinner", () => {

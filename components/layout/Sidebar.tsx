@@ -90,15 +90,29 @@ function Icon({ name }: { name: IconKey }) {
   }
 }
 
+export function initialsFromName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "?";
+  const source = trimmed.includes("@") ? trimmed.split("@")[0] : trimmed;
+  const parts = source.split(/[\s._-]+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+  const letters = (parts[0] ?? "").replace(/[^A-Za-z0-9]/g, "");
+  return (letters.slice(0, 2) || "?").toUpperCase();
+}
+
 export default function Sidebar({
   role,
   canSwitchTo,
   isAdmin,
+  displayName,
   testAccounts,
 }: {
   role: UserRole;
   canSwitchTo?: UserRole | null;
   isAdmin?: boolean;
+  displayName?: string;
   testAccounts?: { key: string; label: string }[];
 }) {
   const pathname = usePathname();
@@ -267,7 +281,9 @@ export default function Sidebar({
         )}
         <div className="flex items-center gap-3 px-3 py-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--ts-ink-on-paper)]/10">
-            <span className="text-xs font-semibold text-[var(--ts-ink-on-paper)]">U</span>
+            <span className="text-xs font-semibold text-[var(--ts-ink-on-paper)]">
+              {initialsFromName(displayName ?? "")}
+            </span>
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">Free Plan</div>

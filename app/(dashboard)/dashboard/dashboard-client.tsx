@@ -2,24 +2,10 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import type { Deal, Show, UserRole } from "@/lib/data/types";
+import type { Show, UserRole } from "@/lib/data/types";
 import { isBrandSide } from "@/lib/nav/items";
 import { tokens } from "@/lib/brand/tokens";
-
-interface DashboardData {
-  totalShows: number;
-  podcastCount: number;
-  youtubeCount: number;
-  activeDeals: number;
-  pendingInvoices: number;
-  revenueThisMonth: number;
-  revenueOutstanding: number;
-  pipelineValue: number;
-  overdueCount: number;
-  campaignCount: number;
-  recentDeals: (Deal & { show_name?: string })[];
-  recentInvoices: { id: string; invoice_number: string; advertiser_name: string; total_due: number; status: string; due_date: string }[];
-}
+import { toDashboardData, type DashboardData } from "@/lib/data/dashboard-view";
 
 function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -66,14 +52,21 @@ const inkBtnClass =
   "inline-flex items-center gap-2 bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
 const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
-const SEED_SHOW_PREFIX = "[SEED]";
+const columnGrid = "grid grid-cols-1 gap-6 lg:grid-cols-2";
 
-export default function DashboardClient({ role }: { role: UserRole }) {
+export default function DashboardClient({
+  role,
+  initial,
+}: {
+  role: UserRole;
+  initial?: DashboardData;
+}) {
   const isBrand = isBrandSide(role);
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashboardData | null>(initial ?? null);
+  const [loading, setLoading] = useState(initial === undefined);
 
   useEffect(() => {
+    if (initial) return;
     async function fetchDashboard() {
       try {
         const [showsRes, dealsRes, invoicesRes, campaignsRes] = await Promise.all([
@@ -84,71 +77,44 @@ export default function DashboardClient({ role }: { role: UserRole }) {
         ]);
 
         const shows: Show[] = Array.isArray(showsRes) ? showsRes : [];
-        const deals: (Deal & { show_name?: string })[] = Array.isArray(dealsRes.deals) ? dealsRes.deals : [];
+        const deals = Array.isArray(dealsRes.deals) ? dealsRes.deals : [];
         const invoices = Array.isArray(invoicesRes.invoices) ? invoicesRes.invoices : [];
-        const stats = invoicesRes.stats ?? {};
-
-        const activeStatuses = [
-          // legacy
-          "proposed", "negotiating", "approved", "signed",
-          // Wave-12 lifecycle (a freshly accepted deal is "planning")
-          "planning", "io_sent", "brand_signed", "show_signed", "live", "delivering",
-        ];
-        const activeDeals = deals.filter((d) => activeStatuses.includes(d.status));
-        const pipelineValue = activeDeals.reduce((s, d) => s + (d.total_net ?? 0), 0);
-
-        const now = new Date();
-        const pendingInvs = invoices.filter((inv: Record<string, unknown>) =>
-          inv.status === "sent" || inv.status === "overdue"
-        );
-        const overdueInvs = invoices.filter((inv: Record<string, unknown>) =>
-          inv.status === "sent" && new Date(inv.due_date as string) < now
-        );
-
         const campaignList = Array.isArray(campaignsRes?.campaigns)
           ? campaignsRes.campaigns
           : Array.isArray(campaignsRes) ? campaignsRes : [];
 
-        const recentDeals = (isBrand
-          ? deals.filter((deal) => !(deal.show_name ?? "").startsWith(SEED_SHOW_PREFIX))
-          : deals
-        ).slice(0, 5);
-
-        setData({
-          totalShows: shows.length,
-          podcastCount: shows.filter((s) => s.platform === "podcast").length,
-          youtubeCount: shows.filter((s) => s.platform === "youtube").length,
-          activeDeals: activeDeals.length,
-          pendingInvoices: pendingInvs.length,
-          revenueThisMonth: stats.total_paid_this_month ?? 0,
-          revenueOutstanding: stats.total_outstanding ?? 0,
-          pipelineValue,
-          overdueCount: overdueInvs.length,
-          campaignCount: campaignList.length,
-          recentDeals,
-          recentInvoices: invoices.slice(0, 5),
-        });
+        setData(toDashboardData({
+          isBrand,
+          deals,
+          invoices,
+          stats: invoicesRes.stats ?? {},
+          campaigns: campaignList,
+          showCounts: {
+            total: shows.length,
+            podcast: shows.filter((s) => s.platform === "podcast").length,
+            youtube: shows.filter((s) => s.platform === "youtube").length,
+          },
+        }));
       } catch (err) {
         console.error("Dashboard fetch error:", err);
-        setData({
-          totalShows: 0, podcastCount: 0, youtubeCount: 0,
-          activeDeals: 0, pendingInvoices: 0, revenueThisMonth: 0,
-          revenueOutstanding: 0, pipelineValue: 0, overdueCount: 0,
-          campaignCount: 0,
-          recentDeals: [], recentInvoices: [],
-        });
+        setData(toDashboardData({
+          isBrand,
+          deals: [],
+          invoices: [],
+          stats: {},
+          campaigns: [],
+          showCounts: { total: 0, podcast: 0, youtube: 0 },
+        }));
       } finally {
         setLoading(false);
       }
     }
     fetchDashboard();
-  }, [isBrand]);
+  }, [isBrand, initial]);
 
   if (loading) {
     const skeletonStatCount = isBrand ? 2 : 6;
-    const skeletonGridClass = isBrand
-      ? "mb-8 grid grid-cols-2 gap-4 md:grid-cols-3"
-      : "mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6";
+    const skeletonGridClass = `mb-8 ${columnGrid}`;
     return (
       <div className="p-8">
         <div className="mb-8">
@@ -248,7 +214,7 @@ export default function DashboardClient({ role }: { role: UserRole }) {
 
       {/* Stats Grid */}
       {isBrand ? (
-        <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
+        <div className={`mb-8 ${columnGrid}`}>
           <StatCard
             label="Campaigns"
             value={d.campaignCount}
@@ -260,7 +226,7 @@ export default function DashboardClient({ role }: { role: UserRole }) {
           )}
         </div>
       ) : (
-        <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+        <div className={`mb-8 ${columnGrid}`}>
           <StatCard label="Active Deals" value={d.activeDeals} href="/deals" />
           <StatCard
             label="Outstanding"
@@ -318,7 +284,7 @@ export default function DashboardClient({ role }: { role: UserRole }) {
       )}
 
       {/* Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={columnGrid}>
         {/* Recent Deals */}
         <div>
           <div className="mb-4 flex items-center justify-between">
@@ -332,10 +298,30 @@ export default function DashboardClient({ role }: { role: UserRole }) {
             style={{ borderRadius: tokens.radius }}
           >
             {d.recentDeals.length === 0 ? (
-              <div className={`p-8 text-center text-sm ${mutedText}`}>
-                {isBrand
-                  ? "No deals yet. Send outreach from a campaign to get started."
-                  : "No deals yet. Brands will reach out as they discover your show."}
+              <div className="px-5 py-6">
+                <div aria-hidden="true" className="pointer-events-none mb-4 space-y-3 opacity-40">
+                  <PreviewLine title="A show on the plan" meta="3 ep · $4,500" badge="Planning" />
+                  <PreviewLine title="Another show" meta="3 ep · $2,100" badge="IO Sent" />
+                </div>
+                <p className={`text-center text-sm ${mutedText}`}>
+                  {isBrand
+                    ? "No deals yet. Send outreach from a campaign to get started."
+                    : "No deals yet. Brands will reach out as they discover your show."}
+                </p>
+                {isBrand && !showBrandEmptyCta && (
+                  <div className="mt-4 text-center">
+                    <Link href="/campaigns" className={inkBtnClass} style={{ borderRadius: tokens.radius }}>
+                      Open campaigns
+                    </Link>
+                  </div>
+                )}
+                {!isBrand && !showShowEmptyCta && (
+                  <div className="mt-4 text-center">
+                    <Link href="/shows" className={inkBtnClass} style={{ borderRadius: tokens.radius }}>
+                      View shows
+                    </Link>
+                  </div>
+                )}
               </div>
             ) : (
               d.recentDeals.map((deal) => {
@@ -389,8 +375,18 @@ export default function DashboardClient({ role }: { role: UserRole }) {
               style={{ borderRadius: tokens.radius }}
             >
               {d.recentInvoices.length === 0 ? (
-                <div className={`p-8 text-center text-sm ${mutedText}`}>
-                  No invoices yet.
+                <div className="px-5 py-6">
+                  <div aria-hidden="true" className="pointer-events-none mb-4 opacity-40">
+                    <PreviewLine title="INV-1001" meta="Due next month · $1,200" badge="Sent" />
+                  </div>
+                  <p className={`text-center text-sm ${mutedText}`}>No invoices yet.</p>
+                  {!showShowEmptyCta && (
+                    <div className="mt-4 text-center">
+                      <Link href="/deals" className={inkBtnClass} style={{ borderRadius: tokens.radius }}>
+                        Open deals
+                      </Link>
+                    </div>
+                  )}
                 </div>
               ) : (
                 d.recentInvoices.map((inv) => {
@@ -440,6 +436,26 @@ export default function DashboardClient({ role }: { role: UserRole }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function PreviewLine({
+  title,
+  meta,
+  badge,
+}: {
+  title: string;
+  meta: string;
+  badge: string;
+}) {
+  return (
+    <div className="flex items-center gap-4 border border-[var(--ts-hairline-on-paper)] px-4 py-3" style={{ borderRadius: tokens.radius }}>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{title}</div>
+        <div className={`text-xs ${mutedText}`}>{meta}</div>
+      </div>
+      <span className="border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold">{badge}</span>
     </div>
   );
 }
