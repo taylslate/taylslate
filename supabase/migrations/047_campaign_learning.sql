@@ -17,6 +17,11 @@
 -- show id. Never show_profiles.podscan_id — that column is user-writable.
 --
 -- Idempotent. Safe to re-run. No backfill. No anon grant.
+-- Table privileges are revoked from public as well as anon, then
+-- re-granted to service_role and authenticated. An update of a
+-- learning override must still pass the brand or rep insert checks,
+-- so the author cannot move the note onto another campaign or a
+-- show they do not represent.
 --
 -- Introspection check (run after applying):
 --   select column_name from information_schema.columns
@@ -35,7 +40,9 @@
 --      and table_name in ('deal_conversion_reports', 'learning_overrides')
 --    order by table_name, grantee, privilege_type;
 --   Expected: authenticated and service_role have select/insert/update/delete.
---   anon has none. RLS enabled. Policies listed below exist.
+--   anon and public have none. RLS enabled. Policies listed below exist.
+--   "Author updates own learning overrides" WITH CHECK repeats the
+--   brand and rep insert checks.
 -- ============================================================
 
 -- -------------------- deal_conversion_reports --------------------
@@ -134,6 +141,8 @@ create index if not exists idx_learning_overrides_campaign
 
 -- -------------------- grants (before RLS) --------------------
 
+revoke all on table public.deal_conversion_reports from public;
+revoke all on table public.learning_overrides from public;
 revoke all on public.deal_conversion_reports from anon;
 revoke all on public.learning_overrides from anon;
 
@@ -302,13 +311,68 @@ create policy "Rep inserts own learning overrides"
     )
   );
 
+-- Update keeps the row with its author, and the new values must still
+-- satisfy the brand or rep insert checks. Changing campaign_id,
+-- target_key, or author_role is rejected unless that new shape would
+-- have been allowed as an insert.
 drop policy if exists "Author updates own learning overrides"
   on public.learning_overrides;
 create policy "Author updates own learning overrides"
   on public.learning_overrides
   for update to authenticated
   using (author_id = auth.uid())
-  with check (author_id = auth.uid());
+  with check (
+    author_id = auth.uid()
+    and (
+      (
+        author_role = 'brand'
+        and exists (
+          select 1 from public.campaigns c
+          where c.id = learning_overrides.campaign_id
+            and c.user_id = auth.uid()
+        )
+      )
+      or (
+        author_role = 'rep'
+        and exists (
+          select 1
+          from public.deals d
+          left join public.outreaches o on o.id = d.outreach_id
+          where (o.campaign_id = learning_overrides.campaign_id
+                 or d.campaign_id = learning_overrides.campaign_id)
+            and (
+              d.agent_id = auth.uid()
+              or exists (
+                select 1 from public.agent_show_relationships a
+                where a.agent_id = auth.uid()
+                  and a.show_id = d.show_id
+              )
+            )
+        )
+        and (
+          target_kind <> 'show'
+          or exists (
+            select 1 from public.agent_show_relationships a
+            where a.agent_id = auth.uid()
+              and a.show_id::text = learning_overrides.target_key
+          )
+          or exists (
+            select 1 from public.deals d
+            where d.agent_id = auth.uid()
+              and d.show_id::text = learning_overrides.target_key
+              and (
+                d.campaign_id = learning_overrides.campaign_id
+                or exists (
+                  select 1 from public.outreaches o
+                  where o.id = d.outreach_id
+                    and o.campaign_id = learning_overrides.campaign_id
+                )
+              )
+          )
+        )
+      )
+    )
+  );
 
 drop policy if exists "Author deletes own learning overrides"
   on public.learning_overrides;
