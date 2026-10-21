@@ -13,6 +13,12 @@ import {
   escapeHtml,
   renderEmailLayout,
 } from "@/lib/email/layout";
+import {
+  LOGIN_OTP_PREHEADER,
+  LOGIN_OTP_SENTENCE,
+  LOGIN_OTP_SUBJECT,
+  otpCodeHtml,
+} from "@/lib/email/templates/login-otp";
 
 export interface AuthEmailTemplate {
   id: string;
@@ -97,6 +103,21 @@ export function renderAuthTemplates(): AuthEmailTemplate[] {
       href: magicHref,
       cta: "Log in",
       text: "Click the button to sign in. This link expires in 24 hours.",
+    }),
+    // Supabase has no separate OTP config field — email OTP shares the
+    // magic-link slot. This template is the code email. The apply script
+    // checks it and does not overwrite the magic-link slot with it.
+    // The message shows actually receive is the Resend copy in login-otp.ts.
+    authMessage({
+      id: "otp",
+      subjectKey: "mailer_subjects_otp",
+      contentKey: "mailer_templates_otp_content",
+      subject: LOGIN_OTP_SUBJECT,
+      preheader: LOGIN_OTP_PREHEADER,
+      headline: "Your sign-in code",
+      body: LOGIN_OTP_SENTENCE,
+      extraHtml: otpCodeHtml("{{ .Token }}"),
+      text: `${LOGIN_OTP_SENTENCE}\n\n{{ .Token }}`,
     }),
     authMessage({
       id: "recovery",
@@ -218,12 +239,62 @@ export function renderAuthTemplates(): AuthEmailTemplate[] {
   ];
 }
 
+/**
+ * Keys the Management API actually stores. `mailer_subjects_otp` is not one
+ * of them — Supabase sends email OTP through the magic-link template. The
+ * OTP template stays in this module for the apply script and previews, and
+ * is left out of the patch so a live apply cannot 400 on an unknown field
+ * or replace the magic link.
+ */
+const HOSTED_AUTH_TEMPLATE_KEYS = new Set([
+  "mailer_subjects_confirmation",
+  "mailer_subjects_magic_link",
+  "mailer_subjects_recovery",
+  "mailer_subjects_invite",
+  "mailer_subjects_email_change",
+  "mailer_subjects_reauthentication",
+  "mailer_subjects_password_changed_notification",
+  "mailer_subjects_email_changed_notification",
+  "mailer_subjects_phone_changed_notification",
+  "mailer_subjects_mfa_factor_enrolled_notification",
+  "mailer_subjects_mfa_factor_unenrolled_notification",
+  "mailer_subjects_identity_linked_notification",
+  "mailer_subjects_identity_unlinked_notification",
+]);
+
 /** Subject and HTML fields for PATCH /v1/projects/{ref}/config/auth. Does not touch enabled flags. */
 export function authTemplateConfigPatch(): Record<string, string> {
   const patch: Record<string, string> = {};
   for (const template of renderAuthTemplates()) {
+    if (!HOSTED_AUTH_TEMPLATE_KEYS.has(template.subjectKey)) continue;
     patch[template.subjectKey] = template.subject;
     patch[template.contentKey] = template.html;
   }
   return patch;
+}
+
+/** Local check the apply script runs before it touches the hosted project. */
+export function assertShowOtpTemplate(): void {
+  const otp = renderAuthTemplates().find((template) => template.id === "otp");
+  if (!otp) throw new Error("OTP auth template is missing");
+  if (otp.subject !== LOGIN_OTP_SUBJECT) {
+    throw new Error("OTP auth template subject drifted");
+  }
+  if (!otp.html.includes("{{ .Token }}")) {
+    throw new Error("OTP auth template has no {{ .Token }}");
+  }
+  if (!otp.html.includes("#f2ebe1")) {
+    throw new Error("OTP auth template is not on the shared layout");
+  }
+  if (otp.html.includes(".ConfirmationURL") || otp.html.includes("token_hash=")) {
+    throw new Error("OTP auth template must be a code, not a link");
+  }
+  const patch = authTemplateConfigPatch();
+  if ("mailer_subjects_otp" in patch || "mailer_templates_otp_content" in patch) {
+    throw new Error("OTP template must not be sent as an unknown auth config key");
+  }
+  const magic = patch.mailer_templates_magic_link_content ?? "";
+  if (!magic.includes("type=magiclink") || !magic.includes("next=/dashboard")) {
+    throw new Error("refusing to apply auth templates without the magic link");
+  }
 }

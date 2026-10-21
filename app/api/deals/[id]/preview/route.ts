@@ -29,8 +29,10 @@ export async function GET(
   if (!deal) return NextResponse.json({ error: "Deal not found" }, { status: 404 });
 
   // Ownership check — match either side.
-  const brandProfile = await getBrandProfileByUserId(user.id);
-  const showProfile = await getShowProfileByUserId(user.id);
+  const [brandProfile, showProfile] = await Promise.all([
+    getBrandProfileByUserId(user.id),
+    getShowProfileByUserId(user.id),
+  ]);
   const ownsAsBrand = brandProfile?.id === deal.brand_profile_id;
   const ownsAsShow = !!deal.show_profile_id && showProfile?.id === deal.show_profile_id;
   if (!ownsAsBrand && !ownsAsShow) {
@@ -54,33 +56,32 @@ export async function GET(
   // Pull related entities. Use admin client so RLS doesn't block legitimate
   // cross-party reads (the brand needs to see the show's profile to render
   // the IO and vice versa).
-  const { data: bp } = await supabaseAdmin
-    .from("brand_profiles")
-    .select("*")
-    .eq("id", deal.brand_profile_id)
-    .single();
-  const { data: sp } = await supabaseAdmin
-    .from("show_profiles")
-    .select("*")
-    .eq("id", deal.show_profile_id)
-    .single();
-  const outreach = await getOutreachById(deal.outreach_id);
+  const [bpRes, spRes, outreach] = await Promise.all([
+    supabaseAdmin.from("brand_profiles").select("*").eq("id", deal.brand_profile_id).single(),
+    supabaseAdmin.from("show_profiles").select("*").eq("id", deal.show_profile_id).single(),
+    getOutreachById(deal.outreach_id),
+  ]);
+  const bp = bpRes.data;
+  const sp = spRes.data;
   if (!bp || !sp || !outreach) {
     return NextResponse.json({ error: "Deal context missing" }, { status: 500 });
   }
 
-  const { data: brandUser } = await supabaseAdmin
-    .from("profiles")
-    .select("email")
-    .eq("id", (bp as BrandProfile).user_id)
-    .single();
-  const { data: showUser } = await supabaseAdmin
-    .from("profiles")
-    .select("email")
-    .eq("id", (sp as ShowProfile).user_id)
-    .single();
-
-  const savedIo = await getIOByDealId(deal.id);
+  const [brandUserRes, showUserRes, savedIo] = await Promise.all([
+    supabaseAdmin
+      .from("profiles")
+      .select("email")
+      .eq("id", (bp as BrandProfile).user_id)
+      .single(),
+    supabaseAdmin
+      .from("profiles")
+      .select("email")
+      .eq("id", (sp as ShowProfile).user_id)
+      .single(),
+    getIOByDealId(deal.id),
+  ]);
+  const brandUser = brandUserRes.data;
+  const showUser = showUserRes.data;
   const rendered = generateIoPdfFromDeal({
     deal,
     brandProfile: bp as BrandProfile,

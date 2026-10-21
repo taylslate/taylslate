@@ -5,7 +5,7 @@
 //
 //   SUPABASE_ACCESS_TOKEN=... npx tsx scripts/apply-auth-email-templates.ts
 
-import { authTemplateConfigPatch } from "../lib/email/templates/auth";
+import { assertShowOtpTemplate, authTemplateConfigPatch } from "../lib/email/templates/auth";
 
 const PROJECT_REF = "ldtmhafewfifdizgfrnn";
 const ENDPOINT = `https://api.supabase.com/v1/projects/${PROJECT_REF}/config/auth`;
@@ -39,6 +39,12 @@ async function readAuthConfig(token: string): Promise<Record<string, unknown>> {
 }
 
 async function main(): Promise<void> {
+  // Code email for shows. Supabase has no separate OTP config field, so this
+  // checks the template in auth.ts and leaves the magic-link slot as a link.
+  // The message that actually sends is Resend (lib/email/templates/login-otp.ts).
+  assertShowOtpTemplate();
+  console.log("otp template ok — magic link slot unchanged");
+
   const token = process.env.SUPABASE_ACCESS_TOKEN?.trim();
   if (!token) {
     console.error("SUPABASE_ACCESS_TOKEN is not set. Refusing to call the Management API.");

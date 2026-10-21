@@ -817,6 +817,9 @@ export type DomainEventType =
   // Layer 2 — founder test-data teardown (DELETE /api/admin/seed-deal). Marker
   // event; payload carries the union of every entity id removed by the teardown.
   | "admin.seed_teardown"
+  // scripts/cleanup-test-data.ts — one row per deleted batch, written inside
+  // the same transaction as the deletes. Payload: { batch, ids, count }.
+  | "admin.test_data_cleanup"
   // Managed brand handed to its owner. The auth user id does not change;
   // deals, campaigns, and IOs stay on that id. Payload: actor_email,
   // brand_user_id, old_email, new_email, timestamp.
