@@ -190,6 +190,12 @@ function LoginForm() {
         </button>
       </form>
 
+      <p className="mt-4 text-sm text-[var(--ts-ink-muted-on-paper)]">
+        <Link href="/login/show" className="text-[var(--ts-accent)] hover:underline">
+          Show or creator? Sign in with an email code
+        </Link>
+      </p>
+
       <div className="mt-6">
         <button
           type="button"
