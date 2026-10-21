@@ -21,25 +21,18 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-async function episodeChargeForBrand(
-  userId: string,
+function episodeChargeForBrand(
   showProfile: { audience_size?: number | string | null } | null,
-  agreedCpm: number
-): Promise<{
+  agreedCpm: number,
+  feePercentage: number
+): {
   grossCents: number;
   feeCents: number;
   chargedCents: number;
   feePercentage: number;
-} | null> {
+} | null {
   const audience = Number(showProfile?.audience_size ?? 0);
   if (!Number.isFinite(audience) || audience <= 0 || !(agreedCpm > 0)) return null;
-
-  const { data: feeProfile } = await supabaseAdmin
-    .from("profiles")
-    .select("platform_fee_percentage")
-    .eq("id", userId)
-    .maybeSingle<{ platform_fee_percentage: number | string | null }>();
-  const feePercentage = Number(feeProfile?.platform_fee_percentage);
   if (!Number.isFinite(feePercentage) || feePercentage < 0 || feePercentage > 1) {
     return null;
   }
@@ -77,23 +70,36 @@ export default async function DealDetailPage({ params }: PageProps) {
   // Try the Wave 12 path first — most new deals will land here.
   const wave12 = await getWave12DealById(id);
   if (wave12 && wave12.outreach_id) {
-    const brandProfile = await getBrandProfileByUserId(user.id);
-    const showProfile = await getShowProfileByUserId(user.id);
+    const [brandProfile, showProfile] = await Promise.all([
+      getBrandProfileByUserId(user.id),
+      getShowProfileByUserId(user.id),
+    ]);
     const ownsAsBrand = brandProfile?.id === wave12.brand_profile_id;
     const ownsAsShow = showProfile?.id === wave12.show_profile_id;
     if (!ownsAsBrand && !ownsAsShow) notFound();
 
-    const { data: bp } = await supabaseAdmin
-      .from("brand_profiles")
-      .select("brand_identity, brand_website")
-      .eq("id", wave12.brand_profile_id)
-      .single();
-    const { data: sp } = await supabaseAdmin
-      .from("show_profiles")
-      .select("show_name, audience_size")
-      .eq("id", wave12.show_profile_id)
-      .single();
-    const outreach = await getOutreachById(wave12.outreach_id);
+    const [bpRes, spRes, outreach, feeRes] = await Promise.all([
+      supabaseAdmin
+        .from("brand_profiles")
+        .select("brand_identity, brand_website")
+        .eq("id", wave12.brand_profile_id)
+        .single(),
+      supabaseAdmin
+        .from("show_profiles")
+        .select("show_name, audience_size")
+        .eq("id", wave12.show_profile_id)
+        .single(),
+      getOutreachById(wave12.outreach_id),
+      ownsAsBrand
+        ? supabaseAdmin
+            .from("profiles")
+            .select("platform_fee_percentage")
+            .eq("id", user.id)
+            .maybeSingle<{ platform_fee_percentage: number | string | null }>()
+        : Promise.resolve({ data: null }),
+    ]);
+    const bp = bpRes.data;
+    const sp = spRes.data;
     const showName =
       (sp as ShowProfile | null)?.show_name ?? outreach?.show_name ?? "Show";
     const brandName = brandDisplayName(bp as Partial<BrandProfile> | null);
@@ -112,8 +118,9 @@ export default async function DealDetailPage({ params }: PageProps) {
       promoCode: wave12.promo_code,
       trackingLink,
     });
+    const feePercentage = Number(feeRes.data?.platform_fee_percentage);
     const episodeCharge = ownsAsBrand
-      ? await episodeChargeForBrand(user.id, sp, wave12.agreed_cpm)
+      ? episodeChargeForBrand(sp, wave12.agreed_cpm, feePercentage)
       : null;
     return (
       <Wave12DealClient
