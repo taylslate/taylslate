@@ -49,6 +49,7 @@ export async function proxy(request: NextRequest) {
   // /sitemap.xml, /robots.txt, /opengraph-image: public crawler files
   // /api/webhooks/docusign       — Wave 12 DocuSign Connect webhook (HMAC-verified)
   // /api/cron/*                  — Vercel Cron jobs (CRON_SECRET-verified)
+  // /api/v1                      public API. Handlers authenticate Bearer keys.
   // All /api/* are listed; per-route handlers enforce their own auth.
   const isPublicRoute =
     pathname === "/" ||
@@ -59,6 +60,7 @@ export async function proxy(request: NextRequest) {
     pathname === "/callback" ||
     pathname === "/forgot-password" ||
     pathname === "/reset-password" ||
+    pathname.startsWith("/api/v1") ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/outreach/") ||
     pathname.startsWith("/auth/magic") ||
