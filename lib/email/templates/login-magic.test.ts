@@ -8,7 +8,7 @@ describe("renderLoginMagicEmail", () => {
 
   it("uses a specific subject, one sentence, and a Log in button", () => {
     expect(out.subject).toBe("Log in to Taylslate");
-    expect(out.html).toContain("Click the button to sign in. This link expires in 24 hours.");
+    expect(out.html).toContain("Here is your sign-in link. It expires in 24 hours.");
     expect(out.html).toMatch(/<a href="[^"]+"[^>]*>\s*Log in\s*<\/a>/);
   });
 
@@ -17,7 +17,7 @@ describe("renderLoginMagicEmail", () => {
       "https://www.taylslate.com/callback?token_hash=abc&amp;type=magiclink&amp;next=/dashboard",
     );
     expect(out.html).not.toMatch(/^https:\/\//);
-    expect(out.text).toContain("Click the button to sign in.");
+    expect(out.text).toContain("Here is your sign-in link.");
     expect(out.text).toContain("token_hash=abc");
   });
 });

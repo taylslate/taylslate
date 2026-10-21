@@ -19,7 +19,7 @@ export function renderLoginMagicEmail(
   input: LoginMagicEmailInput,
 ): RenderedLoginMagicEmail {
   const subject = "Log in to Taylslate";
-  const sentence = "Click the button to sign in. This link expires in 24 hours.";
+  const sentence = "Here is your sign-in link. It expires in 24 hours.";
   const laid = renderEmailLayout({
     preheader: sentence,
     bodyHtml: emailParagraph(sentence),

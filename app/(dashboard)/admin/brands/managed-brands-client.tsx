@@ -134,7 +134,7 @@ export default function ManagedBrandsClient({
         Managed brands
       </h1>
       <p className="mt-2 text-sm text-[var(--ts-ink-muted-on-paper)]">
-        Chris runs these accounts. Taylslate does not email them or send DocuSign
+        You run these accounts. Taylslate does not email them or send DocuSign
         for them. Login links still go to the real address.
       </p>
 

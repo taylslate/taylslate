@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { EMAIL_FROM_OUTREACH } from "@/lib/email/addresses";
+import { resolveManagedDelivery } from "@/lib/email/send";
 import { renderCampaignOutreachEmail } from "@/lib/email/templates/campaign-outreach";
 
 interface OutreachEmailInput {
@@ -48,23 +49,38 @@ export async function POST(request: NextRequest) {
       body: draft.body,
     });
 
+    const delivery = await resolveManagedDelivery({
+      to: draft.contact_email,
+      subject: draft.subject,
+    });
+    if (!delivery.ok) {
+      results.push({
+        show_id: draft.show_id,
+        success: false,
+        to: draft.contact_email,
+        error:
+          "This brand is managed and MANAGED_ACCOUNT_INBOX is not set, so the email was not sent.",
+      });
+      continue;
+    }
+
     try {
       const { error } = await resend.emails.send({
         from: EMAIL_FROM_OUTREACH,
-        to: draft.contact_email,
-        subject: draft.subject,
+        to: delivery.to,
+        subject: delivery.subject,
         html: rendered.html,
         text: rendered.text,
       });
 
       if (error) {
-        results.push({ show_id: draft.show_id, success: false, to: draft.contact_email, error: error.message });
+        results.push({ show_id: draft.show_id, success: false, to: delivery.to, error: error.message });
       } else {
-        results.push({ show_id: draft.show_id, success: true, to: draft.contact_email });
+        results.push({ show_id: draft.show_id, success: true, to: delivery.to });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      results.push({ show_id: draft.show_id, success: false, to: draft.contact_email, error: message });
+      results.push({ show_id: draft.show_id, success: false, to: delivery.to, error: message });
     }
   }
 

@@ -22,9 +22,9 @@ function episodes(count: number): string {
 }
 
 export function renderIoReadyForSignature(input: IoReadyInput): RenderedIoReady {
-  const subject = `${input.show_name} accepted — the IO is ready to sign`;
+  const subject = `${input.show_name} accepted. The IO is ready to sign`;
   const terms = `$${input.agreed_cpm.toFixed(2)} CPM for ${episodes(input.agreed_episode_count)}`;
-  const sentence = `${input.show_name} accepted your offer at ${terms}. Review the insertion order and sign it. After you sign, we send it to ${input.show_name} to countersign on DocuSign.`;
+  const sentence = `${input.show_name} accepted your offer at ${terms}. Review the insertion order and sign when it looks right. After you sign, we send it to ${input.show_name} to countersign on DocuSign.`;
   const laid = renderEmailLayout({
     preheader: `The IO for ${input.show_name} is ready to sign.`,
     headline: `${input.show_name} accepted your offer`,

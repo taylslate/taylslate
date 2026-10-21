@@ -80,11 +80,11 @@ function buildFromAndReply(brandName: string): { from: string; reply_to: string 
 
 export function renderOutreachEmail(input: OutreachEmailInput): RenderedOutreachEmail {
   const brandName = normalizeBrandName(input.brand_name);
-  const subject = `${brandName} x ${input.show_name} — quick intro`;
+  const subject = `A sponsorship offer from ${brandName} for ${input.show_name}`;
   const { from, reply_to } = buildFromAndReply(brandName);
   const placement = placementLabel(input.proposed_placement);
   const episodes = `${input.proposed_episode_count} ${input.proposed_episode_count === 1 ? "episode" : "episodes"}`;
-  const flight = `${formatDateOnly(input.proposed_flight_start)} – ${formatDateOnly(input.proposed_flight_end)}`;
+  const flight = `${formatDateOnly(input.proposed_flight_start)} to ${formatDateOnly(input.proposed_flight_end)}`;
   const cpm = `$${input.proposed_cpm.toFixed(2)}`;
 
   const fromBlock = `<div style="font-size:12px;color:${emailColors.muted};letter-spacing:0.04em;text-transform:uppercase;margin:0 0 4px;">From</div><div style="font-size:16px;font-weight:600;color:${emailColors.ink};">${escapeHtml(brandName)}</div>${
@@ -108,7 +108,7 @@ export function renderOutreachEmail(input: OutreachEmailInput): RenderedOutreach
       `<p style="margin:8px 0 4px;font-size:11px;letter-spacing:0.05em;text-transform:uppercase;color:${emailColors.muted};">Proposed terms</p>` +
       terms,
     cta: { href: input.pitch_url, label: "Review the offer" },
-    note: "Reply to this email if you want to talk first.",
+    note: "Reply to this email if you would like to talk it through first.",
     text: [
       input.pitch_body.trim(),
       "",
@@ -120,7 +120,7 @@ export function renderOutreachEmail(input: OutreachEmailInput): RenderedOutreach
       "",
       `Review the offer: ${input.pitch_url}`,
       "",
-      "Reply to this email if you want to talk first.",
+      "Reply to this email if you would like to talk it through first.",
       "",
       `Sent for ${input.show_name} on behalf of ${brandName}.`,
     ].join("\n"),

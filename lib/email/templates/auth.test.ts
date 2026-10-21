@@ -16,7 +16,7 @@ describe("Supabase auth email templates", () => {
     const magic = byId["magic-link"].html;
     expect(magic).toContain("type=magiclink");
     expect(magic).toContain("next=/dashboard");
-    expect(magic).toContain("Click the button to sign in. This link expires in 24 hours.");
+    expect(magic).toContain("Here is your sign-in link. It expires in 24 hours.");
     expect(magic).not.toContain(".ConfirmationURL");
 
     const recovery = byId["recovery"].html;
