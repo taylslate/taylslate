@@ -97,6 +97,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 import {
   applyAudienceGeographyToShow,
   getVerifiedAudienceGeography,
+  getVerifiedProfileTies,
 } from "./apply-geography";
 
 const CATALOG_ID = "11111111-1111-1111-1111-111111111111";
@@ -225,5 +226,36 @@ describe("audience geography ties", () => {
     });
     expect(ok).toBe(true);
     expect(db.shows[0].demographics).toEqual({ us: 70, male: 55 });
+  });
+});
+
+describe("verified profile ties", () => {
+  const identity = {
+    showId: CATALOG_ID,
+    podscanId: "pd_smartless",
+    contactEmail: "host@smartless.com",
+    dataSources: ["podscan"],
+  };
+
+  it("does not tie a profile that only shares the catalog podscan id", async () => {
+    db.show_profiles[0].podscan_id = "pd_smartless";
+    expect(await getVerifiedProfileTies([identity])).toEqual([]);
+  });
+
+  it("ties a profile through a deal", async () => {
+    db.deals.push({ show_id: CATALOG_ID, show_profile_id: "prof-imposter" });
+    expect(await getVerifiedProfileTies([identity])).toEqual([
+      { showId: CATALOG_ID, profileId: "prof-imposter" },
+    ]);
+  });
+
+  it("ties a show_owner row through the owner's contact email", async () => {
+    db.shows[0].data_sources = ["show_owner"];
+    db.shows[0].contact_email = "Imposter@Example.com";
+    expect(
+      await getVerifiedProfileTies([
+        { ...identity, contactEmail: "imposter@example.com", dataSources: ["show_owner"] },
+      ])
+    ).toEqual([{ showId: CATALOG_ID, profileId: "prof-imposter" }]);
   });
 });

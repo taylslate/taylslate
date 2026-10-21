@@ -72,7 +72,13 @@ import {
   FounderAnnotationsProvider,
   ShowAnnotations,
 } from "@/components/discovery/FounderAnnotations";
+import MarketSignals from "@/components/discovery/MarketSignals";
 import { tokens } from "@/lib/brand/tokens";
+import {
+  computeMarketSignals,
+  recordedPricing,
+  type MarketSignal,
+} from "@/lib/discovery/market-signals";
 
 const radiusStyle = { borderRadius: tokens.radius };
 
@@ -212,6 +218,12 @@ interface ConvictionDiscoveryViewProps {
   annotationsByShow?: Record<string, FounderAnnotationRow[]>;
   /** Published creator add-ons keyed by show id. Display only — not a score. */
   surfacesByShowId?: Record<string, SellableSurface[]>;
+  /**
+   * Market signals keyed by show id. Context only — the view never filters,
+   * sorts, or disables a card from these values. Missing ids fall back to
+   * whatever is already on the show row.
+   */
+  marketSignalsByShow?: Record<string, MarketSignal[]>;
 }
 
 const SellableSurfacesContext = createContext<Record<string, SellableSurface[]>>({});
@@ -238,6 +250,7 @@ export default function ConvictionDiscoveryView({
   isAdmin = false,
   annotationsByShow = {},
   surfacesByShowId = {},
+  marketSignalsByShow,
 }: ConvictionDiscoveryViewProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -395,6 +408,7 @@ export default function ConvictionDiscoveryView({
         onRerun={runDiscovery}
         rerunning={discovering || isPending}
         router={router}
+        marketSignalsByShow={marketSignalsByShow}
       />
     </FounderAnnotationsProvider>
     </SellableSurfacesContext.Provider>
@@ -417,6 +431,7 @@ function TieredScoredUniverse({
   onRerun,
   rerunning,
   router,
+  marketSignalsByShow,
 }: {
   campaignId: string;
   campaignName: string;
@@ -429,6 +444,7 @@ function TieredScoredUniverse({
   onRerun: () => void;
   rerunning: boolean;
   router: ReturnType<typeof useRouter>;
+  marketSignalsByShow?: Record<string, MarketSignal[]>;
 }) {
   const [, startRecompute] = useTransition();
 
@@ -915,6 +931,7 @@ function TieredScoredUniverse({
               onCpmOverride={overrideShowCpm}
               onPlacementOverride={overrideShowPlacement}
               recomputing={recomputing}
+              marketSignalsByShow={marketSignalsByShow}
             />
 
             {/* SCALE TIER (secondary) — over the 25% guideline, still selectable */}
@@ -933,10 +950,15 @@ function TieredScoredUniverse({
               onCpmOverride={overrideShowCpm}
               onPlacementOverride={overrideShowPlacement}
               recomputing={recomputing}
+              marketSignalsByShow={marketSignalsByShow}
             />
 
             {/* BENCH (collapsed) */}
-            <BenchSection shows={visibleBench} ringLabelById={ringLabelById} />
+            <BenchSection
+              shows={visibleBench}
+              ringLabelById={ringLabelById}
+              marketSignalsByShow={marketSignalsByShow}
+            />
           </>
         )}
       </div>
@@ -995,6 +1017,7 @@ function TestSection({
   onCpmOverride,
   onPlacementOverride,
   recomputing,
+  marketSignalsByShow,
 }: {
   shows: TieredShow[];
   underfilled: boolean;
@@ -1004,6 +1027,7 @@ function TestSection({
   onCpmOverride: (showId: string, cpmDollars: number | null) => void;
   onPlacementOverride: (showId: string, placement: Placement) => void;
   recomputing: boolean;
+  marketSignalsByShow?: Record<string, MarketSignal[]>;
 }) {
   const [page, setPage] = useState(1);
   const shown = shows.slice(0, PAGE_SIZE * page);
@@ -1049,6 +1073,7 @@ function TestSection({
               onCpmOverride={onCpmOverride}
               onPlacementOverride={onPlacementOverride}
               recomputing={recomputing}
+              marketSignalsByShow={marketSignalsByShow}
             />
           ))}
         </div>
@@ -1075,6 +1100,7 @@ function ScaleSection({
   onCpmOverride,
   onPlacementOverride,
   recomputing,
+  marketSignalsByShow,
 }: {
   shows: TieredShow[];
   dismissed: TieredShow[];
@@ -1090,6 +1116,7 @@ function ScaleSection({
   onCpmOverride: (showId: string, cpmDollars: number | null) => void;
   onPlacementOverride: (showId: string, placement: Placement) => void;
   recomputing: boolean;
+  marketSignalsByShow?: Record<string, MarketSignal[]>;
 }) {
   const [page, setPage] = useState(1);
   if (shows.length === 0 && dismissed.length === 0) return null;
@@ -1124,6 +1151,7 @@ function ScaleSection({
             onCpmOverride={onCpmOverride}
             onPlacementOverride={onPlacementOverride}
             recomputing={recomputing}
+            marketSignalsByShow={marketSignalsByShow}
           />
         ))}
       </div>
@@ -1167,9 +1195,11 @@ function ScaleSection({
 function BenchSection({
   shows,
   ringLabelById,
+  marketSignalsByShow,
 }: {
   shows: TieredShow[];
   ringLabelById: Map<string, string>;
+  marketSignalsByShow?: Record<string, MarketSignal[]>;
 }) {
   const [open, setOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -1211,6 +1241,7 @@ function BenchSection({
                     ? ringLabelById.get(s.ringHypothesisId) ?? null
                     : null
                 }
+                marketSignalsByShow={marketSignalsByShow}
               />
             ))}
           </div>
@@ -1238,6 +1269,7 @@ function TestShowCard({
   onCpmOverride,
   onPlacementOverride,
   recomputing,
+  marketSignalsByShow,
 }: {
   entry: TieredShow;
   selected: boolean;
@@ -1246,6 +1278,7 @@ function TestShowCard({
   onCpmOverride: (showId: string, cpmDollars: number | null) => void;
   onPlacementOverride: (showId: string, placement: Placement) => void;
   recomputing: boolean;
+  marketSignalsByShow?: Record<string, MarketSignal[]>;
 }) {
   const surfaces = useSellableSurfaces(entry.showId);
   const { show } = entry;
@@ -1318,6 +1351,8 @@ function TestShowCard({
         </p>
       )}
 
+      <MarketSignals signals={signalsForShow(entry, marketSignalsByShow)} />
+
       <CostLine entry={entry} />
 
       <ShowOverrideControls
@@ -1347,6 +1382,7 @@ function ScaleShowCard({
   onCpmOverride,
   onPlacementOverride,
   recomputing,
+  marketSignalsByShow,
 }: {
   entry: TieredShow;
   selected: boolean;
@@ -1358,6 +1394,7 @@ function ScaleShowCard({
   onCpmOverride: (showId: string, cpmDollars: number | null) => void;
   onPlacementOverride: (showId: string, placement: Placement) => void;
   recomputing: boolean;
+  marketSignalsByShow?: Record<string, MarketSignal[]>;
 }) {
   const surfaces = useSellableSurfaces(entry.showId);
   const { show } = entry;
@@ -1409,6 +1446,8 @@ function ScaleShowCard({
         </div>
       </div>
 
+      <MarketSignals signals={signalsForShow(entry, marketSignalsByShow)} />
+
       {entry.budgetDeltaCents != null && entry.budgetDeltaCents > 0 && (
         <div
           data-testid="budget-delta"
@@ -1457,9 +1496,11 @@ function ScaleShowCard({
 function BenchShowCard({
   entry,
   ringLabel,
+  marketSignalsByShow,
 }: {
   entry: TieredShow;
   ringLabel: string | null;
+  marketSignalsByShow?: Record<string, MarketSignal[]>;
 }) {
   const surfaces = useSellableSurfaces(entry.showId);
   const { show } = entry;
@@ -1505,11 +1546,42 @@ function BenchShowCard({
         </div>
       </div>
 
+      <MarketSignals signals={signalsForShow(entry, marketSignalsByShow)} />
+
       <SurfaceAddons surfaces={surfaces} />
 
       <ShowAnnotations showId={entry.showId} />
     </div>
   );
+}
+
+function signalsForShow(
+  entry: TieredShow,
+  byShow?: Record<string, MarketSignal[]>
+): MarketSignal[] {
+  const provided = byShow?.[entry.showId];
+  if (provided && provided.length > 0) return provided;
+  const show = entry.show;
+  const pricing = recordedPricing({
+    minBuy: show?.min_buy,
+    rateCard: show?.rate_card,
+    priceType: show?.price_type,
+    placement: entry.placement,
+    cpmUsedCents: entry.cpmUsedCents,
+    perSpotCents: entry.perSpotCents,
+    costBasis: entry.costBasis,
+    isEstimate: entry.isEstimate,
+    audienceSize: show?.audience_size,
+  });
+  return computeMarketSignals({
+    advertisers: [
+      ...(show?.current_sponsors ?? []).map((name) => ({ name })),
+      ...(show?.past_sponsors ?? []).map((name) => ({ name })),
+    ],
+    recordedCpms: pricing.cpms,
+    recordedFlatDollars: pricing.flats,
+    audienceSize: pricing.audienceSize,
+  });
 }
 
 // ============================================================

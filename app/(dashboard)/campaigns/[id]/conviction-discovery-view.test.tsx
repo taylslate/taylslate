@@ -23,6 +23,7 @@ import type {
   ConvictionUniverseShow,
 } from "@/lib/data/reasoning-log";
 import type { TieredShow, TieredUniverse } from "@/lib/discovery/tiered-universe";
+import type { MarketSignal } from "@/lib/discovery/market-signals";
 import ConvictionDiscoveryView from "./conviction-discovery-view";
 
 const { mockPush, mockRefresh } = vi.hoisted(() => ({
@@ -113,6 +114,7 @@ function renderTiered(
     rings?: RingHypothesisRow[];
     testSpotCount?: number | null;
     testPlacement?: "preroll" | "midroll" | "postroll" | null;
+    marketSignalsByShow?: Record<string, MarketSignal[]>;
   } = {}
 ) {
   return render(
@@ -126,6 +128,7 @@ function renderTiered(
       selectedShowIds={opts.selectedShowIds ?? []}
       testSpotCount={opts.testSpotCount ?? null}
       testPlacement={opts.testPlacement ?? null}
+      marketSignalsByShow={opts.marketSignalsByShow}
     />
   );
 }
@@ -810,5 +813,86 @@ describe("ConvictionDiscoveryView — paper/ink chrome", () => {
     expect(screen.getByRole("button", { name: "+ Add note" }).className).toContain(
       "text-[var(--ts-accent)]"
     );
+  });
+});
+
+describe("ConvictionDiscoveryView — market signals", () => {
+  const why = "Why this signal matters to a buyer.";
+
+  function lines(): MarketSignal[] {
+    return [
+      { id: "advertisers", label: "Similar advertisers", value: "LMNT", known: true, why },
+      {
+        id: "competitor_saturation",
+        label: "Competitor saturation",
+        value: "1 of 1 named competitors appear: LMNT",
+        known: true,
+        why,
+      },
+      { id: "ad_load", label: "Ad load", value: "unknown", known: false, why },
+      { id: "pricing", label: "CPM / spend", value: "unknown", known: false, why },
+      { id: "renewal", label: "Renewal", value: "Annual on file: LMNT", known: true, why },
+    ];
+  }
+
+  it("prints each signal and its reason, and still lets the show be selected", async () => {
+    renderTiered(
+      { test: [tieredShow()] },
+      { marketSignalsByShow: { "show-1": lines() } }
+    );
+    const card = screen.getByTestId("test-show-card");
+    expect(within(card).getByTestId("market-signal-advertisers-value")).toHaveTextContent("LMNT");
+    expect(within(card).getByTestId("market-signal-ad_load-value")).toHaveTextContent("unknown");
+    expect(within(card).getByTestId("market-signal-renewal-value")).toHaveTextContent(
+      "Annual on file: LMNT"
+    );
+    expect(within(card).getAllByText(why)).toHaveLength(5);
+    const box = within(card).getByRole("checkbox");
+    expect(box).toBeEnabled();
+    await userEvent.click(box);
+    expect(box).toBeChecked();
+    expect(screen.getAllByTestId("test-show-card")).toHaveLength(1);
+  });
+
+  it("does not treat a banded discovery CPM as a recorded rate", () => {
+    renderTiered({
+      test: [
+        tieredShow({
+          cpmUsedCents: 2200,
+          isEstimate: true,
+          costBasis: "derived",
+        }),
+      ],
+    });
+    expect(screen.getByTestId("market-signal-pricing-value")).toHaveTextContent("unknown");
+    expect(screen.getByTestId("market-signal-ad_load-value")).toHaveTextContent("unknown");
+  });
+
+  it("shows the same notes on scale and bench cards", async () => {
+    renderTiered({
+      test: [],
+      scale: [
+        tieredShow({
+          showId: "s1",
+          tier: "scale",
+          show: show({ id: "s1", name: "Scale Show", current_sponsors: ["AG1"] }),
+        }),
+      ],
+      bench: [
+        tieredShow({
+          showId: "b1",
+          tier: "dropped",
+          band: "speculative",
+          show: show({ id: "b1", name: "Bench Show" }),
+        }),
+      ],
+    });
+    const scale = screen.getByTestId("scale-show-card");
+    expect(within(scale).getByTestId("market-signal-advertisers-value")).toHaveTextContent("AG1");
+    expect(within(scale).getByRole("checkbox")).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: /Other matches/i }));
+    expect(
+      within(screen.getByTestId("bench-show-card")).getByTestId("market-signal-advertisers-value")
+    ).toHaveTextContent("unknown");
   });
 });
