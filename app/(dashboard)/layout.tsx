@@ -1,11 +1,9 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import {
-  getBrandProfileByUserId,
+  getAuthenticatedUser,
   getEffectiveRole,
-  getShowProfileByUserId,
-  getUserProfile,
+  loadProfileBundle,
 } from "@/lib/data/queries";
 import Sidebar from "@/components/layout/Sidebar";
 import ReturnToAdminButton from "@/components/admin/ReturnToAdminButton";
@@ -18,39 +16,34 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthenticatedUser();
 
   if (!user) {
     redirect("/login");
   }
 
+  // Profile, brand row, show row, and the view-as cookie resolve together.
+  // getEffectiveRole reads the same three rows; the request cache collapses them.
+  const [{ profile, brandProfile, showProfile }, eff] = await Promise.all([
+    loadProfileBundle(user.id),
+    getEffectiveRole(user.id),
+  ]);
+
   // Role-less profile = user hasn't completed the (existing) role-selection
   // onboarding at /onboarding. Send them back there.
-  const profile = await getUserProfile(user.id);
   if (!profile?.role) {
     redirect("/onboarding");
   }
 
   // Brand users need the Wave 8 brand onboarding before hitting the dashboard.
-  if (profile.role === "brand") {
-    const brandProfile = await getBrandProfileByUserId(user.id);
-    if (!brandProfile?.onboarded_at) {
-      redirect("/onboarding/brand");
-    }
+  if (profile.role === "brand" && !brandProfile?.onboarded_at) {
+    redirect("/onboarding/brand");
   }
 
   // Show/creator users need the Wave 9 show onboarding before hitting the dashboard.
-  if (profile.role === "show") {
-    const showProfile = await getShowProfileByUserId(user.id);
-    if (!showProfile?.onboarded_at) {
-      redirect("/onboarding/show");
-    }
+  if (profile.role === "show" && !showProfile?.onboarded_at) {
+    redirect("/onboarding/show");
   }
-
-  const eff = await getEffectiveRole(user.id);
   if (eff?.staleViewAs) {
     redirect("/api/view-mode/clear?next=/dashboard");
   }
@@ -77,6 +70,7 @@ export default async function DashboardLayout({
         role={effectiveRole}
         canSwitchTo={canSwitchTo}
         isAdmin={isAdmin}
+        displayName={profile.full_name?.trim() || profile.company_name?.trim() || profile.email}
         testAccounts={TEST_ACCOUNTS.map(({ key, label }) => ({ key, label }))}
       />
       <main className="ml-[240px] min-h-screen">

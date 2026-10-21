@@ -3,6 +3,7 @@
 // Replaces seed data imports with real database queries.
 // ============================================================
 
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -39,7 +40,7 @@ export const VIEW_AS_COOKIE = "taylslate_view_as";
 
 // ---- Auth & Profiles ----
 
-export async function getAuthenticatedUser() {
+export const getAuthenticatedUser = cache(async function getAuthenticatedUser() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -47,9 +48,11 @@ export async function getAuthenticatedUser() {
   } = await supabase.auth.getUser();
   if (error || !user) return null;
   return user;
-}
+});
 
-export async function getUserProfile(userId: string): Promise<Profile | null> {
+export const getUserProfile = cache(async function getUserProfile(
+  userId: string
+): Promise<Profile | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("profiles")
@@ -58,7 +61,7 @@ export async function getUserProfile(userId: string): Promise<Profile | null> {
     .single();
   if (error || !data) return null;
   return data as Profile;
-}
+});
 
 export async function getProfileById(id: string): Promise<Profile | null> {
   return getUserProfile(id);
@@ -103,6 +106,51 @@ export async function getAllShows(): Promise<Show[]> {
     .order("audience_size", { ascending: false });
   if (error || !data) return [];
   return data.map(transformShow);
+}
+
+function countPlatforms(rows: { platform: string | null }[]): {
+  total: number;
+  podcast: number;
+  youtube: number;
+} {
+  let podcast = 0;
+  let youtube = 0;
+  for (const row of rows) {
+    if (row.platform === "podcast") podcast += 1;
+    else if (row.platform === "youtube") youtube += 1;
+  }
+  return { total: rows.length, podcast, youtube };
+}
+
+/**
+ * Dashboard show counts without downloading rate cards and descriptions.
+ * Brands do not render show counts. Agents count their roster. Shows count
+ * the discoverable catalog, matching GET /api/shows.
+ */
+export async function getDashboardShowCounts(
+  userId: string
+): Promise<{ total: number; podcast: number; youtube: number }> {
+  const empty = { total: 0, podcast: 0, youtube: 0 };
+  const profile = await getUserProfile(userId);
+  if (!profile || isBrandSide(profile.role)) return empty;
+
+  const supabase = await createClient();
+  if (profile.role === "agent") {
+    const { data: rels } = await supabase
+      .from("agent_show_relationships")
+      .select("show_id")
+      .eq("agent_id", userId);
+    const ids = (rels ?? []).map((row) => row.show_id as string);
+    if (ids.length === 0) return empty;
+    const { data } = await supabase.from("shows").select("platform").in("id", ids);
+    return countPlatforms((data ?? []) as { platform: string | null }[]);
+  }
+
+  const { data } = await supabase
+    .from("shows")
+    .select("platform")
+    .eq("is_discoverable", true);
+  return countPlatforms((data ?? []) as { platform: string | null }[]);
 }
 
 export async function getShowById(id: string): Promise<Show | null> {
@@ -534,24 +582,22 @@ export async function deleteDeal(id: string): Promise<boolean> {
 export async function getAgentStats(agentId: string): Promise<AgentDashboardStats> {
   const supabase = await createClient();
 
-  // Total shows
-  const { count: totalShows } = await supabase
-    .from("agent_show_relationships")
-    .select("*", { count: "exact", head: true })
-    .eq("agent_id", agentId);
+  const [showsRes, activeRes, agentDealsRes] = await Promise.all([
+    supabase
+      .from("agent_show_relationships")
+      .select("*", { count: "exact", head: true })
+      .eq("agent_id", agentId),
+    supabase
+      .from("deals")
+      .select("*", { count: "exact", head: true })
+      .eq("agent_id", agentId)
+      .in("status", ["planning", "io_sent", "live"]),
+    supabase.from("deals").select("id").eq("agent_id", agentId),
+  ]);
 
-  // Active deals
-  const { count: activeDeals } = await supabase
-    .from("deals")
-    .select("*", { count: "exact", head: true })
-    .eq("agent_id", agentId)
-    .in("status", ["planning", "io_sent", "live"]);
-
-  // Pending invoices (via IO -> deal)
-  const { data: agentDeals } = await supabase
-    .from("deals")
-    .select("id")
-    .eq("agent_id", agentId);
+  const totalShows = showsRes.count;
+  const activeDeals = activeRes.count;
+  const agentDeals = agentDealsRes.data;
 
   let pendingInvoices = 0;
   let revenueThisMonth = 0;
@@ -568,34 +614,34 @@ export async function getAgentStats(agentId: string): Promise<AgentDashboardStat
 
     if (ios && ios.length > 0) {
       const ioIds = ios.map((io) => io.id);
-
-      // Pending invoices
-      const { count: pending } = await supabase
-        .from("invoices")
-        .select("*", { count: "exact", head: true })
-        .in("io_id", ioIds)
-        .in("status", ["sent", "overdue"]);
-      pendingInvoices = pending ?? 0;
-
-      // Revenue this month
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
-      const { data: paidThisMonth } = await supabase
-        .from("invoices")
-        .select("total_due")
-        .in("io_id", ioIds)
-        .eq("status", "paid")
-        .gte("paid_at", startOfMonth.toISOString());
-      revenueThisMonth = paidThisMonth?.reduce((s, inv) => s + (inv.total_due ?? 0), 0) ?? 0;
 
-      // Revenue outstanding
-      const { data: outstanding } = await supabase
-        .from("invoices")
-        .select("total_due")
-        .in("io_id", ioIds)
-        .in("status", ["sent", "overdue"]);
-      revenueOutstanding = outstanding?.reduce((s, inv) => s + (inv.total_due ?? 0), 0) ?? 0;
+      const [pendingRes, paidRes, outstandingRes] = await Promise.all([
+        supabase
+          .from("invoices")
+          .select("*", { count: "exact", head: true })
+          .in("io_id", ioIds)
+          .in("status", ["sent", "overdue"]),
+        supabase
+          .from("invoices")
+          .select("total_due")
+          .in("io_id", ioIds)
+          .eq("status", "paid")
+          .gte("paid_at", startOfMonth.toISOString()),
+        supabase
+          .from("invoices")
+          .select("total_due")
+          .in("io_id", ioIds)
+          .in("status", ["sent", "overdue"]),
+      ]);
+
+      pendingInvoices = pendingRes.count ?? 0;
+      revenueThisMonth =
+        paidRes.data?.reduce((s, inv) => s + (inv.total_due ?? 0), 0) ?? 0;
+      revenueOutstanding =
+        outstandingRes.data?.reduce((s, inv) => s + (inv.total_due ?? 0), 0) ?? 0;
     }
   }
 
@@ -787,13 +833,22 @@ export async function getInvoicesForUser(
     };
   }
 
-  // Fetch line items for each invoice
+  // Line items and unfiltered stats do not depend on each other.
   const invoiceIds = invoices.map((inv) => inv.id);
-  const { data: allLineItems } = await supabase
-    .from("invoice_line_items")
-    .select("*")
-    .in("invoice_id", invoiceIds)
-    .order("post_date", { ascending: true });
+  const [lineItemsRes, allInvoicesRes] = await Promise.all([
+    invoiceIds.length > 0
+      ? supabase
+          .from("invoice_line_items")
+          .select("*")
+          .in("invoice_id", invoiceIds)
+          .order("post_date", { ascending: true })
+      : Promise.resolve({ data: [] as InvoiceLineItem[] }),
+    supabase
+      .from("invoices")
+      .select("status, total_due, paid_at")
+      .in("io_id", ioIds),
+  ]);
+  const allLineItems = lineItemsRes.data;
 
   const lineItemsByInvoice = new Map<string, InvoiceLineItem[]>();
   for (const li of (allLineItems ?? []) as (InvoiceLineItem & { invoice_id: string })[]) {
@@ -807,11 +862,7 @@ export async function getInvoicesForUser(
     line_items: lineItemsByInvoice.get(inv.id) ?? [],
   })) as (Invoice & { line_items: InvoiceLineItem[] })[];
 
-  // Compute stats (across ALL user invoices, not just filtered)
-  const { data: allInvoices } = await supabase
-    .from("invoices")
-    .select("status, total_due, paid_at")
-    .in("io_id", ioIds);
+  const allInvoices = allInvoicesRes.data;
 
   let totalOutstanding = 0;
   let totalPaidThisMonth = 0;
@@ -1661,7 +1712,7 @@ export async function updateCampaignMediaPlan(
 
 // ---- Brand Profile Queries (Wave 8) ----
 
-export async function getBrandProfileByUserId(
+export const getBrandProfileByUserId = cache(async function getBrandProfileByUserId(
   userId: string
 ): Promise<BrandProfile | null> {
   const supabase = await createClient();
@@ -1675,7 +1726,7 @@ export async function getBrandProfileByUserId(
     return null;
   }
   return (data as BrandProfile) ?? null;
-}
+});
 
 /**
  * Upsert brand profile for a user. Creates the row on first call, patches
@@ -1734,7 +1785,7 @@ export async function completeBrandProfile(
 
 // ---- Show Profile Queries (Wave 9) ----
 
-export async function getShowProfileByUserId(
+export const getShowProfileByUserId = cache(async function getShowProfileByUserId(
   userId: string
 ): Promise<ShowProfile | null> {
   const supabase = await createClient();
@@ -1748,7 +1799,17 @@ export async function getShowProfileByUserId(
     return null;
   }
   return (data as ShowProfile) ?? null;
-}
+});
+
+/** Profile plus both onboarding rows, one round trip when the caller awaits this. */
+export const loadProfileBundle = cache(async function loadProfileBundle(userId: string) {
+  const [profile, brandProfile, showProfile] = await Promise.all([
+    getUserProfile(userId),
+    getBrandProfileByUserId(userId),
+    getShowProfileByUserId(userId),
+  ]);
+  return { profile, brandProfile, showProfile };
+});
 
 export async function upsertShowProfile(
   userId: string,
@@ -2188,14 +2249,14 @@ export interface EffectiveRoleResult {
 export async function getEffectiveRole(
   userId: string
 ): Promise<EffectiveRoleResult | null> {
-  const profile = await getUserProfile(userId);
-  if (!profile?.role) return null;
-
-  const baseRole = profile.role;
-  const [brandProfile, showProfile] = await Promise.all([
+  const [profile, brandProfile, showProfile] = await Promise.all([
+    getUserProfile(userId),
     getBrandProfileByUserId(userId),
     getShowProfileByUserId(userId),
   ]);
+  if (!profile?.role) return null;
+
+  const baseRole = profile.role;
   const hasBrandProfile = !!brandProfile;
   const hasShowProfile = !!showProfile;
 
