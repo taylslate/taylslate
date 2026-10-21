@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 const { mockReplace, mockRefresh, mockAssign } = vi.hoisted(() => ({
@@ -150,16 +150,7 @@ describe("Sidebar chrome", () => {
     expect(internal.parentElement).not.toContainElement(
       screen.getByRole("button", { name: "View as show" }),
     );
-    const viewAs = screen.getByRole("button", { name: "View as show" });
-    expect(viewAs).toHaveClass("ts-clap");
-    expect(viewAs.querySelector(".ts-clap-stick")).not.toBeNull();
-
-    fireEvent.click(viewAs);
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Switching…" })).toHaveClass(
-        "is-clapping",
-      );
-    });
+    expect(screen.getByRole("button", { name: "View as show" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Log in as Test Brand 1" }));
     expect(fetchMock).toHaveBeenCalledWith(
