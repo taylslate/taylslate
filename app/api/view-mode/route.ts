@@ -5,6 +5,7 @@ import {
   VIEW_AS_COOKIE,
   getBrandProfileByUserId,
   getShowProfileByUserId,
+  getUserProfile,
 } from "@/lib/data/queries";
 
 const ALLOWED_MODES = new Set(["brand", "show"]);
@@ -53,6 +54,14 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
+  }
+
+  // Returning to the account's own role drops the cookie instead of
+  // storing a view-as value that matches profiles.role.
+  const profile = await getUserProfile(user.id);
+  if (profile?.role === mode) {
+    cookieStore.delete(VIEW_AS_COOKIE);
+    return NextResponse.json({ ok: true, viewAs: null });
   }
 
   cookieStore.set(VIEW_AS_COOKIE, mode, {

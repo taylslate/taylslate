@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { buildLearningReview } from "@/lib/learning/review";
 import { LearningReviewView } from "./learning-review-view";
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("LearningReviewView", () => {
   it("shows the holding line before a flight completes", () => {
