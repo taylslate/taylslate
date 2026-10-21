@@ -1,22 +1,9 @@
 import type { Metadata } from "next";
-import { HomeLanding } from "@/components/marketing/home-landing";
-import { GUEST_COPY, parseGuest } from "@/lib/marketing/guest";
+import { LaunchHome } from "@/components/marketing/launch-home";
+import { publicMetadata } from "@/lib/marketing/site";
 
-type HomeParams = {
-  searchParams: Promise<{ for?: string | string[] }>;
-};
+export const metadata: Metadata = publicMetadata("/");
 
-export async function generateMetadata({
-  searchParams,
-}: HomeParams): Promise<Metadata> {
-  const copy = GUEST_COPY[parseGuest((await searchParams).for)];
-  return {
-    title: `Taylslate — ${copy.h1.replace(/\.$/, "")}`,
-    description: copy.sub,
-  };
-}
-
-export default async function Home({ searchParams }: HomeParams) {
-  const guest = parseGuest((await searchParams).for);
-  return <HomeLanding initialGuest={guest} />;
+export default function Home() {
+  return <LaunchHome />;
 }

@@ -1,8 +1,12 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { RECOVERY_COOKIE } from "@/lib/auth/recovery-cookie";
+import { publicMetadata } from "@/lib/marketing/site";
 import ResetPasswordForm from "./reset-password-form";
+
+export const metadata: Metadata = publicMetadata("/reset-password");
 
 // Server-component gate: the set-new-password form is shown ONLY when the
 // short-lived recovery marker cookie is present — i.e. the user just arrived

@@ -44,6 +44,7 @@ export async function proxy(request: NextRequest) {
   //                                /login when no recovery session exists.
   // /outreach/[token]            — Wave 11 public pitch page (token-gated)
   // /auth/magic                  — magic link landing/error states
+  // /sitemap.xml, /robots.txt, /opengraph-image: public crawler files
   // /api/webhooks/docusign       — Wave 12 DocuSign Connect webhook (HMAC-verified)
   // /api/cron/*                  — Vercel Cron jobs (CRON_SECRET-verified)
   // All /api/* are listed; per-route handlers enforce their own auth.
@@ -56,7 +57,10 @@ export async function proxy(request: NextRequest) {
     pathname === "/reset-password" ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/outreach/") ||
-    pathname.startsWith("/auth/magic");
+    pathname.startsWith("/auth/magic") ||
+    pathname === "/sitemap.xml" ||
+    pathname === "/robots.txt" ||
+    pathname === "/opengraph-image";
 
   if (isPublicRoute) return supabaseResponse;
 

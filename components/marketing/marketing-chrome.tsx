@@ -21,23 +21,26 @@ export function MarketingWordmark() {
 export function MarketingChrome({
   children,
   actions,
+  wide = false,
 }: {
   children: ReactNode;
   actions?: ReactNode;
+  wide?: boolean;
 }) {
+  const width = wide ? "max-w-6xl" : "max-w-5xl";
   return (
     <div className="marketing-page flex min-h-screen flex-col bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
-      <header className="border-b border-[var(--ts-ink-on-paper)]/10">
-        <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
+      <header className="sticky top-0 z-10 border-b border-[var(--ts-ink-on-paper)]/10 bg-[var(--ts-paper)]">
+        <nav className={`mx-auto flex ${width} items-center justify-between gap-4 px-6 py-3`}>
           <MarketingWordmark />
           {actions ? (
-            <div className="flex items-center gap-6">{actions}</div>
+            <div className="flex items-center gap-4 sm:gap-6">{actions}</div>
           ) : null}
         </nav>
       </header>
       {children}
       <footer className="border-t border-[var(--ts-ink-on-paper)]/10">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
+        <div className={`mx-auto flex ${width} items-center justify-between px-6 py-6`}>
           <span className="text-sm text-[var(--ts-ink-muted-on-paper)]">
             &copy; 2026 Taylslate
           </span>
