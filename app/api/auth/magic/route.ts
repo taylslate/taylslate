@@ -33,14 +33,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/auth/magic?error=invalid_or_expired`);
   }
 
-  // Find or create the auth user.
-  const email = payload.email;
+  // Find or create the auth user. eq on the lowercased address so % and _
+  // in a token cannot widen the lookup.
+  const email = payload.email.trim().toLowerCase();
   let userId: string | null = null;
 
   const { data: existingByEmail } = await supabaseAdmin
     .from("profiles")
     .select("id")
-    .ilike("email", email)
+    .eq("email", email)
     .maybeSingle();
   if (existingByEmail?.id) {
     userId = existingByEmail.id;

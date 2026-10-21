@@ -37,7 +37,7 @@ export async function proxy(request: NextRequest) {
   //                                OTP user establishes a session in the first
   //                                place. It only sets a session on a valid
   //                                token; otherwise it redirects to /login.
-  // /login/show                  — show/creator email-code sign-in (signed out)
+  // /login/show                  — redirects to /login (one code sign-in)
   // /forgot-password             — request a password reset (signed out)
   // /reset-password              — set a new password after a recovery link;
   //                                must be reachable so it can render its own

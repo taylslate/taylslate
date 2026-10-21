@@ -1,6 +1,6 @@
 # Taylslate emails
 
-Every message Taylslate sends uses `lib/email/layout.ts`: a white field (`#ffffff`), a thin ink header bar (`#1c1915`), the mark at `https://www.taylslate.com/mark.png`, the wordmark, a footer, and a plain-text part. Copper `#c17a45` is for links. Buttons are ink with white text.
+Every message Taylslate sends uses `lib/email/layout.ts`: a white field (`#ffffff`), a thin ink header bar (`#1c1915`), the mark at `https://www.taylslate.com/mark.png`, the wordmark, a footer, and a plain-text part. Gold `#8c6e1f` is for links on the white field. Gold on the canvas field is `#7a5f17`. Buttons are ink with white text.
 
 Regenerate HTML previews with:
 
@@ -27,7 +27,7 @@ Files land in `docs/email-previews/`.
 
 `resolveManagedDelivery` in `lib/email/send.ts` sends mail for a managed profile to `MANAGED_ACCOUNT_INBOX` and prefixes the subject with the original address. Lookup is by `recipientProfileId`, then by the `to` address.
 
-Login magic links, show sign-in codes, handoff magic links, and show-setup magic links set `bypassManagedReroute`. They go to the real address so a managed account can still sign in.
+Login codes, handoff magic links, and show-setup magic links set `bypassManagedReroute`. They go to the real address so a managed account can still sign in.
 
 Invoice send, legacy campaign outreach, and IO PDF send call `resolveManagedDelivery` before Resend. A managed recipient goes to `MANAGED_ACCOUNT_INBOX`. If that variable is unset, invoice send and IO PDF send return 409 and do not send. Legacy campaign outreach records that failure on the draft and does not send that draft.
 
@@ -35,8 +35,7 @@ Invoice send, legacy campaign outreach, and IO PDF send call `resolveManagedDeli
 
 | Id | Trigger | Recipient | Template | From | Reroute |
 | --- | --- | --- | --- | --- | --- |
-| login-magic | `POST /api/auth/login/magic` | The address typed on `/login` (brand or show) | `lib/email/templates/login-magic.ts` | auth@ | Bypassed |
-| login-otp | `POST /api/auth/login/otp` | A show email (`/login/show`, or show setup on a pitch) | `lib/email/templates/login-otp.ts` | auth@ | Bypassed. Body is the 6-digit code. No link |
+| login-otp | `POST /api/auth/login/otp` | The address typed on `/login`, or the show contact on a pitch. The response is `{ok:true}` either way and does not say whether an account exists. A code is sent only when one does, or when the address is that pitch's contact (the show account is created when the code is verified). | `lib/email/templates/login-otp.ts` | auth@ | Bypassed. Body is the 6-digit code. No link. `/login/show` redirects to `/login` |
 | handoff-magic | `POST /api/admin/managed-brands/[id]/handoff` via `lib/accounts/handoff.ts` | The new brand email | `login-magic.ts` | auth@ | Bypassed |
 | show-setup-magic | `POST /api/auth/magic/start` | Show email | `lib/email/templates/magic-link.ts` | auth@ | Bypassed. Link is `{origin}/api/auth/magic?token=` |
 | outreach-pitch | `POST /api/outreach` | Show contact | `lib/email/templates/outreach.ts` | {Brand} \<outreach@\> reply-to outreach@ | Yes, `sendEmail` lookup by `to` |
@@ -64,13 +63,13 @@ SUPABASE_ACCESS_TOKEN=... npx tsx scripts/apply-auth-email-templates.ts
 
 The script patches subject and HTML only. It does not flip `mailer_notifications_*_enabled` and it does not change SMTP host, port, or password. It sets `smtp_sender_name` to Taylslate only when that field is something else.
 
-Login on `/login` does not use the Supabase magic-link template. That path is Resend (`login-magic`). Show email codes are also Resend (`login-otp`). The hosted magic-link template is still updated so a dashboard send matches, and it stays a link.
+`/login` sends a 6-digit code through Resend (`login-otp`) for brands and shows. It does not use a hosted Supabase template. There is no `POST /api/auth/login/magic`. `/login/show` redirects to `/login`. Handoff still sends the Resend magic-link email (`login-magic`). The hosted magic-link template stays a link so a dashboard send does not become a code. Supabase has no separate OTP config field, so `scripts/apply-auth-email-templates.ts` checks the code template in `lib/email/templates/auth.ts` (`id: otp`) and does not write it. Running that script is not required for the `/login` code change.
 
 | Template | Subject | Link |
 | --- | --- | --- |
 | Confirm signup | Confirm your Taylslate account | `{{ .SiteURL }}/callback?token_hash={{ .TokenHash }}&type=signup&next=/onboarding` |
 | Magic link | Log in to Taylslate | `…&type=magiclink&next=/dashboard` |
-| OTP | Your Taylslate sign-in code | `{{ .Token }}` in the body. No link. Supabase has no separate OTP config field (email OTP shares the magic-link slot). `scripts/apply-auth-email-templates.ts` checks this template in `lib/email/templates/auth.ts` (`id: otp`) and does not overwrite the magic-link slot. The code shows actually receive is Resend `login-otp` |
+| OTP | Your Taylslate sign-in code | `{{ .Token }}` in the body. No link. Same copy as Resend `login-otp`, which is what `/login` sends to brands and shows. Not written by the apply script |
 | Reset password | Reset your Taylslate password | `…&type=recovery&next=/reset-password` |
 | Invite | You are invited to Taylslate | `…&type=invite&next=/onboarding` |
 | Email change | Confirm your new Taylslate email | `{{ .ConfirmationURL }}` and `{{ .NewEmail }}`. Secure email change uses different verify types for the old and new address, so this one stays on ConfirmationURL |

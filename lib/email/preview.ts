@@ -176,7 +176,7 @@ function appPreviews(): EmailPreview[] {
 
   return [
     { id: "login-magic", title: "Login magic link", from: EMAIL_FROM_AUTH, ...login },
-    { id: "login-otp", title: "Show sign-in code", from: EMAIL_FROM_AUTH, ...loginCode },
+    { id: "login-otp", title: "Sign-in code", from: EMAIL_FROM_AUTH, ...loginCode },
     { id: "show-setup-magic", title: "Show setup magic link", from: EMAIL_FROM_AUTH, ...setup },
     {
       id: "outreach-pitch",

@@ -1,10 +1,11 @@
 // Shared layout for every Taylslate email.
 //
 // Email clients ignore CSS variables. The field is white so the message
-// reads the same in every client. Ink, muted, and copper match the site:
+// reads the same in every client. Ink and muted match the site.
+// Links are gold on this white field. Gold on canvas would be #7a5f17.
 //   ink      #1c1915
 //   muted    #5c564c
-//   accent   #c17a45  (links only)
+//   accent   #8c6e1f  (links only)
 // The hairline is ink at 12% over white, flattened to a solid hex.
 // A thin ink bar sits above the logo. The mark is ink on a transparent
 // ground, so it stays on the white field under that bar.
@@ -14,7 +15,7 @@ export const emailColors = {
   canvas: "#ffffff",
   ink: "#1c1915",
   muted: "#5c564c",
-  accent: "#c17a45",
+  accent: "#8c6e1f",
   hairline: "#e4e3e3",
   buttonText: "#ffffff",
 } as const;

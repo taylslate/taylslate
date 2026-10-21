@@ -104,10 +104,10 @@ export function renderAuthTemplates(): AuthEmailTemplate[] {
       cta: "Log in",
       text: "Here is your sign-in link. It expires in 24 hours.",
     }),
-    // Supabase has no separate OTP config field — email OTP shares the
-    // magic-link slot. This template is the code email. The apply script
-    // checks it and does not overwrite the magic-link slot with it.
-    // The message shows actually receive is the Resend copy in login-otp.ts.
+    // Supabase has no separate OTP config field. Email OTP shares the
+    // magic-link slot. This template is the code email brands and shows
+    // receive from Resend. The apply script checks it and does not
+    // overwrite the magic-link slot with it.
     authMessage({
       id: "otp",
       subjectKey: "mailer_subjects_otp",

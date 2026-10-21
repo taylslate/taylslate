@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { tokens } from "@/lib/brand/tokens";
 import { inputClass, labelClass, primaryBtnClass } from "@/components/auth/auth-shell";
 import { isValidLoginEmail, normalizeLoginEmail } from "@/lib/auth/login-magic";
 import {
   isSixDigitCode,
-  LOGIN_OTP_NOT_SHOW,
   LOGIN_OTP_RESEND_SEC,
   LOGIN_OTP_RESEND_WAIT,
   loginOtpErrorMessage,
@@ -16,6 +14,9 @@ import {
 
 interface ShowEmailCodeProps {
   defaultEmail?: string;
+  /** Controlled email. Login shares this value with the password form. */
+  emailValue?: string;
+  onEmailChange?: (email: string) => void;
   /** Pitch token. Present only on show setup, where a new show may be created. */
   outreachToken?: string;
   nextPath?: string | null;
@@ -24,11 +25,18 @@ interface ShowEmailCodeProps {
 
 export function ShowEmailCode({
   defaultEmail = "",
+  emailValue,
+  onEmailChange,
   outreachToken,
   nextPath,
   onVerified,
 }: ShowEmailCodeProps) {
-  const [email, setEmail] = useState(defaultEmail);
+  const [uncontrolledEmail, setUncontrolledEmail] = useState(defaultEmail);
+  const email = emailValue ?? uncontrolledEmail;
+  const setEmail = (value: string) => {
+    onEmailChange?.(value);
+    if (emailValue === undefined) setUncontrolledEmail(value);
+  };
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
   const [error, setError] = useState<string | null>(null);
@@ -67,13 +75,14 @@ export function ShowEmailCode({
         retry_after_sec?: number;
       } | null;
       if (res.status === 429) {
-        const wait =
-          typeof data?.retry_after_sec === "number" && data.retry_after_sec > 0
-            ? data.retry_after_sec
-            : LOGIN_OTP_RESEND_SEC;
-        setStep("code");
-        setCooldown(wait);
-        setError(loginOtpErrorMessage(LOGIN_OTP_RESEND_WAIT, "request"));
+        if (data?.error === LOGIN_OTP_RESEND_WAIT && step === "code") {
+          const wait =
+            typeof data.retry_after_sec === "number" && data.retry_after_sec > 0
+              ? data.retry_after_sec
+              : LOGIN_OTP_RESEND_SEC;
+          setCooldown(Math.min(wait, LOGIN_OTP_RESEND_SEC));
+        }
+        setError(loginOtpErrorMessage(data?.error, "request"));
         return;
       }
       if (!res.ok) {
@@ -127,22 +136,11 @@ export function ShowEmailCode({
     }
   };
 
-  const notShow = error === loginOtpErrorMessage(LOGIN_OTP_NOT_SHOW, "request");
-
   return (
     <div>
       {error ? (
         <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
-          {notShow ? (
-            <>
-              That email uses a brand login.{" "}
-              <Link href="/login" className="text-[var(--ts-accent-text)] hover:underline">
-                Use the magic link instead.
-              </Link>
-            </>
-          ) : (
-            error
-          )}
+          {error}
         </p>
       ) : null}
 
@@ -169,7 +167,7 @@ export function ShowEmailCode({
               autoComplete="email"
               className={inputClass}
               style={{ borderRadius: tokens.radius }}
-              placeholder="you@yourshow.com"
+              placeholder="you@example.com"
             />
           </div>
           <button
@@ -184,7 +182,7 @@ export function ShowEmailCode({
       ) : (
         <form onSubmit={verifyCode} className="space-y-4">
           <p className="text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
-            We sent a 6-digit code to <span className="text-[var(--ts-ink-on-paper)]">{email}</span>.
+            If there&apos;s an account for that email, we sent a 6-digit code.
           </p>
           <div>
             <label htmlFor="show-otp-code" className={labelClass}>

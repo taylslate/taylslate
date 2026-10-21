@@ -1,13 +1,10 @@
-// Shared helpers for the /login magic-link path.
+// Shared helpers for login links and email codes.
 //
-// Login does not create accounts (signup does). The login OTP/generateLink
-// call always sets shouldCreateUser: false. Unknown emails return no_account
-// so /login can point the user at /signup.
+// generateLink for an existing account always sets shouldCreateUser: false.
+// Handoff still sends a magic link. /login answers {ok:true} either way and
+// does not say whether the address has an account.
 
 export const LOGIN_NEXT_FALLBACK = "/dashboard";
-
-/** API error body when generateLink/OTP finds no existing auth user. */
-export const LOGIN_MAGIC_NO_ACCOUNT = "no_account";
 
 /** Must be false — login must not mint an auth user. Signup does that. */
 export const LOGIN_MAGIC_SHOULD_CREATE_USER = false;

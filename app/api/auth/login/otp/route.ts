@@ -1,14 +1,15 @@
-// POST /api/auth/login/otp — email a 6-digit sign-in code to a show.
-// Brands stay on the magic-link path. Unknown emails are not created
-// unless the body carries a valid outreach token AND the address matches
-// that outreach's show contact email (sent_to_email).
+// POST /api/auth/login/otp — email a 6-digit sign-in code.
+// Any existing profile can use it (brand, agency, show, agent). The response
+// is {ok:true} whether or not that address has an account. A pitch token is
+// not a blank check: a missing profile is emailed a code only when the
+// address is that outreach's contact, and the show account is created when
+// the code is verified.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { EMAIL_FROM_AUTH } from "@/lib/email/addresses";
 import { sendEmail } from "@/lib/email/send";
 import { renderLoginOtpEmail } from "@/lib/email/templates/login-otp";
-import { checkRateLimit } from "@/lib/utils/rate-limit";
 import { verifyOutreachToken } from "@/lib/io/tokens";
 import { getOutreachById } from "@/lib/data/queries";
 import {
@@ -20,13 +21,15 @@ import {
   safeLoginNext,
   siteOriginFromRequest,
 } from "@/lib/auth/login-magic";
+import { isSixDigitCode } from "@/lib/auth/login-otp";
 import {
-  isSixDigitCode,
-  LOGIN_OTP_NO_ACCOUNT,
-  LOGIN_OTP_NOT_SHOW,
-  LOGIN_OTP_RESEND_SEC,
-  LOGIN_OTP_RESEND_WAIT,
-} from "@/lib/auth/login-otp";
+  consumeLoginOtpLimit,
+  hashLoginOtpCode,
+  loginOtpClientIp,
+  LOGIN_OTP_PENDING_MS,
+  mintLoginOtpCode,
+  type LoginOtpLimitDecision,
+} from "@/lib/auth/login-otp-limit";
 
 export const runtime = "nodejs";
 
@@ -39,6 +42,17 @@ interface OtpBody {
 interface ProfileHit {
   id: string;
   role: string;
+}
+
+function unavailable() {
+  return NextResponse.json({ error: "unavailable" }, { status: 503 });
+}
+
+function limited(decision: LoginOtpLimitDecision) {
+  return NextResponse.json(
+    { error: decision.error, retry_after_sec: decision.retry_after_sec },
+    { status: 429 },
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -59,6 +73,7 @@ export async function POST(request: NextRequest) {
 
   const outreachToken =
     typeof body.outreach_token === "string" ? body.outreach_token : "";
+  let outreachId = "";
   let outreachContactEmail = "";
   if (outreachToken) {
     const tokenPayload = verifyOutreachToken(outreachToken);
@@ -69,49 +84,64 @@ export async function POST(request: NextRequest) {
     if (!outreach) {
       return NextResponse.json({ error: "Outreach not found" }, { status: 404 });
     }
+    outreachId = tokenPayload.outreach_id;
     outreachContactEmail = normalizeLoginEmail(outreach.sent_to_email);
   }
 
   const { data: existing, error: lookupError } = await supabaseAdmin
     .from("profiles")
     .select("id, role")
-    .ilike("email", email)
+    .eq("email", email)
     .maybeSingle();
   if (lookupError) {
     console.error("[login.otp] profile lookup:", lookupError.message);
     return NextResponse.json({ error: "send_failed" }, { status: 500 });
   }
   const profile = existing as ProfileHit | null;
-  if (profile && profile.role !== "show") {
-    return NextResponse.json({ error: LOGIN_OTP_NOT_SHOW }, { status: 403 });
-  }
-  // A pitch token is not a blank check. Only the show contact on that
-  // outreach may be turned into an account.
-  if (!profile && outreachContactEmail !== email) {
-    return NextResponse.json({ error: LOGIN_OTP_NO_ACCOUNT }, { status: 404 });
+  const ip = loginOtpClientIp(request.headers);
+
+  let localCode: string | null = null;
+  let pendingHash: string | null = null;
+  let pendingOutreach: string | null = null;
+  let pendingExpires: string | null = null;
+  if (!profile && outreachId && outreachContactEmail === email) {
+    localCode = mintLoginOtpCode();
+    pendingHash = hashLoginOtpCode(email, localCode);
+    pendingOutreach = outreachId;
+    pendingExpires = new Date(Date.now() + LOGIN_OTP_PENDING_MS).toISOString();
   }
 
-  // In-memory only: each serverless instance has its own bucket, so this 60s
-  // resend cooldown is not shared across instances. Keep the 60s window.
-  const limit = checkRateLimit(
-    `login-otp:${email}`,
-    1,
-    LOGIN_OTP_RESEND_SEC * 1000,
-  );
-  if (!limit.ok) {
-    return NextResponse.json(
-      { error: LOGIN_OTP_RESEND_WAIT, retry_after_sec: limit.retryAfterSec },
-      { status: 429 },
-    );
-  }
+  const consumed = await consumeLoginOtpLimit({
+    p_action: "send",
+    p_email: email,
+    p_ip: ip,
+    p_pending_hash: pendingHash,
+    p_pending_outreach: pendingOutreach,
+    p_pending_expires: pendingExpires,
+    p_clear_pending: Boolean(profile),
+  });
+  if (!consumed.ok) return unavailable();
+  if (!consumed.decision.ok) return limited(consumed.decision);
 
-  let createdUserId: string | null = null;
-  if (!profile) {
-    const created = await createShowAccount(email);
-    if (!created.ok) {
+  if (localCode) {
+    const rendered = renderLoginOtpEmail({ code: localCode });
+    const sendResult = await sendEmail({
+      to: email,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+      from: EMAIL_FROM_AUTH,
+      bypassManagedReroute: true,
+    });
+    if (!sendResult.ok) {
+      console.error("[login.otp] send failed:", sendResult.reason, sendResult.error);
       return NextResponse.json({ error: "send_failed" }, { status: 500 });
     }
-    createdUserId = created.userId;
+    return NextResponse.json({ ok: true });
+  }
+
+  if (!profile) {
+    return NextResponse.json({ ok: true });
   }
 
   const origin = siteOriginFromRequest(request.url);
@@ -123,8 +153,7 @@ export async function POST(request: NextRequest) {
     options: loginMagicOtpOptions(redirectTo),
   });
   const code = data?.properties?.email_otp;
-  const mintedSignup = isLoginMagicSignupLink(data?.properties?.verification_type);
-  if (mintedSignup && !createdUserId) {
+  if (isLoginMagicSignupLink(data?.properties?.verification_type)) {
     const createdId = data?.user?.id;
     if (createdId) {
       const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(createdId);
@@ -132,10 +161,10 @@ export async function POST(request: NextRequest) {
         console.error("[login.otp] failed to roll back auto-created user:", deleteError.message);
       }
     }
-    return NextResponse.json({ error: LOGIN_OTP_NO_ACCOUNT }, { status: 404 });
+    return NextResponse.json({ ok: true });
   }
-  if (!createdUserId && isLoginMagicUnknownUserError(error)) {
-    return NextResponse.json({ error: LOGIN_OTP_NO_ACCOUNT }, { status: 404 });
+  if (isLoginMagicUnknownUserError(error)) {
+    return NextResponse.json({ ok: true });
   }
   if (error || !code || !isSixDigitCode(code)) {
     console.warn("[login.otp] generateLink:", error?.message ?? "no email code");
@@ -157,34 +186,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ ok: true });
-}
-
-async function createShowAccount(
-  email: string,
-): Promise<{ ok: true; userId: string } | { ok: false }> {
-  const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-    email,
-    email_confirm: true,
-    user_metadata: { source: "email_code" },
-  });
-  if (createErr || !created?.user) {
-    console.error("[login.otp] createUser failed:", createErr?.message);
-    return { ok: false };
-  }
-  const { error: profileErr } = await supabaseAdmin.from("profiles").insert({
-    id: created.user.id,
-    email,
-    full_name: "",
-    role: "show",
-    tier: "free",
-  });
-  if (profileErr) {
-    console.error("[login.otp] profile insert failed:", profileErr.message);
-    const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(created.user.id);
-    if (deleteError) {
-      console.error("[login.otp] failed to roll back show user:", deleteError.message);
-    }
-    return { ok: false };
-  }
-  return { ok: true, userId: created.user.id };
 }
