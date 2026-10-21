@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import SignOutButton from "@/components/auth/SignOutButton";
 import {
   getNavItemsForRole,
@@ -119,6 +119,14 @@ export default function Sidebar({
   const router = useRouter();
   const [switching, setSwitching] = useState(false);
   const [loggingInAs, setLoggingInAs] = useState<string | null>(null);
+  const alive = useRef(true);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const handleTestLogin = async (key: string) => {
     if (loggingInAs) return;
@@ -148,12 +156,22 @@ export default function Sidebar({
   const handleSwitch = async () => {
     if (!canSwitchTo || switching) return;
     setSwitching(true);
+    const reduced =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     try {
-      const res = await fetch("/api/view-mode", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: canSwitchTo }),
-      });
+      const [res] = await Promise.all([
+        fetch("/api/view-mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: canSwitchTo }),
+        }),
+        // Original clap holds the stick shut for 300ms, then the side changes.
+        reduced
+          ? Promise.resolve()
+          : new Promise((resolve) => setTimeout(resolve, 300)),
+      ]);
+      if (!alive.current) return;
       if (res.ok) {
         router.replace("/dashboard");
         router.refresh();
@@ -161,7 +179,7 @@ export default function Sidebar({
         setSwitching(false);
       }
     } catch {
-      setSwitching(false);
+      if (alive.current) setSwitching(false);
     }
   };
 
@@ -267,14 +285,18 @@ export default function Sidebar({
             type="button"
             onClick={handleSwitch}
             disabled={switching}
-            className={`mb-2 w-full text-left text-xs font-medium disabled:opacity-50 ${navRow} ${quietRow}`}
+            className={`ts-clap mb-2 w-full text-left text-xs font-medium disabled:opacity-50 ${switching ? "is-clapping" : ""} ${navRow} ${quietRow}`}
             style={{ borderRadius: tokens.radius }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 1l4 4-4 4" />
-              <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-              <path d="M7 23l-4-4 4-4" />
-              <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+            <svg viewBox="0 0 32 32" className="h-7 w-7 shrink-0" aria-hidden="true">
+              <g className="ts-clap-stick">
+                <rect x="5" y="9" width="22" height="5" rx="0.6" fill="currentColor" />
+                <rect x="9" y="9" width="2.4" height="5" fill="var(--ts-accent)" />
+                <rect x="14.5" y="9" width="2.4" height="5" fill="var(--ts-accent)" />
+                <rect x="20" y="9" width="2.4" height="5" fill="var(--ts-accent)" />
+              </g>
+              <rect x="5" y="14.5" width="22" height="13" rx="1.2" fill="currentColor" />
+              <rect x="7.2" y="17.2" width="17.6" height="8" fill="var(--ts-paper)" />
             </svg>
             {switching ? "Switching…" : `View as ${canSwitchTo}`}
           </button>
