@@ -82,7 +82,7 @@ function DealCard({ deal }: { deal: PipelineDeal }) {
 }
 
 export default function PreviewClient() {
-  const [direction, setDirection] = useState<DirectionId>("slack");
+  const [direction, setDirection] = useState<DirectionId>("deep-teal");
   const [open, setOpen] = useState(false);
   const [queued, setQueued] = useState(false);
   const [flightStart, setFlightStart] = useState<Date | undefined>(FLIGHT_START);
@@ -112,8 +112,8 @@ export default function PreviewClient() {
       data-design-preview={direction}
     >
       <div className={styles.switcher}>
-        <p className={styles.switcherLabel}>Direction</p>
-        <div className={styles.switcherButtons} role="group" aria-label="Design direction">
+        <p className={styles.switcherLabel}>Palette</p>
+        <div className={styles.switcherButtons} role="group" aria-label="Accent palette">
           {DIRECTIONS.map((item) => {
             const selected = item.id === direction;
             return (

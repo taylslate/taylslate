@@ -55,21 +55,25 @@ describe("design preview", () => {
     expect(screen.queryByText(/^0$/)).not.toBeInTheDocument();
   });
 
-  it("switches direction tokens without adding the preview to navigation", () => {
+  it("switches palette tokens without adding the preview to navigation", async () => {
+    const user = userEvent.setup();
     render(<PreviewClient />);
 
-    expect(document.documentElement.dataset.designPreview).toBe("slack");
-    expect(screen.getByText(/Dark aubergine sidebar/)).toBeInTheDocument();
+    expect(document.documentElement.dataset.designPreview).toBe("deep-teal");
+    expect(screen.getByText(/deep teal accent/)).toBeInTheDocument();
 
-    return userEvent.click(screen.getByRole("button", { name: "Patreon" })).then(() => {
-      expect(document.documentElement.dataset.designPreview).toBe("patreon");
-      expect(screen.getByText(/Warm light field/)).toBeInTheDocument();
-    }).then(() => userEvent.click(screen.getByRole("button", { name: "HubSpot" }))).then(() => {
-      expect(document.documentElement.dataset.designPreview).toBe("hubspot");
-      expect(screen.getByText(/Crisp white cards/)).toBeInTheDocument();
-      const hrefs = getNavItemsForRole("brand").map((item) => item.href);
-      expect(hrefs).not.toContain("/design-preview");
-    });
+    await user.click(screen.getByRole("button", { name: "Ink & Gold" }));
+    expect(document.documentElement.dataset.designPreview).toBe("ink-gold");
+    expect(screen.getByText(/ink navy and antique gold/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Forest" }));
+    expect(document.documentElement.dataset.designPreview).toBe("forest");
+    expect(screen.getByText(/forest green accent/)).toBeInTheDocument();
+
+    const hrefs = getNavItemsForRole("brand").map((item) => item.href);
+    expect(hrefs).not.toContain("/design-preview");
+    expect(screen.queryByRole("button", { name: "HubSpot" })).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(/persimmon/i);
   });
 
   it("queues outreach inside the preview and does not claim a send", async () => {

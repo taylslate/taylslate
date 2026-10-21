@@ -1,18 +1,18 @@
 export const DIRECTIONS = [
   {
-    id: "slack",
-    name: "Slack",
-    line: "Dark aubergine sidebar, white canvas, one cobalt accent.",
+    id: "deep-teal",
+    name: "Deep Teal",
+    line: "Crisp white cards, deep teal accent, Fraunces headings.",
   },
   {
-    id: "patreon",
-    name: "Patreon",
-    line: "Warm light field, coral accent, soft rounded cards.",
+    id: "ink-gold",
+    name: "Ink & Gold",
+    line: "Crisp white cards, ink navy and antique gold, Fraunces headings.",
   },
   {
-    id: "hubspot",
-    name: "HubSpot",
-    line: "Crisp white cards, persimmon accent, strong type contrast.",
+    id: "forest",
+    name: "Forest",
+    line: "Crisp white cards, forest green accent, Fraunces headings.",
   },
 ] as const;
 
