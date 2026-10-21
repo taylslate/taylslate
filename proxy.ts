@@ -45,12 +45,14 @@ export async function proxy(request: NextRequest) {
   //                                /login when no recovery session exists.
   // /outreach/[token]            — Wave 11 public pitch page (token-gated)
   // /auth/magic                  — magic link landing/error states
+  // /for-shows                   — public shows marketing page
   // /sitemap.xml, /robots.txt, /opengraph-image: public crawler files
   // /api/webhooks/docusign       — Wave 12 DocuSign Connect webhook (HMAC-verified)
   // /api/cron/*                  — Vercel Cron jobs (CRON_SECRET-verified)
   // All /api/* are listed; per-route handlers enforce their own auth.
   const isPublicRoute =
     pathname === "/" ||
+    pathname === "/for-shows" ||
     pathname === "/login" ||
     pathname === "/login/show" ||
     pathname === "/signup" ||

@@ -104,7 +104,7 @@ export function LaunchHome() {
     >
       <main className="flex-1">
         <section className="mx-auto max-w-6xl px-6 pt-16 pb-16 sm:pt-20">
-          <AudienceToggle />
+          <AudienceToggle guest="brands" />
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
             {LAUNCH.eyebrow}
           </p>

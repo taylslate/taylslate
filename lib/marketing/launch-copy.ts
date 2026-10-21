@@ -1,6 +1,8 @@
 // January 2027 launch copy. Display only.
 // Do not import billing plans or fee math. The in-app fee schedule is unchanged.
 
+import { SHOWS_PAGE_PATH } from "@/lib/marketing/shows-copy";
+
 export const LAUNCH = {
   eyebrow: "January 2027",
   headline: "Make 2027 the year you win with podcast ads.",
@@ -12,7 +14,7 @@ export const LAUNCH = {
   loginLabel: "Log in",
   loginHref: "/login",
   showsNav: "For shows",
-  showsNavHref: "#shows",
+  showsNavHref: SHOWS_PAGE_PATH,
   pricingNav: "Pricing",
   facts: [
     {
@@ -165,10 +167,10 @@ export function realProofItems<T extends { label: string }>(
   return items.filter((item) => item.label !== PLACEHOLDER_LABEL);
 }
 
-/** /?for=shows keeps the old shows URL and lands on the #shows note. */
+/** /?for=shows keeps the old shows URL and lands on the shows page. */
 export function showsLandingPath(
   value: string | string[] | null | undefined,
-): "/#shows" | null {
+): typeof SHOWS_PAGE_PATH | null {
   const raw = Array.isArray(value) ? value[0] : value;
-  return raw === "shows" ? "/#shows" : null;
+  return raw === "shows" ? SHOWS_PAGE_PATH : null;
 }

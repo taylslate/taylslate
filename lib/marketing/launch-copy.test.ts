@@ -65,7 +65,7 @@ describe("launch copy", () => {
     expect(LAUNCH.pricing.showsNoteTail).toBe("when a brand sends an offer.");
     expect(LAUNCH.pricing.showsHref).toBe("/login");
     expect(LAUNCH.showsNav).toBe("For shows");
-    expect(LAUNCH.showsNavHref).toBe("#shows");
+    expect(LAUNCH.showsNavHref).toBe("/for-shows");
   });
 
   it("keeps placeholder proof in the data and hides it until one entry is real", () => {
@@ -92,10 +92,10 @@ describe("launch copy", () => {
     ).toEqual(["A real quote"]);
   });
 
-  it("sends /?for=shows to the shows anchor", () => {
-    expect(showsLandingPath("shows")).toBe("/#shows");
-    expect(showsLandingPath(["shows"])).toBe("/#shows");
-    expect(showsLandingPath(["shows", "brands"])).toBe("/#shows");
+  it("sends /?for=shows to the shows page", () => {
+    expect(showsLandingPath("shows")).toBe("/for-shows");
+    expect(showsLandingPath(["shows"])).toBe("/for-shows");
+    expect(showsLandingPath(["shows", "brands"])).toBe("/for-shows");
     expect(showsLandingPath(undefined)).toBeNull();
     expect(showsLandingPath(null)).toBeNull();
     expect(showsLandingPath("")).toBeNull();
@@ -118,9 +118,12 @@ describe("launch copy", () => {
       "lib/marketing/launch-copy.ts",
       "lib/marketing/site.ts",
       "components/marketing/launch-home.tsx",
+      "components/marketing/shows-home.tsx",
       "components/marketing/product-shot.tsx",
+      "lib/marketing/shows-copy.ts",
       "app/opengraph-image.tsx",
       "app/page.tsx",
+      "app/for-shows/page.tsx",
     ]) {
       expect(read(file)).not.toContain(EM_DASH);
     }

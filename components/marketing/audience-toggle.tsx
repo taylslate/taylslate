@@ -1,8 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { SlateClap } from "@/components/marketing/slate-clap";
 import type { MarketingGuest } from "@/lib/marketing/guest";
+import { audiencePath } from "@/lib/marketing/shows-copy";
 
 const CLAP_MS = 300;
 
@@ -13,8 +15,8 @@ function prefersReducedMotion(): boolean {
   );
 }
 
-export function AudienceToggle() {
-  const [guest, setGuest] = useState<MarketingGuest>("brands");
+export function AudienceToggle({ guest }: { guest: MarketingGuest }) {
+  const router = useRouter();
   const [clapping, setClapping] = useState(false);
   const busy = useRef(false);
   const nextGuest: MarketingGuest = guest === "brands" ? "shows" : "brands";
@@ -30,15 +32,7 @@ export function AudienceToggle() {
       });
       setClapping(false);
     }
-    setGuest(target);
-    if (target === "shows") {
-      document.getElementById("shows")?.scrollIntoView({
-        behavior: reduced ? "auto" : "smooth",
-        block: "start",
-      });
-    } else {
-      window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
-    }
+    router.push(audiencePath(target));
     busy.current = false;
   }
 
