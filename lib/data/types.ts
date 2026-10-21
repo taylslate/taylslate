@@ -501,6 +501,7 @@ export interface ShowProfile {
   // The profile route omits a client-supplied value. Migration 046 stores
   // a new value only when it equals shows.podscan_id on a show this
   // profile is tied to by that same deal or show_owner email.
+  // Migration 050 drops the podscan equality path from user_owns_show.
   podscan_id?: string | null;
   show_name?: string | null;
   show_description?: string | null;

@@ -6,6 +6,10 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createShow } from "@/lib/data/queries";
 import type { ShowProfile } from "@/lib/data/types";
 import {
+  getVerifiedProfileTies,
+  type ShowGeoIdentity,
+} from "@/lib/shows/apply-geography";
+import {
   chooseSurfaceShowId,
   groupPublishedSurfaces,
   ownerShowSlug,
@@ -154,28 +158,145 @@ export async function listPublishedSurfacesForShows(
   }
 }
 
+/**
+ * Catalog shows this profile may attach surfaces to. Candidates come
+ * from a deal or a show_owner contact email, then getVerifiedProfileTies
+ * confirms the profile. A podscan id is never the lookup key.
+ */
+async function verifiedCatalogShowIds(profile: ShowProfile, email: string): Promise<string[]> {
+  if (!profile.id) return [];
+  const identities = await catalogIdentitiesForProfile(profile.id, email);
+  if (identities.length === 0) return [];
+  const ties = await getVerifiedProfileTies(identities);
+  const allowed = new Set(
+    ties.filter((tie) => tie.profileId === profile.id).map((tie) => tie.showId)
+  );
+  return identities
+    .map((identity) => identity.showId)
+    .filter((id): id is string => !!id && allowed.has(id));
+}
+
+async function catalogIdentitiesForProfile(
+  profileId: string,
+  email: string
+): Promise<ShowGeoIdentity[]> {
+  const byId = new Map<string, ShowGeoIdentity>();
+  const add = (row: {
+    id?: string | null;
+    contact_email?: string | null;
+    data_sources?: string[] | null;
+  }) => {
+    if (!row.id || byId.has(row.id)) return;
+    byId.set(row.id, {
+      showId: row.id,
+      contactEmail: row.contact_email ?? undefined,
+      dataSources: row.data_sources ?? undefined,
+    });
+  };
+
+  try {
+    const { data: deals, error } = await supabaseAdmin
+      .from("deals")
+      .select("show_id")
+      .eq("show_profile_id", profileId);
+    if (error) {
+      console.error("[resolveOwnerShowId] deal lookup", error.message);
+    } else {
+      const showIds = [
+        ...new Set(
+          ((deals ?? []) as { show_id?: string | null }[])
+            .map((row) => row.show_id)
+            .filter((id): id is string => !!id)
+        ),
+      ];
+      if (showIds.length > 0) {
+        const { data: shows, error: showError } = await supabaseAdmin
+          .from("shows")
+          .select("id, contact_email, data_sources")
+          .in("id", showIds);
+        if (showError) {
+          console.error("[resolveOwnerShowId] deal show lookup", showError.message);
+        } else {
+          for (const row of (shows ?? []) as Array<{
+            id: string;
+            contact_email?: string | null;
+            data_sources?: string[] | null;
+          }>) {
+            add(row);
+          }
+        }
+      }
+    }
+
+    const trimmed = email.trim();
+    if (trimmed) {
+      const { data: owned, error: ownedError } = await supabaseAdmin
+        .from("shows")
+        .select("id, contact_email, data_sources")
+        .contains("data_sources", ["show_owner"])
+        .ilike("contact_email", escapeIlike(trimmed));
+      if (ownedError) {
+        console.error("[resolveOwnerShowId] owner show lookup", ownedError.message);
+      } else {
+        for (const row of (owned ?? []) as Array<{
+          id: string;
+          contact_email?: string | null;
+          data_sources?: string[] | null;
+        }>) {
+          if (!isShowOwnerRow(row.data_sources) || !emailsMatch(row.contact_email, trimmed)) {
+            continue;
+          }
+          add(row);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[resolveOwnerShowId] catalog identities", err);
+  }
+
+  return [...byId.values()];
+}
+
+function isShowOwnerRow(dataSources?: string[] | null): boolean {
+  return Array.isArray(dataSources) && dataSources.includes("show_owner");
+}
+
+function emailsMatch(left?: string | null, right?: string | null): boolean {
+  const a = left?.trim().toLowerCase();
+  const b = right?.trim().toLowerCase();
+  return !!a && !!b && a === b;
+}
+
+function escapeIlike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 async function resolveOwnerShowId(
   userId: string,
   email: string,
   profile: ShowProfile
 ): Promise<string | null> {
+  // Catalog attachment goes through a deal or a show_owner email.
+  // show_profiles.podscan_id is self-reported and is not a tie.
+  const verifiedShowIds = await verifiedCatalogShowIds(profile, email);
   let catalogShowId: string | null = null;
   let catalogOwnedByOther = false;
-  if (profile.podscan_id) {
-    const { data } = await supabaseAdmin
-      .from("shows")
-      .select("id")
-      .eq("podscan_id", profile.podscan_id)
-      .limit(1);
-    catalogShowId = (data?.[0] as { id: string } | undefined)?.id ?? null;
-    if (catalogShowId) {
-      const { data: owners } = await supabaseAdmin
-        .from("show_surfaces")
-        .select("owner_user_id")
-        .eq("show_id", catalogShowId);
-      catalogOwnedByOther = ((owners ?? []) as { owner_user_id: string }[]).some(
-        (row) => row.owner_user_id && row.owner_user_id !== userId
-      );
+  for (const id of verifiedShowIds) {
+    const { data: owners } = await supabaseAdmin
+      .from("show_surfaces")
+      .select("owner_user_id")
+      .eq("show_id", id);
+    const ownedByOther = ((owners ?? []) as { owner_user_id: string }[]).some(
+      (row) => row.owner_user_id && row.owner_user_id !== userId
+    );
+    if (!ownedByOther) {
+      catalogShowId = id;
+      catalogOwnedByOther = false;
+      break;
+    }
+    if (!catalogShowId) {
+      catalogShowId = id;
+      catalogOwnedByOther = true;
     }
   }
 
