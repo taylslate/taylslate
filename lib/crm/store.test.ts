@@ -17,6 +17,7 @@ interface QueryLog {
 const tables: Record<string, Row[]> = {};
 const log: QueryLog[] = [];
 const failures: Record<string, string> = {};
+let signedInUserId: string | null = null;
 
 function resetDb(seed: Record<string, Row[]> = {}) {
   for (const key of Object.keys(tables)) delete tables[key];
@@ -171,7 +172,15 @@ function from(table: string) {
 }
 
 vi.mock("@/lib/supabase/server", () => ({
-  createClient: vi.fn(async () => ({ from })),
+  createClient: vi.fn(async () => ({
+    from,
+    auth: {
+      getUser: async () => ({
+        data: { user: signedInUserId ? { id: signedInUserId } : null },
+        error: null,
+      }),
+    },
+  })),
 }));
 
 import {
@@ -200,6 +209,28 @@ function calls(table: string) {
 describe("crm store", () => {
   beforeEach(() => {
     resetDb();
+    signedInUserId = BRAND;
+  });
+
+  it("uses the signed-in user and rejects a different brandId", async () => {
+    await listContacts(BRAND.toUpperCase(), SHOW);
+    expect(calls("brand_show_contacts")[0]?.filters).toContainEqual({
+      op: "eq",
+      column: "brand_id",
+      value: BRAND,
+    });
+
+    log.length = 0;
+    signedInUserId = OTHER;
+    await expect(listContacts(BRAND, SHOW)).rejects.toThrow(
+      /brandId does not match the signed-in user/
+    );
+    await expect(
+      addNote({ brandId: BRAND, showId: SHOW, body: "hello" })
+    ).rejects.toThrow(/brandId does not match the signed-in user/);
+    signedInUserId = null;
+    await expect(listCrmShows(BRAND)).rejects.toThrow(/not signed in/);
+    expect(log).toHaveLength(0);
   });
 
   it("uses the user server client and does not touch podscan or the service role", () => {

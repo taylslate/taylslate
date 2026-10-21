@@ -31,6 +31,7 @@ describe("migration 053 brand show CRM", () => {
   it("says it is not applied until after merge and Chris's OK", () => {
     expect(sql).toMatch(/NOT applied/i);
     expect(sql).toMatch(/after merge and Chris's OK/i);
+    expect(sql).not.toMatch(/—/);
     expect(sql).toMatch(/information_schema\.role_table_grants/);
     expect(sql).toMatch(/pg_policy/);
     expect(sql).toMatch(/pg_indexes/);
@@ -50,8 +51,13 @@ describe("migration 053 brand show CRM", () => {
       /show_id\s+uuid not null references public\.shows\(id\) on delete cascade/i
     );
     expect(statements).toMatch(
-      /check \(length\(body\) between 1 and 2000\)/i
+      /check \(length\(btrim\(name\)\) between 1 and 200\)/i
     );
+    expect(statements).toMatch(
+      /check \(length\(btrim\(body\)\) between 1 and 2000\)/i
+    );
+    expect(statements).not.toMatch(/check \(length\(body\) between 1 and 2000\)/i);
+    expect(statements).not.toMatch(/check \(length\(name\) between 1 and 200\)/i);
     expect(statements).toMatch(
       /create index if not exists idx_brand_show_contacts_brand_show\s+on public\.brand_show_contacts \(brand_id, show_id\)/i
     );

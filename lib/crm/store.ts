@@ -1,5 +1,7 @@
 // Brand-private CRM. Every read and write uses the user server client,
 // so row level security (brand_id = auth.uid()) scopes the rows.
+// The brand id is the signed-in user. A passed brandId that does not
+// match auth.getUser() is rejected before any table query.
 // show_id is the catalog show on the deal (shows.id).
 // Deal history is read-only. A deal counts when deals.brand_id is the
 // brand, or deals.brand_profile_id belongs to that brand's profile.
@@ -111,6 +113,21 @@ function requireUuid(value: unknown, label: string): string {
     throw new Error(`${label} must be a uuid`);
   }
   return value;
+}
+
+async function requireCaller(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  brandId: string
+): Promise<string> {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error || !user) throw new Error("not signed in");
+  if (user.id.toLowerCase() !== brandId.toLowerCase()) {
+    throw new Error("brandId does not match the signed-in user");
+  }
+  return user.id;
 }
 
 function requireName(value: unknown): string {
@@ -232,9 +249,10 @@ export async function listContacts(
   brandId: string,
   showId: string
 ): Promise<BrandShowContact[]> {
-  const brand = requireUuid(brandId, "brandId");
+  const requested = requireUuid(brandId, "brandId");
   const show = requireUuid(showId, "showId");
   const supabase = await createClient();
+  const brand = await requireCaller(supabase, requested);
   const { data, error } = await supabase
     .from("brand_show_contacts")
     .select("*")
@@ -246,13 +264,14 @@ export async function listContacts(
 }
 
 export async function addContact(input: AddContactInput): Promise<BrandShowContact> {
-  const brandId = requireUuid(input.brandId, "brandId");
+  const requested = requireUuid(input.brandId, "brandId");
   const showId = requireUuid(input.showId, "showId");
   const name = requireName(input.name);
   const email = optionalEmail(input.email);
   const role = optionalShort(input.role, "role", CRM_ROLE_MAX);
   const phone = optionalShort(input.phone, "phone", CRM_PHONE_MAX);
   const supabase = await createClient();
+  const brandId = await requireCaller(supabase, requested);
   const { data, error } = await supabase
     .from("brand_show_contacts")
     .insert({ brand_id: brandId, show_id: showId, name, email, role, phone })
@@ -263,7 +282,7 @@ export async function addContact(input: AddContactInput): Promise<BrandShowConta
 }
 
 export async function updateContact(input: UpdateContactInput): Promise<BrandShowContact> {
-  const brandId = requireUuid(input.brandId, "brandId");
+  const requested = requireUuid(input.brandId, "brandId");
   const showId = requireUuid(input.showId, "showId");
   const contactId = requireUuid(input.contactId, "contactId");
   const patch: {
@@ -279,6 +298,7 @@ export async function updateContact(input: UpdateContactInput): Promise<BrandSho
   if (Object.keys(patch).length === 0) throw new Error("nothing to update");
 
   const supabase = await createClient();
+  const brandId = await requireCaller(supabase, requested);
   const { data, error } = await supabase
     .from("brand_show_contacts")
     .update(patch)
@@ -292,10 +312,11 @@ export async function updateContact(input: UpdateContactInput): Promise<BrandSho
 }
 
 export async function deleteContact(input: DeleteContactInput): Promise<void> {
-  const brandId = requireUuid(input.brandId, "brandId");
+  const requested = requireUuid(input.brandId, "brandId");
   const showId = requireUuid(input.showId, "showId");
   const contactId = requireUuid(input.contactId, "contactId");
   const supabase = await createClient();
+  const brandId = await requireCaller(supabase, requested);
   const { data, error } = await supabase
     .from("brand_show_contacts")
     .delete()
@@ -308,10 +329,11 @@ export async function deleteContact(input: DeleteContactInput): Promise<void> {
 }
 
 export async function addNote(input: AddNoteInput): Promise<BrandShowNote> {
-  const brandId = requireUuid(input.brandId, "brandId");
+  const requested = requireUuid(input.brandId, "brandId");
   const showId = requireUuid(input.showId, "showId");
   const body = requireNote(input.body);
   const supabase = await createClient();
+  const brandId = await requireCaller(supabase, requested);
   const { data, error } = await supabase
     .from("brand_show_notes")
     .insert({ brand_id: brandId, show_id: showId, body })
@@ -322,9 +344,10 @@ export async function addNote(input: AddNoteInput): Promise<BrandShowNote> {
 }
 
 export async function listNotes(brandId: string, showId: string): Promise<BrandShowNote[]> {
-  const brand = requireUuid(brandId, "brandId");
+  const requested = requireUuid(brandId, "brandId");
   const show = requireUuid(showId, "showId");
   const supabase = await createClient();
+  const brand = await requireCaller(supabase, requested);
   const { data, error } = await supabase
     .from("brand_show_notes")
     .select("*")
@@ -339,9 +362,10 @@ export async function listShowDealHistory(
   brandId: string,
   showId: string
 ): Promise<CrmDealHistory[]> {
-  const brand = requireUuid(brandId, "brandId");
+  const requested = requireUuid(brandId, "brandId");
   const show = requireUuid(showId, "showId");
   const supabase = await createClient();
+  const brand = await requireCaller(supabase, requested);
   const profiles = await supabase
     .from("brand_profiles")
     .select("id")
@@ -364,8 +388,9 @@ export async function listShowDealHistory(
 }
 
 export async function listCrmShows(brandId: string): Promise<CrmShow[]> {
-  const brand = requireUuid(brandId, "brandId");
+  const requested = requireUuid(brandId, "brandId");
   const supabase = await createClient();
+  const brand = await requireCaller(supabase, requested);
   const [contacts, notes, profiles] = await Promise.all([
     supabase.from("brand_show_contacts").select("show_id").eq("brand_id", brand),
     supabase.from("brand_show_notes").select("show_id").eq("brand_id", brand),

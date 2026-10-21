@@ -7,8 +7,8 @@
 -- a deploy hook.
 --
 -- Two tables, both private to the brand (profiles.id = auth.uid()):
---   brand_show_contacts — people at a show the brand is working with
---   brand_show_notes — short notes beside that brand's deal history
+--   brand_show_contacts: people at a show the brand is working with
+--   brand_show_notes: short notes beside that brand's deal history
 --
 -- show_id is public.shows.id (the catalog show on the deal). It is
 -- not show_profiles.podscan_id. That column is user-writable.
@@ -62,7 +62,8 @@
 --   authenticated has no truncate, references, or trigger. RLS is
 --   enabled. Each policy is owner-only (brand_id = auth.uid()).
 --   Insert and update policies include WITH CHECK. No anon policy.
---   brand_show_notes_body_check is length(body) between 1 and 2000.
+--   brand_show_notes_body_check is length(btrim(body)) between 1 and 2000.
+--   brand_show_contacts_name_check is length(btrim(name)) between 1 and 200.
 --   Both tables have an index on (brand_id, show_id).
 -- ============================================================
 
@@ -79,6 +80,12 @@ create table if not exists public.brand_show_contacts (
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+
+alter table public.brand_show_contacts
+  drop constraint if exists brand_show_contacts_name_check;
+alter table public.brand_show_contacts
+  add constraint brand_show_contacts_name_check
+  check (length(btrim(name)) between 1 and 200);
 
 create index if not exists idx_brand_show_contacts_brand_show
   on public.brand_show_contacts (brand_id, show_id);
@@ -97,7 +104,7 @@ alter table public.brand_show_notes
   drop constraint if exists brand_show_notes_body_check;
 alter table public.brand_show_notes
   add constraint brand_show_notes_body_check
-  check (length(body) between 1 and 2000);
+  check (length(btrim(body)) between 1 and 2000);
 
 create index if not exists idx_brand_show_notes_brand_show
   on public.brand_show_notes (brand_id, show_id);
@@ -209,5 +216,7 @@ comment on column public.brand_show_contacts.show_id is
   'Catalog shows.id. Not show_profiles.podscan_id.';
 comment on column public.brand_show_notes.show_id is
   'Catalog shows.id. Not show_profiles.podscan_id.';
+comment on column public.brand_show_contacts.name is
+  'Required contact name. length(btrim(name)) is between 1 and 200.';
 comment on column public.brand_show_notes.body is
-  'Required note text. length(body) is between 1 and 2000.';
+  'Required note text. length(btrim(body)) is between 1 and 2000.';
