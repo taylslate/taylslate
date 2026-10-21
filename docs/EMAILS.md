@@ -12,7 +12,7 @@ Files land in `docs/email-previews/`.
 
 ## Sign-in code
 
-Everyone signs in with a 6-digit code. `/login` sends it through Resend with `lib/email/templates/login-otp.ts` from `EMAIL_FROM_AUTH`. The hosted Supabase Auth templates in `lib/email/templates/auth.ts` are pushed with `SUPABASE_ACCESS_TOKEN=... npx tsx scripts/apply-auth-email-templates.ts`. The code email says it expires in 1 hour; change that copy if Email OTP Expiration is set to 600 seconds.
+Everyone signs in with a 6-digit code. `/login` sends it through Resend with `lib/email/templates/login-otp.ts` from `EMAIL_FROM_AUTH`. The hosted Supabase Auth templates in `lib/email/templates/auth.ts` are pushed with `SUPABASE_ACCESS_TOKEN=... npx tsx scripts/apply-auth-email-templates.ts`. The code email says it expires in 10 minutes. Email OTP Expiration is set to 600 seconds.
 
 ## Senders
 

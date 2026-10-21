@@ -5,7 +5,9 @@ import {
   applyLoginOtpRpc,
   hashLoginOtpCode,
   LOGIN_OTP_EMAIL_HOUR_MAX,
+  LOGIN_OTP_HOUR_MS,
   LOGIN_OTP_IP_HOUR_MAX,
+  LOGIN_OTP_PENDING_MS,
   LOGIN_OTP_WRONG_MAX,
   loginOtpClientIp,
   loginOtpEmailBucket,
@@ -230,5 +232,10 @@ describe("migration 051", () => {
     expect(LOGIN_OTP_IP_HOUR_MAX).toBe(20);
     expect(LOGIN_OTP_EMAIL_HOUR_MAX).toBe(5);
     expect(LOGIN_OTP_WRONG_MAX).toBe(5);
+  });
+
+  it("expires a pending show contact code in 10 minutes", () => {
+    expect(LOGIN_OTP_PENDING_MS).toBe(10 * 60 * 1000);
+    expect(LOGIN_OTP_HOUR_MS).toBe(60 * 60 * 1000);
   });
 });

@@ -5,9 +5,9 @@
 import { emailColors, emailParagraph, escapeHtml, renderEmailLayout } from "@/lib/email/layout";
 
 export const LOGIN_OTP_SUBJECT = "Your Taylslate sign-in code";
-export const LOGIN_OTP_PREHEADER = "Enter this code to sign in. It expires in 1 hour.";
+export const LOGIN_OTP_PREHEADER = "Enter this code to sign in. It expires in 10 minutes.";
 export const LOGIN_OTP_SENTENCE =
-  "Enter this code to sign in. It expires in 1 hour. If you did not ask for it, you can ignore this email.";
+  "Enter this code to sign in. It expires in 10 minutes. If you did not ask for it, you can ignore this email.";
 
 export interface LoginOtpEmailInput {
   /** Six digits, or the Go template `{{ .Token }}` for the hosted auth copy. */

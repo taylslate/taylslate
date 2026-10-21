@@ -266,6 +266,12 @@ describe("POST /api/auth/login/otp", () => {
         p_pending_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
       }),
     );
+    const pendingExpires = Date.parse(
+      rpc.mock.calls.at(-1)?.[1]?.p_pending_expires as string,
+    );
+    const remaining = pendingExpires - Date.now();
+    expect(remaining).toBeGreaterThan(10 * 60 * 1000 - 5_000);
+    expect(remaining).toBeLessThanOrEqual(10 * 60 * 1000);
   });
 
   it("returns ok when the outreach contact email does not match", async () => {
