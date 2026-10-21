@@ -19,7 +19,7 @@
 --   status       text not null default 'approved'
 --                pending, approved, or rejected
 --   source       text not null default 'admin'
---                admin or import
+--                admin, import, or claim
 --   approved_by  uuid null -> public.profiles(id)
 --   approved_at  timestamptz null
 --
@@ -29,8 +29,9 @@
 -- "Agents delete own relationships". Keep "Agents read own
 -- relationships" (recreated with the same predicate). Reads are
 -- not filtered by status here. Migration 047's learning policies
--- and repMayWrite stay as they are; a later migration filters
--- those reads.
+-- stay as written in that file. 056 recreates the live policies
+-- so a rep read requires status 'approved'. repMayWrite is
+-- unchanged; its caller filters the show set.
 --
 -- Grants. agent_show_relationships predates migration 020, which
 -- granted authenticated select, insert, update, and delete.
@@ -119,7 +120,7 @@ alter table public.agent_show_relationships
   drop constraint if exists agent_show_relationships_source_check;
 alter table public.agent_show_relationships
   add constraint agent_show_relationships_source_check
-  check (source in ('admin', 'import'));
+  check (source in ('admin', 'import', 'claim'));
 
 alter table public.agent_show_relationships
   drop constraint if exists agent_show_relationships_approved_by_fkey;
@@ -155,7 +156,7 @@ create policy "Agents read own relationships"
 comment on column public.agent_show_relationships.status is
   'pending waits for admin approval. approved is a live roster link. rejected is kept and is not a live link. Existing rows default to approved.';
 comment on column public.agent_show_relationships.source is
-  'admin: an internal admin wrote the link. import: a bulk roster import. Imported links start pending.';
+  'admin: an internal admin wrote the link. import: a bulk roster import. claim: an agent asked to represent a catalog show. Imported and claimed links start pending.';
 comment on column public.agent_show_relationships.approved_by is
   'Profile that approved the link. Null until an admin approves, and null on rows that were already on the roster when this column was added.';
 comment on column public.agent_show_relationships.approved_at is

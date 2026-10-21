@@ -48,7 +48,7 @@ describe("migration 055 agent_show_relationships status", () => {
       /drop constraint if exists agent_show_relationships_source_check/i
     );
     expect(statements).toMatch(
-      /add constraint agent_show_relationships_source_check\s+check \(source in \('admin', 'import'\)\)/i
+      /add constraint agent_show_relationships_source_check\s+check \(source in \('admin', 'import', 'claim'\)\)/i
     );
     expect(statements).toMatch(
       /drop constraint if exists agent_show_relationships_approved_by_fkey/i

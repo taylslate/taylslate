@@ -142,7 +142,8 @@ export async function getDashboardShowCounts(
     const { data: rels } = await supabase
       .from("agent_show_relationships")
       .select("show_id")
-      .eq("agent_id", userId);
+      .eq("agent_id", userId)
+      .eq("status", "approved");
     const ids = (rels ?? []).map((row) => row.show_id as string);
     if (ids.length === 0) return empty;
     const { data } = await supabase.from("shows").select("platform").in("id", ids);
@@ -173,7 +174,8 @@ export async function getShowsByAgent(agentId: string): Promise<Show[]> {
   const { data: rels, error: relError } = await supabase
     .from("agent_show_relationships")
     .select("show_id")
-    .eq("agent_id", agentId);
+    .eq("agent_id", agentId)
+    .eq("status", "approved");
   if (relError || !rels || rels.length === 0) return [];
 
   const showIds = rels.map((r) => r.show_id);
@@ -589,7 +591,8 @@ export async function getAgentStats(agentId: string): Promise<AgentDashboardStat
     supabase
       .from("agent_show_relationships")
       .select("*", { count: "exact", head: true })
-      .eq("agent_id", agentId),
+      .eq("agent_id", agentId)
+      .eq("status", "approved"),
     supabase
       .from("deals")
       .select("*", { count: "exact", head: true })
@@ -1159,7 +1162,8 @@ export async function getShowsFiltered(filters: {
     const { data: rels } = await supabase
       .from("agent_show_relationships")
       .select("show_id")
-      .eq("agent_id", filters.agent_id);
+      .eq("agent_id", filters.agent_id)
+      .eq("status", "approved");
     if (!rels || rels.length === 0) return [];
     showIds = rels.map((r) => r.show_id);
   }
@@ -1209,28 +1213,64 @@ export async function getAgentShowRelationship(
     .select("*")
     .eq("agent_id", agentId)
     .eq("show_id", showId)
+    .eq("status", "approved")
     .maybeSingle();
   if (error || !data) return null;
   return data as AgentShowRelationship;
 }
 
-export async function claimShow(
+/**
+ * Any roster row for this agent and show, including pending and rejected.
+ * The claim route uses this for its 409. getAgentShowRelationship is the
+ * approved-only check that gates show edits.
+ */
+export async function getAgentShowRelationshipAnyStatus(
   agentId: string,
-  showId: string,
-  commissionRate?: number
+  showId: string
 ): Promise<AgentShowRelationship | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("agent_show_relationships")
+    .select("*")
+    .eq("agent_id", agentId)
+    .eq("show_id", showId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as AgentShowRelationship;
+}
+
+/**
+ * Ask to represent a catalog show. agent_id is the signed-in user only.
+ * The insert runs as service_role, which would otherwise accept any id.
+ * The link stays pending until an admin approves it.
+ */
+export async function claimShow(
+  showId: string,
+  commissionRate?: number
+): Promise<AgentShowRelationship> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    throw new Error("Sign in to claim a show.");
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("agent_show_relationships")
     .insert({
-      agent_id: agentId,
+      agent_id: user.id,
       show_id: showId,
       commission_rate: commissionRate ?? null,
       is_exclusive: false,
+      status: "pending",
+      source: "claim",
     })
     .select()
     .single();
-  if (error || !data) return null;
+  if (error || !data) {
+    throw new Error(error?.message ?? "Failed to claim show.");
+  }
   return data as AgentShowRelationship;
 }
 
@@ -1281,17 +1321,34 @@ export async function importShows(
       continue;
     }
 
-    // Create agent relationship
-    const { error: relError } = await supabase
+    // Roster link is service_role. Authenticated can no longer insert.
+    // Pending until an admin approves. agentId is the signed-in user,
+    // passed by the import route.
+    const { error: relError } = await supabaseAdmin
       .from("agent_show_relationships")
       .insert({
         agent_id: agentId,
         show_id: newShow.id,
         is_exclusive: false,
+        status: "pending",
+        source: "import",
       });
 
     if (relError) {
-      errors.push(`${showData.name}: relationship error: ${relError.message}`);
+      const { error: deleteError } = await supabaseAdmin
+        .from("shows")
+        .delete()
+        .eq("id", newShow.id);
+      if (deleteError) {
+        errors.push(
+          `${showData.name}: roster link failed (${relError.message}); show ${newShow.id} was left in place (${deleteError.message})`
+        );
+      } else {
+        errors.push(
+          `${showData.name}: roster link failed (${relError.message}); the new show was removed`
+        );
+      }
+      continue;
     }
 
     existingNames.add(showData.name.toLowerCase());
@@ -1516,7 +1573,8 @@ export async function getShowsNeedingEnrichment(agentId: string): Promise<Show[]
   const { data: rels, error: relError } = await supabase
     .from("agent_show_relationships")
     .select("show_id")
-    .eq("agent_id", agentId);
+    .eq("agent_id", agentId)
+    .eq("status", "approved");
 
   if (relError || !rels || rels.length === 0) return [];
 

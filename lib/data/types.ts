@@ -1142,6 +1142,12 @@ export interface AgentShowRelationship {
   commission_rate?: number; // agent's cut, e.g., 0.15 for 15%
   is_exclusive: boolean; // is this agent the exclusive rep?
   created_at: string;
+  /** pending waits for admin approval. approved is a live roster link. */
+  status?: "pending" | "approved" | "rejected";
+  /** admin: written by an internal admin. import: bulk roster. claim: agent request. */
+  source?: "admin" | "import" | "claim";
+  approved_by?: string | null;
+  approved_at?: string | null;
 }
 
 // ---- Dashboard Aggregates (computed, not stored) ----
