@@ -7,9 +7,9 @@ Start with the [Company Brain](company-brain/START_HERE.md) for company context,
 This block wins over anything older in this file or in other docs.
 
 - **Sign-in:** everyone, brands and shows, signs in with a 6-digit code sent by email (`/login` → `POST /api/auth/login/otp/*`, mail from `lib/email/templates/login-otp.ts` via Resend). Passwords and magic links are not the sign-in path. Rate limits live in `public.login_otp_limits` (migration 051).
-- **Teams:** no roles or permissions to start. Seats are not sold and not limited (unlimited seats). `seatsIncluded` on the plan record is data only and not enforced.
-- **Pricing (locked, see `PRICING_DECISIONS.md`):** brand pays. Free $0, Starter $79/mo (5 active campaigns), Operator $299/mo (unlimited campaigns). Fees, card / bank transfer: Free 10% / 7%, Starter 8% / 5%, Operator 6% / 3%. Shows are free and pay no fee. No public Agency tier.
-- **Design:** Ink & Gold across the app, homepage, and email (`lib/brand/tokens.ts`, `lib/brand/tokens.css`, `lib/email/layout.ts`).
+- **Teams:** No team roles or permissions to start (the brand/show view switch still exists). Seats are not sold and not limited (unlimited seats). `seatsIncluded` on the plan record is data only and not enforced.
+- **Pricing (locked, see `PRICING_DECISIONS.md`):** brand pays. Free $0 (1 active campaign), Starter $79/mo (5 active campaigns + CRM), Operator $299/mo (unlimited campaigns, full CRM). Fees, card / bank transfer: Free 10% / 7%, Starter 8% / 5%, Operator 6% / 3%. Shows are free and pay no fee. No public Agency tier.
+- **Design:** Ink & Gold. Hexes: navy #1B2A4A, ink #141C2B, canvas #F6F5F2, gold #8C6E1F. Fraunces headings. HubSpot-style crisp white cards. Auth emails use a white background with an ink header bar. No em dashes in copy. This is not the old beige theme. Tokens: `lib/brand/tokens.ts`, `lib/brand/tokens.css`, `lib/email/layout.ts`.
 - **Public pages:** homepage and `/for-shows` are live.
 - **Launch:** January 2027.
 - **Migrations on `ldtmhafewfifdizgfrnn`:** 001–051 applied. 045 (benchmarks + media-kit geography), 046 (podscan_id guard trigger), 047 (campaign learning tables), 048 (make_goods), 049 (show_surfaces anon revoke), 050 (`user_owns_show` without podscan match) were applied Oct 21, 2026. 051 (`login_otp_limits`) was applied earlier the same day. Never re-run a file.

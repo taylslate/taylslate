@@ -94,7 +94,7 @@ The moat is the data. Everything else is a mechanism to capture it.
 
 ## 4. Pricing & Fees (Locked April 28, 2026)
 
-> **Superseded.** Current pricing was locked Sep 28, 2026: Free $0 (10% card / 7% bank), Starter $79/mo with 5 active campaigns (8% / 5%), Operator $299/mo unlimited (6% / 3%). Brand pays; shows are free. Seats are not sold. See `PRICING_DECISIONS.md`. The text below is history.
+> **Superseded.** Current pricing was locked Sep 28, 2026: Free $0, 1 active campaign (10% card / 7% bank), Starter $79/mo with 5 active campaigns + CRM (8% / 5%), Operator $299/mo unlimited, full CRM (6% / 3%). Brand pays; shows are free. Seats are not sold. See `PRICING_DECISIONS.md`. The text below is history.
 
 Three-tier model pressure-tested in pricing strategy session. Customer chooses entry point; conversion to higher tiers is sales-led, not gated. Reference class is commerce infrastructure (Shopify, Toast), not full marketing suites (HubSpot, Salesforce) — Taylslate is a channel tool, "Facebook Ads for podcast reads," not a marketing platform.
 
