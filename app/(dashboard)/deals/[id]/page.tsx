@@ -12,6 +12,7 @@ import {
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import LegacyDealClient from "./legacy-client";
 import Wave12DealClient from "@/components/deals/Wave12DealClient";
+import { listMakeGoodsFailSoft } from "@/lib/make-goods/propose";
 import { buildTrackingLink } from "@/lib/io/tracking-link";
 import { buildShowNotesBlurb } from "@/lib/io/show-notes";
 import { computeApplicationFeeCents } from "@/lib/stripe/payment-intent";
@@ -122,6 +123,7 @@ export default async function DealDetailPage({ params }: PageProps) {
     const episodeCharge = ownsAsBrand
       ? episodeChargeForBrand(sp, wave12.agreed_cpm, feePercentage)
       : null;
+    const makeGoods = await listMakeGoodsFailSoft(wave12.id);
     return (
       <Wave12DealClient
         deal={wave12}
@@ -131,6 +133,7 @@ export default async function DealDetailPage({ params }: PageProps) {
         trackingLink={trackingLink}
         showNotesBlurb={showNotesBlurb}
         episodeCharge={episodeCharge}
+        makeGoods={makeGoods}
       />
     );
   }
