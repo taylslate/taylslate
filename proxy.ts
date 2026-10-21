@@ -60,7 +60,7 @@ export async function proxy(request: NextRequest) {
     pathname === "/callback" ||
     pathname === "/forgot-password" ||
     pathname === "/reset-password" ||
-    pathname.startsWith("/api/v1") ||
+    pathname === "/api/v1" || pathname.startsWith("/api/v1/") ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/outreach/") ||
     pathname.startsWith("/auth/magic") ||

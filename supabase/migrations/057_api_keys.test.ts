@@ -168,7 +168,7 @@ describe("migration 057 api keys", () => {
       .indexOf("revoke all on table public.api_keys from authenticated;");
     const grantKeysAuth = statements
       .toLowerCase()
-      .indexOf("grant select on public.api_keys to authenticated;");
+      .indexOf("grant select (");
     expect(revokeKeysAuth).toBeGreaterThanOrEqual(0);
     expect(grantKeysAuth).toBeGreaterThan(revokeKeysAuth);
     expect(grantKeysAuth).toBeLessThan(rlsAt);
@@ -179,6 +179,36 @@ describe("migration 057 api keys", () => {
     expect(statements).not.toMatch(
       /grant\s+(insert|update|delete)[^;]*on\s+(?:table\s+)?public\.api_keys\s+to\s+authenticated/i
     );
+    expect(statements).not.toMatch(
+      /grant select on public\.api_keys to authenticated/i
+    );
+  });
+
+  it("denies authenticated select of key_hash", () => {
+    const match = statements.match(
+      /grant select \(([^)]+)\) on public\.api_keys to authenticated;/i
+    );
+    expect(match).not.toBeNull();
+    const columns = match![1].split(",").map((column) => column.trim());
+    expect(columns).toEqual([
+      "id",
+      "brand_id",
+      "name",
+      "prefix",
+      "scopes",
+      "created_at",
+      "last_used_at",
+      "revoked_at",
+    ]);
+    expect(columns).not.toContain("key_hash");
+    expect(statements).toMatch(
+      /revoke select \(key_hash\) on public\.api_keys from authenticated;/i
+    );
+    expect(statements).not.toMatch(
+      /grant select \(?[^;]*key_hash[^;]*\)? on public\.api_keys to authenticated/i
+    );
+    expect(sql).toContain("information_schema.column_privileges");
+    expect(sql).toContain("key_hash as authenticated is denied");
   });
 
   it("increments the rate window atomically and grants execute to service_role only", () => {

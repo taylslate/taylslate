@@ -10,7 +10,8 @@
 -- token (ts_live_<prefix>_<secret>). The secret is not stored.
 -- prefix is the lookup key and is unique. Writes run as
 -- service_role. authenticated may select its own rows
--- (brand_id = auth.uid()) and has no write policy.
+-- (brand_id = auth.uid()) on every column except key_hash,
+-- and has no write policy.
 --
 -- api_rate_windows is the durable per-key per-minute counter.
 -- service_role only. No authenticated grant and no policy.
@@ -40,11 +41,21 @@
 --      and table_name in ('api_keys', 'api_rate_windows')
 --    order by table_name, grantee, privilege_type;
 --   Expected: service_role has select, insert, update, and
---   delete on both. authenticated has select on api_keys only.
---   authenticated has nothing on api_rate_windows. anon and
---   public have none. authenticated has no truncate,
+--   delete on both. authenticated has no table-level select,
+--   insert, update, or delete on api_keys (column select is
+--   below). authenticated has nothing on api_rate_windows.
+--   anon and public have none. authenticated has no truncate,
 --   references, or trigger. service_role may still hold
 --   truncate, references, and trigger from default privileges.
+--   select grantee, column_name, privilege_type
+--     from information_schema.column_privileges
+--    where table_schema = 'public'
+--      and table_name = 'api_keys'
+--      and grantee = 'authenticated'
+--    order by column_name, privilege_type;
+--   Expected: select on id, brand_id, name, prefix, scopes,
+--   created_at, last_used_at, and revoked_at. Selecting
+--   key_hash as authenticated is denied: no key_hash row.
 --   select schemaname, tablename, policyname, roles, cmd, qual
 --     from pg_policies
 --    where schemaname = 'public'
@@ -177,7 +188,17 @@ revoke all on table public.api_rate_windows from authenticated;
 
 grant select, insert, update, delete on public.api_keys to service_role;
 grant select, insert, update, delete on public.api_rate_windows to service_role;
-grant select on public.api_keys to authenticated;
+grant select (
+  id,
+  brand_id,
+  name,
+  prefix,
+  scopes,
+  created_at,
+  last_used_at,
+  revoked_at
+) on public.api_keys to authenticated;
+revoke select (key_hash) on public.api_keys from authenticated;
 
 -- Default privileges also grant truncate, references, and trigger
 -- to authenticated. revoke all above clears them. Repeat the three
