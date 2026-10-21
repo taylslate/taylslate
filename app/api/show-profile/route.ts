@@ -18,6 +18,7 @@ import type {
 } from "@/lib/data/types";
 import { parseMediaKitGeography, hasAudienceGeography } from "@/lib/shows/media-kit-geo";
 import { applyAudienceGeographyToShow } from "@/lib/shows/apply-geography";
+import { SHOW_PROFILE_PODSCAN_ID_LABEL } from "@/lib/shows/profile-podscan";
 
 const ALLOWED_PLATFORMS: ShowProfilePlatform[] = ["podcast", "youtube", "both"];
 const ALLOWED_CADENCES: ShowEpisodeCadence[] = [
@@ -109,9 +110,10 @@ export function sanitizeShowProfilePatch(
 ): Partial<Omit<ShowProfile, "id" | "user_id" | "created_at" | "updated_at" | "onboarded_at">> {
   const patch: Partial<ShowProfile> = {};
 
+  // podscan_id is self-reported. The route does not copy it from the
+  // body. A catalog tie is a deal or a show_owner email match.
   for (const k of [
     "feed_url",
-    "podscan_id",
     "show_name",
     "show_description",
     "show_image_url",
@@ -195,7 +197,10 @@ export async function GET() {
   }
 
   const showProfile = await getShowProfileByUserId(user.id);
-  return NextResponse.json({ show_profile: showProfile });
+  return NextResponse.json({
+    show_profile: showProfile,
+    podscan_id_label: SHOW_PROFILE_PODSCAN_ID_LABEL,
+  });
 }
 
 export async function PUT(request: NextRequest) {
@@ -235,9 +240,9 @@ export async function PUT(request: NextRequest) {
   }
 
   // Copy parsed country shares onto a shows row only when a verified
-  // tie exists (a deal, or a show_owner email). A client-supplied
-  // podscan_id is not a tie. A miss is fine — the profile still holds
-  // the parse. Failures here must not fail the save.
+  // tie exists (a deal, or a show_owner email). A stored podscan id is
+  // not a tie. A miss is fine — the profile still holds the parse.
+  // Failures here must not fail the save.
   if ("media_kit_text" in patch) {
     await applyAudienceGeographyToShow(result);
   }

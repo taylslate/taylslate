@@ -495,7 +495,13 @@ export interface ShowProfile {
   // Step 1
   feed_url?: string | null;
 
-  // Step 2 — Podscan-enriched, editable
+  // Step 2 — self-reported Podscan id from the onboarding URL lookup.
+  // Display only (SHOW_PROFILE_PODSCAN_ID_LABEL). Scoring and geography
+  // use a deal or a show_owner email match. Payouts use deals.show_profile_id.
+  // The profile route omits a client-supplied value. Migration 046 stores
+  // a new value only when it equals shows.podscan_id on a show this
+  // profile is tied to by that same deal or show_owner email.
+  // Migration 050 drops the podscan equality path from user_owns_show.
   podscan_id?: string | null;
   show_name?: string | null;
   show_description?: string | null;
