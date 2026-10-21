@@ -283,8 +283,11 @@ export function assertShowOtpTemplate(): void {
   if (!otp.html.includes("{{ .Token }}")) {
     throw new Error("OTP auth template has no {{ .Token }}");
   }
-  if (!otp.html.includes("#f2ebe1")) {
+  if (!otp.html.includes('data-taylslate-email="1"') || !otp.html.includes("#ffffff")) {
     throw new Error("OTP auth template is not on the shared layout");
+  }
+  if (otp.html.includes("#f2ebe1")) {
+    throw new Error("OTP auth template is still on the paper field");
   }
   if (otp.html.includes(".ConfirmationURL") || otp.html.includes("token_hash=")) {
     throw new Error("OTP auth template must be a code, not a link");

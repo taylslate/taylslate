@@ -49,7 +49,9 @@ describe("Supabase auth email templates", () => {
     const otp = byId.otp;
     expect(otp.subject).toBe("Your Taylslate sign-in code");
     expect(otp.html).toContain("{{ .Token }}");
-    expect(otp.html).toContain("#f2ebe1");
+    expect(otp.html).toContain('data-taylslate-email="1"');
+    expect(otp.html).toContain("#ffffff");
+    expect(otp.html).not.toContain("#f2ebe1");
     expect(otp.html).not.toContain(".ConfirmationURL");
     expect(otp.html).not.toContain("token_hash=");
     expect(() => assertShowOtpTemplate()).not.toThrow();
