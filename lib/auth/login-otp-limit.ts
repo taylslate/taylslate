@@ -22,7 +22,8 @@ export const LOGIN_OTP_EMAIL_HOUR_MAX = 5;
 export const LOGIN_OTP_IP_HOUR_MAX = 20;
 export const LOGIN_OTP_WRONG_MAX = 5;
 export const LOGIN_OTP_HOUR_MS = 60 * 60 * 1000;
-export const LOGIN_OTP_PENDING_MS = 60 * 60 * 1000;
+// Pending show-contact codes. The rate-limit window stays LOGIN_OTP_HOUR_MS.
+export const LOGIN_OTP_PENDING_MS = 10 * 60 * 1000;
 
 export const LOGIN_OTP_HOUR_LIMIT = "hour_limit";
 export const LOGIN_OTP_IP_LIMIT = "ip_limit";
