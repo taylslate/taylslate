@@ -16,6 +16,7 @@ import type {
 } from "@/lib/data/types";
 import { SHOW_ONBOARDING_STEPS, TOTAL_STEPS, stepIndexOf } from "../steps";
 import { getCpmBenchmark, spotPrice } from "@/lib/utils/cpm-benchmark";
+import { formatSurfaceSummary, type SellableSurface } from "@/lib/shows/surfaces";
 
 const PLATFORM_LABELS: Record<ShowProfilePlatform, string> = {
   podcast: "Podcast",
@@ -75,7 +76,13 @@ function formatBrandHistory(entries: ShowBrandHistoryEntry[] | undefined): strin
     .join(", ");
 }
 
-export default function SummaryClient({ profile }: { profile: ShowProfile }) {
+export default function SummaryClient({
+  profile,
+  surfaces = [],
+}: {
+  profile: ShowProfile;
+  surfaces?: SellableSurface[];
+}) {
   const router = useRouter();
   const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -189,6 +196,13 @@ export default function SummaryClient({ profile }: { profile: ShowProfile }) {
               value={formatBrandHistory(profile.brand_history)}
               editSlug="brand-history"
               emptyLabel="None added"
+              placeholderAsEmpty
+            />
+            <Row
+              label="Other surfaces"
+              value={formatSurfaceSummary(surfaces)}
+              editSlug="surfaces"
+              emptyLabel="None listed"
               placeholderAsEmpty
             />
             <Row

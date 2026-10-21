@@ -16,6 +16,7 @@ import { notFound } from "next/navigation";
 import CampaignDetail from "./campaign-detail";
 import DiscoveryList from "./discovery-list";
 import ConvictionDiscoveryView from "./conviction-discovery-view";
+import { listPublishedSurfacesForShows } from "@/lib/data/show-surfaces";
 
 export default async function CampaignDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -75,6 +76,11 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       }
     }
 
+    const surfaceIds = tiered
+      ? [...tiered.test, ...tiered.scale, ...tiered.bench].map((show) => show.showId)
+      : [];
+    const surfacesByShowId = await listPublishedSurfacesForShows(surfaceIds);
+
     return (
       <ConvictionDiscoveryView
         campaignId={id}
@@ -88,6 +94,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         testPlacement={campaign.test_placement ?? null}
         isAdmin={isAdmin}
         annotationsByShow={annotationsByShow}
+        surfacesByShowId={surfacesByShowId}
       />
     );
   }
@@ -101,7 +108,10 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     Array.isArray(campaign.scored_shows) &&
     campaign.scored_shows.length > 0;
   if (hasScoredShows) {
-    return <DiscoveryList campaign={campaign} />;
+    const surfacesByShowId = await listPublishedSurfacesForShows(
+      (campaign.scored_shows ?? []).map((show) => show.podcastId)
+    );
+    return <DiscoveryList campaign={campaign} surfacesByShowId={surfacesByShowId} />;
   }
 
   // Legacy: campaigns generated via Claude still use the old detail view

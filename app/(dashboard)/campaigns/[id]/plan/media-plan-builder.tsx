@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   MediaPlan,
@@ -20,6 +20,14 @@ import {
   totalImpressions,
 } from "@/lib/utils/pricing";
 import { tokens } from "@/lib/brand/tokens";
+import {
+  addonSpend,
+  formatSurfacePrice,
+  postingOwnerLabel,
+  surfaceMinBuyNote,
+  surfaceTypeLabel,
+  type SellableSurface,
+} from "@/lib/shows/surfaces";
 
 const radiusStyle = { borderRadius: tokens.radius };
 
@@ -52,6 +60,20 @@ interface Props {
   budgetTotal: number;
   selectedShows: ScoredShowRecord[];
   initialPlan: MediaPlan | null;
+  /** Published add-ons keyed by show id. Empty until a creator has listed any. */
+  surfacesByShowId?: Record<string, SellableSurface[]>;
+}
+
+function planLine(li: MediaPlanLineItem): MediaPlanLineItem {
+  const next: MediaPlanLineItem = {
+    podcast_id: li.podcast_id,
+    placement: li.placement,
+    num_episodes: li.num_episodes,
+  };
+  if (li.addon_surface_ids && li.addon_surface_ids.length > 0) {
+    next.addon_surface_ids = li.addon_surface_ids;
+  }
+  return next;
 }
 
 function formatCurrency(n: number): string {
@@ -89,6 +111,7 @@ export default function MediaPlanBuilder({
   budgetTotal,
   selectedShows,
   initialPlan,
+  surfacesByShowId = {},
 }: Props) {
   const router = useRouter();
 
@@ -103,7 +126,7 @@ export default function MediaPlanBuilder({
     );
     return selectedShows.map((show) => {
       const existing = persistedById.get(show.podcastId);
-      return (
+      return planLine(
         existing ?? {
           podcast_id: show.podcastId,
           // Wave 14 Phase 2C Layer 5: seed at the placement the brand chose in
@@ -155,7 +178,10 @@ export default function MediaPlanBuilder({
           await fetch("/api/campaigns/plan", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ campaign_id: campaignId, media_plan: next }),
+            body: JSON.stringify({
+            campaign_id: campaignId,
+            media_plan: { ...next, line_items: next.line_items.map(planLine) },
+          }),
           });
         } catch {
           // Non-fatal — the user can retry by tweaking again.
@@ -186,6 +212,19 @@ export default function MediaPlanBuilder({
   const updateItem = (podcastId: string, patch: Partial<MediaPlanLineItem>) => {
     setLineItems((prev) =>
       prev.map((li) => (li.podcast_id === podcastId ? { ...li, ...patch } : li))
+    );
+  };
+
+  const toggleAddon = (podcastId: string, surfaceId: string) => {
+    setLineItems((prev) =>
+      prev.map((li) => {
+        if (li.podcast_id !== podcastId) return li;
+        const current = li.addon_surface_ids ?? [];
+        const nextIds = current.includes(surfaceId)
+          ? current.filter((id) => id !== surfaceId)
+          : [...current, surfaceId];
+        return planLine({ ...li, addon_surface_ids: nextIds });
+      })
     );
   };
 
@@ -228,7 +267,9 @@ export default function MediaPlanBuilder({
     for (const li of visibleItems) {
       const show = showById.get(li.podcast_id);
       if (!show) continue;
-      spend += lineTotal(show.audienceSize, show.estimatedCpm, li.placement, li.num_episodes);
+      spend +=
+        lineTotal(show.audienceSize, show.estimatedCpm, li.placement, li.num_episodes) +
+        addonSpend(surfacesByShowId[li.podcast_id] ?? [], li.addon_surface_ids);
       impressionInputs.push({ audienceSize: show.audienceSize, episodes: li.num_episodes });
       if (li.num_episodes > maxEpisodes) maxEpisodes = li.num_episodes;
     }
@@ -244,7 +285,7 @@ export default function MediaPlanBuilder({
       lengthWeeks: weeks,
       overBudget: spend > budgetTotal,
     };
-  }, [visibleItems, showById, spacing, budgetTotal]);
+  }, [visibleItems, showById, spacing, budgetTotal, surfacesByShowId]);
 
   // ---- Export CSV (stub) ----
 
@@ -258,11 +299,18 @@ export default function MediaPlanBuilder({
       "Episodes",
       "Spot price",
       "Line total",
+      "Add-ons",
     ];
     const rows = visibleItems.map((li) => {
       const show = showById.get(li.podcast_id)!;
       const adj = adjustedCpm(show.estimatedCpm, li.placement);
       const spot = spotPrice(show.audienceSize, show.estimatedCpm, li.placement);
+      const surfaces = surfacesByShowId[li.podcast_id] ?? [];
+      const selected = new Set(li.addon_surface_ids ?? []);
+      const addonLabel = surfaces
+        .filter((surface) => selected.has(surface.id))
+        .map((surface) => surfaceTypeLabel(surface.type))
+        .join("; ");
       return [
         `"${show.name.replace(/"/g, '""')}"`,
         show.audienceSize,
@@ -271,7 +319,8 @@ export default function MediaPlanBuilder({
         adj.toFixed(2),
         li.num_episodes,
         Math.round(spot),
-        Math.round(spot * li.num_episodes),
+        Math.round(spot * li.num_episodes + addonSpend(surfaces, li.addon_surface_ids)),
+        `"${addonLabel.replace(/"/g, '""')}"`,
       ];
     });
     const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -478,10 +527,14 @@ export default function MediaPlanBuilder({
                   const show = showById.get(li.podcast_id)!;
                   const adj = adjustedCpm(show.estimatedCpm, li.placement);
                   const spot = spotPrice(show.audienceSize, show.estimatedCpm, li.placement);
-                  const total = spot * li.num_episodes;
+                  const surfaces = surfacesByShowId[li.podcast_id] ?? [];
+                  const addons = addonSpend(surfaces, li.addon_surface_ids);
+                  const total = spot * li.num_episodes + addons;
                   const multiplier = PLACEMENT_MULTIPLIERS[li.placement];
+                  const selectedAddons = new Set(li.addon_surface_ids ?? []);
                   return (
-                    <tr key={li.podcast_id} className="hover:bg-[var(--ts-band-shows)]">
+                    <Fragment key={li.podcast_id}>
+                    <tr className="hover:bg-[var(--ts-band-shows)]">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           {show.imageUrl ? (
@@ -564,6 +617,43 @@ export default function MediaPlanBuilder({
                         </button>
                       </td>
                     </tr>
+                    {surfaces.length > 0 && (
+                      <tr data-testid="plan-surface-addons">
+                        <td colSpan={8} className="px-4 pb-3">
+                          <div className={`text-[10px] font-medium uppercase tracking-wider ${mutedText}`}>
+                            Add-ons on this show
+                          </div>
+                          <div className="mt-1 flex flex-col gap-1">
+                            {surfaces.map((surface) => {
+                              const note = surfaceMinBuyNote(surface.min_buy);
+                              return (
+                                <label
+                                  key={surface.id}
+                                  className={`flex items-start gap-2 text-xs ${inkText}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="mt-0.5 accent-[var(--ts-accent)]"
+                                    checked={selectedAddons.has(surface.id)}
+                                    aria-label={`Add ${surfaceTypeLabel(surface.type)} on ${show.name}`}
+                                    onChange={() => toggleAddon(li.podcast_id, surface.id)}
+                                  />
+                                  <span>
+                                    <span className="font-medium">{surfaceTypeLabel(surface.type)}</span>
+                                    <span className={mutedText}>
+                                      {" "}
+                                      · {formatSurfacePrice(surface.price)} · {postingOwnerLabel(surface.posting_owner)}
+                                    </span>
+                                    {note && <span className={`block ${mutedText}`}>{note}</span>}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>

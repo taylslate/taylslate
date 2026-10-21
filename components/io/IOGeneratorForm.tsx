@@ -138,6 +138,7 @@ function editorPayload(io: InsertionOrder, sync: boolean) {
       price_type: li.price_type,
       net_due: li.net_due,
       spot_format: li.spot_format?.trim() || null,
+      ...(li.show_surface_id ? { show_surface_id: li.show_surface_id } : {}),
       verified: li.verified,
       make_good_triggered: li.make_good_triggered,
     })),
@@ -860,7 +861,11 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
                 </div>
               ) : (
                 <div className={`mt-3 flex flex-wrap items-center gap-4 text-xs ${mutedText}`}>
-                  {item.spot_format ? <span>{item.spot_format}</span> : null}
+                  {item.show_surface_id ? (
+                    <span data-testid="io-surface-line">Add-on · {item.spot_format || "Creator surface"}</span>
+                  ) : item.spot_format ? (
+                    <span>{item.spot_format}</span>
+                  ) : null}
                   <span>{item.price_type === "cpm" ? `$${item.gross_cpm} CPM` : "Flat rate"}</span>
                   <span>{item.is_scripted ? "Scripted" : "Organic"}</span>
                   <span>{item.is_personal_experience ? "Personal exp." : "Standard"}</span>

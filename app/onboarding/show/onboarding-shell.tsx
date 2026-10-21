@@ -22,7 +22,8 @@ interface ShellProps {
    * If provided, the "Continue" button posts this patch to /api/show-profile
    * before advancing. Return `false` to block navigation.
    */
-  onContinue?: () => Promise<Partial<ShowProfile> | false>;
+  /** `null` means the step already saved itself (surfaces) and should advance. */
+  onContinue?: () => Promise<Partial<ShowProfile> | false | null>;
   continueLabel?: string;
   continueDisabled?: boolean;
   hideBack?: boolean;
@@ -63,7 +64,7 @@ export default function OnboardingShell({
     setError(null);
     setSubmitting(true);
     try {
-      let patch: Partial<ShowProfile> | false | undefined;
+      let patch: Partial<ShowProfile> | false | null | undefined;
       if (onContinue) {
         patch = await onContinue();
         if (patch === false) {

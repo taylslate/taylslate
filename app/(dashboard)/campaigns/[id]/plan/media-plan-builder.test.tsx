@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import type { MediaPlan, ScoredShowRecord } from "@/lib/data/types";
+import type { SellableSurface } from "@/lib/shows/surfaces";
 import MediaPlanBuilder from "./media-plan-builder";
 
 const { mockPush } = vi.hoisted(() => ({
@@ -53,7 +54,13 @@ function show(over: Partial<ScoredShowRecord> = {}): ScoredShowRecord {
   };
 }
 
-function renderPlan(over: { initialPlan?: MediaPlan | null; shows?: ScoredShowRecord[] } = {}) {
+function renderPlan(
+  over: {
+    initialPlan?: MediaPlan | null;
+    shows?: ScoredShowRecord[];
+    surfacesByShowId?: Record<string, SellableSurface[]>;
+  } = {}
+) {
   return render(
     <MediaPlanBuilder
       campaignId="camp-1"
@@ -61,6 +68,7 @@ function renderPlan(over: { initialPlan?: MediaPlan | null; shows?: ScoredShowRe
       budgetTotal={30000}
       selectedShows={over.shows ?? [show()]}
       initialPlan={over.initialPlan ?? null}
+      surfacesByShowId={over.surfacesByShowId}
     />
   );
 }
@@ -218,5 +226,52 @@ describe("MediaPlanBuilder — paper/ink", () => {
       selected_show_ids: [],
     });
     expect(calls.some((c) => String(c[0]).includes("generate-ios"))).toBe(false);
+  });
+
+  it("adds a surface onto the show without removing the show when the minimum is high", async () => {
+    renderPlan({
+      surfacesByShowId: {
+        "pod-1": [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            show_id: "pod-1",
+            type: "newsletter",
+            audience_size: 4000,
+            format: null,
+            min_buy: 50000,
+            creative_constraints: null,
+            lead_time_days: 4,
+            posting_owner: "creator",
+            price: 500,
+            notes: null,
+            published: true,
+          },
+        ],
+      },
+    });
+
+    expect(screen.getByText("The Recovery Lab")).toBeInTheDocument();
+    expect(screen.getByText(/Suggested minimum/)).toBeInTheDocument();
+    const box = screen.getByRole("checkbox", { name: /newsletter mention on the recovery lab/i });
+    expect(box).toBeEnabled();
+    expect(screen.getAllByText(money(7500)).length).toBeGreaterThan(0);
+
+    fireEvent.click(box);
+
+    expect(screen.getByText("The Recovery Lab")).toBeInTheDocument();
+    expect(screen.getAllByText(money(8000)).length).toBeGreaterThan(0);
+
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+    });
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [
+      string,
+      { method?: string; body?: string },
+    ][];
+    const planPut = calls.find((c) => c[0] === "/api/campaigns/plan" && c[1]?.method === "PUT");
+    const body = JSON.parse(planPut?.[1].body ?? "{}");
+    expect(body.media_plan.line_items[0].addon_surface_ids).toEqual([
+      "11111111-1111-4111-8111-111111111111",
+    ]);
   });
 });
