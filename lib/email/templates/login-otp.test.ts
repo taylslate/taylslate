@@ -12,8 +12,11 @@ describe("renderLoginOtpEmail", () => {
     expect(out.html).not.toContain("#f2ebe1");
     expect(out.html).not.toContain("token_hash=");
     expect(out.html).not.toContain("type=magiclink");
+    expect(out.html).toContain("It expires in 10 minutes.");
+    expect(out.html).not.toContain("1 hour");
     expect(out.text).toContain("482913");
-    expect(out.text).toContain("Enter this code to sign in.");
+    expect(out.text).toContain("Enter this code to sign in. It expires in 10 minutes.");
+    expect(out.text).not.toContain("1 hour");
   });
 
   it("escapes a code that is not plain digits", () => {
