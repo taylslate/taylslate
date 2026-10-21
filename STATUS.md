@@ -14,6 +14,7 @@ This block wins over anything older in this file or in other docs.
 - **Launch:** January 2027.
 - **Migrations on `ldtmhafewfifdizgfrnn`:** 001–051 applied. 045 (benchmarks + media-kit geography), 046 (podscan_id guard trigger), 047 (campaign learning tables), 048 (make_goods), 049 (show_surfaces anon revoke), 050 (`user_owns_show` without podscan match) were applied Oct 21, 2026. 051 (`login_otp_limits`) was applied earlier the same day. Never re-run a file.
 - **Open manual settings:** Supabase Auth email templates need `scripts/apply-auth-email-templates.ts` run with a `SUPABASE_ACCESS_TOKEN`. Email OTP expiry is a dashboard setting (Authentication → Sign In / Providers → Email → Email OTP Expiration). `SUPABASE_SERVICE_ROLE_KEY` is set for Production only, not Preview.
+- **Login code email copy:** `lib/email/templates/login-otp.ts` says the code "expires in 1 hour". Once the Supabase OTP expiry is set to 600s, that copy must change to 10 minutes. Leave the template unchanged until then.
 
 ## Most recent — outbound email on white, with managed reroute on invoice and legacy outreach (Oct 20, 2026)
 
