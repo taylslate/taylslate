@@ -1,11 +1,13 @@
 import Link from "next/link";
+import { appBodyFont, appDisplayFont } from "@/lib/brand/app-fonts";
 import { tokens } from "@/lib/brand/tokens";
 import { LAUNCH, planFee, realProofItems } from "@/lib/marketing/launch-copy";
+import { AudienceToggle } from "@/components/marketing/audience-toggle";
 import { MarketingChrome } from "@/components/marketing/marketing-chrome";
 import { ProductShot } from "@/components/marketing/product-shot";
 
 const inkButton =
-  "inline-flex items-center justify-center bg-[var(--ts-ink-on-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90";
+  "inline-flex items-center justify-center bg-[var(--ts-accent)] px-5 py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90";
 const quietLink =
   "text-sm text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]";
 
@@ -77,6 +79,8 @@ export function LaunchHome() {
   return (
     <MarketingChrome
       wide
+      tone="ink-gold"
+      className={`${appDisplayFont.variable} ${appBodyFont.variable}`}
       actions={
         <>
           <Link href={LAUNCH.showsNavHref} className={quietLink}>
@@ -90,7 +94,7 @@ export function LaunchHome() {
           </Link>
           <Link
             href={LAUNCH.primaryHref}
-            className="hidden bg-[var(--ts-ink-on-paper)] px-3.5 py-1.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 sm:inline-flex"
+            className="hidden bg-[var(--ts-accent)] px-3.5 py-1.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 sm:inline-flex"
             style={{ borderRadius: tokens.radius }}
           >
             {LAUNCH.primaryCta}
@@ -100,6 +104,7 @@ export function LaunchHome() {
     >
       <main className="flex-1">
         <section className="mx-auto max-w-6xl px-6 pt-16 pb-16 sm:pt-20">
+          <AudienceToggle />
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
             {LAUNCH.eyebrow}
           </p>
