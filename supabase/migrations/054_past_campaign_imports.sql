@@ -23,8 +23,14 @@
 -- read the import.
 --
 -- brand_id on a record is the RLS key, copied from the import so
--- a policy can stay owner-only without joining. Records are removed
+-- a policy can stay owner-only without joining. Foreign-key checks
+-- bypass RLS, so import_id alone would let one brand attach a row
+-- to another brand's import. past_campaign_imports is unique on
+-- (id, brand_id). The record foreign key is (import_id, brand_id)
+-- referencing that pair, on delete cascade. Records are removed
 -- with their import. Imports are removed with the profile.
+-- matched_show_id stays on delete set null. source_kind is required.
+-- file_name may be absent.
 --
 -- Idempotent. Safe to re-run. No backfill. No anon grant.
 -- Supabase default privileges grant anon and authenticated
@@ -65,7 +71,7 @@
 create table if not exists public.past_campaign_imports (
   id               uuid primary key default gen_random_uuid(),
   brand_id         uuid not null references public.profiles(id) on delete cascade,
-  source_kind      text,
+  source_kind      text not null,
   file_name        text,
   status           text not null default 'parsed',
   pooling_consent  boolean not null default false,
@@ -74,10 +80,13 @@ create table if not exists public.past_campaign_imports (
 );
 
 alter table public.past_campaign_imports
+  alter column source_kind set not null;
+
+alter table public.past_campaign_imports
   drop constraint if exists past_campaign_imports_source_kind_check;
 alter table public.past_campaign_imports
   add constraint past_campaign_imports_source_kind_check
-  check (source_kind is null or source_kind in ('csv', 'xlsx', 'pdf'));
+  check (source_kind in ('csv', 'xlsx', 'pdf'));
 
 alter table public.past_campaign_imports
   drop constraint if exists past_campaign_imports_status_check;
@@ -101,7 +110,7 @@ comment on column public.past_campaign_imports.brand_id is
 
 create table if not exists public.past_campaign_records (
   id               uuid primary key default gen_random_uuid(),
-  import_id        uuid not null references public.past_campaign_imports(id) on delete cascade,
+  import_id        uuid not null,
   brand_id         uuid not null references public.profiles(id),
   show_name        text not null,
   -- Advisory catalog match. Not a share with the show.
@@ -125,6 +134,27 @@ alter table public.past_campaign_records
   add constraint past_campaign_records_price_type_check
   check (price_type is null or price_type in ('cpm', 'flat'));
 
+-- Drop the record foreign key before replacing the unique target it
+-- depends on. The single-column import_id key is the one a prior
+-- draft of this file would have created; foreign-key checks bypass
+-- RLS, so it must not remain.
+alter table public.past_campaign_records
+  drop constraint if exists past_campaign_records_import_id_fkey;
+alter table public.past_campaign_records
+  drop constraint if exists past_campaign_records_import_brand_fkey;
+
+alter table public.past_campaign_imports
+  drop constraint if exists past_campaign_imports_id_brand_key;
+alter table public.past_campaign_imports
+  add constraint past_campaign_imports_id_brand_key
+  unique (id, brand_id);
+
+alter table public.past_campaign_records
+  add constraint past_campaign_records_import_brand_fkey
+  foreign key (import_id, brand_id)
+  references public.past_campaign_imports (id, brand_id)
+  on delete cascade;
+
 create index if not exists idx_past_campaign_records_brand
   on public.past_campaign_records (brand_id);
 
@@ -134,7 +164,9 @@ create index if not exists idx_past_campaign_records_import
 comment on table public.past_campaign_records is
   'Parsed rows from one brand-private past campaign import. Visible only to that brand.';
 comment on column public.past_campaign_records.brand_id is
-  'Owner copied from the import so RLS can use brand_id = auth.uid() without a join.';
+  'Owner copied from the import. Part of the composite foreign key (import_id, brand_id), because a foreign-key check bypasses RLS.';
+comment on column public.past_campaign_records.import_id is
+  'Parent import. Paired with brand_id so the row cannot point at another brand''s import.';
 comment on column public.past_campaign_records.matched_show_id is
   'Optional shows.id suggestion. Advisory only. Clearing it does not delete the brand row, and the show cannot read this row.';
 comment on column public.past_campaign_records.raw is

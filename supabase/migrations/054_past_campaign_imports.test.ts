@@ -54,24 +54,50 @@ describe("migration 054 past campaign imports", () => {
     expect(statements).toMatch(
       /brand_id\s+uuid not null references public\.profiles\(id\) on delete cascade/i
     );
-    expect(statements).toMatch(
-      /import_id\s+uuid not null references public\.past_campaign_imports\(id\) on delete cascade/i
-    );
+    expect(statements).toMatch(/import_id\s+uuid not null,/i);
     expect(statements).toMatch(
       /matched_show_id\s+uuid references public\.shows\(id\) on delete set null/i
+    );
+    expect(statements).toMatch(/source_kind\s+text not null/i);
+    expect(statements).toMatch(/file_name\s+text,/i);
+    expect(statements).not.toMatch(/file_name\s+text not null/i);
+    expect(statements).toMatch(
+      /alter column source_kind set not null/i
     );
     expect(statements).toMatch(
       /pooling_consent\s+boolean not null default false/i
     );
     expect(statements).toMatch(/status\s+text not null default 'parsed'/i);
     expect(statements).toMatch(
-      /check \(source_kind is null or source_kind in \('csv', 'xlsx', 'pdf'\)\)/i
+      /check \(source_kind in \('csv', 'xlsx', 'pdf'\)\)/i
     );
+    expect(statements).not.toMatch(/source_kind is null or/i);
     expect(statements).toMatch(
       /check \(status in \('parsed', 'confirmed', 'discarded'\)\)/i
     );
     expect(statements).toMatch(
       /check \(price_type is null or price_type in \('cpm', 'flat'\)\)/i
+    );
+  });
+
+  it("ties a record to an import only when both share brand_id", () => {
+    expect(statements).toMatch(
+      /drop constraint if exists past_campaign_records_import_id_fkey;/i
+    );
+    expect(statements).toMatch(
+      /drop constraint if exists past_campaign_records_import_brand_fkey;/i
+    );
+    expect(statements).toMatch(
+      /add constraint past_campaign_imports_id_brand_key\s+unique \(id, brand_id\);/i
+    );
+    expect(statements).toMatch(
+      /add constraint past_campaign_records_import_brand_fkey\s+foreign key \(import_id, brand_id\)\s+references public\.past_campaign_imports \(id, brand_id\)\s+on delete cascade;/i
+    );
+    expect(statements).not.toMatch(
+      /import_id\s+uuid not null references public\.past_campaign_imports/i
+    );
+    expect(statements).toMatch(
+      /matched_show_id\s+uuid references public\.shows\(id\) on delete set null/i
     );
   });
 
