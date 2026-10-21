@@ -49,6 +49,8 @@ export function transformShow(row: Record<string, unknown>): Show {
     spotify_id: row.spotify_id as string | undefined,
     youtube_channel_id: row.youtube_channel_id as string | undefined,
     rss_url: row.rss_url as string | undefined,
+    surfaces: (row.surfaces as Show["surfaces"]) ?? undefined,
+    medium_priors: (row.medium_priors as Show["medium_priors"]) ?? undefined,
     is_claimed: (row.is_claimed as boolean) ?? false,
     is_verified: (row.is_verified as boolean) ?? false,
     is_discoverable: (row.is_discoverable as boolean) ?? true,

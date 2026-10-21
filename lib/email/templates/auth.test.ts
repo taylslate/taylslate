@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authTemplateConfigPatch, renderAuthTemplates } from "./auth";
+import { assertShowOtpTemplate, authTemplateConfigPatch, renderAuthTemplates } from "./auth";
 
 describe("Supabase auth email templates", () => {
   const templates = renderAuthTemplates();
@@ -45,6 +45,16 @@ describe("Supabase auth email templates", () => {
     expect(code.html).not.toContain(".ConfirmationURL");
   });
 
+  it("keeps the show OTP template as a code on the shared layout", () => {
+    const otp = byId.otp;
+    expect(otp.subject).toBe("Your Taylslate sign-in code");
+    expect(otp.html).toContain("{{ .Token }}");
+    expect(otp.html).toContain("#f2ebe1");
+    expect(otp.html).not.toContain(".ConfirmationURL");
+    expect(otp.html).not.toContain("token_hash=");
+    expect(() => assertShowOtpTemplate()).not.toThrow();
+  });
+
   it("patches only subject and content fields", () => {
     const patch = authTemplateConfigPatch();
     const keys = Object.keys(patch);
@@ -52,6 +62,8 @@ describe("Supabase auth email templates", () => {
     expect(keys.some((key) => key.includes("enabled"))).toBe(false);
     expect(keys.some((key) => key.startsWith("smtp_"))).toBe(false);
     expect(patch.mailer_subjects_confirmation).toBe("Confirm your Taylslate account");
+    expect(patch).not.toHaveProperty("mailer_subjects_otp");
+    expect(patch.mailer_templates_magic_link_content).toContain("type=magiclink");
     expect(patch.mailer_subjects_recovery).toBe("Reset your Taylslate password");
     for (const html of Object.values(patch).filter((value) => value.includes("<html"))) {
       expect(html.length).toBeLessThan(5000);

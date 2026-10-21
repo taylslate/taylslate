@@ -19,6 +19,13 @@ import type {
 import { adjustedCpm, spotPrice } from "@/lib/utils/pricing";
 import { addDaysDateOnly } from "@/lib/format/date-only";
 import { resolveDealFlight } from "@/lib/deals/campaign-flight";
+import { fetchSurfaceAttachment } from "@/lib/data/show-surfaces";
+import {
+  buildSurfaceAddonLines,
+  sanitizeAddonSurfaceIds,
+  surfacesEligibleForDeal,
+  type SellableSurface,
+} from "@/lib/shows/surfaces";
 
 const SPACING_DAYS: Record<PlanSpacing, number> = {
   weekly: 7,
@@ -129,14 +136,52 @@ export async function POST(request: NextRequest) {
   const created: { deal_id: string; io_id: string; show_name: string }[] = [];
   const errors: string[] = [];
 
-  for (const { scoredShow, lineItem } of items) {
-    try {
-      const show = await persistScoredShow(scoredShow);
-      if (!show) {
-        errors.push(`Could not persist show "${scoredShow.name}"`);
-        continue;
-      }
+  // Resolve every show and its add-ons before creating a deal. A surface that
+  // is missing, unpublished, or on another show aborts with nothing written.
+  const ready: {
+    scoredShow: ScoredShowRecord;
+    lineItem: MediaPlanLineItem;
+    show: Show;
+    surfaces: SellableSurface[];
+  }[] = [];
 
+  for (const { scoredShow, lineItem } of items) {
+    let show: Show | null = null;
+    try {
+      show = await persistScoredShow(scoredShow);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      errors.push(`"${scoredShow.name}": ${msg}`);
+      console.error(`[plan/generate-ios] Failed on "${scoredShow.name}":`, msg);
+      continue;
+    }
+    if (!show) {
+      errors.push(`Could not persist show "${scoredShow.name}"`);
+      continue;
+    }
+
+    const selected = sanitizeAddonSurfaceIds(lineItem.addon_surface_ids);
+    let surfaces: SellableSurface[] = [];
+    if (selected.length > 0) {
+      const fetched = await fetchSurfaceAttachment(show.id, selected);
+      const verdict = fetched.ok
+        ? surfacesEligibleForDeal({
+            dealShowId: show.id,
+            shows: fetched.shows,
+            surfaces: fetched.surfaces,
+            requestedIds: selected,
+          })
+        : { ok: false as const, error: "invalid_surface" as const };
+      if (!verdict.ok) {
+        return NextResponse.json({ error: "invalid_surface" }, { status: 400 });
+      }
+      surfaces = verdict.surfaces;
+    }
+    ready.push({ scoredShow, lineItem, show, surfaces });
+  }
+
+  for (const { scoredShow, lineItem, show, surfaces } of ready) {
+    try {
       const placement: Placement = lineItem.placement;
       const numEpisodes = Math.max(1, Math.round(lineItem.num_episodes));
       const baseCpm = scoredShow.estimatedCpm;
@@ -144,7 +189,6 @@ export async function POST(request: NextRequest) {
       const netPerEpisode = Math.round(
         spotPrice(scoredShow.audienceSize, baseCpm, placement)
       );
-      const totalNet = netPerEpisode * numEpisodes;
 
       const flight = resolveDealFlight({
         brief: campaign.brief,
@@ -152,43 +196,9 @@ export async function POST(request: NextRequest) {
         spacingDays,
       });
 
-      const deal = await createDeal({
-        campaign_id: campaign.id,
-        show_id: show.id,
-        brand_id: profile.id,
-        status: "planning",
-        num_episodes: numEpisodes,
-        placement,
-        ad_format: "host_read",
-        price_type: "cpm",
-        cpm_rate: Math.round(adjCpm * 100) / 100,
-        gross_cpm: Math.round(adjCpm * 100) / 100,
-        guaranteed_downloads: scoredShow.audienceSize,
-        net_per_episode: netPerEpisode,
-        gross_per_episode: netPerEpisode,
-        total_net: totalNet,
-        total_gross: totalNet,
-        is_scripted: false,
-        is_personal_experience: true,
-        reader_type: "host_read",
-        content_type: "evergreen",
-        pixel_required: false,
-        competitor_exclusion: [],
-        exclusivity_days: 90,
-        rofr_days: 30,
-        flight_start: flight.flight_start,
-        flight_end: flight.flight_end,
-      });
-
-      if (!deal) {
-        errors.push(`Deal creation failed for "${scoredShow.name}"`);
-        continue;
-      }
-
-      // Build IO line items — one per episode, spaced by plan spacing.
-      const lineItems = [];
+      const episodeLines = [];
       for (let i = 0; i < numEpisodes; i++) {
-        lineItems.push({
+        episodeLines.push({
           format: "podcast" as const,
           post_date: addDaysDateOnly(flight.flight_start, i * spacingDays),
           guaranteed_downloads: scoredShow.audienceSize,
@@ -208,6 +218,58 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      const addons = buildSurfaceAddonLines({
+        surfaces,
+        selectedIds: lineItem.addon_surface_ids,
+        showName: show.name,
+        placement,
+        postDate: episodeLines[0]?.post_date ?? flight.flight_start,
+        format: "podcast",
+      });
+      for (const name of addons.unpriced) {
+        errors.push(
+          `"${scoredShow.name}": ${name} needs a price before it can go on the IO`
+        );
+      }
+      const lineItems = [...episodeLines, ...addons.lines];
+      const totalNet =
+        Math.round(lineItems.reduce((sum, li) => sum + li.net_due, 0) * 100) / 100;
+      const totalGross =
+        Math.round(lineItems.reduce((sum, li) => sum + li.gross_rate, 0) * 100) / 100;
+
+      const deal = await createDeal({
+        campaign_id: campaign.id,
+        show_id: show.id,
+        brand_id: profile.id,
+        status: "planning",
+        num_episodes: numEpisodes,
+        placement,
+        ad_format: "host_read",
+        price_type: "cpm",
+        cpm_rate: Math.round(adjCpm * 100) / 100,
+        gross_cpm: Math.round(adjCpm * 100) / 100,
+        guaranteed_downloads: scoredShow.audienceSize,
+        net_per_episode: netPerEpisode,
+        gross_per_episode: netPerEpisode,
+        total_net: totalNet,
+        total_gross: totalGross,
+        is_scripted: false,
+        is_personal_experience: true,
+        reader_type: "host_read",
+        content_type: "evergreen",
+        pixel_required: false,
+        competitor_exclusion: [],
+        exclusivity_days: 90,
+        rofr_days: 30,
+        flight_start: flight.flight_start,
+        flight_end: flight.flight_end,
+      });
+
+      if (!deal) {
+        errors.push(`Deal creation failed for "${scoredShow.name}"`);
+        continue;
+      }
+
       const ioNumber = await getNextIONumber();
       const io = await createIO(
         {
@@ -220,8 +282,8 @@ export async function POST(request: NextRequest) {
           publisher_contact_name: show.contact?.name ?? "",
           publisher_contact_email: show.contact?.email ?? "",
           total_downloads: scoredShow.audienceSize * numEpisodes,
-          total_gross: Math.round(totalNet * 100) / 100,
-          total_net: Math.round(totalNet * 100) / 100,
+          total_gross: totalGross,
+          total_net: totalNet,
           payment_terms: "Net 30 EOM",
           competitor_exclusion: [],
           exclusivity_days: 90,

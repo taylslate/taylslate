@@ -44,6 +44,8 @@
 //     meter's hard sum — the number is a placeholder, not a defensible quote.
 
 import {
+  createContext,
+  useContext,
   useState,
   useMemo,
   useCallback,
@@ -51,6 +53,8 @@ import {
   useEffect,
   useTransition,
 } from "react";
+import SurfaceAddons from "@/components/shows/SurfaceAddons";
+import type { SellableSurface } from "@/lib/shows/surfaces";
 import { useRouter } from "next/navigation";
 import type {
   ConvictionBand,
@@ -206,6 +210,14 @@ interface ConvictionDiscoveryViewProps {
   /** Phase 2D Layer 1: founder annotations keyed by show id (admin-only; empty
    *  for brands). Threaded to the cards via FounderAnnotationsProvider. */
   annotationsByShow?: Record<string, FounderAnnotationRow[]>;
+  /** Published creator add-ons keyed by show id. Display only — not a score. */
+  surfacesByShowId?: Record<string, SellableSurface[]>;
+}
+
+const SellableSurfacesContext = createContext<Record<string, SellableSurface[]>>({});
+
+function useSellableSurfaces(showId: string): SellableSurface[] {
+  return useContext(SellableSurfacesContext)[showId] ?? [];
 }
 
 type RingFilter = "all" | string;
@@ -225,6 +237,7 @@ export default function ConvictionDiscoveryView({
   testPlacement,
   isAdmin = false,
   annotationsByShow = {},
+  surfacesByShowId = {},
 }: ConvictionDiscoveryViewProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -365,6 +378,7 @@ export default function ConvictionDiscoveryView({
   // The Provider threads isAdmin + annotations to the deeply-nested cards (Phase
   // 2D Layer 1) without prop-drilling through tiered/section/card layers.
   return (
+    <SellableSurfacesContext.Provider value={surfacesByShowId}>
     <FounderAnnotationsProvider
       isAdmin={isAdmin}
       annotationsByShow={annotationsByShow}
@@ -383,6 +397,7 @@ export default function ConvictionDiscoveryView({
         router={router}
       />
     </FounderAnnotationsProvider>
+    </SellableSurfacesContext.Provider>
   );
 }
 
@@ -695,18 +710,30 @@ function TieredScoredUniverse({
     [callWatchlist, persistSelection]
   );
 
-  // ---- Budget meter (selected derived/rate_card 3-spot vs test budget) ----
-  const selectedCostCents = useMemo(() => {
+  // ---- Budget meter (selected 3-spot vs test budget) ----
+  // flat_fee is a quote-to-confirm point estimate. The media plan prices that
+  // same number (back-computed CPM that reproduces per-spot × spots), so the
+  // meter sums it too. Leaving it out showed a spend the plan then exceeded.
+  // The over-budget line is a warning. It does not uncheck the show.
+  const { selectedCostCents, includesQuoteFee } = useMemo(() => {
     let sum = 0;
+    let quote = false;
     for (const s of allShows) {
       if (!selectedIds.has(s.showId)) continue;
-      // flat_fee (untrusted) is shown but never summed; null basis can't price.
-      if (s.costBasis !== "derived" && s.costBasis !== "rate_card") continue;
+      // null basis can't price (needs-quote). derived, rate_card, and flat_fee can.
+      if (
+        s.costBasis !== "derived" &&
+        s.costBasis !== "rate_card" &&
+        s.costBasis !== "flat_fee"
+      ) {
+        continue;
+      }
       if (s.threeSpotCents != null && Number.isFinite(s.threeSpotCents)) {
         sum += s.threeSpotCents;
+        if (s.costBasis === "flat_fee") quote = true;
       }
     }
-    return sum;
+    return { selectedCostCents: sum, includesQuoteFee: quote };
   }, [allShows, selectedIds]);
   const overBudget =
     tiered.testBudgetCents > 0 && selectedCostCents > tiered.testBudgetCents;
@@ -921,6 +948,7 @@ function TieredScoredUniverse({
           budgetCents={tiered.testBudgetCents}
           selectedCount={selectedIds.size}
           overBudget={overBudget}
+          includesQuoteFee={includesQuoteFee}
         />
         <div className="ml-auto flex items-center gap-3">
           {ctaError && (
@@ -1219,6 +1247,7 @@ function TestShowCard({
   onPlacementOverride: (showId: string, placement: Placement) => void;
   recomputing: boolean;
 }) {
+  const surfaces = useSellableSurfaces(entry.showId);
   const { show } = entry;
   const band = entry.band ?? "low";
   const meta = BAND_META[band];
@@ -1300,6 +1329,8 @@ function TestShowCard({
 
       {safety && <BrandSafetyNotice flag={safety} />}
 
+      <SurfaceAddons surfaces={surfaces} />
+
       <ShowAnnotations showId={entry.showId} />
     </label>
   );
@@ -1328,6 +1359,7 @@ function ScaleShowCard({
   onPlacementOverride: (showId: string, placement: Placement) => void;
   recomputing: boolean;
 }) {
+  const surfaces = useSellableSurfaces(entry.showId);
   const { show } = entry;
   const band = entry.band ?? "low";
   const meta = BAND_META[band];
@@ -1415,6 +1447,8 @@ function ScaleShowCard({
         recomputing={recomputing}
       />
 
+      <SurfaceAddons surfaces={surfaces} />
+
       <ShowAnnotations showId={entry.showId} />
     </label>
   );
@@ -1427,6 +1461,7 @@ function BenchShowCard({
   entry: TieredShow;
   ringLabel: string | null;
 }) {
+  const surfaces = useSellableSurfaces(entry.showId);
   const { show } = entry;
   const band = entry.band ?? "speculative";
   const meta = BAND_META[band];
@@ -1469,6 +1504,8 @@ function BenchShowCard({
           )}
         </div>
       </div>
+
+      <SurfaceAddons surfaces={surfaces} />
 
       <ShowAnnotations showId={entry.showId} />
     </div>
@@ -1768,11 +1805,13 @@ function BudgetMeter({
   budgetCents,
   selectedCount,
   overBudget,
+  includesQuoteFee,
 }: {
   spentCents: number;
   budgetCents: number;
   selectedCount: number;
   overBudget: boolean;
+  includesQuoteFee: boolean;
 }) {
   const pct =
     budgetCents > 0 ? Math.min(100, (spentCents / budgetCents) * 100) : 0;
@@ -1786,6 +1825,14 @@ function BudgetMeter({
           </span>{" "}
           of {formatMoneyCents(budgetCents)}
         </span>
+        {includesQuoteFee && (
+          <span
+            data-testid="budget-quote-note"
+            className={`font-medium ${mutedText}`}
+          >
+            includes a quote-to-confirm fee
+          </span>
+        )}
         {overBudget && (
           <span
             data-testid="budget-warning"

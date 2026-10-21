@@ -87,7 +87,7 @@ afterEach(() => {
 
 describe("Sidebar chrome", () => {
   it("uses the slate mark, ink primary CTA, and paper tokens for a brand", () => {
-    const { container } = render(<Sidebar role="brand" />);
+    const { container } = render(<Sidebar role="brand" displayName="Chris Taylor" />);
 
     expect(container.querySelector('img[src="/mark.png"]')).not.toBeNull();
     expect(screen.getByRole("link", { name: "taylslate" })).toHaveAttribute(
@@ -109,6 +109,7 @@ describe("Sidebar chrome", () => {
     expect(screen.getByRole("link", { name: "Upgrade" })).toHaveClass(
       "text-[var(--ts-accent)]",
     );
+    expect(screen.getByText("CT")).toBeInTheDocument();
 
     expect(container.innerHTML).not.toMatch(BANNED);
     expect(container.querySelector("[class*='from-[var(--brand-blue)]']")).toBeNull();
@@ -143,9 +144,12 @@ describe("Sidebar chrome", () => {
     expect(
       screen.getByRole("link", { name: "Managed brands" }),
     ).toHaveAttribute("href", "/admin/brands");
-    expect(
-      screen.getByRole("button", { name: "Log in as Test Brand 1" }),
-    ).toBeInTheDocument();
+    const internal = screen.getByText("Internal");
+    const testLogin = screen.getByRole("button", { name: "Log in as Test Brand 1" });
+    expect(internal.parentElement).toContainElement(testLogin);
+    expect(internal.parentElement).not.toContainElement(
+      screen.getByRole("button", { name: "View as show" }),
+    );
     expect(screen.getByRole("button", { name: "View as show" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Log in as Test Brand 1" }));

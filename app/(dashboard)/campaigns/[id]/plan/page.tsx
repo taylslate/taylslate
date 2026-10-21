@@ -1,4 +1,5 @@
 import { getCampaignById } from "@/lib/data/queries";
+import { listPublishedSurfacesForShows } from "@/lib/data/show-surfaces";
 import { notFound, redirect } from "next/navigation";
 import type { ScoredShowRecord } from "@/lib/data/types";
 import MediaPlanBuilder from "./media-plan-builder";
@@ -22,6 +23,10 @@ export default async function PlanBuilderPage({ params }: PlanPageProps) {
     redirect(`/campaigns/${id}`);
   }
 
+  const surfacesByShowId = await listPublishedSurfacesForShows(
+    selectedShows.map((show) => show.podcastId)
+  );
+
   return (
     <MediaPlanBuilder
       campaignId={campaign.id}
@@ -29,6 +34,7 @@ export default async function PlanBuilderPage({ params }: PlanPageProps) {
       budgetTotal={campaign.budget_total}
       selectedShows={selectedShows}
       initialPlan={campaign.media_plan ?? null}
+      surfacesByShowId={surfacesByShowId}
     />
   );
 }

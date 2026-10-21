@@ -20,6 +20,7 @@ import { renderInvoiceNotice } from "@/lib/email/templates/invoice-notice";
 import { renderIoAttachmentEmail } from "@/lib/email/templates/io-attachment";
 import { renderIoReadyForSignature } from "@/lib/email/templates/io-ready-for-signature";
 import { renderLoginMagicEmail } from "@/lib/email/templates/login-magic";
+import { renderLoginOtpEmail } from "@/lib/email/templates/login-otp";
 import { renderMagicLinkEmail } from "@/lib/email/templates/magic-link";
 import { renderBrandNotification } from "@/lib/email/templates/outreach-response-brand";
 import { renderOutreachEmail } from "@/lib/email/templates/outreach";
@@ -79,6 +80,7 @@ const insertionOrder = {
 
 function appPreviews(): EmailPreview[] {
   const login = renderLoginMagicEmail({ login_url: LOGIN_URL });
+  const loginCode = renderLoginOtpEmail({ code: "482913" });
   const setup = renderMagicLinkEmail({
     to_email: "host@dailybriefing.example",
     brand_name: "Aurora Sleep",
@@ -174,6 +176,7 @@ function appPreviews(): EmailPreview[] {
 
   return [
     { id: "login-magic", title: "Login magic link", from: EMAIL_FROM_AUTH, ...login },
+    { id: "login-otp", title: "Show sign-in code", from: EMAIL_FROM_AUTH, ...loginCode },
     { id: "show-setup-magic", title: "Show setup magic link", from: EMAIL_FROM_AUTH, ...setup },
     {
       id: "outreach-pitch",

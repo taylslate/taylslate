@@ -27,9 +27,9 @@ const enrichColors: Record<EnrichStatus, { dot: string; label: string }> = {
   never: { dot: "var(--ts-ink-muted-on-paper)", label: "Not enriched" },
 };
 
-export default function ShowsClient() {
-  const [showList, setShowList] = useState<AgentShow[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function ShowsClient({ initialShows }: { initialShows?: AgentShow[] }) {
+  const [showList, setShowList] = useState<AgentShow[]>(initialShows ?? []);
+  const [loading, setLoading] = useState(initialShows === undefined);
   const [search, setSearch] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -41,6 +41,7 @@ export default function ShowsClient() {
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => {
+    if (initialShows !== undefined) return;
     async function fetchShows() {
       try {
         const res = await fetch("/api/shows");
@@ -55,7 +56,7 @@ export default function ShowsClient() {
       }
     }
     fetchShows();
-  }, []);
+  }, [initialShows]);
 
   // Form state
   const [formName, setFormName] = useState("");
@@ -363,7 +364,7 @@ export default function ShowsClient() {
   );
 
   return (
-    <div className="max-w-5xl bg-[var(--ts-paper)] p-8 text-[var(--ts-ink-on-paper)]">
+    <div className="w-full bg-[var(--ts-paper)] p-4 text-[var(--ts-ink-on-paper)] sm:p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-[var(--ts-ink-on-paper)] tracking-tight">Shows</h1>
@@ -404,6 +405,7 @@ export default function ShowsClient() {
             </svg>
             Import Shows
           </button>
+          {showList.length > 0 && (
           <button
             onClick={handleAdd}
             className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90"
@@ -413,6 +415,7 @@ export default function ShowsClient() {
             </svg>
             Add Show
           </button>
+          )}
         </div>
       </div>
 
@@ -576,32 +579,23 @@ export default function ShowsClient() {
           <p className="text-sm text-[var(--ts-ink-muted-on-paper)]">No shows match &ldquo;{search}&rdquo;</p>
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center rounded-[var(--ts-radius)] border border-dashed border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] py-24">
-          <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-on-paper)]">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" x2="12" y1="19" y2="22" />
-            </svg>
+        <div className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]">
+          <div aria-hidden="true" className="pointer-events-none divide-y divide-[var(--ts-hairline-on-paper)] opacity-40">
+            <div className="flex items-center justify-between px-5 py-4">
+              <div>
+                <div className="text-sm font-medium text-[var(--ts-ink-on-paper)]">Morning interview</div>
+                <div className="text-xs text-[var(--ts-ink-muted-on-paper)]">Podcast · 48,000 audience</div>
+              </div>
+              <span className="border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ts-ink-muted-on-paper)]">Not enriched</span>
+            </div>
           </div>
-          <h3 className="text-lg font-semibold text-[var(--ts-ink-on-paper)] mb-2">No shows yet</h3>
-          <p className="text-sm text-[var(--ts-ink-muted-on-paper)] mb-6 max-w-sm text-center">
-            Import your roster to get started, or add shows manually.
-          </p>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)] text-sm font-medium transition-colors">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" x2="12" y1="3" y2="15" />
-              </svg>
-              Import Shows
-            </button>
-            <button onClick={handleAdd} className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              Add Your First Show
+          <div className="border-t border-[var(--ts-hairline-on-paper)] px-6 py-10 text-center">
+            <h3 className="mb-2 text-lg font-semibold text-[var(--ts-ink-on-paper)]">No shows yet</h3>
+            <p className="mx-auto mb-6 max-w-sm text-sm text-[var(--ts-ink-muted-on-paper)]">
+              Add the show brands should be able to book.
+            </p>
+            <button onClick={handleAdd} className="inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90">
+              Add Show
             </button>
           </div>
         </div>

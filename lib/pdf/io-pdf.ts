@@ -9,6 +9,7 @@ import {
   storedTermRows,
   visibleDownloadTotal,
 } from "@/lib/pdf/io-terms";
+import { ioLineSurfaceCaption } from "@/lib/shows/surfaces";
 
 // VeritoneOne-style IO PDF generator
 // Professional document layout: header, parties, line items table, terms, signature blocks
@@ -248,12 +249,13 @@ export function generateIOPdf(io: InsertionOrder): Buffer {
   doc.setTextColor(...GRAY);
   for (const li of io.line_items) {
     checkPage(12);
+    const addon = ioLineSurfaceCaption(li);
     const details = [
-      li.spot_format?.trim() || (li.format === "youtube" ? "YouTube" : "Podcast"),
-      li.spot_format?.trim() ? "" : capitalize(li.reader_type),
-      li.is_scripted ? "Scripted" : "Organic",
-      li.is_personal_experience ? "Personal Exp." : "Standard",
-      capitalize(li.content_type),
+      addon ?? (li.spot_format?.trim() || (li.format === "youtube" ? "YouTube" : "Podcast")),
+      addon || li.spot_format?.trim() ? "" : capitalize(li.reader_type),
+      addon ? "" : li.is_scripted ? "Scripted" : "Organic",
+      addon ? "" : li.is_personal_experience ? "Personal Exp." : "Standard",
+      addon ? "" : capitalize(li.content_type),
       li.pixel_required ? "Pixel Required" : "",
       isFlatRate(li.price_type) ? flatPerSpotLabel(li.gross_rate) : "",
     ]

@@ -438,6 +438,41 @@ describe("negotiated IO terms on the DocuSign PDF", () => {
     expect(out.totalDownloads).toBe(0);
   });
 
+  it("prints a creator surface add-on on the PDF DocuSign attaches", () => {
+    const surfaceId = "11111111-1111-4111-8111-111111111111";
+    const out = generateIoPdfFromDeal({
+      deal: baseDeal,
+      brandProfile: baseBrand,
+      showProfile: baseShow,
+      outreach: baseOutreach,
+      brandSigningEmail: "x",
+      showSigningEmail: "y",
+      saved: {
+        lineItems: [
+          savedLine(),
+          savedLine({
+            show_surface_id: surfaceId,
+            spot_format: "Newsletter mention · creator posts · 7-day lead",
+            price_type: "flat_rate",
+            gross_rate: 500,
+            net_due: 500,
+            gross_cpm: 0,
+            guaranteed_downloads: 8000,
+            post_date: "2026-05-01",
+          }),
+        ],
+      },
+    });
+    const text = out.pdfBuffer.toString("latin1");
+    expect(text).toContain("Add-on: Newsletter mention");
+    expect(text).toContain("Flat, $500.00 per spot");
+    expect(out.lineItems[1].show_surface_id).toBe(surfaceId);
+    const attached = Buffer.from(out.pdfBuffer.toString("base64"), "base64").toString("latin1");
+    expect(attached).toContain("Add-on: Newsletter mention");
+    expect(attached).toContain(SIGNATURE_ANCHORS.advertiser);
+    expect(attached).toContain(SIGNATURE_ANCHORS.publisher);
+  });
+
   it("uses each line's placement and format", () => {
     const text = dealPdf({
       lineItems: [

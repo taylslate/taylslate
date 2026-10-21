@@ -32,6 +32,7 @@ import {
   visibleDownloadTotal,
   type IoPdfSaved,
 } from "@/lib/pdf/io-terms";
+import { ioLineSurfaceCaption } from "@/lib/shows/surfaces";
 
 // ---- Visual constants (mirror lib/pdf/io-pdf.ts) ----
 
@@ -446,9 +447,10 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   } else {
     for (const li of lineItems) {
       checkPage(12);
+      const addon = ioLineSurfaceCaption(li);
       const parts = [
-        li.spot_format?.trim() || formatLabel,
-        placementLabel(li.placement),
+        addon ?? (li.spot_format?.trim() || formatLabel),
+        addon ? null : placementLabel(li.placement),
         isFlatRate(li.price_type) ? flatPerSpotLabel(li.gross_rate) : null,
       ].filter((part): part is string => !!part);
       doc.text(parts.join("  |  "), MARGIN + 4, y);

@@ -26,6 +26,7 @@ describe("proxy public-route allowlist (signed out)", () => {
   for (const path of [
     "/signup",
     "/login",
+    "/login/show",
     "/callback",
     "/forgot-password",
     "/reset-password",

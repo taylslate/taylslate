@@ -270,7 +270,7 @@ describe("ConvictionDiscoveryView — tiered dual output", () => {
     expect(screen.getAllByRole("checkbox")).toHaveLength(2);
   });
 
-  it("sums selected derived shows in the budget meter and warns when over, excluding flat_fee", () => {
+  it("sums flat_fee with derived shows so the meter matches the media plan", () => {
     renderTiered(
       {
         test: [
@@ -281,18 +281,22 @@ describe("ConvictionDiscoveryView — tiered dual output", () => {
             costBasis: "flat_fee",
             cpmUsedCents: null,
             perSpotCents: 500_000,
-            threeSpotCents: 1_500_000,
+            threeSpotCents: 1_500_000, // $15,000 — the plan prices this point estimate
           }),
         ],
-        testBudgetCents: 200_000, // $2,000 — derived alone ($2,640) blows it
+        testBudgetCents: 200_000, // $2,000
       },
       { selectedShowIds: ["t1", "t2"] }
     );
 
     const meter = screen.getByTestId("budget-meter");
-    // flat_fee is excluded, so the spend is the derived show only.
-    expect(within(meter).getByText("$2,640")).toBeInTheDocument();
+    // $2,640 + $15,000. The warning guides; both shows stay selected.
+    expect(within(meter).getByText("$17,640")).toBeInTheDocument();
+    expect(screen.getByTestId("budget-quote-note")).toBeInTheDocument();
     expect(screen.getByTestId("budget-warning")).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: /YouTube Show/i })
+    ).toBeChecked();
   });
 
   it("adds a scale show to the test cart via its checkbox and shows a budget-impact warning", () => {

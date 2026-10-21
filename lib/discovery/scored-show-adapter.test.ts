@@ -120,6 +120,25 @@ describe("tieredShowToScoredShowRecord", () => {
     expect(tieredShowToScoredShowRecord(tiered({ placement: "midroll" }))!.placement).toBe("mid-roll");
   });
 
+  it("prices a flat_fee show at the same 3-spot total the budget meter sums", () => {
+    // The meter sums threeSpotCents. The plan prices audience × base CPM ×
+    // placement multiplier × episodes. For a flat fee those must be the same
+    // dollars, or the brand sees one spend and then a different plan.
+    const threeSpotCents = 1_500_000;
+    const rec = tieredShowToScoredShowRecord(
+      tiered({
+        cpmUsedCents: null,
+        perSpotCents: 500_000,
+        threeSpotCents,
+        costBasis: "flat_fee",
+        placement: "midroll",
+        show: show({ audience_size: 40_000 }),
+      })
+    )!;
+    const planLine = spotPrice(rec.audienceSize, rec.estimatedCpm, rec.placement!) * 3;
+    expect(planLine).toBeCloseTo(threeSpotCents / 100, 5);
+  });
+
   it("hands the builder a BASE CPM so it reproduces the discovery per-spot price (no double placement adjustment)", () => {
     // Discovery priced post-roll at $14 CPM on 50k downloads → $700/spot.
     const audience = 50_000;

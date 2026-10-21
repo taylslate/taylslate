@@ -175,6 +175,7 @@ function lineDraft(item: IOLineItem): IoLineItemDraft {
     verified: item.verified === true,
     make_good_triggered: item.make_good_triggered === true,
     spot_format: item.spot_format?.trim() || null,
+    ...(item.show_surface_id ? { show_surface_id: item.show_surface_id } : {}),
   };
 }
 

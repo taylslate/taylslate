@@ -16,9 +16,11 @@ import { notFound } from "next/navigation";
 import CampaignDetail from "./campaign-detail";
 import DiscoveryList from "./discovery-list";
 import ConvictionDiscoveryView from "./conviction-discovery-view";
+import { listPublishedSurfacesForShows } from "@/lib/data/show-surfaces";
 
 export default async function CampaignDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const userPromise = getAuthenticatedUser();
   const campaign = await getCampaignById(id);
   if (!campaign) notFound();
 
@@ -39,23 +41,28 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     let universe: ConvictionUniverse = { rings: [], groups: [], hasScores: false };
     let tiered: TieredUniverse | undefined;
     let discoveryRan = false;
+    let user = null as Awaited<typeof userPromise>;
     if (pattern) {
       // Phase 2C Layer 3: load the per-ring 2B universe (current rendering) AND
       // the test/scale/bench partitions (the Layer 4 seam) in one pass.
-      const [scored, tieredScored, events] = await Promise.all([
+      // The session lookup overlaps those reads; it was previously a later await.
+      const [scored, tieredScored, events, authed] = await Promise.all([
         getConvictionUniverse(pattern.id),
         getTieredUniverse(pattern.id),
         listEventsForEntity("campaign", id),
+        userPromise,
       ]);
       universe = scored;
       tiered = tieredScored;
       discoveryRan = events.some((e) => e.event_type === "conviction.scored");
+      user = authed;
+    } else {
+      user = await userPromise;
     }
 
     // Phase 2D Layer 1: founder annotations are admin-only — gate the fetch on
     // the INTERNAL_ADMIN_EMAILS allowlist so a brand never loads them. Batched
     // across every rendered (test/scale/bench) show id in one round trip.
-    const user = await getAuthenticatedUser();
     const isAdmin = isInternalAdmin(user?.email);
     let annotationsByShow: Record<string, FounderAnnotationRow[]> = {};
     if (isAdmin && tiered) {
@@ -68,6 +75,11 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         annotationsByShow = await getFounderAnnotationsForShows(showIds);
       }
     }
+
+    const surfaceIds = tiered
+      ? [...tiered.test, ...tiered.scale, ...tiered.bench].map((show) => show.showId)
+      : [];
+    const surfacesByShowId = await listPublishedSurfacesForShows(surfaceIds);
 
     return (
       <ConvictionDiscoveryView
@@ -82,9 +94,12 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         testPlacement={campaign.test_placement ?? null}
         isAdmin={isAdmin}
         annotationsByShow={annotationsByShow}
+        surfacesByShowId={surfacesByShowId}
       />
     );
   }
+
+  await userPromise;
 
   // Wave 6 (legacy): campaigns scored by the flat fit-score engine carry
   // scored_shows — render those via the original discovery list.
@@ -93,7 +108,10 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     Array.isArray(campaign.scored_shows) &&
     campaign.scored_shows.length > 0;
   if (hasScoredShows) {
-    return <DiscoveryList campaign={campaign} />;
+    const surfacesByShowId = await listPublishedSurfacesForShows(
+      (campaign.scored_shows ?? []).map((show) => show.podcastId)
+    );
+    return <DiscoveryList campaign={campaign} surfacesByShowId={surfacesByShowId} />;
   }
 
   // Legacy: campaigns generated via Claude still use the old detail view
