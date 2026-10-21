@@ -120,7 +120,10 @@ describe("POST /api/auth/login/otp/verify", () => {
     const res = await POST(
       req(
         { email: "Host@Example.com", code: "482913", next: "/campaigns/abc" },
-        { "x-forwarded-for": "203.0.113.5, 10.0.0.1" },
+        {
+          "x-vercel-forwarded-for": "198.51.100.20",
+          "x-forwarded-for": "203.0.113.5, 10.0.0.1",
+        },
       ),
     );
     expect(res.status).toBe(200);
@@ -132,7 +135,7 @@ describe("POST /api/auth/login/otp/verify", () => {
     });
     expect(rpc).toHaveBeenCalledWith(
       "login_otp_consume",
-      expect.objectContaining({ p_action: "verify", p_ip: "203.0.113.5" }),
+      expect.objectContaining({ p_action: "verify", p_ip: "198.51.100.20" }),
     );
     expect(signOut).not.toHaveBeenCalled();
   });
@@ -171,6 +174,11 @@ describe("POST /api/auth/login/otp/verify", () => {
     expect(locked.status).toBe(429);
     expect(await locked.json()).toMatchObject({ error: "locked" });
     expect(verifyOtp).toHaveBeenCalledTimes(5);
+    const actions = rpc.mock.calls.map(
+      (call) => (call[1] as { p_action: string }).p_action,
+    );
+    expect(actions.filter((action) => action === "verify")).toHaveLength(6);
+    expect(actions).not.toContain("wrong");
   });
 
   it("rejects a non-digit code without calling verifyOtp", async () => {

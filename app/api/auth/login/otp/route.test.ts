@@ -107,7 +107,13 @@ beforeEach(() => {
 describe("POST /api/auth/login/otp", () => {
   it("emails a 6-digit code for an existing show", async () => {
     const res = await POST(
-      req({ email: "Host@Example.com" }, { "x-forwarded-for": "203.0.113.5, 10.0.0.1" }),
+      req(
+        { email: "Host@Example.com" },
+        {
+          "x-vercel-forwarded-for": "198.51.100.20",
+          "x-forwarded-for": "203.0.113.5, 10.0.0.1",
+        },
+      ),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -118,7 +124,7 @@ describe("POST /api/auth/login/otp", () => {
       expect.objectContaining({
         p_action: "send",
         p_email: "host@example.com",
-        p_ip: "203.0.113.5",
+        p_ip: "198.51.100.20",
         p_clear_pending: true,
       }),
     );

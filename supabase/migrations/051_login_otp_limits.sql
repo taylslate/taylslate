@@ -6,8 +6,9 @@
 -- lib/auth/login-otp-limit.ts (keep the two in sync):
 --   send: 1 per 60 seconds and 5 per hour per email
 --   send and verify: 20 per hour per IP
---   verify: lock the email after 5 wrong or expired codes,
---           until a send is accepted
+--   verify: under the email row lock, refuse when wrong_codes >= 5,
+--           otherwise increment wrong_codes before the caller asks
+--           Supabase. clear resets the counter. An accepted send does too.
 --
 -- A show-setup code (no profile yet, outreach contact matches)
 -- stores only a hash on the email bucket. The account is created
@@ -122,7 +123,7 @@ declare
   v_error text := null;
   v_retry integer := 0;
 begin
-  if p_action not in ('send', 'verify', 'wrong', 'clear') then
+  if p_action not in ('send', 'verify', 'clear') then
     raise exception 'login_otp_consume: unknown action';
   end if;
   if p_email is null or length(p_email) = 0 or p_ip is null or length(p_ip) = 0 then
@@ -195,15 +196,18 @@ begin
     v_ip.hour_hits := v_ip.hour_hits + 1;
   elsif p_action = 'verify' then
     v_ip.hour_hits := v_ip.hour_hits + 1;
-    if v_email.locked then
+    -- Same row lock as the read. Parallel guesses cannot all pass a
+    -- check that a later request increments.
+    if v_email.wrong_codes >= 5 then
       v_ok := false;
       v_error := 'locked';
       v_retry := 0;
-    end if;
-  elsif p_action = 'wrong' then
-    v_email.wrong_codes := v_email.wrong_codes + 1;
-    if v_email.wrong_codes >= 5 then
       v_email.locked := true;
+    else
+      v_email.wrong_codes := v_email.wrong_codes + 1;
+      if v_email.wrong_codes >= 5 then
+        v_email.locked := true;
+      end if;
     end if;
   elsif p_action = 'clear' then
     v_email.wrong_codes := 0;

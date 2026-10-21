@@ -1,3 +1,4 @@
+import { createHash, createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
@@ -74,23 +75,40 @@ describe("applyLoginOtpRpc", () => {
     expect(store.get("ip:9.9.9.9")?.hourHits).toBe(LOGIN_OTP_IP_HOUR_MAX);
   });
 
-  it("locks an email after 5 wrong codes until a new send is accepted", () => {
+  it("counts five verifies with no wrong calls, then locks until a send", () => {
     const { store, call, advance } = fresh();
     expect(call({ p_action: "send", p_email: "a@b.co", p_ip: "1.1.1.1" }).ok).toBe(true);
+    const actions: string[] = [];
     for (let i = 0; i < LOGIN_OTP_WRONG_MAX; i++) {
-      expect(call({ p_action: "wrong", p_email: "a@b.co", p_ip: "1.1.1.1" }).ok).toBe(true);
+      const attempt = call({ p_action: "verify", p_email: "a@b.co", p_ip: "1.1.1.1" });
+      actions.push("verify");
+      expect(attempt.ok).toBe(true);
     }
+    expect(actions).not.toContain("wrong");
+    expect(store.get(loginOtpEmailBucket("a@b.co"))?.wrongCodes).toBe(LOGIN_OTP_WRONG_MAX);
     expect(call({ p_action: "verify", p_email: "a@b.co", p_ip: "1.1.1.1" }).error).toBe(
       "locked",
     );
     const rejected = call({ p_action: "send", p_email: "a@b.co", p_ip: "1.1.1.1" });
     expect(rejected.error).toBe("resend_wait");
     expect(store.get(loginOtpEmailBucket("a@b.co"))?.locked).toBe(true);
+    expect(store.get(loginOtpEmailBucket("a@b.co"))?.wrongCodes).toBe(LOGIN_OTP_WRONG_MAX);
     advance(61_000);
     expect(call({ p_action: "send", p_email: "a@b.co", p_ip: "1.1.1.1" }).ok).toBe(true);
     expect(store.get(loginOtpEmailBucket("a@b.co"))?.locked).toBe(false);
     expect(store.get(loginOtpEmailBucket("a@b.co"))?.wrongCodes).toBe(0);
     expect(call({ p_action: "verify", p_email: "a@b.co", p_ip: "1.1.1.1" }).ok).toBe(true);
+  });
+
+  it("resets the verify count on clear", () => {
+    const { store, call } = fresh();
+    for (let i = 0; i < 3; i++) {
+      expect(call({ p_action: "verify", p_email: "a@b.co", p_ip: "1.1.1.1" }).ok).toBe(true);
+    }
+    expect(store.get(loginOtpEmailBucket("a@b.co"))?.wrongCodes).toBe(3);
+    expect(call({ p_action: "clear", p_email: "a@b.co", p_ip: "1.1.1.1" }).ok).toBe(true);
+    expect(store.get(loginOtpEmailBucket("a@b.co"))?.wrongCodes).toBe(0);
+    expect(store.get(loginOtpEmailBucket("a@b.co"))?.locked).toBe(false);
   });
 
   it("keeps a pending show code unless the send clears it", () => {
@@ -121,7 +139,49 @@ describe("applyLoginOtpRpc", () => {
   });
 });
 
+describe("hashLoginOtpCode", () => {
+  const prevMagic = process.env.MAGIC_LINK_TOKEN_SECRET;
+  const prevOutreach = process.env.OUTREACH_TOKEN_SECRET;
+
+  function restore() {
+    if (prevMagic === undefined) delete process.env.MAGIC_LINK_TOKEN_SECRET;
+    else process.env.MAGIC_LINK_TOKEN_SECRET = prevMagic;
+    if (prevOutreach === undefined) delete process.env.OUTREACH_TOKEN_SECRET;
+    else process.env.OUTREACH_TOKEN_SECRET = prevOutreach;
+  }
+
+  it("stays a plain hash until an existing server secret is set", () => {
+    delete process.env.MAGIC_LINK_TOKEN_SECRET;
+    delete process.env.OUTREACH_TOKEN_SECRET;
+    try {
+      const plain = hashLoginOtpCode("a@b.co", "482913");
+      expect(plain).toBe(createHash("sha256").update("a@b.co:482913").digest("hex"));
+
+      process.env.OUTREACH_TOKEN_SECRET = "existing-outreach-secret";
+      expect(hashLoginOtpCode("a@b.co", "482913")).toBe(
+        createHmac("sha256", "existing-outreach-secret").update("a@b.co:482913").digest("hex"),
+      );
+
+      process.env.MAGIC_LINK_TOKEN_SECRET = "existing-magic-secret-16";
+      expect(hashLoginOtpCode("a@b.co", "482913")).toBe(
+        createHmac("sha256", "existing-magic-secret-16").update("a@b.co:482913").digest("hex"),
+      );
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe("loginOtpClientIp", () => {
+  it("prefers the Vercel forwarded hop over x-forwarded-for", () => {
+    const headers = new Headers({
+      "x-vercel-forwarded-for": "198.51.100.20",
+      "x-forwarded-for": "203.0.113.5, 10.0.0.1",
+      "x-real-ip": "192.0.2.8",
+    });
+    expect(loginOtpClientIp(headers)).toBe("198.51.100.20");
+  });
+
   it("uses the first forwarded hop", () => {
     const headers = new Headers({
       "x-forwarded-for": "203.0.113.5, 10.0.0.1",

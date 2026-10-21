@@ -3,11 +3,15 @@
 // rules in process, used by tests and kept in sync with that function.
 //
 // Send is 1 per 60 seconds and 5 per hour per email. Send and verify share
-// 20 per hour per IP. Five wrong or expired codes lock that email until a
-// send is accepted. A rejected resend does not clear the lock.
-// Verify is allowed inside the 60 second send window.
+// 20 per hour per IP. Each verify increments wrong_codes in the same step
+// that refuses a count already at 5, so parallel guesses cannot all pass
+// the check. clear resets the counter. An accepted send does too.
+// A rejected resend does not. Verify is allowed inside the 60 second send window.
+//
+// Show-setup codes are HMAC-SHA256 when MAGIC_LINK_TOKEN_SECRET or
+// OUTREACH_TOKEN_SECRET is already set. No new env var is required.
 
-import { createHash, randomInt, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   LOGIN_OTP_RESEND_SEC,
@@ -24,7 +28,7 @@ export const LOGIN_OTP_HOUR_LIMIT = "hour_limit";
 export const LOGIN_OTP_IP_LIMIT = "ip_limit";
 export const LOGIN_OTP_LOCKED = "locked";
 
-export type LoginOtpLimitAction = "send" | "verify" | "wrong" | "clear";
+export type LoginOtpLimitAction = "send" | "verify" | "clear";
 
 export type LoginOtpLimitError =
   | typeof LOGIN_OTP_RESEND_WAIT
@@ -70,16 +74,36 @@ export function loginOtpIpBucket(ip: string): string {
   return `ip:${ip}`;
 }
 
+function firstHop(value: string | null): string {
+  return value?.split(",")[0]?.trim() ?? "";
+}
+
 export function loginOtpClientIp(headers: Headers): string {
-  const forwarded = headers.get("x-forwarded-for");
-  const first = forwarded?.split(",")[0]?.trim() ?? "";
-  const raw = first || headers.get("x-real-ip")?.trim() || "unknown";
+  // x-vercel-forwarded-for is set by the platform and is not the client-supplied
+  // x-forwarded-for list. Fall back for local runs.
+  const raw =
+    firstHop(headers.get("x-vercel-forwarded-for")) ||
+    firstHop(headers.get("x-forwarded-for")) ||
+    headers.get("x-real-ip")?.trim() ||
+    "unknown";
   const sliced = raw.slice(0, 64);
   return sliced || "unknown";
 }
 
+/** Existing auth-token secret, if the deploy already has one. */
+function showSetupCodeSecret(): string | null {
+  const magic = process.env.MAGIC_LINK_TOKEN_SECRET?.trim();
+  if (magic) return magic;
+  const outreach = process.env.OUTREACH_TOKEN_SECRET?.trim();
+  if (outreach) return outreach;
+  return null;
+}
+
 export function hashLoginOtpCode(email: string, code: string): string {
-  return createHash("sha256").update(`${email}:${code}`).digest("hex");
+  const material = `${email}:${code}`;
+  const secret = showSetupCodeSecret();
+  if (!secret) return createHash("sha256").update(material).digest("hex");
+  return createHmac("sha256", secret).update(material).digest("hex");
 }
 
 export function mintLoginOtpCode(): string {
@@ -144,7 +168,8 @@ function decision(
 /**
  * Mutates store. Mirrors public.login_otp_consume. Send and verify share the
  * IP window. The 60 second cooldown and the 5-per-hour cap count accepted
- * sends only. wrong and clear do not spend the IP budget; verify already did.
+ * sends only. clear does not spend the IP budget. verify increments
+ * wrong_codes before it returns, and refuses when the count is already 5.
  */
 export function applyLoginOtpRpc(
   store: Map<string, LoginOtpBucket>,
@@ -208,16 +233,17 @@ export function applyLoginOtpRpc(
 
   if (args.p_action === "verify") {
     ip.hourHits += 1;
-    if (email.locked) {
+    if (email.wrongCodes >= LOGIN_OTP_WRONG_MAX) {
+      email.locked = true;
       return decision(false, LOGIN_OTP_LOCKED, 0);
     }
+    email.wrongCodes += 1;
+    if (email.wrongCodes >= LOGIN_OTP_WRONG_MAX) email.locked = true;
     return decision(true, null, 0, email);
   }
 
-  if (args.p_action === "wrong") {
-    email.wrongCodes += 1;
-    if (email.wrongCodes >= LOGIN_OTP_WRONG_MAX) email.locked = true;
-    return decision(true, null, 0);
+  if (args.p_action !== "clear") {
+    return decision(false, null, 0);
   }
 
   email.wrongCodes = 0;

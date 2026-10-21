@@ -64,17 +64,6 @@ function limited(decision: LoginOtpLimitDecision) {
   );
 }
 
-async function recordWrong(email: string, ip: string) {
-  const recorded = await consumeLoginOtpLimit({
-    p_action: "wrong",
-    p_email: email,
-    p_ip: ip,
-  });
-  if (!recorded.ok) {
-    console.error("[login.otp.verify] could not record a failed code");
-  }
-}
-
 async function finish(
   request: NextRequest,
   body: VerifyBody,
@@ -123,6 +112,9 @@ export async function POST(request: NextRequest) {
   }
 
   const ip = loginOtpClientIp(request.headers);
+  // The verify action increments wrong_codes under the email row lock and
+  // refuses when the count is already 5. A later call would let parallel
+  // guesses all pass the check.
   const consumed = await consumeLoginOtpLimit({
     p_action: "verify",
     p_email: email,
@@ -150,7 +142,6 @@ export async function POST(request: NextRequest) {
       type: "email",
     });
     if (error || !data.user) {
-      await recordWrong(email, ip);
       const kind = classifyEmailOtpError(error);
       return NextResponse.json(
         { error: kind === "expired" ? LOGIN_OTP_EXPIRED : LOGIN_OTP_INVALID },
@@ -170,17 +161,14 @@ export async function POST(request: NextRequest) {
     : Number.NaN;
   const matches = pendingLoginOtpMatches(pending.pending_hash, email, code);
   if (!matches || !pending.pending_outreach_id || !Number.isFinite(expiresAt)) {
-    await recordWrong(email, ip);
     return NextResponse.json({ error: LOGIN_OTP_INVALID }, { status: 400 });
   }
   if (expiresAt <= Date.now()) {
-    await recordWrong(email, ip);
     return NextResponse.json({ error: LOGIN_OTP_EXPIRED }, { status: 400 });
   }
 
   const outreach = await getOutreachById(pending.pending_outreach_id);
   if (!outreach || normalizeLoginEmail(outreach.sent_to_email) !== email) {
-    await recordWrong(email, ip);
     return NextResponse.json({ error: LOGIN_OTP_INVALID }, { status: 400 });
   }
 
