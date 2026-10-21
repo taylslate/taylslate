@@ -59,4 +59,26 @@ describe("POST /api/view-mode", () => {
     );
     expect(cookieStore.delete).not.toHaveBeenCalled();
   });
+
+  it("sets the cookie when a show account switches to brand", async () => {
+    getUserProfile.mockResolvedValue({ role: "show" });
+    const res = await POST(post({ mode: "brand" }) as never);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, viewAs: "brand" });
+    expect(cookieStore.set).toHaveBeenCalledWith(
+      "taylslate_view_as",
+      "brand",
+      expect.objectContaining({ httpOnly: true, path: "/" }),
+    );
+    expect(cookieStore.delete).not.toHaveBeenCalled();
+  });
+
+  it("clears the cookie when a show account switches back to show", async () => {
+    getUserProfile.mockResolvedValue({ role: "show" });
+    const res = await POST(post({ mode: "show" }) as never);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, viewAs: null });
+    expect(cookieStore.delete).toHaveBeenCalledWith("taylslate_view_as");
+    expect(cookieStore.set).not.toHaveBeenCalled();
+  });
 });

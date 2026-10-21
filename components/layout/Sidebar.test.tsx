@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 const { mockReplace, mockRefresh, mockAssign } = vi.hoisted(() => ({
@@ -160,5 +160,59 @@ describe("Sidebar chrome", () => {
         body: JSON.stringify({ key: "brand1" }),
       }),
     );
+  });
+
+  it("renders the mode switch on the brand layout and the show layout", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { unmount } = render(<Sidebar role="brand" canSwitchTo="show" displayName="Chris Taylor" />);
+    const toShow = screen.getByRole("button", { name: "View as show" });
+    expect(toShow).toBeInTheDocument();
+    expect(toShow).toHaveTextContent("Brands");
+    expect(screen.getByRole("link", { name: "Campaigns" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Shows" })).toBeNull();
+    expect(toShow.className).toContain("bg-[var(--ts-band-brands)]");
+    expect(toShow.className).toContain("text-[var(--ts-ink-on-paper)]");
+    expect(toShow.innerHTML).toContain("text-[var(--ts-accent-text)]");
+    expect(toShow.querySelector("svg")?.getAttribute("class")).toContain("text-[var(--ts-gold)]");
+    fireEvent.click(toShow);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/view-mode",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ mode: "show" }),
+      }),
+    );
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+    });
+    expect(mockRefresh).toHaveBeenCalled();
+    unmount();
+
+    fetchMock.mockClear();
+    render(<Sidebar role="show" canSwitchTo="brand" displayName="Chris Taylor" />);
+    const toBrand = screen.getByRole("button", { name: "View as brand" });
+    expect(toBrand).toBeInTheDocument();
+    expect(toBrand).toHaveTextContent("Shows");
+    expect(screen.getByRole("link", { name: "Shows" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Campaigns" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "View as show" })).toBeNull();
+    expect(toBrand.className).toContain("bg-[var(--ts-band-brands)]");
+    expect(toBrand.querySelector("svg")?.getAttribute("class")).toContain("text-[var(--ts-gold)]");
+    mockReplace.mockClear();
+    mockRefresh.mockClear();
+    fireEvent.click(toBrand);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/view-mode",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ mode: "brand" }),
+      }),
+    );
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+    });
+    expect(mockRefresh).toHaveBeenCalled();
   });
 });

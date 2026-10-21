@@ -2296,8 +2296,9 @@ export interface EffectiveRoleResult {
   /** True when the cookie names a role for which no profile row exists.
    *  Caller should clear the cookie so the next render is clean. */
   staleViewAs: boolean;
-  /** Opposite of the side on screen, when both a brand_profiles row and a
-   *  show_profiles row exist. Null otherwise. */
+  /** Opposite of the side on screen, when both a brand profile and a show
+   *  profile exist. Brand chrome offers show; show chrome offers brand.
+   *  Null when either profile is missing. */
   canSwitchTo: UserRole | null;
 }
 
@@ -2330,8 +2331,8 @@ export async function getEffectiveRole(
     effectiveRole = "show";
   }
 
-  // After effectiveRole. Keying this off baseRole left a show view offering
-  // "show" again, with no return to brands.
+  // Follow the side on screen, not profiles.role. Keying this off baseRole
+  // left a show view offering "show" again, with no way back to brands.
   let canSwitchTo: UserRole | null = null;
   if (hasBrandProfile && hasShowProfile) {
     canSwitchTo = isBrandSide(effectiveRole) ? "show" : "brand";
