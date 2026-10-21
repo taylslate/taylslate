@@ -50,6 +50,11 @@ import {
   normalizeSpotCount,
   type Placement,
 } from "./spot-cost";
+import { applyPostAirLift } from "@/lib/scoring/post-air-lift";
+import {
+  loadCampaignBrandUserId,
+  loadPostAirConversionsByShow,
+} from "@/lib/learning/post-air-outcomes";
 
 /** One show in a tier partition: the 2B conviction read + the per-show cost
  *  (persisted, or computed on read) the Layer 4 card renders. */
@@ -83,6 +88,14 @@ export interface TieredShow {
   brandDismissed: boolean;
   /** True when tier+cost were derived on read (persisted tier was null). */
   computedOnRead: boolean;
+  /**
+   * Post-air lift. The original composite stays on `composite`. `postAirAdjusted`
+   * is the sort key when a brand reported conversions for this catalog show.
+   * A missing report leaves the score unchanged. The lift never drops a show.
+   */
+  postAirDelta?: number;
+  postAirAdjusted?: number | null;
+  postAirReasoning?: string | null;
 }
 
 export interface TieredUniverse {
@@ -110,12 +123,29 @@ export interface TieredUniverseDeps {
   loadCampaignCtx: (
     campaignPatternId: string
   ) => Promise<CampaignContextForPattern | null>;
+  /**
+   * This brand's reported conversions, keyed by catalog show id.
+   * The second argument is campaigns.user_id for the brand who is
+   * looking. Omitted → no lift (tests). The default loader is fail-soft
+   * and does not read another brand's reports.
+   */
+  loadPostAirByShow?: (
+    showIds: string[],
+    brandUserId: string
+  ) => Promise<Map<string, number>>;
+  /**
+   * Owner of the campaign being viewed (campaigns.user_id). Omitted
+   * together with the loader → no lift. The default reads that column.
+   */
+  loadBrandUserId?: (campaignId: string) => Promise<string | null>;
 }
 
 const defaultDeps: TieredUniverseDeps = {
   loadScoresWithShows: getConvictionScoresWithShowsForPattern,
   loadConfirmedRings: getConfirmedRings,
   loadCampaignCtx: getCampaignContextForPattern,
+  loadPostAirByShow: loadPostAirConversionsByShow,
+  loadBrandUserId: loadCampaignBrandUserId,
 };
 
 function emptyUniverse(): TieredUniverse {
@@ -189,6 +219,29 @@ export async function getTieredUniverse(
     if (!row.show_id) continue;
     if (!showById.has(row.show_id) || (showById.get(row.show_id) == null && row.show)) {
       showById.set(row.show_id, row.show ?? null);
+    }
+  }
+
+  // Post-air lift is a sort guide for this brand only. Another brand's
+  // report is not loaded. A missing brand id or a loader failure leaves
+  // every score as it was scored. Shows are not filtered on the result.
+  let reportedByShow = new Map<string, number>();
+  if (deps.loadPostAirByShow && ctx?.campaignId && deps.loadBrandUserId) {
+    let brandUserId: string | null = null;
+    try {
+      brandUserId = (await deps.loadBrandUserId(ctx.campaignId))?.trim() || null;
+    } catch {
+      brandUserId = null;
+    }
+    if (brandUserId) {
+      try {
+        reportedByShow = await deps.loadPostAirByShow(
+          [...showById.keys()],
+          brandUserId
+        );
+      } catch {
+        reportedByShow = new Map();
+      }
     }
   }
 
@@ -267,6 +320,9 @@ export async function getTieredUniverse(
         ? threeSpotCents - ceilingCents
         : null;
 
+    const reported = reportedByShow.get(showId) ?? null;
+    const lift = applyPostAirLift(roll.composite, reported);
+
     const entry: TieredShow = {
       showId,
       show,
@@ -289,6 +345,9 @@ export async function getTieredUniverse(
       brandSaved: top.brand_saved ?? false,
       brandDismissed: top.brand_dismissed ?? false,
       computedOnRead,
+      postAirDelta: lift.delta,
+      postAirAdjusted: lift.adjusted,
+      postAirReasoning: lift.reasoningLine,
     };
 
     if (tier === "test") test.push(entry);
@@ -296,8 +355,10 @@ export async function getTieredUniverse(
     else bench.push(entry);
   }
 
+  // Lifted score guides the order. A show with no report keeps its
+  // composite and stays in the list.
   const byCompositeDesc = (a: TieredShow, b: TieredShow) =>
-    (b.composite ?? -1) - (a.composite ?? -1);
+    (b.postAirAdjusted ?? b.composite ?? -1) - (a.postAirAdjusted ?? a.composite ?? -1);
   test.sort(byCompositeDesc);
   scale.sort(byCompositeDesc);
   bench.sort(byCompositeDesc);
