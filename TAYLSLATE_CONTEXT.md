@@ -94,6 +94,8 @@ The moat is the data. Everything else is a mechanism to capture it.
 
 ## 4. Pricing & Fees (Locked April 28, 2026)
 
+> **Superseded.** Current pricing was locked Sep 28, 2026: Free $0 (10% card / 7% bank), Starter $79/mo with 5 active campaigns (8% / 5%), Operator $299/mo unlimited (6% / 3%). Brand pays; shows are free. Seats are not sold. See `PRICING_DECISIONS.md`. The text below is history.
+
 Three-tier model pressure-tested in pricing strategy session. Customer chooses entry point; conversion to higher tiers is sales-led, not gated. Reference class is commerce infrastructure (Shopify, Toast), not full marketing suites (HubSpot, Salesforce) — Taylslate is a channel tool, "Facebook Ads for podcast reads," not a marketing platform.
 
 **Pay-as-you-go (Brand entry):**
@@ -572,7 +574,10 @@ Every AI decision (brief interpretation, ring hypothesis, conviction score, anal
 
 ## 10. Launch Plan
 
-### Current State (April 30, 2026)
+### Current State (Oct 21, 2026)
+- Launch target: January 2027. Ink & Gold design live; homepage and `/for-shows` live. Code sign-in (6-digit email code) for everyone. Migrations 001–051 applied.
+
+### Earlier state (April 30, 2026)
 - Full flow built through paid IO + delivery + payouts (Waves 1-13 shipped)
 - Discovery agent foundation in place (Wave 14 Phase 1 shipped, dormant — Phase 2 wires it up)
 - Pricing tier architecture in place; PAYG → Operator conversion mechanic working
