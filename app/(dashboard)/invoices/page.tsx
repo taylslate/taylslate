@@ -92,6 +92,9 @@ export default function InvoicesPage() {
       const invoicesData = await invoicesRes.json();
       setInvoices(invoicesData.invoices ?? []);
       setStats(invoicesData.stats ?? { total_outstanding: 0, total_paid_this_month: 0, count_by_status: {} });
+      // Paint the invoice list before the per-deal IO fan-out. Those reads
+      // only decide whether Generate invoice is available.
+      setLoading(false);
 
       if (dealsRes.ok) {
         const dealsData = await dealsRes.json();
@@ -262,7 +265,7 @@ export default function InvoicesPage() {
 
   if (loading) {
     return (
-      <div className={`bg-[var(--ts-paper)] p-8 max-w-5xl ${inkText}`}>
+      <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
@@ -292,7 +295,7 @@ export default function InvoicesPage() {
 
   if (error) {
     return (
-      <div className={`bg-[var(--ts-paper)] p-8 max-w-5xl ${inkText}`}>
+      <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
@@ -317,7 +320,7 @@ export default function InvoicesPage() {
   const hasInvoices = invoices.length > 0;
 
   return (
-    <div className={`bg-[var(--ts-paper)] p-8 max-w-5xl ${inkText}`}>
+    <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
@@ -427,19 +430,25 @@ export default function InvoicesPage() {
           })}
         </div>
       ) : (
-        <div className={`flex flex-col items-center justify-center border-dashed py-24 ${panelClass} ${radiusClass}`}>
-          <div className={`mb-5 flex h-16 w-16 items-center justify-center border bg-[var(--ts-paper)] ${hairlineRule} ${radiusClass} ${inkText}`}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="16" x2="8" y1="13" y2="13" />
-              <line x1="16" x2="8" y1="17" y2="17" />
-            </svg>
+        <div className={`${panelClass} ${radiusClass}`}>
+          <div aria-hidden="true" className={`pointer-events-none divide-y opacity-40 ${hairlineRule}`}>
+            <div className="flex items-center justify-between px-5 py-4">
+              <div>
+                <div className={`text-sm font-medium ${inkText}`}>INV-1001</div>
+                <div className={`text-xs ${mutedText}`}>Due next month · $1,200</div>
+              </div>
+              <span className={`border px-2 py-0.5 text-[10px] font-semibold ${hairlineRule} ${mutedText}`}>Sent</span>
+            </div>
           </div>
-          <h3 className={`text-lg font-semibold mb-2 ${inkText}`}>No invoices yet</h3>
-          <p className={`text-sm mb-6 max-w-sm text-center ${mutedText}`}>
-            Invoices will appear here once deals are completed and delivered.
-          </p>
+          <div className={`border-t px-6 py-10 text-center ${hairlineRule}`}>
+            <h3 className={`mb-2 text-lg font-semibold ${inkText}`}>No invoices yet</h3>
+            <p className={`mx-auto mb-6 max-w-sm text-center text-sm ${mutedText}`}>
+              Invoices will appear here once deals are completed and delivered.
+            </p>
+            <Link href="/deals" className={inkBtnClass}>
+              Open deals
+            </Link>
+          </div>
         </div>
       )}
 

@@ -20,6 +20,7 @@ import { listPublishedSurfacesForShows } from "@/lib/data/show-surfaces";
 
 export default async function CampaignDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const userPromise = getAuthenticatedUser();
   const campaign = await getCampaignById(id);
   if (!campaign) notFound();
 
@@ -40,23 +41,28 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     let universe: ConvictionUniverse = { rings: [], groups: [], hasScores: false };
     let tiered: TieredUniverse | undefined;
     let discoveryRan = false;
+    let user = null as Awaited<typeof userPromise>;
     if (pattern) {
       // Phase 2C Layer 3: load the per-ring 2B universe (current rendering) AND
       // the test/scale/bench partitions (the Layer 4 seam) in one pass.
-      const [scored, tieredScored, events] = await Promise.all([
+      // The session lookup overlaps those reads; it was previously a later await.
+      const [scored, tieredScored, events, authed] = await Promise.all([
         getConvictionUniverse(pattern.id),
         getTieredUniverse(pattern.id),
         listEventsForEntity("campaign", id),
+        userPromise,
       ]);
       universe = scored;
       tiered = tieredScored;
       discoveryRan = events.some((e) => e.event_type === "conviction.scored");
+      user = authed;
+    } else {
+      user = await userPromise;
     }
 
     // Phase 2D Layer 1: founder annotations are admin-only — gate the fetch on
     // the INTERNAL_ADMIN_EMAILS allowlist so a brand never loads them. Batched
     // across every rendered (test/scale/bench) show id in one round trip.
-    const user = await getAuthenticatedUser();
     const isAdmin = isInternalAdmin(user?.email);
     let annotationsByShow: Record<string, FounderAnnotationRow[]> = {};
     if (isAdmin && tiered) {
@@ -92,6 +98,8 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       />
     );
   }
+
+  await userPromise;
 
   // Wave 6 (legacy): campaigns scored by the flat fit-score engine carry
   // scored_shows — render those via the original discovery list.

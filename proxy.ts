@@ -37,6 +37,7 @@ export async function proxy(request: NextRequest) {
   //                                OTP user establishes a session in the first
   //                                place. It only sets a session on a valid
   //                                token; otherwise it redirects to /login.
+  // /login/show                  — show/creator email-code sign-in (signed out)
   // /forgot-password             — request a password reset (signed out)
   // /reset-password              — set a new password after a recovery link;
   //                                must be reachable so it can render its own
@@ -50,6 +51,7 @@ export async function proxy(request: NextRequest) {
   const isPublicRoute =
     pathname === "/" ||
     pathname === "/login" ||
+    pathname === "/login/show" ||
     pathname === "/signup" ||
     pathname === "/callback" ||
     pathname === "/forgot-password" ||

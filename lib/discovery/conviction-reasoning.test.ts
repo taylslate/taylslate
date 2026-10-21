@@ -181,7 +181,22 @@ describe("templateReasoning", () => {
     const out = templateReasoning(makeEntry("s1"));
     expect(out).toMatch(/topical/i);
     expect(out).toMatch(/purchase power/i);
+    expect(out).toMatch(/as a podcast buy/i);
     expect(out.length).toBeGreaterThan(0);
+  });
+
+  it("names the medium the buy is on, including a simulcast", () => {
+    expect(
+      templateReasoning(makeEntry("yt", makeScore(), { platform: "youtube" }))
+    ).toMatch(/as a YouTube buy/i);
+    expect(
+      templateReasoning(
+        makeEntry("sim", makeScore(), {
+          platform: "podcast",
+          surfaces: { podcast: {}, youtube: { youtube_channel_id: "UCsim" } },
+        })
+      )
+    ).toMatch(/as a podcast and YouTube buy/i);
   });
 
   it("launch-shape honesty: NEVER asserts an audience claim when audience is degraded", () => {
@@ -300,6 +315,25 @@ describe("buildReasoningUserContent", () => {
     expect(content).toContain("topical relevance 85 MEASURED");
     expect(content).toContain("audience fit UNMEASURED"); // the degraded flag is passed through
     expect(content).toContain("id: s1");
+    expect(content).toContain("medium: podcast");
+  });
+
+  it("names YouTube, and both surfaces when the show is a simulcast", () => {
+    const youtube = buildReasoningUserContent(makeRing(), "", [
+      makeEntry("yt", makeScore(), { platform: "youtube" }),
+    ]);
+    expect(youtube).toContain("medium: YouTube");
+
+    const both = buildReasoningUserContent(makeRing(), "", [
+      makeEntry("sim", makeScore(), {
+        platform: "podcast",
+        surfaces: {
+          podcast: { audience_size: 10000 },
+          youtube: { youtube_channel_id: "UCsim" },
+        },
+      }),
+    ]);
+    expect(both).toContain("medium: podcast and YouTube");
   });
 
   it("includes the description line, HTML-stripped", () => {

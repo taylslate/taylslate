@@ -142,40 +142,77 @@ export interface Show {
   last_api_refresh?: string;
 
   /**
-   * Wave 14 Phase 2B (migration 026). Simulcast surfaces — populated only when
-   * a podcast + long-form YouTube record for the same show are merged into one
-   * record (lib/discovery mergeSimulcasts). Null/undefined for single-surface
-   * shows, which is every show while discovery is podcast-only.
+   * Simulcast surfaces (migration 026). Populated only when a podcast
+   * and a long-form YouTube record for the same show are merged into one
+   * record (lib/discovery mergeSimulcasts). Each surface carries that
+   * medium's audience, CPM range, and links. Null/undefined for a show that
+   * lives on one medium — the primary row's own audience and rate card are
+   * the record. Scoring does not add the two audiences together.
    */
   surfaces?: ShowSurfaces;
   /**
-   * Wave 14 Phase 2B (migration 026). Medium-specific scoring priors (CPM
-   * range, engagement weight, frequency norms). Populated light for launch;
-   * structure reserved for full medium-aware scoring math (deferred).
+   * Medium-specific priors (migration 026): CPM range, engagement
+   * weight, frequency. Written for every discovered show. Launch engagement
+   * weight is 1 — the number is recorded, and discovery does not filter or
+   * reweight on it. Scores guide; medium does not gate.
    */
-  medium_priors?: Record<string, unknown>;
+  medium_priors?: ShowMediumPriors;
 
   created_at: string;
   updated_at: string;
 }
 
+/** Dollars. Podcast: the placement CPMs on the rate card. YouTube: implied CPM band. */
+export interface ShowCpmRange {
+  min: number;
+  max: number;
+}
+
+/** Per-medium links. Absent keys mean that link is unknown. */
+export interface ShowSurfaceLinks {
+  /** Podcast RSS feed URL. */
+  rss?: string;
+  /** Long-form YouTube channel URL. */
+  channel?: string;
+}
+
 /**
- * Wave 14 Phase 2B (migration 026). Simulcast surface payload: the same show
- * present on both podcast and long-form YouTube, merged into one record. Light
- * shape — one key per surface the show appears on; absent keys mean the show is
- * not on that surface. Forward-compatible with medium-aware scoring math.
+ * One medium of a simulcast show. `rss_url` / `youtube_channel_id` stay so
+ * existing readers of the light 026 shape keep working.
+ */
+export interface ShowSurface {
+  audience_size?: number;
+  cpm_range?: ShowCpmRange;
+  links?: ShowSurfaceLinks;
+  rate_card?: ShowRateCard;
+  rss_url?: string;
+  youtube_channel_id?: string;
+}
+
+/**
+ * Simulcast payload: the same show on podcast and long-form YouTube, one
+ * record. Absent keys mean the show is not on that surface.
  */
 export interface ShowSurfaces {
-  podcast?: {
-    rss_url?: string;
-    audience_size?: number;
-    rate_card?: ShowRateCard;
-  };
-  youtube?: {
-    youtube_channel_id?: string;
-    audience_size?: number;
-    rate_card?: ShowRateCard;
-  };
+  podcast?: ShowSurface;
+  youtube?: ShowSurface;
+}
+
+/**
+ * Medium-specific prior. `engagement_weight` is 1 at launch — stored, not
+ * applied. Discovery must not drop or re-rank a show because of this object.
+ */
+export interface MediumPrior {
+  cpm_min?: number;
+  cpm_max?: number;
+  engagement_weight: number;
+  /** Default test cadence, in spots. */
+  frequency_spots: number;
+}
+
+export interface ShowMediumPriors {
+  podcast?: MediumPrior;
+  youtube?: MediumPrior;
 }
 
 // ---- Campaigns (Brand Side) ----
@@ -785,6 +822,9 @@ export type DomainEventType =
   // Layer 2 — founder test-data teardown (DELETE /api/admin/seed-deal). Marker
   // event; payload carries the union of every entity id removed by the teardown.
   | "admin.seed_teardown"
+  // scripts/cleanup-test-data.ts — one row per deleted batch, written inside
+  // the same transaction as the deletes. Payload: { batch, ids, count }.
+  | "admin.test_data_cleanup"
   // Managed brand handed to its owner. The auth user id does not change;
   // deals, campaigns, and IOs stay on that id. Payload: actor_email,
   // brand_user_id, old_email, new_email, timestamp.

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BrandProfile, Outreach } from "@/lib/data/types";
@@ -84,5 +84,21 @@ describe("public pitch headline", () => {
       "A brand wants to work with Ottoman History Podcast"
     );
     expect(heading.textContent).not.toContain(IDENTITY_PARAGRAPH);
+  });
+
+  it("keeps the magic-link setup and offers an email code", () => {
+    render(
+      <PitchClient
+        token="tok"
+        outreach={outreach}
+        brand={{ brand_name: "SaunaBox", brand_url: null }}
+        isOnboarded={false}
+        showStandardCpm={null}
+      />
+    );
+    expect(screen.getByRole("button", { name: "Set up my account" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code instead" }));
+    expect(screen.getByRole("button", { name: "Send code" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use the email link instead" })).toBeInTheDocument();
   });
 });

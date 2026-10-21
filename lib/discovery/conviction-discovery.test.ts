@@ -147,6 +147,14 @@ interface DepsHarness {
     id: string;
     input: { podscan_id?: string; demographics?: Show["demographics"] };
   }>;
+  /** (id, input) pairs from the slug-collision surfaces / medium_priors write-back. */
+  mediumBackfillCalls: Array<{
+    id: string;
+    input: {
+      surfaces?: Show["surfaces"];
+      medium_priors?: Show["medium_priors"];
+    };
+  }>;
 }
 
 function makeDeps(opts: {
@@ -160,6 +168,7 @@ function makeDeps(opts: {
   tierPortfolio?: ConvictionDiscoveryDeps["tierPortfolio"];
   hydrateDemographics?: ConvictionDiscoveryDeps["hydrateDemographics"];
   backfillShowPodscanData?: ConvictionDiscoveryDeps["backfillShowPodscanData"];
+  backfillShowMediumFields?: ConvictionDiscoveryDeps["backfillShowMediumFields"];
 } = {}): DepsHarness {
   const recordCalls: RecordConvictionScoreInput[] = [];
   const events: LogEventInput[] = [];
@@ -167,6 +176,7 @@ function makeDeps(opts: {
   const tierCalls: string[] = [];
   const hydrateCalls: Show[][] = [];
   const backfillCalls: DepsHarness["backfillCalls"] = [];
+  const mediumBackfillCalls: DepsHarness["mediumBackfillCalls"] = [];
   const harness = { reasoningCalls: 0 };
   let clearCount = 0;
   let seq = 0;
@@ -244,6 +254,13 @@ function makeDeps(opts: {
       }
       return true;
     },
+    backfillShowMediumFields: async (id, input) => {
+      mediumBackfillCalls.push({ id, input });
+      if (opts.backfillShowMediumFields) {
+        return opts.backfillShowMediumFields(id, input);
+      }
+      return true;
+    },
   };
 
   return {
@@ -258,6 +275,7 @@ function makeDeps(opts: {
     clearCalls: () => clearCount,
     hydrateCalls,
     backfillCalls,
+    mediumBackfillCalls,
   };
 }
 
@@ -315,26 +333,85 @@ describe("genre exclusion (§11)", () => {
 describe("simulcast merge", () => {
   it("folds a podcast + YouTube of the same name into one record with both surfaces", () => {
     const shows = [
-      makeShow({ id: "pod-1", name: "Huberman Lab", platform: "podcast", rss_url: "rss" }),
+      makeShow({
+        id: "pod-1",
+        name: "Huberman Lab",
+        platform: "podcast",
+        rss_url: "https://feeds.example/huberman",
+        audience_size: 80_000,
+        rate_card: { preroll_cpm: 20, midroll_cpm: 28, postroll_cpm: 14 },
+      }),
       makeShow({
         id: "yt-1",
-        name: "Huberman Lab",
+        name: "Huberman Lab Podcast",
         platform: "youtube",
         youtube_channel_id: "UC123",
+        audience_size: 120_000,
+        price_type: "flat_rate",
+        rate_card: { flat_rate: 5000 },
       }),
     ];
     const merged = mergeSimulcasts(shows);
     expect(merged).toHaveLength(1);
     expect(merged[0].platform).toBe("podcast");
-    expect(merged[0].surfaces?.podcast?.rss_url).toBe("rss");
+    expect(merged[0].id).toBe("pod-1");
+    // Podcast audience stays on the row. YouTube audience is on the surface
+    // and is not added into audience_size.
+    expect(merged[0].audience_size).toBe(80_000);
+    expect(merged[0].surfaces?.podcast?.rss_url).toBe("https://feeds.example/huberman");
+    expect(merged[0].surfaces?.podcast?.audience_size).toBe(80_000);
+    expect(merged[0].surfaces?.podcast?.cpm_range).toEqual({ min: 14, max: 28 });
+    expect(merged[0].surfaces?.podcast?.links?.rss).toBe(
+      "https://feeds.example/huberman"
+    );
     expect(merged[0].surfaces?.youtube?.youtube_channel_id).toBe("UC123");
+    expect(merged[0].surfaces?.youtube?.audience_size).toBe(120_000);
+    expect(merged[0].surfaces?.youtube?.links?.channel).toBe(
+      "https://www.youtube.com/channel/UC123"
+    );
+    expect(merged[0].surfaces?.youtube?.cpm_range?.min).toBeGreaterThan(0);
+    expect(merged[0].surfaces?.youtube?.cpm_range?.max).toBeGreaterThan(
+      merged[0].surfaces!.youtube!.cpm_range!.min
+    );
+    expect(merged[0].youtube_channel_id).toBe("UC123");
+    expect(merged[0].medium_priors?.podcast?.cpm_min).toBe(14);
+    expect(merged[0].medium_priors?.podcast?.cpm_max).toBe(28);
+    expect(merged[0].medium_priors?.podcast?.engagement_weight).toBe(1);
+    expect(merged[0].medium_priors?.podcast?.frequency_spots).toBe(3);
+    expect(merged[0].medium_priors?.youtube?.engagement_weight).toBe(1);
+    expect(merged[0].medium_priors?.youtube?.frequency_spots).toBe(3);
   });
 
-  it("is inert for podcast-only input (no surfaces attached)", () => {
+  it("leaves a single-medium show without surfaces and records that medium's prior", () => {
     const shows = [recoveryShow(), offTopicShow()];
     const merged = mergeSimulcasts(shows);
     expect(merged).toHaveLength(2);
     expect(merged.every((s) => s.surfaces === undefined)).toBe(true);
+    expect(merged[0].medium_priors?.podcast?.engagement_weight).toBe(1);
+    expect(merged[0].medium_priors?.youtube).toBeUndefined();
+    expect(merged[0].medium_priors?.podcast?.cpm_min).toBe(25);
+    expect(merged[0].medium_priors?.podcast?.cpm_max).toBe(25);
+  });
+
+  it("drops a second YouTube duplicate instead of replacing the first surface", () => {
+    const shows = [
+      makeShow({ id: "pod-1", name: "Same Show", platform: "podcast" }),
+      makeShow({
+        id: "yt-1",
+        name: "Same Show",
+        platform: "youtube",
+        youtube_channel_id: "UCfirst",
+      }),
+      makeShow({
+        id: "yt-2",
+        name: "Same Show YouTube",
+        platform: "youtube",
+        youtube_channel_id: "UCsecond",
+      }),
+    ];
+    const merged = mergeSimulcasts(shows);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].surfaces?.youtube?.youtube_channel_id).toBe("UCfirst");
   });
 
   it("does not mutate the input shows", () => {
@@ -342,6 +419,8 @@ describe("simulcast merge", () => {
     const yt = makeShow({ id: "yt-1", name: "Same", platform: "youtube" });
     mergeSimulcasts([pod, yt]);
     expect(pod.surfaces).toBeUndefined();
+    expect(pod.medium_priors).toBeUndefined();
+    expect(yt.surfaces).toBeUndefined();
   });
 });
 
@@ -521,12 +600,49 @@ describe("runConvictionDiscovery", () => {
       platform: "youtube",
       youtube_channel_id: "UCabc",
     });
-    const { deps } = makeDeps({ discovered: [pod, yt], rings: [makeRing()] });
+    const { deps, persistCalls, mediumBackfillCalls } = makeDeps({
+      discovered: [pod, yt],
+      rings: [makeRing()],
+    });
     const result = await runConvictionDiscovery("camp-1", deps);
 
     expect(result.candidateCount).toBe(1);
     const merged = result.rings[0].shows[0].show;
     expect(merged.surfaces?.youtube?.youtube_channel_id).toBe("UCabc");
+    expect(persistCalls[0].surfaces?.youtube?.youtube_channel_id).toBe("UCabc");
+    expect(persistCalls[0].medium_priors?.podcast?.engagement_weight).toBe(1);
+    expect(persistCalls[0].medium_priors?.youtube).toBeDefined();
+    // Fresh insert already carries both columns → no medium write-back.
+    expect(mediumBackfillCalls).toHaveLength(0);
+  });
+
+  it("slug collision: fills surfaces and medium_priors onto a row that has neither", async () => {
+    const pod = recoveryShow({ id: "pod-1", name: "Recovery Lab", platform: "podcast" });
+    const yt = recoveryShow({
+      id: "yt-1",
+      name: "Recovery Lab",
+      platform: "youtube",
+      youtube_channel_id: "UCabc",
+    });
+    const h = makeDeps({
+      discovered: [pod, yt],
+      rings: [makeRing()],
+      persistShow: async (input) =>
+        ({
+          ...(input as Show),
+          id: "uuid-existing",
+          surfaces: undefined,
+          medium_priors: undefined,
+        }) as Show,
+    });
+    await runConvictionDiscovery("camp-1", h.deps);
+    expect(h.mediumBackfillCalls).toHaveLength(1);
+    expect(h.mediumBackfillCalls[0].id).toBe("uuid-existing");
+    expect(h.mediumBackfillCalls[0].input.surfaces?.youtube?.youtube_channel_id).toBe(
+      "UCabc"
+    );
+    expect(h.mediumBackfillCalls[0].input.medium_priors?.podcast?.engagement_weight).toBe(1);
+    expect(h.mediumBackfillCalls[0].input.medium_priors?.youtube).toBeDefined();
   });
 
   it("returns a response when persistence fails, skipping the score write", async () => {
