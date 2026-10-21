@@ -7,7 +7,7 @@
 //   1. loads the campaign_pattern + confirmed rings,
 //   2. discovers candidate shows (Podscan; YouTube when a brief opts in),
 //   3. HARD-excludes Sleep / Meditation / ASMR before scoring (§11),
-//   4. folds simulcast (podcast + YouTube) records into one (inert today),
+//   4. folds simulcast (podcast + YouTube) records into one show,
 //   5. fills audience_purchase_power in-memory from categories
 //      ("Layer 3 fills, Layer 2 strict" — keeps PP live regardless of
 //      persistence),
@@ -50,6 +50,7 @@ import {
   getCampaignById,
   createShow,
   backfillShowPodscanData,
+  backfillShowMediumFields,
 } from "@/lib/data/queries";
 import {
   hydrateCandidateDemographics,
@@ -140,6 +141,15 @@ export interface ConvictionDiscoveryDeps {
     id: string,
     input: { podscan_id?: string; demographics?: Show["demographics"] }
   ) => Promise<boolean>;
+  /** Fill-empty write-back for surfaces + medium_priors when createShow's
+   *  slug collision returns a row saved before the YouTube twin was folded in. */
+  backfillShowMediumFields: (
+    id: string,
+    input: {
+      surfaces?: Show["surfaces"];
+      medium_priors?: Show["medium_priors"];
+    }
+  ) => Promise<boolean>;
 }
 
 const defaultDeps: ConvictionDiscoveryDeps = {
@@ -155,6 +165,7 @@ const defaultDeps: ConvictionDiscoveryDeps = {
   tierPortfolio: (patternId) => tierCampaignPortfolio(patternId),
   hydrateDemographics: (candidates) => hydrateCandidateDemographics(candidates),
   backfillShowPodscanData,
+  backfillShowMediumFields,
 };
 
 // ---- Band helpers ----
@@ -494,6 +505,7 @@ async function persistCandidate(
       youtube_channel_id: show.youtube_channel_id,
       rss_url: show.rss_url,
       surfaces: show.surfaces,
+      medium_priors: show.medium_priors,
       data_sources: show.data_sources ?? ["discovery"],
       is_claimed: false,
       is_verified: false,
@@ -519,6 +531,29 @@ async function persistCandidate(
       } catch (err) {
         console.warn(
           `[conviction-discovery] podscan write-back failed for "${show.name}":`,
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
+    // Same collision branch for simulcast identity. A podcast row saved
+    // before its YouTube twin was discovered comes back without surfaces.
+    // Fill-empty only — a row that already has either column is left alone.
+    if (
+      saved &&
+      ((show.surfaces && !saved.surfaces) ||
+        (show.medium_priors && !saved.medium_priors))
+    ) {
+      try {
+        await deps.backfillShowMediumFields(saved.id, {
+          surfaces: show.surfaces && !saved.surfaces ? show.surfaces : undefined,
+          medium_priors:
+            show.medium_priors && !saved.medium_priors
+              ? show.medium_priors
+              : undefined,
+        });
+      } catch (err) {
+        console.warn(
+          `[conviction-discovery] medium write-back failed for "${show.name}":`,
           err instanceof Error ? err.message : err
         );
       }

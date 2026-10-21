@@ -15,6 +15,8 @@ import type {
   Profile,
   Show,
   ShowDemographics,
+  ShowMediumPriors,
+  ShowSurfaces,
   Platform,
   Deal,
   InsertionOrder,
@@ -1443,6 +1445,60 @@ export async function backfillShowPodscanData(
     .eq("id", id);
   if (error) {
     console.error("[backfillShowPodscanData] update failed:", error.message);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Fill-empty write-back for simulcast identity. createShow's slug collision
+ * returns the existing row unchanged, so a podcast saved before its YouTube
+ * twin was found would stay a single-medium row. Writes surfaces and
+ * medium_priors only where the stored value is null. Never overwrites a
+ * value already on the row.
+ *
+ * Returns true on success or no-op; false only on a write error.
+ */
+export async function backfillShowMediumFields(
+  id: string,
+  input: { surfaces?: ShowSurfaces; medium_priors?: ShowMediumPriors }
+): Promise<boolean> {
+  const hasPayload = (v: unknown): boolean =>
+    !!v && typeof v === "object" && Object.keys(v as object).length > 0;
+
+  if (!hasPayload(input.surfaces) && !hasPayload(input.medium_priors)) {
+    return true;
+  }
+
+  const { data: current, error: fetchError } = await supabaseAdmin
+    .from("shows")
+    .select("surfaces, medium_priors")
+    .eq("id", id)
+    .single();
+  if (fetchError || !current) {
+    console.error(
+      "[backfillShowMediumFields] fetch failed:",
+      fetchError?.message ?? "no row"
+    );
+    return false;
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (hasPayload(input.surfaces) && !hasPayload(current.surfaces)) {
+    updates.surfaces = input.surfaces;
+  }
+  if (hasPayload(input.medium_priors) && !hasPayload(current.medium_priors)) {
+    updates.medium_priors = input.medium_priors;
+  }
+  if (Object.keys(updates).length === 0) return true;
+
+  updates.updated_at = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("shows")
+    .update(updates)
+    .eq("id", id);
+  if (error) {
+    console.error("[backfillShowMediumFields] update failed:", error.message);
     return false;
   }
   return true;
