@@ -119,7 +119,7 @@ export default function WelcomeForm({ initialValue }: { initialValue: string }) 
         We&apos;ll pull your show details, episode count, and audience data automatically.
       </p>
       {error && (
-        <p className="mt-2 text-xs text-[var(--ts-accent)]">{error}</p>
+        <p className="mt-2 text-xs text-[var(--ts-accent-text)]">{error}</p>
       )}
     </OnboardingShell>
   );

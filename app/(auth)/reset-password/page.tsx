@@ -30,7 +30,7 @@ export default async function ResetPasswordPage() {
           </p>
           <Link
             href="/forgot-password"
-            className="mt-8 inline-block text-sm text-[var(--ts-accent)] hover:underline"
+            className="mt-8 inline-block text-sm text-[var(--ts-accent-text)] hover:underline"
           >
             Request a new reset link
           </Link>

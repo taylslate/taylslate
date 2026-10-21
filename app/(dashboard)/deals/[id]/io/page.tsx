@@ -175,7 +175,7 @@ export default function IOPage({ params }: { params: Promise<{ id: string }> }) 
           All Deals
         </Link>
         <div
-          className="mt-6 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm text-[var(--ts-accent)]"
+          className="mt-6 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm text-[var(--ts-accent-text)]"
           style={radiusStyle}
         >
           {error || "Deal not found"}

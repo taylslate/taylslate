@@ -353,7 +353,7 @@ export default function OnboardingPage() {
                   </p>
                   <button
                     onClick={() => { setParsedRows([]); setFileName(""); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-                    className="text-xs text-[var(--ts-accent)] transition-colors hover:opacity-80"
+                    className="text-xs text-[var(--ts-accent-text)] transition-colors hover:opacity-80"
                   >
                     Clear
                   </button>
@@ -399,7 +399,7 @@ export default function OnboardingPage() {
             )}
 
             {uploadError && (
-              <div className="mt-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-3 text-sm text-[var(--ts-accent)]">
+              <div className="mt-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-3 text-sm text-[var(--ts-accent-text)]">
                 {uploadError}
               </div>
             )}
@@ -418,7 +418,7 @@ export default function OnboardingPage() {
             <div className="mt-6 flex items-center justify-between border-t border-[var(--ts-hairline-on-paper)] pt-4">
               <button
                 onClick={() => setStep(3)}
-                className="text-sm text-[var(--ts-accent)] transition-colors hover:opacity-80"
+                className="text-sm text-[var(--ts-accent-text)] transition-colors hover:opacity-80"
               >
                 Skip for now
               </button>
@@ -461,7 +461,7 @@ export default function OnboardingPage() {
                   : "You're all set to start planning campaigns."}
             </p>
             {importResult && importResult.errors.length > 0 && (
-              <p className="mb-4 text-xs text-[var(--ts-accent)]">
+              <p className="mb-4 text-xs text-[var(--ts-accent-text)]">
                 {importResult.errors.length} error{importResult.errors.length !== 1 ? "s" : ""} during import.
               </p>
             )}

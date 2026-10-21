@@ -225,7 +225,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
           {dealsCreated ? (
             <button
               onClick={() => router.push("/deals")}
-              className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90"
+              className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] transition-colors hover:opacity-90"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
@@ -236,7 +236,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
             <button
               onClick={handleCreateDeals}
               disabled={isCreatingDeals || totalShowCount === 0}
-              className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90 disabled:opacity-60"
+              className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] transition-colors hover:opacity-90 disabled:opacity-60"
             >
               {isCreatingDeals ? (
                 <>
@@ -254,7 +254,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
           <button
             onClick={handleApproveAndDraft}
             disabled={isGeneratingOutreach}
-            className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90 disabled:opacity-60"
+            className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] transition-colors hover:opacity-90 disabled:opacity-60"
           >
             {isGeneratingOutreach ? (
               <>
@@ -317,7 +317,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2 rounded-[var(--ts-radius)] text-sm font-medium transition-all ${
               activeTab === tab.id
-                ? "bg-[var(--ts-ink-on-paper)] text-[var(--ts-paper)]"
+                ? "bg-[var(--ts-accent)] text-[var(--ts-accent-foreground)]"
                 : "text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
             }`}>
             {tab.label}
@@ -539,7 +539,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                   <button
                     onClick={sendAllEmails}
                     disabled={isSendingAll}
-                    className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90 disabled:opacity-60"
+                    className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] transition-colors hover:opacity-90 disabled:opacity-60"
                   >
                     {isSendingAll ? (
                       <>
@@ -580,7 +580,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                             <button
                               onClick={() => sendSingleEmail(draft)}
                               disabled={status === "sending"}
-                              className="text-xs font-medium text-[var(--ts-accent)] hover:underline disabled:opacity-50"
+                              className="text-xs font-medium text-[var(--ts-accent-text)] hover:underline disabled:opacity-50"
                             >
                               {status === "sending" ? "Sending..." : "Send"}
                             </button>
@@ -629,7 +629,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                       <h3 className="font-semibold text-[var(--ts-ink-on-paper)]">{show.show_name}</h3>
                       <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">{show.contact_email}</span>
                     </div>
-                    <button className="text-xs font-medium text-[var(--ts-accent)] hover:underline">Copy email</button>
+                    <button className="text-xs font-medium text-[var(--ts-accent-text)] hover:underline">Copy email</button>
                   </div>
                   <div className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
                     <p className="font-medium text-[var(--ts-ink-on-paper)] mb-2">Subject: Partnership Opportunity — [Your Brand] x {show.show_name}</p>
@@ -653,7 +653,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                       <span className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--ts-ink-muted-on-paper)]">YouTube</span>
                       <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">{show.contact_email}</span>
                     </div>
-                    <button className="text-xs font-medium text-[var(--ts-accent)] hover:underline">Copy email</button>
+                    <button className="text-xs font-medium text-[var(--ts-accent-text)] hover:underline">Copy email</button>
                   </div>
                   <div className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
                     <p className="font-medium text-[var(--ts-ink-on-paper)] mb-2">Subject: Sponsorship Opportunity — [Your Brand] x {show.show_name}</p>
@@ -683,7 +683,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                   <h3 className="font-semibold text-[var(--ts-ink-on-paper)]">{show.show_name}</h3>
                   <span className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-2 py-0.5 text-xs text-[var(--ts-ink-muted-on-paper)]">~60 seconds</span>
                 </div>
-                <button className="text-xs font-medium text-[var(--ts-accent)] hover:underline">Copy script</button>
+                <button className="text-xs font-medium text-[var(--ts-accent-text)] hover:underline">Copy script</button>
               </div>
               <div className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
                 <p>
@@ -704,7 +704,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                   <span className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--ts-ink-muted-on-paper)]">YouTube</span>
                   <span className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-2 py-0.5 text-xs text-[var(--ts-ink-muted-on-paper)]">integrated segment</span>
                 </div>
-                <button className="text-xs font-medium text-[var(--ts-accent)] hover:underline">Copy brief</button>
+                <button className="text-xs font-medium text-[var(--ts-accent-text)] hover:underline">Copy brief</button>
               </div>
               <div className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
                 <p className="font-medium text-[var(--ts-ink-on-paper)] mb-2">Talking Points</p>

@@ -141,7 +141,7 @@ export function ShowAnnotations({ showId }: { showId: string }) {
       className="mt-3 border-t border-[var(--ts-hairline-on-paper)] pt-3"
     >
       <div className="mb-1.5 flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
           Founder notes
         </span>
         {annotations.length > 0 && (
@@ -215,7 +215,7 @@ export function ShowAnnotations({ showId }: { showId: string }) {
               type="button"
               onClick={save}
               disabled={!note.trim() || busy}
-              className="bg-[var(--ts-ink-on-paper)] px-3 py-1.5 text-xs font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:opacity-40"
+              className="bg-[var(--ts-accent)] px-3 py-1.5 text-xs font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:opacity-40"
               style={radiusStyle}
             >
               {busy ? "Saving…" : "Save note"}
@@ -238,7 +238,7 @@ export function ShowAnnotations({ showId }: { showId: string }) {
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="text-xs font-medium text-[var(--ts-accent)] hover:underline"
+          className="text-xs font-medium text-[var(--ts-accent-text)] hover:underline"
         >
           + Add note
         </button>

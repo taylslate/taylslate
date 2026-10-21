@@ -10,7 +10,7 @@ import {
 
 const radiusStyle = { borderRadius: tokens.radius };
 const inkBtn =
-  "inline-flex items-center bg-[var(--ts-ink-on-paper)] px-3 py-1.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center bg-[var(--ts-accent)] px-3 py-1.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 const ghostBtn =
   "inline-flex items-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-1.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:cursor-not-allowed disabled:opacity-50";
 const fieldClass =
@@ -127,7 +127,7 @@ export default function ManagedBrandsClient({
 
   return (
     <div className="w-full p-4 sm:p-8">
-      <p className="text-xs font-medium uppercase tracking-wide text-[var(--ts-accent)]">
+      <p className="text-xs font-medium uppercase tracking-wide text-[var(--ts-accent-text)]">
         Internal
       </p>
       <h1 className="mt-2 text-2xl font-semibold text-[var(--ts-ink-on-paper)]">
@@ -139,7 +139,7 @@ export default function ManagedBrandsClient({
       </p>
 
       {error && (
-        <p className="mt-4 text-sm text-[var(--ts-accent)]" role="alert">
+        <p className="mt-4 text-sm text-[var(--ts-accent-text)]" role="alert">
           {error}
         </p>
       )}

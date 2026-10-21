@@ -40,7 +40,7 @@ export default async function CampaignOutreachPage({
             </svg>
             Back to plan
           </Link>
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
             For brands
           </p>
         </div>
@@ -64,7 +64,7 @@ export default async function CampaignOutreachPage({
             </p>
             <Link
               href={`/campaigns/${id}`}
-              className="text-sm font-medium text-[var(--ts-accent)] hover:underline"
+              className="text-sm font-medium text-[var(--ts-accent-text)] hover:underline"
             >
               Pick shows →
             </Link>

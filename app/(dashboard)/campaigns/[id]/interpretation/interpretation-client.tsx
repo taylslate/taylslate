@@ -33,7 +33,7 @@ const fieldClass =
   "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none resize-none";
 
 const inkBtnClass =
-  "inline-flex items-center justify-center gap-2 bg-[var(--ts-ink-on-paper)] text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 bg-[var(--ts-accent)] text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 
 const alertClass =
   "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-sm text-[var(--ts-ink-on-paper)]";
@@ -41,7 +41,7 @@ const alertClass =
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
 
 const accentLinkClass =
-  "font-medium text-[var(--ts-accent)] hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-40";
+  "font-medium text-[var(--ts-accent-text)] hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-40";
 
 const GOAL_LABELS: Record<BriefGoal, string> = {
   test_channel: "test-the-channel",
@@ -563,7 +563,7 @@ function RingCard({
           <ConfidenceBadge confidence={slot.ring.confidence} />
           {slot.addedByBrand && (
             <span
-              className="border border-[var(--ts-hairline-on-paper)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ts-accent)]"
+              className="border border-[var(--ts-hairline-on-paper)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ts-accent-text)]"
               style={radiusStyle}
             >
               You added this
@@ -828,7 +828,7 @@ function ToggleButton({
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="max-w-2xl p-4 sm:p-8">
-      <p className="mb-6 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+      <p className="mb-6 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
         For brands
       </p>
       {children}

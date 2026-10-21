@@ -136,7 +136,7 @@ export function ShowEmailCode({
           {notShow ? (
             <>
               That email uses a brand login.{" "}
-              <Link href="/login" className="text-[var(--ts-accent)] hover:underline">
+              <Link href="/login" className="text-[var(--ts-accent-text)] hover:underline">
                 Use the magic link instead.
               </Link>
             </>
@@ -230,7 +230,7 @@ export function ShowEmailCode({
               setError(null);
               setCooldown(0);
             }}
-            className="w-full text-sm text-[var(--ts-accent)] hover:underline"
+            className="w-full text-sm text-[var(--ts-accent-text)] hover:underline"
           >
             Use a different email
           </button>

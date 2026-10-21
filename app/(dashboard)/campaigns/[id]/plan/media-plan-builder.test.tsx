@@ -106,8 +106,8 @@ describe("MediaPlanBuilder — paper/ink", () => {
     expect(back.className).toContain("text-[var(--ts-ink-muted-on-paper)]");
 
     const generate = screen.getByRole("button", { name: "Generate IOs" });
-    expect(generate.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(generate.className).toContain("text-[var(--ts-paper)]");
+    expect(generate.className).toContain("bg-[var(--ts-accent)]");
+    expect(generate.className).toContain("text-[var(--ts-accent-foreground)]");
     expect(generate).toHaveStyle({ borderRadius: "var(--ts-radius)" });
 
     for (const name of ["Edit shows", "Export CSV"]) {
@@ -119,7 +119,7 @@ describe("MediaPlanBuilder — paper/ink", () => {
     }
 
     const outreach = screen.getByRole("button", { name: "Send outreach" });
-    expect(outreach.className).toContain("text-[var(--ts-accent)]");
+    expect(outreach.className).toContain("text-[var(--ts-accent-text)]");
     expect(outreach.className).toContain("border-[var(--ts-hairline-on-paper)]");
     expect(outreach.className).not.toMatch(/--brand-blue/);
 

@@ -55,7 +55,7 @@ export default function SurfaceEditor({
               type="button"
               onClick={() => remove(index)}
               aria-label={`Remove surface ${index + 1}`}
-              className="rounded-[var(--ts-radius)] p-1.5 text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-accent)]"
+              className="rounded-[var(--ts-radius)] p-1.5 text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-accent-text)]"
             >
               Remove
             </button>
@@ -216,7 +216,7 @@ export default function SurfaceEditor({
         <button
           type="button"
           onClick={() => onChange([...drafts, emptySurfaceDraft()])}
-          className="text-sm font-medium text-[var(--ts-accent)] hover:opacity-80"
+          className="text-sm font-medium text-[var(--ts-accent-text)] hover:opacity-80"
         >
           + Add a surface
         </button>

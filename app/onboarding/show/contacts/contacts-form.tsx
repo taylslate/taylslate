@@ -75,7 +75,7 @@ export default function ContactsForm({
         </div>
 
         {!valid && (
-          <p className="text-xs text-[var(--ts-accent)]">
+          <p className="text-xs text-[var(--ts-accent-text)]">
             Please use a valid email format, or clear the field to use your signing email.
           </p>
         )}

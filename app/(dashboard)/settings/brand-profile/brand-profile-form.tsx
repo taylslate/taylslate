@@ -18,9 +18,9 @@ const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-pap
 const fieldClass =
   "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
 const inkBtnClass =
-  "inline-flex items-center gap-2 bg-[var(--ts-ink-on-paper)] px-6 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center gap-2 bg-[var(--ts-accent)] px-6 py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
 const kickerClass =
-  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]";
 const chipOn = `border ${hairlineRule} bg-[var(--ts-band-brands)] ${inkText}`;
 const chipOff = `border ${hairlineRule} bg-[var(--ts-paper)] ${mutedText} hover:bg-[var(--ts-band-shows)]`;
 const chipDisabled = `border ${hairlineRule} bg-[var(--ts-paper)] ${mutedText} cursor-not-allowed opacity-40`;
@@ -366,7 +366,7 @@ export default function BrandProfileForm({ profile }: { profile: BrandProfile | 
       </div>
       {error && (
         <div
-          className="mt-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] p-3 text-sm text-[var(--ts-accent)]"
+          className="mt-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] p-3 text-sm text-[var(--ts-accent-text)]"
           style={radiusStyle}
         >
           {error}

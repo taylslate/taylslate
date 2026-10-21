@@ -32,7 +32,7 @@ function MagicMessage() {
         </p>
         <Link
           href="/"
-          className="mt-8 inline-block text-sm text-[var(--ts-accent)] hover:underline"
+          className="mt-8 inline-block text-sm text-[var(--ts-accent-text)] hover:underline"
         >
           Back to home
         </Link>

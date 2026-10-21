@@ -23,7 +23,7 @@ const labelClass = "mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper
 const valueClass =
   "w-full break-words border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] px-3 py-2 text-sm text-[var(--ts-ink-muted-on-paper)]";
 const inkBtnClass =
-  "inline-flex items-center justify-center gap-2 bg-[var(--ts-ink-on-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 bg-[var(--ts-accent)] px-5 py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 const ghostBtnClass =
   "inline-flex items-center justify-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)]";
 

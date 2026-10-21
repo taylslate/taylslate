@@ -53,7 +53,7 @@ export default function ShowSurfacesSettingsForm({ initial }: { initial: Sellabl
 
   return (
     <div className="max-w-2xl p-4 sm:p-8">
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
         For shows
       </p>
       <h1 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--ts-ink-on-paper)]">
@@ -64,7 +64,7 @@ export default function ShowSurfacesSettingsForm({ initial }: { initial: Sellabl
       </p>
       <SurfaceEditor drafts={drafts} onChange={setDrafts} />
       {error && (
-        <p className="mt-4 text-sm text-[var(--ts-accent)]" role="alert">
+        <p className="mt-4 text-sm text-[var(--ts-accent-text)]" role="alert">
           {error}
         </p>
       )}
@@ -82,7 +82,7 @@ export default function ShowSurfacesSettingsForm({ initial }: { initial: Sellabl
           type="button"
           onClick={save}
           disabled={saving}
-          className="bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:opacity-50"
+          className="bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:opacity-50"
           style={radiusStyle}
         >
           {saving ? "Saving…" : "Save surfaces"}

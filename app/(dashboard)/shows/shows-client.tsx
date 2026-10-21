@@ -23,7 +23,7 @@ function getEnrichStatus(show: AgentShow): EnrichStatus {
 
 const enrichColors: Record<EnrichStatus, { dot: string; label: string }> = {
   fresh: { dot: "var(--ts-ink-on-paper)", label: "Enriched" },
-  stale: { dot: "var(--ts-accent)", label: "Stale" },
+  stale: { dot: "var(--ts-gold)", label: "Stale" },
   never: { dot: "var(--ts-ink-muted-on-paper)", label: "Not enriched" },
 };
 
@@ -355,7 +355,7 @@ export default function ShowsClient({ initialShows }: { initialShows?: AgentShow
 
         <div className="flex items-center gap-3 justify-end mt-6 pt-5 border-t border-[var(--ts-hairline-on-paper)]">
           <button onClick={onCancel} className="px-4 py-2 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-sm font-medium text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)] transition-colors">Cancel</button>
-          <button onClick={onSave} disabled={!formName} className="flex items-center gap-2 px-4 py-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90 disabled:opacity-50">
+          <button onClick={onSave} disabled={!formName} className="flex items-center gap-2 px-4 py-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] text-sm font-medium text-[var(--ts-accent-foreground)] transition-colors hover:opacity-90 disabled:opacity-50">
             {title === "Add Show" ? "Add Show" : "Save Changes"}
           </button>
         </div>
@@ -408,7 +408,7 @@ export default function ShowsClient({ initialShows }: { initialShows?: AgentShow
           {showList.length > 0 && (
           <button
             onClick={handleAdd}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] text-sm font-medium text-[var(--ts-accent-foreground)] transition-colors hover:opacity-90"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 5v14M5 12h14" />
@@ -546,7 +546,7 @@ export default function ShowsClient({ initialShows }: { initialShows?: AgentShow
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">Remove?</span>
                       <button onClick={() => setRemovingId(null)} className="px-2.5 py-1 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-xs font-medium text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)] transition-colors">Cancel</button>
-                      <button onClick={() => handleRemove(show.id)} className="rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-2.5 py-1 text-xs font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90">Remove</button>
+                      <button onClick={() => handleRemove(show.id)} className="rounded-[var(--ts-radius)] bg-[var(--ts-accent)] px-2.5 py-1 text-xs font-medium text-[var(--ts-accent-foreground)] transition-colors hover:opacity-90">Remove</button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -562,7 +562,7 @@ export default function ShowsClient({ initialShows }: { initialShows?: AgentShow
                         )}
                       </button>
                       <button onClick={() => handleEdit(show)} className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] px-3 py-1.5 text-xs font-medium text-[var(--ts-ink-on-paper)] transition-all hover:border-[var(--ts-ink-on-paper)]">Edit</button>
-                      <button onClick={() => setRemovingId(show.id)} className="rounded-[var(--ts-radius)] p-1.5 text-[var(--ts-ink-muted-on-paper)] transition-all hover:text-[var(--ts-accent)]">
+                      <button onClick={() => setRemovingId(show.id)} className="rounded-[var(--ts-radius)] p-1.5 text-[var(--ts-ink-muted-on-paper)] transition-all hover:text-[var(--ts-accent-text)]">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M18 6 6 18M6 6l12 12" />
                         </svg>
@@ -594,7 +594,7 @@ export default function ShowsClient({ initialShows }: { initialShows?: AgentShow
             <p className="mx-auto mb-6 max-w-sm text-sm text-[var(--ts-ink-muted-on-paper)]">
               Add the show brands should be able to book.
             </p>
-            <button onClick={handleAdd} className="inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90">
+            <button onClick={handleAdd} className="inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] px-4 py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] transition-colors hover:opacity-90">
               Add Show
             </button>
           </div>
@@ -735,7 +735,7 @@ function ImportShowsModal({
                 <p className="text-sm text-[var(--ts-ink-on-paper)] mb-1">Drop CSV here or click to browse</p>
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-sm text-[var(--ts-accent)] hover:underline"
+                  className="text-sm text-[var(--ts-accent-text)] hover:underline"
                 >
                   Choose file
                 </button>
@@ -768,13 +768,13 @@ function ImportShowsModal({
         )}
 
         {error && (
-          <div className="mt-3 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-2.5 text-sm text-[var(--ts-accent)]">{error}</div>
+          <div className="mt-3 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-2.5 text-sm text-[var(--ts-accent-text)]">{error}</div>
         )}
 
         <div className="flex items-center gap-3 justify-end mt-5 pt-4 border-t border-[var(--ts-hairline-on-paper)]">
           <button onClick={onClose} className="px-4 py-2 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-sm font-medium text-[var(--ts-ink-muted-on-paper)] hover:border-[var(--ts-ink-on-paper)] transition-colors">Cancel</button>
           {parsedRows.length > 0 && (
-            <button onClick={handleImport} disabled={isImporting} className="flex items-center gap-2 px-4 py-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] text-sm font-medium text-[var(--ts-paper)] transition-colors hover:opacity-90 disabled:opacity-50">
+            <button onClick={handleImport} disabled={isImporting} className="flex items-center gap-2 px-4 py-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] text-sm font-medium text-[var(--ts-accent-foreground)] transition-colors hover:opacity-90 disabled:opacity-50">
               {isImporting ? (
                 <><div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--ts-paper)]/30 border-t-[var(--ts-paper)]" /> Importing...</>
               ) : (

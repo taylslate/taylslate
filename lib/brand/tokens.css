@@ -40,6 +40,9 @@
   --ts-ink-muted-on-paper: #5c564c;
   --ts-accent: #c17a45;
   --ts-accent-foreground: var(--ts-ink);
+  /* Small accent text. Outside the app this is copper, same as --ts-accent. */
+  --ts-accent-text: var(--ts-accent);
+  /* Non-text marks. #8C6E1F is the Ink & Gold mark; it is too light for small text. */
   --ts-gold: #8c6e1f;
   --ts-hairline: rgb(243 239 232 / 0.12);
   --ts-hairline-on-paper: rgb(28 25 21 / 0.12);
@@ -57,6 +60,9 @@
   --ts-ink-muted-on-paper: #46526a;
   --ts-accent: #1b2a4a;
   --ts-accent-foreground: #fbf7ee;
+  /* Small text gold. #7A5F17 is 5.54:1 on canvas #F6F5F2 and 5.16:1 on #F4EDD8.
+     #8C6E1F stays on --ts-gold for marks and large text (4.41:1 / 4.11:1, fails AA body text). */
+  --ts-accent-text: #7a5f17;
   --ts-gold: #8c6e1f;
   --ts-hairline-on-paper: #ddd8ce;
   --ts-band-brands: #f4edd8;
@@ -81,17 +87,6 @@
   font-family: var(--font-app-display), Georgia, "Iowan Old Style", serif;
   font-weight: 640;
   letter-spacing: -0.03em;
-}
-
-/* Class names stay ink-fill / accent-text so existing assertions hold.
-   Inside the logged-in shell those paints resolve to navy and gold. */
-.brand-app :is(a, button)[class~="bg-[var(--ts-ink-on-paper)]"] {
-  background-color: var(--ts-accent);
-  color: var(--ts-accent-foreground);
-}
-
-.brand-app [class~="text-[var(--ts-accent)]"] {
-  color: var(--ts-gold);
 }
 
 .marketing-page *:focus-visible,

@@ -458,7 +458,7 @@ export default function BriefIntakeForm({
           </svg>
           Back
         </button>
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
           For brands
         </p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">
@@ -680,7 +680,7 @@ export default function BriefIntakeForm({
           <button
             type="submit"
             disabled={isSubmitting}
-            className="flex w-full items-center justify-center gap-2 bg-[var(--ts-ink-on-paper)] py-3 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 bg-[var(--ts-accent)] py-3 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             style={radiusStyle}
           >
             {isSubmitting ? (

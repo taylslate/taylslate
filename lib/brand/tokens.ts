@@ -35,6 +35,7 @@ export const tokens = {
   inkMutedOnPaper: "var(--ts-ink-muted-on-paper)",
   accent: "var(--ts-accent)",
   accentForeground: "var(--ts-accent-foreground)",
+  accentText: "var(--ts-accent-text)",
   gold: "var(--ts-gold)",
   hairline: "var(--ts-hairline)",
   hairlineOnPaper: "var(--ts-hairline-on-paper)",

@@ -43,13 +43,13 @@ const statusBadge: Record<string, { tone: BadgeTone; label: string }> = {
 const badgeColor: Record<BadgeTone, string> = {
   ink: "var(--ts-ink-on-paper)",
   muted: "var(--ts-ink-muted-on-paper)",
-  accent: "var(--ts-accent)",
+  accent: "var(--ts-accent-text)",
 };
 
 const cardClass =
   "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const inkBtnClass =
-  "inline-flex items-center gap-2 bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90";
+  "inline-flex items-center gap-2 bg-[var(--ts-accent)] px-4 py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
 const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
 const columnGrid = "grid grid-cols-1 gap-6 lg:grid-cols-2";
@@ -154,7 +154,7 @@ export default function DashboardClient({
     <div className="p-8">
       {/* Header */}
       <div className="mb-8">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
           {isBrand ? "For brands" : "For shows"}
         </p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">Dashboard</h1>
@@ -170,7 +170,7 @@ export default function DashboardClient({
         >
           <div className="flex items-start justify-between gap-6">
             <div>
-              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">Welcome to Taylslate</div>
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">Welcome to Taylslate</div>
               <h2 className="text-xl font-semibold tracking-tight">Create your first campaign</h2>
               <p className={`mt-1.5 max-w-xl text-sm ${mutedText}`}>
                 We&apos;ve saved your brand profile. When you start a campaign, we&apos;ll score 50–100 shows against your audience and surface the best matches. Most brands take 2–5 minutes from brief to IO.
@@ -194,7 +194,7 @@ export default function DashboardClient({
         >
           <div className="flex items-start justify-between gap-6">
             <div>
-              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">Welcome to Taylslate</div>
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">Welcome to Taylslate</div>
               <h2 className="text-xl font-semibold tracking-tight">Add your first show</h2>
               <p className={`mt-1.5 max-w-xl text-sm ${mutedText}`}>
                 {role === "agent"
@@ -291,7 +291,7 @@ export default function DashboardClient({
             <h2 className="text-sm font-semibold uppercase tracking-wider">
               Recent Deals
             </h2>
-            <Link href="/deals" className="text-xs text-[var(--ts-accent)] hover:underline">View all</Link>
+            <Link href="/deals" className="text-xs text-[var(--ts-accent-text)] hover:underline">View all</Link>
           </div>
           <div
             className={`${cardClass} divide-y divide-[var(--ts-hairline-on-paper)]`}
@@ -368,7 +368,7 @@ export default function DashboardClient({
               <h2 className="text-sm font-semibold uppercase tracking-wider">
                 Recent Invoices
               </h2>
-              <Link href="/invoices" className="text-xs text-[var(--ts-accent)] hover:underline">View all</Link>
+              <Link href="/invoices" className="text-xs text-[var(--ts-accent-text)] hover:underline">View all</Link>
             </div>
             <div
               className={`${cardClass} divide-y divide-[var(--ts-hairline-on-paper)]`}

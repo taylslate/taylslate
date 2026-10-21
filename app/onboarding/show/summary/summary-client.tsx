@@ -244,7 +244,7 @@ export default function SummaryClient({
           )}
 
           {error && (
-            <div className="mt-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-3 text-sm text-[var(--ts-accent)]">
+            <div className="mt-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-3 text-sm text-[var(--ts-accent-text)]">
               {error}
             </div>
           )}
@@ -294,7 +294,7 @@ function Row({
             isEmpty
               ? placeholderAsEmpty
                 ? "text-[var(--ts-ink-muted-on-paper)] italic"
-                : "text-[var(--ts-accent)]"
+                : "text-[var(--ts-accent-text)]"
               : "text-[var(--ts-ink-on-paper)]"
           }`}
         >
@@ -303,7 +303,7 @@ function Row({
       </div>
       <Link
         href={`/onboarding/show/${editSlug}?return=summary`}
-        className="text-xs font-medium whitespace-nowrap text-[var(--ts-accent)] transition-colors hover:opacity-80"
+        className="text-xs font-medium whitespace-nowrap text-[var(--ts-accent-text)] transition-colors hover:opacity-80"
       >
         Edit
       </Link>

@@ -84,17 +84,17 @@ const radiusStyle = { borderRadius: tokens.radius };
 
 const inkText = "text-[var(--ts-ink-on-paper)]";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
-const accentText = "text-[var(--ts-accent)]";
+const accentText = "text-[var(--ts-accent-text)]";
 const kickerClass =
-  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]";
 const panelClass =
   "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const inkBtnClass =
-  "inline-flex items-center justify-center gap-2 bg-[var(--ts-ink-on-paper)] px-5 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 bg-[var(--ts-accent)] px-5 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 const fieldClass =
   "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none disabled:opacity-50";
 const accentLinkClass =
-  "font-medium text-[var(--ts-accent)] hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-40";
+  "font-medium text-[var(--ts-accent-text)] hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-40";
 const mutedLinkClass =
   "text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]";
 const pulseBarClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
