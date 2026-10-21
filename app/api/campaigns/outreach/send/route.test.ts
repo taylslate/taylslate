@@ -101,7 +101,10 @@ describe("POST /api/campaigns/outreach/send", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.results[0].success).toBe(false);
-    expect(body.results[0].error).toMatch(/MANAGED_ACCOUNT_INBOX/);
+    expect(body.results[0].error).toBe(
+      "This show is managed and MANAGED_ACCOUNT_INBOX is not set, so the email was not sent.",
+    );
+    expect(body.results[0].error).not.toMatch(/brand/i);
     expect(resendSend).not.toHaveBeenCalled();
   });
 });

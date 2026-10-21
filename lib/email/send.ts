@@ -81,6 +81,11 @@ export async function resolveManagedDelivery(input: {
   };
 }
 
+/** Literal ilike pattern. `_` and `%` are wildcards unless escaped. */
+function escapeIlike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 async function recipientIsManaged(input: {
   to: string;
   recipientProfileId?: string;
@@ -102,7 +107,7 @@ async function recipientIsManaged(input: {
     const { data, error } = await supabaseAdmin
       .from("profiles")
       .select("email, is_managed")
-      .ilike("email", input.to)
+      .ilike("email", escapeIlike(input.to))
       .limit(5);
     if (error) {
       console.error("[email/send] managed lookup failed:", error.message);

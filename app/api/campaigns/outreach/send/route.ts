@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
         success: false,
         to: draft.contact_email,
         error:
-          "This brand is managed and MANAGED_ACCOUNT_INBOX is not set, so the email was not sent.",
+          "This show is managed and MANAGED_ACCOUNT_INBOX is not set, so the email was not sent.",
       });
       continue;
     }
