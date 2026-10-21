@@ -25,7 +25,7 @@ export function renderInvoiceNotice(invoice: Invoice, senderName: string): {
     ? `Hi ${invoice.bill_to_name.trim()},`
     : "Hi,";
   const due = formatDateOnly(invoice.due_date);
-  const intro = `Please find the attached invoice for ${invoice.advertiser_name} — ${invoice.campaign_period}. Payment is due by ${due}.`;
+  const intro = `Here is the invoice for ${invoice.advertiser_name} (${invoice.campaign_period}). The PDF is attached. Payment is due ${due}.`;
 
   const rows: Array<[string, string]> = [
     ["Invoice", escapeHtml(invoice.invoice_number)],
@@ -59,7 +59,7 @@ export function renderInvoiceNotice(invoice: Invoice, senderName: string): {
       (lineRows.length
         ? emailDataTable(["#", "Show", "Date", "Description", "Amount"], lineRows)
         : "") +
-      emailParagraph(`The PDF is attached.<br>${escapeHtml(senderName)}`),
+      emailParagraph(escapeHtml(senderName)),
     text: [
       greeting,
       "",

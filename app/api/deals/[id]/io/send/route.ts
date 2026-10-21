@@ -145,7 +145,7 @@ export async function POST(
     const filename = `${io.io_number.replace(/\s+/g, "_")}.pdf`;
 
     // Build email
-    const subject = `Insertion Order ${io.io_number} — ${io.advertiser_name} × ${io.line_items[0]?.show_name ?? "Campaign"}`;
+    const subject = `Insertion order ${io.io_number} for ${io.advertiser_name} and ${io.line_items[0]?.show_name ?? "Campaign"}`;
     const rendered = renderIoAttachmentEmail(io, senderName);
 
     // The recipient is the agency when one is on the IO, otherwise the brand.

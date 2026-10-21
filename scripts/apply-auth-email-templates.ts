@@ -92,7 +92,7 @@ async function main(): Promise<void> {
     ["mailer_templates_recovery_content", "next=/reset-password"],
     ["mailer_templates_invite_content", "type=invite"],
     ["mailer_templates_email_change_content", "{{ .ConfirmationURL }}"],
-    ["mailer_templates_confirmation_content", "#f2ebe1"],
+    ["mailer_templates_confirmation_content", "#ffffff"],
   ] as const;
 
   let failed = 0;

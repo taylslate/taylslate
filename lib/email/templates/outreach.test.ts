@@ -26,7 +26,7 @@ describe("renderOutreachEmail", () => {
 
   it("subject is brand x show", () => {
     const out = renderOutreachEmail(baseInput);
-    expect(out.subject).toBe("Aurora Sleep x The Daily Briefing — quick intro");
+    expect(out.subject).toBe("A sponsorship offer from Aurora Sleep for The Daily Briefing");
   });
 
   it("escapes HTML in body and surfaces proposed terms", () => {
@@ -51,7 +51,7 @@ describe("renderOutreachEmail", () => {
   it("falls back to 'Sponsorship' when the brand name is empty", () => {
     const out = renderOutreachEmail({ ...baseInput, brand_name: "" });
     expect(out.from).toBe("Sponsorship <outreach@taylslate.com>");
-    expect(out.subject).toBe("Sponsorship x The Daily Briefing — quick intro");
+    expect(out.subject).toBe("A sponsorship offer from Sponsorship for The Daily Briefing");
     expect(out.html).toContain(">Sponsorship</div>");
   });
 
@@ -83,7 +83,7 @@ describe("renderOutreachEmail", () => {
       brand_name: "Aurora Sleep\nWe make mattresses for tired founders.",
     });
     expect(out.from).toBe("Aurora Sleep <outreach@taylslate.com>");
-    expect(out.subject).toBe("Aurora Sleep x The Daily Briefing — quick intro");
+    expect(out.subject).toBe("A sponsorship offer from Aurora Sleep for The Daily Briefing");
   });
 });
 

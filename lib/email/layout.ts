@@ -1,22 +1,22 @@
 // Shared layout for every Taylslate email.
 //
-// Email clients ignore CSS variables, so these hex values are the paper/ink
-// tokens from lib/brand/tokens.css:
-//   --ts-paper                 #f2ebe1
-//   --ts-ink-on-paper          #1c1915
-//   --ts-ink-muted-on-paper    #5c564c
-//   --ts-accent                #c17a45  (links only)
-//   --ts-radius                4px
-// The hairline is ink at 12% over paper, flattened to a solid hex.
-// Primary buttons are ink fill with paper text, matching the site.
+// Email clients ignore CSS variables. The field is white so the message
+// reads the same in every client. Ink, muted, and copper match the site:
+//   ink      #1c1915
+//   muted    #5c564c
+//   accent   #c17a45  (links only)
+// The hairline is ink at 12% over white, flattened to a solid hex.
+// A thin ink bar sits above the logo. The mark is ink on a transparent
+// ground, so it stays on the white field under that bar.
+// Buttons are ink fill with white text.
 
 export const emailColors = {
-  paper: "#f2ebe1",
+  canvas: "#ffffff",
   ink: "#1c1915",
   muted: "#5c564c",
   accent: "#c17a45",
-  hairline: "#d8d2c8",
-  buttonText: "#f2ebe1",
+  hairline: "#e4e3e3",
+  buttonText: "#ffffff",
 } as const;
 
 export const EMAIL_WORDMARK = "taylslate";
@@ -72,16 +72,17 @@ export function renderEmailLayout(input: EmailLayoutInput): {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${preheader}</title>
 </head>
-<body style="margin:0;padding:0;background:${emailColors.paper};">
+<body style="margin:0;padding:0;background:${emailColors.canvas};">
 <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${preheader}</div>
-<table role="presentation" data-taylslate-email="1" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${emailColors.paper};">
-<tr><td align="center" style="padding:32px 16px;">
-<table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;">
-<tr><td style="padding:0 0 20px;font-family:${EMAIL_FONT};">
+<table role="presentation" data-taylslate-email="1" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${emailColors.canvas};">
+<tr><td align="center" style="padding:24px 16px;">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;background:${emailColors.canvas};">
+<tr><td data-taylslate-header="1" style="background:${emailColors.ink};height:4px;line-height:4px;font-size:0;">&nbsp;</td></tr>
+<tr><td style="padding:16px 0 20px;font-family:${EMAIL_FONT};">
 <img src="${EMAIL_MARK_URL}" width="28" height="28" alt="" style="vertical-align:middle;border:0;display:inline-block;">
 <span style="font-size:15px;font-weight:600;letter-spacing:-0.01em;color:${emailColors.ink};vertical-align:middle;padding-left:8px;">${EMAIL_WORDMARK}</span>
 </td></tr>
-<tr><td style="border-top:1px solid ${emailColors.hairline};padding:24px 0 8px;font-family:${EMAIL_FONT};color:${emailColors.ink};font-size:14px;line-height:1.6;">
+<tr><td style="padding:0 0 8px;font-family:${EMAIL_FONT};color:${emailColors.ink};font-size:14px;line-height:1.6;">
 ${headline}${input.bodyHtml}${cta}${note}
 </td></tr>
 <tr><td style="border-top:1px solid ${emailColors.hairline};padding:16px 0 0;font-family:${EMAIL_FONT};font-size:12px;line-height:1.5;color:${emailColors.muted};">
@@ -98,8 +99,7 @@ ${PRODUCT_LINE}<br>
   const text = [
     input.text.trim(),
     "",
-    "—",
-    `Taylslate`,
+    "Taylslate",
     PRODUCT_LINE,
     EMAIL_SITE_URL,
     `© ${year} Taylslate`,

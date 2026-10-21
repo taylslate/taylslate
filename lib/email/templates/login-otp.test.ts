@@ -7,8 +7,9 @@ describe("renderLoginOtpEmail", () => {
   it("shows the code on the shared layout and does not include a magic link", () => {
     expect(out.subject).toBe("Your Taylslate sign-in code");
     expect(out.html).toContain("482913");
-    expect(out.html).toContain("#f2ebe1");
+    expect(out.html).toContain("#ffffff");
     expect(out.html).toContain('data-taylslate-email="1"');
+    expect(out.html).not.toContain("#f2ebe1");
     expect(out.html).not.toContain("token_hash=");
     expect(out.html).not.toContain("type=magiclink");
     expect(out.text).toContain("482913");

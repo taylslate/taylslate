@@ -34,7 +34,7 @@ export function renderIoAttachmentEmail(
     : io.advertiser_contact_name;
   const greeting = recipientName?.trim() ? `Hi ${recipientName.trim()},` : "Hi,";
   const showName = io.line_items[0]?.show_name ?? "your campaign";
-  const intro = `Please find the attached insertion order for ${showName} on behalf of ${io.advertiser_name}.`;
+  const intro = `Here is the insertion order for ${showName}, on behalf of ${io.advertiser_name}. The PDF is attached.`;
 
   const lineRows = io.line_items.map((item, index) => [
     String(index + 1),
@@ -64,7 +64,7 @@ export function renderIoAttachmentEmail(
           )
         : "") +
       emailParagraph(
-        `The full insertion order, with terms, is attached as a PDF. Reply if anything needs to change.<br>${escapeHtml(senderName)}`,
+        `The full terms are in the PDF. Reply if anything needs a change.<br>${escapeHtml(senderName)}`,
       ),
     text: [
       greeting,
@@ -76,7 +76,7 @@ export function renderIoAttachmentEmail(
       `Total net: $${money(io.total_net)}`,
       `Payment terms: ${io.payment_terms}`,
       "",
-      "The full insertion order is attached as a PDF.",
+      "The full terms are in the attached PDF.",
       "",
       senderName,
     ].join("\n"),

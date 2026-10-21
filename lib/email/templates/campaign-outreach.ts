@@ -1,6 +1,6 @@
 // Legacy campaign-detail outreach. The brand writes the subject and body.
-// This wraps that plain text in the shared layout. It does not go through
-// sendEmail, so managed-account reroute does not apply.
+// This wraps that plain text in the shared layout. The send route calls
+// resolveManagedDelivery before Resend, so a managed recipient is rerouted.
 
 import {
   emailParagraph,
@@ -19,10 +19,16 @@ export function renderCampaignOutreachEmail(input: {
     preheader: `A sponsorship note for ${show}.`,
     headline: "Sponsorship offer",
     bodyHtml:
-      emailParagraph(`To ${escapeHtml(show)}`) +
-      (body ? plainParagraphs(body) : emailParagraph("The note is empty.")),
-    note: "Sent by Taylslate.",
-    text: [`To ${show}`, "", body, "", "Sent by Taylslate."].join("\n"),
+      emailParagraph(`A brand asked us to pass this along for ${escapeHtml(show)}.`) +
+      (body ? plainParagraphs(body) : emailParagraph("The note did not include a message.")),
+    note: "Sent through Taylslate. Reply if you have a question.",
+    text: [
+      `A brand asked us to pass this along for ${show}.`,
+      "",
+      body,
+      "",
+      "Sent through Taylslate. Reply if you have a question.",
+    ].join("\n"),
   });
   return laid;
 }

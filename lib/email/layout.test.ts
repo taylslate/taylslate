@@ -22,8 +22,10 @@ describe("renderEmailLayout", () => {
     text: "Plain body\n\nhttps://www.taylslate.com/callback?token_hash=abc&type=magiclink",
   });
 
-  it("uses the paper field, wordmark, mark, and footer", () => {
-    expect(laid.html).toContain(`background:${emailColors.paper}`);
+  it("uses a white field, a thin ink header, the logo, and the footer", () => {
+    expect(laid.html).toContain(`background:${emailColors.canvas}`);
+    expect(laid.html).toContain('data-taylslate-header="1"');
+    expect(laid.html).toContain(`background:${emailColors.ink};height:4px`);
     expect(laid.html).toContain(EMAIL_WORDMARK);
     expect(laid.html).toContain(EMAIL_MARK_URL);
     expect(laid.html).toContain('data-taylslate-email="1"');
@@ -31,6 +33,8 @@ describe("renderEmailLayout", () => {
     expect(laid.html).toContain(`© ${year} Taylslate`);
     expect(laid.html).toContain(emailColors.ink);
     expect(laid.html).toContain("border-radius:4px");
+    expect(laid.html).not.toContain("#f2ebe1");
+    expect(laid.text).not.toContain("\u2014");
   });
 
   it("escapes the button href and keeps the raw URL in the text part", () => {

@@ -1,6 +1,6 @@
 # Taylslate emails
 
-Every message Taylslate sends uses `lib/email/layout.ts`: paper `#f2ebe1`, ink `#1c1915`, the mark at `https://www.taylslate.com/mark.png`, the wordmark, a footer, and a plain-text part. Copper `#c17a45` is for links. Buttons are ink with paper text.
+Every message Taylslate sends uses `lib/email/layout.ts`: a white field (`#ffffff`), a thin ink header bar (`#1c1915`), the mark at `https://www.taylslate.com/mark.png`, the wordmark, a footer, and a plain-text part. Copper `#c17a45` is for links. Buttons are ink with white text.
 
 Regenerate HTML previews with:
 
@@ -29,7 +29,7 @@ Files land in `docs/email-previews/`.
 
 Login magic links, show sign-in codes, handoff magic links, and show-setup magic links set `bypassManagedReroute`. They go to the real address so a managed account can still sign in.
 
-Invoice send and legacy campaign outreach call Resend directly. They are not rerouted. IO PDF send calls `resolveManagedDelivery` itself.
+Invoice send, legacy campaign outreach, and IO PDF send call `resolveManagedDelivery` before Resend. A managed recipient goes to `MANAGED_ACCOUNT_INBOX`. If that variable is unset, invoice send and IO PDF send return 409 and do not send. Legacy campaign outreach records that failure on the draft and does not send that draft.
 
 ## App mail (Resend)
 
@@ -40,13 +40,13 @@ Invoice send and legacy campaign outreach call Resend directly. They are not rer
 | handoff-magic | `POST /api/admin/managed-brands/[id]/handoff` via `lib/accounts/handoff.ts` | The new brand email | `login-magic.ts` | auth@ | Bypassed |
 | show-setup-magic | `POST /api/auth/magic/start` | Show email | `lib/email/templates/magic-link.ts` | auth@ | Bypassed. Link is `{origin}/api/auth/magic?token=` |
 | outreach-pitch | `POST /api/outreach` | Show contact | `lib/email/templates/outreach.ts` | {Brand} \<outreach@\> reply-to outreach@ | Yes, `sendEmail` lookup by `to` |
-| legacy-campaign-outreach | `POST /api/campaigns/outreach/send` | Show `contact_email` | `lib/email/templates/campaign-outreach.ts` | Taylslate \<outreach@\> | No. Direct Resend. Subject is whatever the caller sends |
+| legacy-campaign-outreach | `POST /api/campaigns/outreach/send` | Show `contact_email` | `lib/email/templates/campaign-outreach.ts` | Taylslate \<outreach@\> | Yes, via `resolveManagedDelivery` (lookup by `to`). Subject is whatever the caller sends |
 | brand-accepted / counter / declined | Show accept, counter, or decline in `app/api/outreach/[token]/_shared.ts` | Brand | `lib/email/templates/outreach-response-brand.ts` | notifications@ | Yes, `recipientProfileId` |
 | io-ready | Same accept path when a deal is created, and `POST /api/outreach/[token]/accept-counter` | Brand | `lib/email/templates/io-ready-for-signature.ts` | notifications@ | Yes, `recipientProfileId` |
 | brand-reminder | `GET /api/cron/deal-timeouts` on day 3 | Brand | `lib/email/templates/brand-signature-reminder.ts` | notifications@ | Yes, `recipientProfileId` |
 | show-countersign | DocuSign webhook after the brand signs | Show | `lib/email/templates/show-countersignature-request.ts` | notifications@ | Lookup by `to` if that profile is managed |
 | deal-cancelled | Brand cancel (`POST /api/deals/[id]/cancel`), DocuSign void, and the day-14 cron | Show | `lib/email/templates/deal-cancelled-show.ts` | notifications@ | Lookup by `to`. Timeout cron does not pass a profile id |
-| invoice | `POST /api/invoices/send` | `invoice.bill_to_email` | `lib/email/templates/invoice-notice.ts` | {Name} via Taylslate \<invoices@\> | No. Direct Resend |
+| invoice | `POST /api/invoices/send` | `invoice.bill_to_email` | `lib/email/templates/invoice-notice.ts` | {Name} via Taylslate \<invoices@\> | Yes, via `resolveManagedDelivery`. Profile id is the agency when the bill-to address is the agency, otherwise the brand |
 | io-pdf | `POST /api/deals/[id]/io/send` | Agency email, otherwise the advertiser | `lib/email/templates/io-attachment.ts` | {Name} via Taylslate \<io@\> | Yes, via `resolveManagedDelivery` |
 | conversion-alert | `GET /api/cron/conversion-alerts` | `INTERNAL_ALERT_EMAIL`, or chris@taylslate.com | `lib/alerts/conversion.ts` | notifications@ | Not applied. The cron skips managed customers before send |
 

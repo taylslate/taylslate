@@ -270,7 +270,7 @@ export default function InvoicesPage() {
           <div>
             <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
             <p className={`text-sm mt-1 ${mutedText}`}>
-              Track invoices and payments for your shows.
+              Track invoices and payments for your campaigns.
             </p>
           </div>
         </div>
@@ -300,7 +300,7 @@ export default function InvoicesPage() {
           <div>
             <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
             <p className={`text-sm mt-1 ${mutedText}`}>
-              Track invoices and payments for your shows.
+              Track invoices and payments for your campaigns.
             </p>
           </div>
         </div>
@@ -325,7 +325,7 @@ export default function InvoicesPage() {
         <div>
           <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
           <p className={`text-sm mt-1 ${mutedText}`}>
-            Track invoices and payments for your shows.
+            Track invoices and payments for your campaigns.
           </p>
         </div>
         {invoiceableIOs.length > 0 && (

@@ -44,6 +44,8 @@ describe("ManagedBrandsClient handoff", () => {
 
     render(<ManagedBrandsClient brands={brands} />);
 
+    expect(screen.getByText(/You run these accounts/)).toBeInTheDocument();
+    expect(screen.queryByText(/Chris runs/)).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Hand off" })).toHaveLength(1);
 
     await user.click(screen.getByRole("button", { name: "Hand off" }));

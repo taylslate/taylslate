@@ -21,7 +21,7 @@ export function renderMagicLinkEmail(
   input: MagicLinkEmailInput,
 ): RenderedMagicLinkEmail {
   const subject = `Set up your Taylslate account to respond to ${input.brand_name}`;
-  const sentence = `${input.brand_name} sent a sponsorship offer for ${input.show_name}. Set up your account to review the terms. This link expires in 24 hours and brings you back to the offer.`;
+  const sentence = `${input.brand_name} sent ${input.show_name} a sponsorship offer. Create your account to read it and respond. This link expires in 24 hours and brings you back to the offer.`;
   const laid = renderEmailLayout({
     preheader: `${input.brand_name} sent an offer for ${input.show_name}.`,
     headline: `Respond to ${input.brand_name}`,
