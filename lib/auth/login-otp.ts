@@ -1,18 +1,16 @@
 // One email-code sign-in for brands and shows.
 //
-// An existing profile of any role can receive a code. The session that
-// follows is the same session password and magic-link login already create.
-// /dashboard still sends a brand to brand onboarding and a show to show
-// onboarding. This path does not create accounts unless the request is tied
-// to a valid outreach token (the show-setup pitch), which is the same gate
-// the magic-link setup route already uses. That created profile is a show.
+// An existing profile of any role can receive a code. The response does not
+// say whether that address has an account. A show profile is created only
+// when a pitch code is verified and the address is still that outreach's
+// contact. /dashboard still sends a brand to brand onboarding and a show to
+// show onboarding.
 
-export const LOGIN_OTP_NO_ACCOUNT = "no_account";
 export const LOGIN_OTP_EXPIRED = "expired";
 export const LOGIN_OTP_INVALID = "invalid_code";
 export const LOGIN_OTP_RESEND_WAIT = "resend_wait";
 
-/** Matches Supabase's default email OTP cooldown. */
+/** Matches the send cooldown in lib/auth/login-otp-limit.ts. */
 export const LOGIN_OTP_RESEND_SEC = 60;
 export const LOGIN_OTP_LENGTH = 6;
 
@@ -74,14 +72,17 @@ export function loginOtpErrorMessage(
   phase: "request" | "verify",
 ): string {
   switch (code) {
-    case LOGIN_OTP_NO_ACCOUNT:
-      return "No account for that email.";
     case LOGIN_OTP_EXPIRED:
       return "That code has expired. Request a new one.";
     case LOGIN_OTP_INVALID:
       return "That code doesn't match. Try again.";
     case LOGIN_OTP_RESEND_WAIT:
       return "Wait a minute before requesting another code.";
+    case "hour_limit":
+    case "ip_limit":
+      return "Too many attempts. Try again later.";
+    case "locked":
+      return "Too many attempts. Request a new code.";
     case "email required":
     case "invalid email":
       return "Enter your email.";

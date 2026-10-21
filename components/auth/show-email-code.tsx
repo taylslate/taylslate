@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { tokens } from "@/lib/brand/tokens";
 import { inputClass, labelClass, primaryBtnClass } from "@/components/auth/auth-shell";
 import { isValidLoginEmail, normalizeLoginEmail } from "@/lib/auth/login-magic";
 import {
   isSixDigitCode,
-  LOGIN_OTP_NO_ACCOUNT,
   LOGIN_OTP_RESEND_SEC,
   LOGIN_OTP_RESEND_WAIT,
   loginOtpErrorMessage,
@@ -77,13 +75,14 @@ export function ShowEmailCode({
         retry_after_sec?: number;
       } | null;
       if (res.status === 429) {
-        const wait =
-          typeof data?.retry_after_sec === "number" && data.retry_after_sec > 0
-            ? data.retry_after_sec
-            : LOGIN_OTP_RESEND_SEC;
-        setStep("code");
-        setCooldown(wait);
-        setError(loginOtpErrorMessage(LOGIN_OTP_RESEND_WAIT, "request"));
+        if (data?.error === LOGIN_OTP_RESEND_WAIT && step === "code") {
+          const wait =
+            typeof data.retry_after_sec === "number" && data.retry_after_sec > 0
+              ? data.retry_after_sec
+              : LOGIN_OTP_RESEND_SEC;
+          setCooldown(Math.min(wait, LOGIN_OTP_RESEND_SEC));
+        }
+        setError(loginOtpErrorMessage(data?.error, "request"));
         return;
       }
       if (!res.ok) {
@@ -137,23 +136,11 @@ export function ShowEmailCode({
     }
   };
 
-  const noAccount =
-    !outreachToken && error === loginOtpErrorMessage(LOGIN_OTP_NO_ACCOUNT, "request");
-
   return (
     <div>
       {error ? (
         <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
-          {noAccount ? (
-            <>
-              No account for that email.{" "}
-              <Link href="/signup" className="text-[var(--ts-accent-text)] hover:underline">
-                Sign up instead.
-              </Link>
-            </>
-          ) : (
-            error
-          )}
+          {error}
         </p>
       ) : null}
 
@@ -195,7 +182,7 @@ export function ShowEmailCode({
       ) : (
         <form onSubmit={verifyCode} className="space-y-4">
           <p className="text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
-            We sent a 6-digit code to <span className="text-[var(--ts-ink-on-paper)]">{email}</span>.
+            If there&apos;s an account for that email, we sent a 6-digit code.
           </p>
           <div>
             <label htmlFor="show-otp-code" className={labelClass}>

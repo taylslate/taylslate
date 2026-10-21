@@ -4,12 +4,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor, act } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
-vi.mock("next/link", () => ({
-  default: ({ href, children }: { href: string; children: React.ReactNode }) => (
-    <a href={href}>{children}</a>
-  ),
-}));
-
 import { ShowEmailCode } from "./show-email-code";
 
 const fetchMock = vi.fn();
@@ -45,6 +39,9 @@ describe("ShowEmailCode", () => {
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "host@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Send code" }));
     expect(await screen.findByLabelText("Code")).toBeInTheDocument();
+    expect(
+      screen.getByText("If there's an account for that email, we sent a 6-digit code."),
+    ).toBeInTheDocument();
     expect(fetchMock.mock.calls[0][0]).toBe("/api/auth/login/otp");
 
     fireEvent.change(screen.getByLabelText("Code"), { target: { value: "482913" } });
@@ -93,22 +90,32 @@ describe("ShowEmailCode", () => {
     expect(screen.getByRole("button", { name: "Resend code" })).toBeEnabled();
   });
 
-  it("points an unknown email at signup and stays on the email step", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 404,
-      json: async () => ({ error: "no_account" }),
-    });
+  it("does not say whether the email has an account", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
     renderForm();
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "brand@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Send code" }));
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("No account for that email.");
-    expect(screen.getByRole("link", { name: "Sign up instead." })).toHaveAttribute(
-      "href",
-      "/signup",
-    );
+    expect(
+      await screen.findByText("If there's an account for that email, we sent a 6-digit code."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/No account for that email/i)).toBeNull();
+    expect(screen.queryByRole("link", { name: /sign up instead/i })).toBeNull();
     expect(screen.queryByText(/magic link/i)).toBeNull();
+  });
+
+  it("stays on the email step when the first send is rate limited", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({ error: "hour_limit", retry_after_sec: 3500 }),
+    });
+    renderForm();
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "host@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Too many attempts. Try again later.",
+    );
     expect(screen.queryByLabelText("Code")).toBeNull();
+    expect(screen.queryByText(/Resend code in/)).toBeNull();
   });
 });

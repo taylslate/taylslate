@@ -35,8 +35,7 @@ Invoice send, legacy campaign outreach, and IO PDF send call `resolveManagedDeli
 
 | Id | Trigger | Recipient | Template | From | Reroute |
 | --- | --- | --- | --- | --- | --- |
-| login-magic | `POST /api/auth/login/magic` | The address typed on `/login` (brand or show) | `lib/email/templates/login-magic.ts` | auth@ | Bypassed |
-| login-otp | `POST /api/auth/login/otp` | Any existing account on `/login` (brand or show), or show setup on a pitch | `lib/email/templates/login-otp.ts` | auth@ | Bypassed. Body is the 6-digit code. No link. `/login/show` redirects to `/login` |
+| login-otp | `POST /api/auth/login/otp` | The address typed on `/login`, or the show contact on a pitch. The response is `{ok:true}` either way and does not say whether an account exists. A code is sent only when one does, or when the address is that pitch's contact (the show account is created when the code is verified). | `lib/email/templates/login-otp.ts` | auth@ | Bypassed. Body is the 6-digit code. No link. `/login/show` redirects to `/login` |
 | handoff-magic | `POST /api/admin/managed-brands/[id]/handoff` via `lib/accounts/handoff.ts` | The new brand email | `login-magic.ts` | auth@ | Bypassed |
 | show-setup-magic | `POST /api/auth/magic/start` | Show email | `lib/email/templates/magic-link.ts` | auth@ | Bypassed. Link is `{origin}/api/auth/magic?token=` |
 | outreach-pitch | `POST /api/outreach` | Show contact | `lib/email/templates/outreach.ts` | {Brand} \<outreach@\> reply-to outreach@ | Yes, `sendEmail` lookup by `to` |
@@ -64,7 +63,7 @@ SUPABASE_ACCESS_TOKEN=... npx tsx scripts/apply-auth-email-templates.ts
 
 The script patches subject and HTML only. It does not flip `mailer_notifications_*_enabled` and it does not change SMTP host, port, or password. It sets `smtp_sender_name` to Taylslate only when that field is something else.
 
-`/login` sends a 6-digit code through Resend (`login-otp`) for brands and shows. It does not use a hosted Supabase template. `/login/show` redirects there. Handoff still sends the Resend magic-link email (`login-magic`). The hosted magic-link template stays a link so a dashboard send does not become a code. Supabase has no separate OTP config field, so `scripts/apply-auth-email-templates.ts` checks the code template in `lib/email/templates/auth.ts` (`id: otp`) and does not write it. Running that script is not required for the `/login` code change.
+`/login` sends a 6-digit code through Resend (`login-otp`) for brands and shows. It does not use a hosted Supabase template. There is no `POST /api/auth/login/magic`. `/login/show` redirects to `/login`. Handoff still sends the Resend magic-link email (`login-magic`). The hosted magic-link template stays a link so a dashboard send does not become a code. Supabase has no separate OTP config field, so `scripts/apply-auth-email-templates.ts` checks the code template in `lib/email/templates/auth.ts` (`id: otp`) and does not write it. Running that script is not required for the `/login` code change.
 
 | Template | Subject | Link |
 | --- | --- | --- |

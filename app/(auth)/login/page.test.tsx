@@ -152,30 +152,24 @@ describe("LoginPage", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.email).toBe("jane@example.com");
     expect(await screen.findByLabelText("Code")).toBeInTheDocument();
+    expect(
+      screen.getByText("If there's an account for that email, we sent a 6-digit code."),
+    ).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Log in" })).toBeInTheDocument();
     expect(signInWithPassword).not.toHaveBeenCalled();
   });
 
-  it("stays on login and points unknown emails to signup", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      json: async () => ({ error: "no_account" }),
-    });
+  it("does not say whether that email has an account", async () => {
     render(<LoginPage />);
     fillEmail("nobody@example.com");
     fireEvent.click(screen.getByRole("button", { name: "Send code" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "No account for that email. Sign up instead.",
-    );
     expect(
-      screen.getByRole("link", { name: /sign up instead/i }),
-    ).toHaveAttribute("href", "/signup");
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Log in" }),
+      await screen.findByText("If there's an account for that email, we sent a 6-digit code."),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "Check your email" }),
-    ).toBeNull();
+    expect(screen.queryByText(/No account for that email/i)).toBeNull();
+    expect(screen.queryByRole("link", { name: /sign up instead/i })).toBeNull();
+    expect(screen.getByRole("heading", { level: 1, name: "Log in" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/signup");
   });
 
   it("rejects an empty email without requesting a code", async () => {

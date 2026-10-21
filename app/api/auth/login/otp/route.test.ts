@@ -1,22 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { _resetRateLimits } from "@/lib/utils/rate-limit";
+import {
+  applyLoginOtpRpc,
+  type LoginOtpBucket,
+  type LoginOtpRpcArgs,
+} from "@/lib/auth/login-otp-limit";
 
-const { generateLink, deleteUser, createUser, sendEmail, from, verifyOutreachToken, getOutreachById } =
+const { generateLink, deleteUser, createUser, sendEmail, from, rpc, verifyOutreachToken, getOutreachById, eq, ilike } =
   vi.hoisted(() => ({
     generateLink: vi.fn(),
     deleteUser: vi.fn(),
     createUser: vi.fn(),
     sendEmail: vi.fn(),
     from: vi.fn(),
+    rpc: vi.fn(),
     verifyOutreachToken: vi.fn(),
     getOutreachById: vi.fn(),
+    eq: vi.fn(),
+    ilike: vi.fn(),
   }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
     auth: { admin: { generateLink, deleteUser, createUser } },
     from,
+    rpc,
   },
 }));
 vi.mock("@/lib/email/send", () => ({
@@ -31,25 +39,31 @@ vi.mock("@/lib/data/queries", () => ({
 
 import { POST } from "./route";
 
+const store = new Map<string, LoginOtpBucket>();
 let profile: { id: string; role: string } | null = { id: "show-1", role: "show" };
 let lookupError: { message: string } | null = null;
-let insertError: { message: string } | null = null;
 
 function profileChain() {
   const chain = {
     select: vi.fn(() => chain),
-    ilike: vi.fn(() => chain),
-    eq: vi.fn(() => chain),
+    ilike: vi.fn((...args: unknown[]) => {
+      ilike(...args);
+      return chain;
+    }),
+    eq: vi.fn((...args: unknown[]) => {
+      eq(...args);
+      return chain;
+    }),
     maybeSingle: vi.fn(async () => ({ data: profile, error: lookupError })),
-    insert: vi.fn(async () => ({ error: insertError })),
+    insert: vi.fn(async () => ({ error: null })),
   };
   return chain;
 }
 
-function req(body: unknown): NextRequest {
+function req(body: unknown, headers?: Record<string, string>): NextRequest {
   return new NextRequest("https://www.taylslate.com/api/auth/login/otp", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
 }
@@ -60,13 +74,19 @@ beforeEach(() => {
   createUser.mockReset();
   sendEmail.mockReset();
   from.mockReset();
+  rpc.mockReset();
   verifyOutreachToken.mockReset();
   getOutreachById.mockReset();
-  _resetRateLimits();
+  eq.mockReset();
+  ilike.mockReset();
+  store.clear();
   profile = { id: "show-1", role: "show" };
   lookupError = null;
-  insertError = null;
   from.mockImplementation(() => profileChain());
+  rpc.mockImplementation(async (_name: string, args: LoginOtpRpcArgs) => ({
+    data: applyLoginOtpRpc(store, args, Date.now()),
+    error: null,
+  }));
   generateLink.mockResolvedValue({
     data: {
       user: { id: "show-1" },
@@ -86,9 +106,22 @@ beforeEach(() => {
 
 describe("POST /api/auth/login/otp", () => {
   it("emails a 6-digit code for an existing show", async () => {
-    const res = await POST(req({ email: "Host@Example.com" }));
+    const res = await POST(
+      req({ email: "Host@Example.com" }, { "x-forwarded-for": "203.0.113.5, 10.0.0.1" }),
+    );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
+    expect(eq).toHaveBeenCalledWith("email", "host@example.com");
+    expect(ilike).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "login_otp_consume",
+      expect.objectContaining({
+        p_action: "send",
+        p_email: "host@example.com",
+        p_ip: "203.0.113.5",
+        p_clear_pending: true,
+      }),
+    );
     expect(generateLink).toHaveBeenCalledWith({
       type: "magiclink",
       email: "host@example.com",
@@ -110,12 +143,23 @@ describe("POST /api/auth/login/otp", () => {
     expect(sent.text).toContain("482913");
   });
 
+  it("matches a wildcard email exactly", async () => {
+    const res = await POST(req({ email: "a%@b_c.com" }));
+    expect(res.status).toBe(200);
+    expect(eq).toHaveBeenCalledWith("email", "a%@b_c.com");
+    expect(ilike).not.toHaveBeenCalled();
+    expect(generateLink).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "a%@b_c.com" }),
+    );
+  });
+
   it("rejects an empty email", async () => {
     const res = await POST(req({ email: "   " }));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "email required" });
     expect(generateLink).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("emails a 6-digit code for an existing brand", async () => {
@@ -132,17 +176,25 @@ describe("POST /api/auth/login/otp", () => {
     expect(sendEmail.mock.calls[0][0].html).toContain("482913");
   });
 
-  it("returns no_account for an unknown email and does not create a user", async () => {
+  it("returns ok for an unknown email and does not create a user or send mail", async () => {
     profile = null;
     const res = await POST(req({ email: "nobody@example.com" }));
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: "no_account" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
     expect(generateLink).not.toHaveBeenCalled();
     expect(createUser).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "login_otp_consume",
+      expect.objectContaining({
+        p_email: "nobody@example.com",
+        p_pending_hash: null,
+        p_clear_pending: false,
+      }),
+    );
   });
 
-  it("rolls back a GoTrue signup conversion instead of emailing a code", async () => {
+  it("rolls back a GoTrue signup conversion and still answers ok", async () => {
     generateLink.mockResolvedValue({
       data: {
         user: { id: "created-user" },
@@ -151,9 +203,21 @@ describe("POST /api/auth/login/otp", () => {
       error: null,
     });
     const res = await POST(req({ email: "host@example.com" }));
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: "no_account" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
     expect(deleteUser).toHaveBeenCalledWith("created-user");
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("answers ok when generateLink reports an unknown user", async () => {
+    generateLink.mockResolvedValue({
+      data: { user: null, properties: {} },
+      error: { message: "User with this email not found", code: "user_not_found" },
+    });
+    const res = await POST(req({ email: "host@example.com" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(deleteUser).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
@@ -168,7 +232,7 @@ describe("POST /api/auth/login/otp", () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 
-  it("creates a show when the email matches the outreach contact", async () => {
+  it("emails a pitch code without creating the show account yet", async () => {
     profile = null;
     verifyOutreachToken.mockReturnValue({ outreach_id: "out-1", iat: 1, v: 1 });
     getOutreachById.mockResolvedValue({
@@ -180,25 +244,25 @@ describe("POST /api/auth/login/otp", () => {
       req({ email: "new@example.com", outreach_token: "pitch-token" }),
     );
     expect(res.status).toBe(200);
-    expect(createUser).toHaveBeenCalledWith({
-      email: "new@example.com",
-      email_confirm: true,
-      user_metadata: { source: "email_code" },
-    });
-    const insert = from.mock.results
-      .map((call) => call.value.insert)
-      .find((fn) => fn.mock.calls.length > 0);
-    expect(insert).toBeTruthy();
-    expect(insert.mock.calls[0][0]).toMatchObject({
-      id: "new-show",
-      email: "new@example.com",
-      role: "show",
-    });
+    expect(await res.json()).toEqual({ ok: true });
+    expect(createUser).not.toHaveBeenCalled();
+    expect(generateLink).not.toHaveBeenCalled();
     expect(sendEmail).toHaveBeenCalledTimes(1);
-    expect(deleteUser).not.toHaveBeenCalled();
+    const sent = sendEmail.mock.calls[0][0];
+    expect(sent.to).toBe("new@example.com");
+    expect(sent.text).toMatch(/\b\d{6}\b/);
+    expect(rpc).toHaveBeenCalledWith(
+      "login_otp_consume",
+      expect.objectContaining({
+        p_action: "send",
+        p_email: "new@example.com",
+        p_pending_outreach: "out-1",
+        p_pending_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
   });
 
-  it("returns no_account when the outreach contact email does not match", async () => {
+  it("returns ok when the outreach contact email does not match", async () => {
     profile = null;
     verifyOutreachToken.mockReturnValue({ outreach_id: "out-1", iat: 1, v: 1 });
     getOutreachById.mockResolvedValue({
@@ -209,9 +273,48 @@ describe("POST /api/auth/login/otp", () => {
     const res = await POST(
       req({ email: "other@example.com", outreach_token: "pitch-token" }),
     );
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: "no_account" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
     expect(createUser).not.toHaveBeenCalled();
+    expect(generateLink).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "login_otp_consume",
+      expect.objectContaining({ p_email: "other@example.com", p_pending_hash: null }),
+    );
+  });
+
+  it("keeps an invalid outreach token as 401", async () => {
+    verifyOutreachToken.mockReturnValue(null);
+    const res = await POST(
+      req({ email: "new@example.com", outreach_token: "bad-token" }),
+    );
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "Invalid outreach token" });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("keeps a missing outreach as 404", async () => {
+    verifyOutreachToken.mockReturnValue({ outreach_id: "gone", iat: 1, v: 1 });
+    getOutreachById.mockResolvedValue(null);
+    const res = await POST(
+      req({ email: "new@example.com", outreach_token: "pitch-token" }),
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Outreach not found" });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the limiter is unavailable", async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { message: "function login_otp_consume does not exist" },
+    });
+    const res = await POST(req({ email: "host@example.com" }));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "unavailable" });
     expect(generateLink).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
   });
