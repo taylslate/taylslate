@@ -132,10 +132,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Auto-create agent relationship if user is an agent
+    // Auto-create a pending roster link if the signed-in user is an agent.
     const profile = await getUserProfile(user.id);
     if (profile?.role === "agent") {
-      await claimShow(user.id, show.id, body.commission_rate);
+      try {
+        await claimShow(show.id, body.commission_rate);
+      } catch (claimError) {
+        const message =
+          claimError instanceof Error ? claimError.message : "Roster link failed.";
+        console.error("Roster link failed after creating show:", claimError);
+        return NextResponse.json(
+          {
+            error: `Show created, but the roster link failed: ${message}`,
+            show,
+          },
+          { status: 500 }
+        );
+      }
     }
 
     return NextResponse.json(show, { status: 201 });

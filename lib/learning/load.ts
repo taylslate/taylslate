@@ -283,7 +283,8 @@ async function loadRepresentedShowIds(
   const { data, error } = await supabaseAdmin
     .from("agent_show_relationships")
     .select("show_id")
-    .eq("agent_id", userId);
+    .eq("agent_id", userId)
+    .eq("status", "approved");
   if (error) {
     console.warn("[learning] rep relationships unavailable:", error.message);
     return [];

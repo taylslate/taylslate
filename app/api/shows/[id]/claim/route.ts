@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getShowById, getUserProfile, claimShow, getAgentShowRelationship } from "@/lib/data/queries";
+import {
+  getShowById,
+  getUserProfile,
+  claimShow,
+  getAgentShowRelationshipAnyStatus,
+} from "@/lib/data/queries";
 
 export async function POST(
   request: NextRequest,
@@ -26,8 +31,8 @@ export async function POST(
       return NextResponse.json({ error: "Show not found" }, { status: 404 });
     }
 
-    // Check if already claimed
-    const existing = await getAgentShowRelationship(user.id, showId);
+    // Any existing row blocks a second claim, including pending and rejected.
+    const existing = await getAgentShowRelationshipAnyStatus(user.id, showId);
     if (existing) {
       return NextResponse.json(
         { error: "You already represent this show", relationship: existing },
@@ -44,9 +49,12 @@ export async function POST(
       // No body is fine
     }
 
-    const relationship = await claimShow(user.id, showId, commissionRate);
+    const relationship = await claimShow(showId, commissionRate);
 
-    return NextResponse.json({ relationship, show }, { status: 201 });
+    return NextResponse.json(
+      { relationship, show, status: "pending" },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Claim error:", error);
     return NextResponse.json(
