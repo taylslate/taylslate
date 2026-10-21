@@ -68,7 +68,7 @@ describe("ManagedBrandsClient handoff", () => {
     expect(await screen.findByText("Sign-in link sent to owner@saunabox.com.")).toBeInTheDocument();
     expect(screen.getByText("owner@saunabox.com")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Hand off" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Mark managed" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Not managed" })).toHaveLength(2);
   });
 
   it("shows the server error and leaves the row managed", async () => {

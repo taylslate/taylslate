@@ -229,7 +229,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
 
   return (
     <div className={`min-h-screen bg-[var(--ts-paper)] p-4 sm:p-8 ${inkText}`}>
-      <div className="mb-8 max-w-3xl">
+      <div className="mb-8 w-full">
         <div className="mb-3 flex items-center gap-3">
           <Link
             href="/deals"
@@ -277,7 +277,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
 
       {isEditing ? (
         /* ======================== EDIT MODE ======================== */
-        <div className="max-w-3xl space-y-6">
+        <div className="w-full space-y-6">
           {/* Status */}
           <div>
             <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Status</label>
@@ -476,7 +476,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
         </div>
       ) : (
         /* ======================== VIEW MODE ======================== */
-        <div className="max-w-3xl space-y-6">
+        <div className="w-full space-y-6">
           {/* Deal Info */}
           <section className="p-5 bg-[var(--ts-paper)] rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)]">
             <h2 className="text-xs font-semibold text-[var(--ts-ink-muted-on-paper)] uppercase tracking-wider mb-4">Deal Details</h2>

@@ -35,7 +35,7 @@ export default function GeneratedCampaignPage() {
 
   if (loading || !campaign) {
     return (
-      <div className="max-w-6xl bg-[var(--ts-paper)] p-8 text-[var(--ts-ink-on-paper)]">
+      <div className="w-full bg-[var(--ts-paper)] p-4 text-[var(--ts-ink-on-paper)] sm:p-8">
         <div className="animate-pulse space-y-4">
           <div className="h-8 w-64 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)]/10" />
           <div className="h-4 w-48 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)]/10" />
