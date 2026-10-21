@@ -195,7 +195,7 @@ export default function NewDealPage() {
         </div>
         <h1 className={`text-2xl font-semibold tracking-tight ${inkText}`}>New Deal</h1>
         <p className={`mt-1 text-sm ${mutedText}`}>
-          Create a sponsorship deal for one of your shows.
+          Create a sponsorship deal with a show.
         </p>
       </div>
 

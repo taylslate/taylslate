@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Deal, DealStatus, Placement, PriceType } from "@/lib/data/types";
+import MakeGoodPanel from "@/components/deals/MakeGoodPanel";
 import { formatDateOnly } from "@/lib/format/date-only";
 import { tokens } from "@/lib/brand/tokens";
 
@@ -477,6 +478,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
       ) : (
         /* ======================== VIEW MODE ======================== */
         <div className="w-full space-y-6">
+          <MakeGoodPanel dealId={id} autoload />
           {/* Deal Info */}
           <section className="p-5 bg-[var(--ts-paper)] rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)]">
             <h2 className="text-xs font-semibold text-[var(--ts-ink-muted-on-paper)] uppercase tracking-wider mb-4">Deal Details</h2>

@@ -267,7 +267,9 @@ export default function DealsClient({ initialDeals }: { initialDeals?: Deal[] })
           <p className={kickerClass}>For brands</p>
           <h1 className={`mt-2 text-2xl font-semibold tracking-tight ${inkText}`}>Deal Pipeline</h1>
           <p className={`mt-1 text-sm ${mutedText}`}>
-            Drag deals between columns to update their status.
+            {dealList.length > 0
+              ? "Drag deals between columns to update their status."
+              : "Your sponsorship deals, from the first offer through a signed insertion order."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -396,7 +398,7 @@ export default function DealsClient({ initialDeals }: { initialDeals?: Deal[] })
           <div className="border-t border-[var(--ts-hairline-on-paper)] px-6 py-10 text-center">
             <h3 className={`mb-2 text-lg font-semibold ${inkText}`}>No deals yet</h3>
             <p className={`mx-auto max-w-sm text-sm ${mutedText}`}>
-              Deals will appear here as brands reach out to sponsor your shows.
+              Deals show up here when a show accepts your offer.
             </p>
             <Link href="/deals/new" className={`${inkBtnClass} mt-6`} style={radiusStyle}>
               New Deal

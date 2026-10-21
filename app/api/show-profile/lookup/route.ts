@@ -4,6 +4,7 @@ import { getPodscanClientSafe } from "@/lib/podscan";
 import { lookupShowByUrl } from "@/lib/podscan/lookup";
 import type { PodscanPodcast } from "@/lib/podscan/types";
 import { stripHtml } from "@/lib/utils/strip-html";
+import { SHOW_PROFILE_PODSCAN_ID_LABEL } from "@/lib/shows/profile-podscan";
 
 /**
  * Given a raw feed URL or Apple Podcasts link, look the show up in Podscan
@@ -55,6 +56,7 @@ export async function POST(request: NextRequest) {
       found: true,
       podcast: {
         podscan_id: podcast.podcast_id,
+        podscan_id_label: SHOW_PROFILE_PODSCAN_ID_LABEL,
         show_name: podcast.podcast_name,
         show_description: stripHtml(podcast.podcast_description) || null,
         show_image_url: podcast.podcast_image_url ?? null,

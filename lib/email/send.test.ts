@@ -73,6 +73,12 @@ describe("sendEmail managed reroute", () => {
     expect(resendSend.mock.calls[0][0].to).toBe("ops@taylslate.com");
   });
 
+  it("escapes _ and % before the recipient email ilike", async () => {
+    const builder = stageLookup({ email: "show_a%@x.com", is_managed: true });
+    await resolveManagedDelivery({ to: "show_a%@x.com", subject: "Pitch" });
+    expect(builder.ilike).toHaveBeenCalledWith("email", "show\\_a\\%@x.com");
+  });
+
   it("skips the send and does not call Resend when the inbox is unset", async () => {
     delete process.env.MANAGED_ACCOUNT_INBOX;
     stageLookup({ email: "brand@x.com", is_managed: true });

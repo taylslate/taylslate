@@ -9,6 +9,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import type { Wave12Deal, Wave12DealStatus } from "@/lib/data/types";
+import type { MakeGoodRecord } from "@/lib/make-goods/types";
+import MakeGoodPanel from "@/components/deals/MakeGoodPanel";
 import { derivePromoCode } from "@/lib/io/promo-code";
 import { formatDateOnly } from "@/lib/format/date-only";
 import { tokens } from "@/lib/brand/tokens";
@@ -42,6 +44,8 @@ interface Props {
     chargedCents: number;
     feePercentage: number;
   } | null;
+  /** Open and decided make-goods. Omit to leave the section off. */
+  makeGoods?: MakeGoodRecord[];
 }
 
 function formatChargeUsd(cents: number): string {
@@ -180,6 +184,7 @@ export default function Wave12DealClient({
   trackingLink,
   showNotesBlurb,
   episodeCharge = null,
+  makeGoods,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -628,6 +633,12 @@ export default function Wave12DealClient({
               </div>
             </div>
           )}
+
+          <MakeGoodPanel
+            dealId={deal.id}
+            canApprove={viewerRole === "brand"}
+            proposals={makeGoods}
+          />
 
           <div className={`p-5 ${panelClass}`} style={radiusStyle}>
             <h2 className={sectionHead}>

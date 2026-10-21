@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useRef } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Campaign, ScoredShowRecord } from "@/lib/data/types";
 import { isBriefV2 } from "@/lib/data/types";
@@ -193,6 +194,12 @@ export default function DiscoveryList({ campaign, surfacesByShowId = {} }: Disco
             </svg>
           </button>
           <h1 className="text-xl font-bold text-[var(--ts-ink-on-paper)] tracking-tight">{campaign.name}</h1>
+          <Link
+            href={`/campaigns/${campaign.id}/learning`}
+            className="ml-auto text-xs text-[var(--ts-ink-muted-on-paper)] underline hover:text-[var(--ts-ink-on-paper)]"
+          >
+            What we learned
+          </Link>
           {isSaving && (
             <span className="text-xs text-[var(--ts-ink-muted-on-paper)] animate-pulse">Saving...</span>
           )}

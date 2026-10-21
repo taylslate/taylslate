@@ -55,6 +55,7 @@ import {
 } from "react";
 import SurfaceAddons from "@/components/shows/SurfaceAddons";
 import type { SellableSurface } from "@/lib/shows/surfaces";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type {
   ConvictionBand,
@@ -827,10 +828,17 @@ function TieredScoredUniverse({
         <div className="mb-3 flex items-center gap-3">
           <BackButton router={router} />
           <p className={kickerClass}>For brands</p>
+          <Link
+            href={`/campaigns/${campaignId}/learning`}
+            className={`ml-auto px-3 py-1.5 text-xs ${fieldClass}`}
+            style={radiusStyle}
+          >
+            What we learned
+          </Link>
           <button
             onClick={onRerun}
             disabled={rerunning}
-            className={`ml-auto px-3 py-1.5 text-xs ${fieldClass} disabled:cursor-not-allowed`}
+            className={`px-3 py-1.5 text-xs ${fieldClass} disabled:cursor-not-allowed`}
             style={radiusStyle}
           >
             {rerunning ? "Re-running…" : "Re-run discovery"}
@@ -1261,6 +1269,15 @@ function BenchSection({
 // Cards
 // ============================================================
 
+function PostAirLine({ entry }: { entry: TieredShow }) {
+  if (!entry.postAirReasoning) return null;
+  return (
+    <p data-testid="post-air-reasoning" className={`mt-2 text-sm leading-snug ${inkText}`}>
+      {entry.postAirReasoning}
+    </p>
+  );
+}
+
 function TestShowCard({
   entry,
   selected,
@@ -1321,10 +1338,12 @@ function TestShowCard({
             data-testid="composite-score"
             className={`text-2xl font-bold leading-none ${inkText}`}
           >
-            {entry.composite ?? "—"}
+            {(entry.postAirDelta && entry.postAirAdjusted != null
+              ? entry.postAirAdjusted
+              : entry.composite) ?? "—"}
           </div>
           <div className={`mt-1 text-[10px] ${mutedText}`}>
-            composite
+            {entry.postAirDelta ? `was ${entry.composite}` : "composite"}
           </div>
         </div>
       </div>
@@ -1350,6 +1369,7 @@ function TestShowCard({
           {entry.reasoning}
         </p>
       )}
+      <PostAirLine entry={entry} />
 
       <MarketSignals signals={signalsForShow(entry, marketSignalsByShow)} />
 
@@ -1432,6 +1452,7 @@ function ScaleShowCard({
               {entry.reasoning}
             </p>
           )}
+          <PostAirLine entry={entry} />
         </div>
         <div className="text-right flex-shrink-0">
           <div className="flex items-center justify-end gap-1.5">
@@ -1528,6 +1549,7 @@ function BenchShowCard({
               {entry.reasoning}
             </p>
           )}
+          <PostAirLine entry={entry} />
         </div>
         <div className="text-right flex-shrink-0">
           {entry.needsQuote ? (
@@ -2122,13 +2144,18 @@ function Shell({
   router: ReturnType<typeof useRouter>;
   children: React.ReactNode;
 }) {
-  void campaignId;
   return (
     <div className={`flex h-[calc(100vh-64px)] flex-col bg-[var(--ts-canvas)] ${inkText}`}>
       <div className={`border-b ${hairlineRule} bg-[var(--ts-paper)] px-8 pt-6 pb-4`}>
         <div className="mb-3 flex items-center gap-3">
           <BackButton router={router} />
           <p className={kickerClass}>For brands</p>
+          <Link
+            href={`/campaigns/${campaignId}/learning`}
+            className={`ml-auto text-xs ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}
+          >
+            What we learned
+          </Link>
         </div>
         <h1 className={`text-xl font-semibold tracking-tight ${inkText}`}>
           {campaignName}

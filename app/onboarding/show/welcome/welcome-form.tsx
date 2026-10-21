@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import OnboardingShell from "../onboarding-shell";
+import { profilePatchFromLookup } from "@/lib/shows/profile-podscan";
 
 function looksLikeUrl(v: string): boolean {
   const trimmed = v.trim();
@@ -23,6 +24,7 @@ function normalize(v: string): string {
 }
 
 interface Looked {
+  /** Display of the URL lookup. The save below does not send this field. */
   podscan_id?: string | null;
   show_name: string;
   show_description: string | null;
@@ -69,10 +71,12 @@ export default function WelcomeForm({ initialValue }: { initialValue: string }) 
       if (lookup.ok) {
         const data = (await lookup.json()) as { found: boolean; podcast?: Looked };
         if (data.found && data.podcast) {
+          // Show details from the URL lookup. The Podscan id stays on the
+          // lookup response as a display label and is left out of this save.
           await fetch("/api/show-profile", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data.podcast),
+            body: JSON.stringify(profilePatchFromLookup(data.podcast)),
           });
         }
       }

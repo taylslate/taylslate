@@ -9,6 +9,7 @@ import type {
   AircheckMatchEvidence,
   AircheckRow,
 } from "./types";
+import { runMakeGoodDetectionHook } from "./detect";
 import { AircheckLineNotFound, transcribeIoLine } from "./transcribe";
 import { loadAircheckBuy, saveAircheckMatch } from "./store";
 
@@ -189,5 +190,7 @@ export async function aircheckIoLine(ioLineItemId: string): Promise<AircheckRow>
   const row = await transcribeIoLine(ioLineItemId);
   const buy = await loadAircheckBuy(ioLineItemId);
   if (!buy) throw new AircheckLineNotFound(ioLineItemId);
-  return saveAircheckMatch(ioLineItemId, judgeAircheck(row, buy));
+  const saved = await saveAircheckMatch(ioLineItemId, judgeAircheck(row, buy));
+  await runMakeGoodDetectionHook(ioLineItemId);
+  return saved;
 }

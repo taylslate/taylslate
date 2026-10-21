@@ -21,16 +21,16 @@ export function renderDealCancelledShow(
 ): RenderedDealCancelled {
   const timeout = input.cause === "timeout";
   const subject = timeout
-    ? "This opportunity has closed"
+    ? `The ${input.brand_name} opportunity has closed`
     : `${input.brand_name} cancelled the deal`;
   const headline = timeout
     ? `The ${input.brand_name} opportunity has closed`
     : `${input.brand_name} cancelled the deal`;
   const reason = input.reason?.trim();
   const body = timeout
-    ? `More than 14 days passed without a signed insertion order, so the deal for ${input.show_name} is closed. ${input.brand_name} can reach out again later. Your show stays available.`
-    : `${input.brand_name} cancelled the deal for ${input.show_name} before it was fully signed.${
-        reason ? ` Reason: ${reason}` : ""
+    ? `More than 14 days passed without a signed insertion order, so the deal for ${input.show_name} is closed. ${input.brand_name} can reach out again if the timing is better. Your show stays available.`
+    : `${input.brand_name} cancelled the deal for ${input.show_name} before both sides had signed.${
+        reason ? ` They noted: ${reason}` : ""
       } Your show stays available.`;
 
   const laid = renderEmailLayout({

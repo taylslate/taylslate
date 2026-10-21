@@ -132,12 +132,12 @@ describe("POST /api/deals/[id]/io/send", () => {
     const body = await res.json();
     expect(body.to).toBe("brand@x.com");
     expect(body.subject).toBe(
-      "Insertion Order IO-1001 — SaunaBox × Daily Briefing",
+      "Insertion order IO-1001 for SaunaBox and Daily Briefing",
     );
     expect(resolveManagedDelivery).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "brand@x.com",
-        subject: "Insertion Order IO-1001 — SaunaBox × Daily Briefing",
+        subject: "Insertion order IO-1001 for SaunaBox and Daily Briefing",
         recipientProfileId: "brand-1",
       }),
     );
@@ -146,10 +146,11 @@ describe("POST /api/deals/[id]/io/send", () => {
     expect(sent.from).toBe("Host via Taylslate <io@taylslate.com>");
     expect(sent.to).toBe("brand@x.com");
     expect(sent.subject).toBe(
-      "Insertion Order IO-1001 — SaunaBox × Daily Briefing",
+      "Insertion order IO-1001 for SaunaBox and Daily Briefing",
     );
-    expect(sent.html).toContain("Please find the attached insertion order");
-    expect(sent.text).toContain("Please find the attached insertion order");
+    expect(sent.html).toContain("Here is the insertion order");
+    expect(sent.html).not.toMatch(/please find/i);
+    expect(sent.text).toContain("The PDF is attached");
     expect(sent.text).toContain("https://www.taylslate.com");
     expect(sent.attachments).toEqual([
       { filename: "IO-1001.pdf", content: pdf.toString("base64") },
@@ -163,7 +164,7 @@ describe("POST /api/deals/[id]/io/send", () => {
       ok: true,
       to: "ops@taylslate.com",
       subject:
-        "[managed: brand@x.com] Insertion Order IO-1001 — SaunaBox × Daily Briefing",
+        "[managed: brand@x.com] Insertion order IO-1001 for SaunaBox and Daily Briefing",
     });
 
     const res = await POST(post() as never, { params });
@@ -171,10 +172,11 @@ describe("POST /api/deals/[id]/io/send", () => {
     const sent = resendSend.mock.calls[0][0];
     expect(sent.to).toBe("ops@taylslate.com");
     expect(sent.subject).toBe(
-      "[managed: brand@x.com] Insertion Order IO-1001 — SaunaBox × Daily Briefing",
+      "[managed: brand@x.com] Insertion order IO-1001 for SaunaBox and Daily Briefing",
     );
     expect(sent.from).toBe("Host via Taylslate <io@taylslate.com>");
-    expect(sent.html).toContain("Please find the attached insertion order");
+    expect(sent.html).toContain("Here is the insertion order");
+    expect(sent.html).not.toMatch(/please find/i);
     expect(sent.attachments).toEqual([
       { filename: "IO-1001.pdf", content: pdf.toString("base64") },
     ]);

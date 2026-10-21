@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { getAuthenticatedUser, getInvoiceById, getIOById, getDealById, getProfileById } from "@/lib/data/queries";
 import { generateInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { EMAIL_ADDRESS_INVOICES, viaTaylslateFrom } from "@/lib/email/addresses";
+import { resolveManagedDelivery } from "@/lib/email/send";
 import { renderInvoiceNotice } from "@/lib/email/templates/invoice-notice";
 import type { Invoice } from "@/lib/data";
 
@@ -56,13 +57,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Determine sender from the IO's publisher/agent
+    // Determine sender from the IO's publisher/agent, and which profile
+    // should receive the mail. A managed brand or agency is rerouted.
     let senderName = invoice.from_name;
+    let recipientProfileId: string | undefined;
     const io = await getIOById(invoice.io_id);
     if (io) {
       const deal = await getDealById(io.deal_id);
       const agent = deal?.agent_id ? await getProfileById(deal.agent_id) : undefined;
       if (agent) senderName = agent.full_name;
+      if (deal) {
+        const billedToAgency =
+          !!io.agency_contact_email &&
+          invoice.bill_to_email.trim().toLowerCase() ===
+            io.agency_contact_email.trim().toLowerCase();
+        recipientProfileId = billedToAgency
+          ? (deal.agency_id ?? undefined)
+          : (deal.brand_id ?? undefined);
+      }
     }
 
     // Generate PDF
@@ -70,17 +82,31 @@ export async function POST(request: NextRequest) {
     const filename = `${invoice.invoice_number.replace(/\s+/g, "_")}.pdf`;
 
     // Build email
-    const subject = `Invoice ${invoice.invoice_number} — ${invoice.advertiser_name} — ${invoice.campaign_period}`;
+    const subject = `Invoice ${invoice.invoice_number} for ${invoice.advertiser_name}, ${invoice.campaign_period}`;
     const rendered = renderInvoiceNotice(invoice, senderName);
 
-    // Send via Resend. This path does not use sendEmail, so managed-account
-    // reroute does not apply — same recipients as before.
+    const delivery = await resolveManagedDelivery({
+      to: recipientEmail,
+      subject,
+      recipientProfileId,
+    });
+    if (!delivery.ok) {
+      return NextResponse.json(
+        {
+          error:
+            "This brand is managed and MANAGED_ACCOUNT_INBOX is not set, so the email was not sent.",
+        },
+        { status: 409 },
+      );
+    }
+
+    // Send via Resend. Managed recipients go to MANAGED_ACCOUNT_INBOX.
     const resend = new Resend(apiKey);
 
     const { error } = await resend.emails.send({
       from: viaTaylslateFrom(senderName, EMAIL_ADDRESS_INVOICES),
-      to: recipientEmail,
-      subject,
+      to: delivery.to,
+      subject: delivery.subject,
       html: rendered.html,
       text: rendered.text,
       attachments: [
@@ -100,9 +126,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      to: recipientEmail,
+      to: delivery.to,
       toName: recipientName,
-      subject,
+      subject: delivery.subject,
       invoiceNumber: invoice.invoice_number,
     });
   } catch (err) {

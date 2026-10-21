@@ -24,10 +24,10 @@ export interface RenderedShowCountersign {
 export function renderShowCountersignatureRequest(
   input: ShowCountersignInput,
 ): RenderedShowCountersign {
-  const subject = `${input.brand_name} signed — your IO is on the way`;
+  const subject = `${input.brand_name} signed. Your IO is on the way`;
   const episodes = `${input.agreed_episode_count} episode${input.agreed_episode_count === 1 ? "" : "s"}`;
   const cpm = `$${input.agreed_cpm.toFixed(2)}`;
-  const sentence = `${input.brand_name} signed the insertion order for ${input.show_name}. DocuSign will email you a separate link to countersign. That message comes from dse@docusign.net. After you sign, the deal is set.`;
+  const sentence = `${input.brand_name} signed the insertion order for ${input.show_name}. DocuSign will email you a separate link to countersign. That message comes from dse@docusign.net. Once you sign, the deal is set.`;
   const laid = renderEmailLayout({
     preheader: `${input.brand_name} signed. DocuSign will send the countersign link.`,
     headline: `${input.brand_name} signed the IO`,
@@ -41,7 +41,7 @@ export function renderShowCountersignatureRequest(
     text: [
       sentence,
       "",
-      `Agreed terms: ${cpm} CPM × ${input.agreed_episode_count} episodes.`,
+      `Agreed terms: ${cpm} CPM for ${input.agreed_episode_count} episodes.`,
       "",
       "The DocuSign email comes from dse@docusign.net.",
     ].join("\n"),

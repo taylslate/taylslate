@@ -495,7 +495,13 @@ export interface ShowProfile {
   // Step 1
   feed_url?: string | null;
 
-  // Step 2 — Podscan-enriched, editable
+  // Step 2 — self-reported Podscan id from the onboarding URL lookup.
+  // Display only (SHOW_PROFILE_PODSCAN_ID_LABEL). Scoring and geography
+  // use a deal or a show_owner email match. Payouts use deals.show_profile_id.
+  // The profile route omits a client-supplied value. Migration 046 stores
+  // a new value only when it equals shows.podscan_id on a show this
+  // profile is tied to by that same deal or show_owner email.
+  // Migration 050 drops the podscan equality path from user_owns_show.
   podscan_id?: string | null;
   show_name?: string | null;
   show_description?: string | null;
@@ -846,7 +852,16 @@ export type DomainEventType =
   // Managed brand handed to its owner. The auth user id does not change;
   // deals, campaigns, and IOs stay on that id. Payload: actor_email,
   // brand_user_id, old_email, new_email, timestamp.
-  | "account.handoff";
+  | "account.handoff"
+  // Learning review — a brand or rep note, or a brand-reported count.
+  | "learning.override_saved"
+  | "learning.conversion_reported"
+  | "learning.conversion_cleared"
+  // Make-good from an aircheck. detected proposes options. approved and
+  // declined are the brand on the deal. No DocuSign and no charge.
+  | "make_good.detected"
+  | "make_good.approved"
+  | "make_good.declined";
 
 export type DomainEntityType =
   | "deal"
@@ -863,6 +878,8 @@ export type DomainEntityType =
   | "io_line_item"
   // Aircheck review decision, one row per IO line.
   | "aircheck"
+  // Make-good proposal and the brand's decision.
+  | "make_good"
   // Wave 14 Phase 2A — brief derivation/interpretation events hang off campaigns
   | "campaign";
 

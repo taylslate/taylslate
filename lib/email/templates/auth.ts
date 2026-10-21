@@ -87,22 +87,22 @@ export function renderAuthTemplates(): AuthEmailTemplate[] {
       subject: "Confirm your Taylslate account",
       preheader: "Confirm your email to finish signing up.",
       headline: "Confirm your email",
-      body: "Confirm this address to finish creating your Taylslate account. The link expires in 24 hours.",
+      body: "Welcome. Confirm this address to finish creating your Taylslate account. The link expires in 24 hours.",
       href: confirmHref,
       cta: "Confirm email",
-      text: "Confirm this address to finish creating your Taylslate account. The link expires in 24 hours.",
+      text: "Welcome. Confirm this address to finish creating your Taylslate account. The link expires in 24 hours.",
     }),
     authMessage({
       id: "magic-link",
       subjectKey: "mailer_subjects_magic_link",
       contentKey: "mailer_templates_magic_link_content",
       subject: "Log in to Taylslate",
-      preheader: "Click the button to sign in. This link expires in 24 hours.",
+      preheader: "Here is your sign-in link. It expires in 24 hours.",
       headline: "Log in",
-      body: "Click the button to sign in. This link expires in 24 hours.",
+      body: "Here is your sign-in link. It expires in 24 hours.",
       href: magicHref,
       cta: "Log in",
-      text: "Click the button to sign in. This link expires in 24 hours.",
+      text: "Here is your sign-in link. It expires in 24 hours.",
     }),
     // Supabase has no separate OTP config field — email OTP shares the
     // magic-link slot. This template is the code email. The apply script
@@ -138,10 +138,10 @@ export function renderAuthTemplates(): AuthEmailTemplate[] {
       subject: "You are invited to Taylslate",
       preheader: "Accept the invite to create your account.",
       headline: "You are invited",
-      body: "You have been invited to create a Taylslate account. Accept the invite to continue.",
+      body: "You are invited to create a Taylslate account. Accept the invite when you are ready.",
       href: inviteHref,
       cta: "Accept invite",
-      text: "You have been invited to create a Taylslate account. Accept the invite to continue.",
+      text: "You are invited to create a Taylslate account. Accept the invite when you are ready.",
     }),
     authMessage({
       id: "email-change",
@@ -283,8 +283,11 @@ export function assertShowOtpTemplate(): void {
   if (!otp.html.includes("{{ .Token }}")) {
     throw new Error("OTP auth template has no {{ .Token }}");
   }
-  if (!otp.html.includes("#f2ebe1")) {
+  if (!otp.html.includes('data-taylslate-email="1"') || !otp.html.includes("#ffffff")) {
     throw new Error("OTP auth template is not on the shared layout");
+  }
+  if (otp.html.includes("#f2ebe1")) {
+    throw new Error("OTP auth template is still on the paper field");
   }
   if (otp.html.includes(".ConfirmationURL") || otp.html.includes("token_hash=")) {
     throw new Error("OTP auth template must be a code, not a link");

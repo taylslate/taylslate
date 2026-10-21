@@ -54,7 +54,7 @@ export function renderBrandNotification(
     input.status === "accepted"
       ? `Accepted: ${input.show_name} (${input.campaign_name})`
       : input.status === "countered"
-        ? `Counter: ${input.show_name} — $${(input.counter_cpm ?? 0).toFixed(2)} CPM`
+        ? `Counter from ${input.show_name}: $${(input.counter_cpm ?? 0).toFixed(2)} CPM`
         : `Declined: ${input.show_name}`;
 
   let detail = "";
@@ -62,9 +62,9 @@ export function renderBrandNotification(
   if (input.status === "accepted") {
     const rate = `$${input.proposed_cpm.toFixed(2)} CPM`;
     detail = emailParagraph(
-      `They accepted your offer at <strong>${escapeHtml(rate)}</strong>. Build the insertion order to lock the dates.`,
+      `Good news. They accepted your offer at <strong>${escapeHtml(rate)}</strong>. Build the insertion order when you are ready, and the dates lock in.`,
     );
-    textDetail = `They accepted your offer at ${rate}. Build the insertion order to lock the dates.`;
+    textDetail = `Good news. They accepted your offer at ${rate}. Build the insertion order when you are ready, and the dates lock in.`;
   } else if (input.status === "countered") {
     const counter = input.counter_cpm ?? 0;
     const delta = counter - input.proposed_cpm;
@@ -81,20 +81,20 @@ export function renderBrandNotification(
       detail += `<blockquote style="margin:0 0 12px;padding:10px 14px;border-left:3px solid ${emailColors.accent};color:${emailColors.ink};font-size:13px;line-height:1.55;">${escapeHtml(input.counter_message)}</blockquote>`;
     }
     detail += emailParagraph(
-      "Accept the counter to move ahead, or send a new offer with different terms.",
+      "You can accept the counter and move ahead, or send a new offer with different terms.",
     );
     textDetail = `They countered at $${counter.toFixed(2)} CPM (${deltaLabel}).${
       input.counter_message ? `\n\n"${input.counter_message}"` : ""
-    }\n\nAccept the counter to move ahead, or send a new offer.`;
+    }\n\nYou can accept the counter and move ahead, or send a new offer with different terms.`;
   } else {
     detail = emailParagraph(
-      `They passed on this one${
+      `${escapeHtml(input.show_name)} passed on this one${
         input.decline_reason
           ? `: ${escapeHtml(input.decline_reason)}`
           : "."
-      } Open the campaign to choose another show.`,
+      } You can open the campaign and choose another show.`,
     );
-    textDetail = `They passed${input.decline_reason ? `: ${input.decline_reason}` : "."} Open the campaign to choose another show.`;
+    textDetail = `${input.show_name} passed${input.decline_reason ? `: ${input.decline_reason}` : "."} You can open the campaign and choose another show.`;
   }
 
   const eyebrow = `<p style="margin:0 0 8px;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:${emailColors.muted};">${escapeHtml(input.campaign_name)}</p>`;

@@ -11,7 +11,13 @@ describe("email previews", () => {
     expect(new Set(ids).size).toBe(ids.length);
 
     for (const preview of previews) {
-      expect(preview.html, preview.id).toContain(emailColors.paper);
+      expect(preview.html, preview.id).toContain(emailColors.canvas);
+      expect(preview.html, preview.id).toContain('data-taylslate-header="1"');
+      expect(preview.html, preview.id).not.toContain("#f2ebe1");
+      expect(preview.html, preview.id).not.toContain("\u2014");
+      expect(preview.text, preview.id).not.toContain("\u2014");
+      expect(preview.subject, preview.id).not.toContain("\u2014");
+      expect(`${preview.html} ${preview.text}`, preview.id).not.toMatch(/please find/i);
       expect(preview.html, preview.id).toContain(EMAIL_WORDMARK);
       expect(preview.html, preview.id).toContain(EMAIL_MARK_URL);
       expect(preview.html, preview.id).toContain("Podcast and YouTube sponsorships");
