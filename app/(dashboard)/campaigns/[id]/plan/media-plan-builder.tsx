@@ -361,7 +361,7 @@ export default function MediaPlanBuilder({
   };
 
   return (
-    <div className={`flex h-[calc(100vh-64px)] flex-col bg-[var(--ts-paper)] ${inkText}`}>
+    <div className={`flex h-[calc(100vh-64px)] flex-col bg-[var(--ts-canvas)] ${inkText}`}>
       {/* ---- Header ---- */}
       <div className={`border-b ${hairlineRule} bg-[var(--ts-paper)] px-8 pt-6 pb-5`}>
         <div className="mb-3 flex items-center gap-3">

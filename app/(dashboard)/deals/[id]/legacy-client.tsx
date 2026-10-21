@@ -113,7 +113,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
 
   if (error || !deal) {
     return (
-      <div className={`min-h-screen bg-[var(--ts-paper)] p-4 sm:p-8 ${inkText}`}>
+      <div className={`min-h-screen bg-[var(--ts-canvas)] p-4 sm:p-8 ${inkText}`}>
         <Link href="/deals" className={`mb-4 flex items-center gap-1.5 text-xs ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
           Deals
@@ -228,7 +228,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
   const editTotalNet = editNetPerEp * (Number(editNumEpisodes) || 0);
 
   return (
-    <div className={`min-h-screen bg-[var(--ts-paper)] p-4 sm:p-8 ${inkText}`}>
+    <div className={`min-h-screen bg-[var(--ts-canvas)] p-4 sm:p-8 ${inkText}`}>
       <div className="mb-8 w-full">
         <div className="mb-3 flex items-center gap-3">
           <Link

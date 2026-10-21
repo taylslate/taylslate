@@ -1,11 +1,8 @@
-/* HubSpot structure, three Taylslate palettes. One attribute swaps color only.
+/* HubSpot structure, Ink & Gold only.
    Shared structure: white cards, no resting shadow, tight radii, Fraunces at 640,
    tight display tracking, white sidebar, ink headings on a tinted canvas.
-   Accents are original Taylslate colors.
 
-   Deep Teal — accent #0C5C63, ink #102226, canvas #F3F6F6
-   Ink & Gold — accent #1B2A4A, gold #8C6E1F, ink #141C2B, canvas #F6F5F2
-   Forest — accent #1B5C38, ink #132018, canvas #F4F6F3 */
+   Ink & Gold — accent #1B2A4A, gold #8C6E1F, ink #141C2B, canvas #F6F5F2 */
 
 :is(html[data-design-preview], [data-design-preview]) {
   --font-display: var(--font-preview-display), Georgia, "Iowan Old Style", serif;
@@ -32,27 +29,6 @@
   --control-thumb-on: #ffffff;
 }
 
-:is(html[data-design-preview="deep-teal"], [data-design-preview="deep-teal"]) {
-  --background: #ffffff;
-  --surface-muted: #e7eeee;
-  --foreground: #102226;
-  --text-secondary: #24383c;
-  --text-muted: #3d555a;
-  --border: #d3dedf;
-  --border-subtle: #e4eced;
-  --border-strong: #1a3034;
-  --accent: #0c5c63;
-  --accent-strong: #08464c;
-  --accent-subtle: color-mix(in srgb, #0c5c63 12%, white);
-  --accent-foreground: #f4fbfa;
-  --shell-sidebar-fg: #102226;
-  --shell-sidebar-muted: #3a5156;
-  --shell-sidebar-active: #e3f1f2;
-  --shell-sidebar-active-fg: #0a4e54;
-  --shell-sidebar-border: #d5e0e1;
-  --shell-canvas: #f3f6f6;
-}
-
 :is(html[data-design-preview="ink-gold"], [data-design-preview="ink-gold"]) {
   --background: #ffffff;
   --surface-muted: #eeebe4;
@@ -73,27 +49,6 @@
   --shell-sidebar-active-fg: #1b2a4a;
   --shell-sidebar-border: #e3ddd2;
   --shell-canvas: #f6f5f2;
-}
-
-:is(html[data-design-preview="forest"], [data-design-preview="forest"]) {
-  --background: #ffffff;
-  --surface-muted: #e7eee6;
-  --foreground: #132018;
-  --text-secondary: #24352c;
-  --text-muted: #3e5446;
-  --border: #d4ddd4;
-  --border-subtle: #e5ebe4;
-  --border-strong: #1a2e22;
-  --accent: #1b5c38;
-  --accent-strong: #12442a;
-  --accent-subtle: color-mix(in srgb, #1b5c38 12%, white);
-  --accent-foreground: #f4fbf6;
-  --shell-sidebar-fg: #132018;
-  --shell-sidebar-muted: #3c5244;
-  --shell-sidebar-active: #e5f2e9;
-  --shell-sidebar-active-fg: #144a2e;
-  --shell-sidebar-border: #d5dfd6;
-  --shell-canvas: #f4f6f3;
 }
 
 [data-cover] {

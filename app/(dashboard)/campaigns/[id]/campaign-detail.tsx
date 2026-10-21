@@ -206,7 +206,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
   const unsentCount = outreachDrafts.filter((d) => !d.sent).length;
 
   return (
-    <div className="w-full bg-[var(--ts-paper)] p-4 text-[var(--ts-ink-on-paper)] sm:p-8">
+    <div className="w-full bg-[var(--ts-canvas)] p-4 text-[var(--ts-ink-on-paper)] sm:p-8">
       <div className="flex items-start justify-between mb-6">
         <div>
           <Link href="/campaigns" className="flex items-center gap-1.5 text-sm text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)] transition-colors mb-3">

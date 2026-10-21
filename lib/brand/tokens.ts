@@ -21,15 +21,21 @@
  * /admin/brands, the onboarding role
  * picker, /onboarding/brand/*, /shows, and /onboarding/show/*.
  * globals.css still defines --brand-*. No page uses those variables.
+ *
+ * :root stays the marketing paper/copper palette (email asserts #f2ebe1).
+ * Logged-in .brand-app overrides these variables to Ink & Gold.
  */
 export const tokens = {
   field: "var(--ts-field)",
   ink: "var(--ts-ink)",
   inkMuted: "var(--ts-ink-muted)",
+  canvas: "var(--ts-canvas)",
   paper: "var(--ts-paper)",
   inkOnPaper: "var(--ts-ink-on-paper)",
   inkMutedOnPaper: "var(--ts-ink-muted-on-paper)",
   accent: "var(--ts-accent)",
+  accentForeground: "var(--ts-accent-foreground)",
+  gold: "var(--ts-gold)",
   hairline: "var(--ts-hairline)",
   hairlineOnPaper: "var(--ts-hairline-on-paper)",
   radius: "var(--ts-radius)",

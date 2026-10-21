@@ -265,7 +265,7 @@ export default function InvoicesPage() {
 
   if (loading) {
     return (
-      <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
+      <div className={`bg-[var(--ts-canvas)] p-8 w-full ${inkText}`}>
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
@@ -295,7 +295,7 @@ export default function InvoicesPage() {
 
   if (error) {
     return (
-      <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
+      <div className={`bg-[var(--ts-canvas)] p-8 w-full ${inkText}`}>
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
@@ -320,7 +320,7 @@ export default function InvoicesPage() {
   const hasInvoices = invoices.length > 0;
 
   return (
-    <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
+    <div className={`bg-[var(--ts-canvas)] p-8 w-full ${inkText}`}>
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>

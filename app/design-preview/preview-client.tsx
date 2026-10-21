@@ -27,7 +27,6 @@ import { bodyFont, displayFont } from "./preview-fonts";
 import styles from "./preview.module.css";
 import {
   CAMPAIGN,
-  DIRECTIONS,
   FLIGHT_START,
   FLIGHTS,
   PIPELINE_COLUMNS,
@@ -40,7 +39,6 @@ import {
   formatAirDate,
   formatMoney,
   isoFromDate,
-  type DirectionId,
   type PipelineDeal,
 } from "./sample-data";
 
@@ -82,11 +80,9 @@ function DealCard({ deal }: { deal: PipelineDeal }) {
 }
 
 export default function PreviewClient() {
-  const [direction, setDirection] = useState<DirectionId>("deep-teal");
   const [open, setOpen] = useState(false);
   const [queued, setQueued] = useState(false);
   const [flightStart, setFlightStart] = useState<Date | undefined>(FLIGHT_START);
-  const active = DIRECTIONS.find((item) => item.id === direction) ?? DIRECTIONS[0];
   const filledShare = Math.round((CAMPAIGN.filled / CAMPAIGN.budget) * 100);
   const visibleFlights = useMemo(
     () => flightsOnOrAfter(FLIGHTS, flightStart ? isoFromDate(flightStart) : undefined),
@@ -103,37 +99,14 @@ export default function PreviewClient() {
   }, []);
 
   useLayoutEffect(() => {
-    document.documentElement.dataset.designPreview = direction;
-  }, [direction]);
+    document.documentElement.dataset.designPreview = "ink-gold";
+  }, []);
 
   return (
     <div
       className={`${displayFont.variable} ${bodyFont.variable} ${styles.page}`}
-      data-design-preview={direction}
+      data-design-preview="ink-gold"
     >
-      <div className={styles.switcher}>
-        <p className={styles.switcherLabel}>Palette</p>
-        <div className={styles.switcherButtons} role="group" aria-label="Accent palette">
-          {DIRECTIONS.map((item) => {
-            const selected = item.id === direction;
-            return (
-              <Button
-                key={item.id}
-                type="button"
-                size="sm"
-                variant={selected ? "primary" : "secondary"}
-                aria-pressed={selected}
-                className={selected ? styles.primary : undefined}
-                onClick={() => setDirection(item.id)}
-              >
-                {item.name}
-              </Button>
-            );
-          })}
-        </div>
-        <p className={styles.switcherCopy}>{active.line}</p>
-      </div>
-
       <div className={styles.shell}>
         <aside className={styles.sidebar}>
           <div className={styles.brand}>

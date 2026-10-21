@@ -1,23 +1,3 @@
-export const DIRECTIONS = [
-  {
-    id: "deep-teal",
-    name: "Deep Teal",
-    line: "Crisp white cards, deep teal accent, Fraunces headings.",
-  },
-  {
-    id: "ink-gold",
-    name: "Ink & Gold",
-    line: "Crisp white cards, ink navy and antique gold, Fraunces headings.",
-  },
-  {
-    id: "forest",
-    name: "Forest",
-    line: "Crisp white cards, forest green accent, Fraunces headings.",
-  },
-] as const;
-
-export type DirectionId = (typeof DIRECTIONS)[number]["id"];
-
 export const CAMPAIGN = {
   name: "Sauna Box spring test",
   budget: 25000,

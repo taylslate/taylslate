@@ -143,7 +143,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
   if (isLoading) {
     return (
-      <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
+      <div className={`bg-[var(--ts-canvas)] p-8 w-full ${inkText}`}>
         <div className="flex items-center justify-center py-24">
           <div className={`h-8 w-8 animate-spin rounded-full border-2 border-[var(--ts-hairline-on-paper)] border-t-[var(--ts-ink-on-paper)]`} />
         </div>
@@ -153,7 +153,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
   if (error || !invoice) {
     return (
-      <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
+      <div className={`bg-[var(--ts-canvas)] p-8 w-full ${inkText}`}>
         <Link href="/invoices" className={`mb-4 flex items-center gap-1.5 text-sm ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
           All Invoices
@@ -168,7 +168,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const canMarkPaid = invoice.status === "sent" || invoice.status === "overdue";
 
   return (
-    <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
+    <div className={`bg-[var(--ts-canvas)] p-8 w-full ${inkText}`}>
       {/* Back + Header */}
       <div className="mb-8">
         <Link

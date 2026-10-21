@@ -14,52 +14,20 @@
   color: var(--foreground);
 }
 
-.switcher {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 20px;
-  padding: 14px 22px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in oklab, var(--surface) 92%, transparent);
-  backdrop-filter: blur(12px);
-}
-
-.switcherLabel {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 500;
-}
-
-.switcherCopy {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-}
-
-.switcherButtons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .shell {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
-  min-height: calc(100vh - 68px);
+  min-height: 100vh;
 }
 
 .sidebar {
   position: sticky;
-  top: 4.25rem;
+  top: 0;
   align-self: start;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  height: calc(100vh - 4.25rem);
+  height: 100vh;
   padding: 20px 12px 16px;
   overflow: auto;
   border-right: 1px solid var(--shell-sidebar-border);

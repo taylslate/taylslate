@@ -364,7 +364,7 @@ export default function ShowsClient({ initialShows }: { initialShows?: AgentShow
   );
 
   return (
-    <div className="w-full bg-[var(--ts-paper)] p-4 text-[var(--ts-ink-on-paper)] sm:p-8">
+    <div className="w-full bg-[var(--ts-canvas)] p-4 text-[var(--ts-ink-on-paper)] sm:p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-[var(--ts-ink-on-paper)] tracking-tight">Shows</h1>

@@ -182,7 +182,7 @@ export default function Sidebar({
             className="h-7 w-7"
             priority
           />
-          <span className="text-[15px] font-semibold tracking-tight">
+          <span className="ts-wordmark text-[15px]">
             taylslate
           </span>
         </Link>
@@ -208,7 +208,7 @@ export default function Sidebar({
               href={item.href}
               className={`${navRow} ${
                 isActive
-                  ? "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]"
+                  ? "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)] shadow-[inset_3px_0_0_var(--ts-gold)]"
                   : quietRow
               }`}
               style={{ borderRadius: tokens.radius }}

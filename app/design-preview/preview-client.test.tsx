@@ -55,25 +55,22 @@ describe("design preview", () => {
     expect(screen.queryByText(/^0$/)).not.toBeInTheDocument();
   });
 
-  it("switches palette tokens without adding the preview to navigation", async () => {
-    const user = userEvent.setup();
+  it("locks Ink & Gold and stays out of navigation", () => {
     render(<PreviewClient />);
 
-    expect(document.documentElement.dataset.designPreview).toBe("deep-teal");
-    expect(screen.getByText(/deep teal accent/)).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Ink & Gold" }));
     expect(document.documentElement.dataset.designPreview).toBe("ink-gold");
-    expect(screen.getByText(/ink navy and antique gold/)).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Forest" }));
-    expect(document.documentElement.dataset.designPreview).toBe("forest");
-    expect(screen.getByText(/forest green accent/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Deep Teal" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ink & Gold" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Forest" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "HubSpot" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Patreon" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Slack" })).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(/persimmon/i);
+    expect(document.body).not.toHaveTextContent(/deep teal/i);
+    expect(document.body).not.toHaveTextContent(/forest green/i);
 
     const hrefs = getNavItemsForRole("brand").map((item) => item.href);
     expect(hrefs).not.toContain("/design-preview");
-    expect(screen.queryByRole("button", { name: "HubSpot" })).not.toBeInTheDocument();
-    expect(document.body).not.toHaveTextContent(/persimmon/i);
   });
 
   it("queues outreach inside the preview and does not claim a send", async () => {

@@ -28,7 +28,7 @@ export default async function CampaignOutreachPage({
   const outreaches = await getOutreachesForCampaign(id);
 
   return (
-    <div className="min-h-screen bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
+    <div className="min-h-screen bg-[var(--ts-canvas)] text-[var(--ts-ink-on-paper)]">
       <div className="border-b border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-8 pt-6 pb-5">
         <div className="mb-3 flex items-center gap-3">
           <Link

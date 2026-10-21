@@ -24,7 +24,7 @@ export default async function DesignPreviewPage() {
       <script
         dangerouslySetInnerHTML={{
           __html:
-            'document.documentElement.dataset.designPreview=document.documentElement.dataset.designPreview||"deep-teal";',
+            'document.documentElement.dataset.designPreview="ink-gold";',
         }}
       />
       <PreviewClient />

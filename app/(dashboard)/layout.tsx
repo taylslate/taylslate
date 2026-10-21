@@ -10,6 +10,7 @@ import ReturnToAdminButton from "@/components/admin/ReturnToAdminButton";
 import { isInternalAdmin } from "@/lib/auth/admin";
 import { TEST_ACCOUNTS } from "@/lib/admin/test-accounts";
 import { RETURN_TOKEN_COOKIE } from "@/lib/admin/return-token";
+import { appBodyFont, appDisplayFont } from "@/lib/brand/app-fonts";
 
 export default async function DashboardLayout({
   children,
@@ -65,7 +66,9 @@ export default async function DashboardLayout({
   const canReturnToAdmin = Boolean(cookieStore.get(RETURN_TOKEN_COOKIE)?.value);
 
   return (
-    <div className="brand-app min-h-screen bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
+    <div
+      className={`brand-app min-h-screen bg-[var(--ts-canvas)] text-[var(--ts-ink-on-paper)] ${appDisplayFont.variable} ${appBodyFont.variable}`}
+    >
       <Sidebar
         role={effectiveRole}
         canSwitchTo={canSwitchTo}

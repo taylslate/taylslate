@@ -180,7 +180,7 @@ export default function DiscoveryList({ campaign, surfacesByShowId = {} }: Disco
   }, [shows, selectedIds]);
 
   return (
-    <div className="flex h-[calc(100vh-64px)] flex-col bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
+    <div className="flex h-[calc(100vh-64px)] flex-col bg-[var(--ts-canvas)] text-[var(--ts-ink-on-paper)]">
       {/* ---- Brief summary bar ---- */}
       <div className="px-8 pt-6 pb-4 border-b border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]">
         <div className="flex items-center gap-3 mb-1">

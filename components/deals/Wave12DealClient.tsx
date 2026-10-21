@@ -417,7 +417,7 @@ export default function Wave12DealClient({
   const activeCardSecret = resolvedSecret ?? deal.setup_intent_client_secret ?? null;
 
   return (
-    <div className={`min-h-screen bg-[var(--ts-paper)] ${inkText}`}>
+    <div className={`min-h-screen bg-[var(--ts-canvas)] ${inkText}`}>
       <div className={`border-b ${hairlineRule} bg-[var(--ts-paper)] px-4 pt-6 pb-5 sm:px-8`}>
         <div className="mb-3 flex items-center gap-3">
           <Link
