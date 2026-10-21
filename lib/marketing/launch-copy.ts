@@ -11,6 +11,8 @@ export const LAUNCH = {
   secondaryHref: "#pricing",
   loginLabel: "Log in",
   loginHref: "/login",
+  showsNav: "For shows",
+  showsNavHref: "#shows",
   pricingNav: "Pricing",
   facts: [
     {
@@ -51,11 +53,11 @@ export const LAUNCH = {
   pricing: {
     id: "pricing",
     heading: "Pricing",
-    sub: "Launch pricing for January 2027. The brand pays the platform fee on top of each deal. Shows are free.",
+    sub: "The brand pays the platform fee on top of each deal.",
     feeLabel: "Platform fee",
-    showsNote:
-      "Shows do not pay a subscription or a platform fee. Log in when a brand sends an offer.",
-    showsCta: "Show log in",
+    showsNoteLead: "Shows are free.",
+    showsLogin: "Log in",
+    showsNoteTail: "when a brand sends an offer.",
     showsHref: "/login",
     plans: [
       {
@@ -153,4 +155,20 @@ export const LAUNCH = {
 
 export function planFee(cardFee: string, bankFee: string): string {
   return `${cardFee} / ${bankFee}`;
+}
+
+const PLACEHOLDER_LABEL = "Placeholder";
+
+export function realProofItems<T extends { label: string }>(
+  items: readonly T[],
+): T[] {
+  return items.filter((item) => item.label !== PLACEHOLDER_LABEL);
+}
+
+/** /?for=shows keeps the old shows URL and lands on the #shows note. */
+export function showsLandingPath(
+  value: string | string[] | null | undefined,
+): "/#shows" | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw === "shows" ? "/#shows" : null;
 }

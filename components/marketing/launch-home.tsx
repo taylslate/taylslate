@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { tokens } from "@/lib/brand/tokens";
-import { LAUNCH, planFee } from "@/lib/marketing/launch-copy";
+import { LAUNCH, planFee, realProofItems } from "@/lib/marketing/launch-copy";
 import { MarketingChrome } from "@/components/marketing/marketing-chrome";
 import { ProductShot } from "@/components/marketing/product-shot";
 
@@ -29,12 +29,59 @@ function PrimaryLink({
   );
 }
 
+export function ProofSection({
+  proof,
+}: {
+  proof: {
+    id: string;
+    heading: string;
+    sub: string;
+    items: readonly { label: string; title: string; body: string }[];
+  };
+}) {
+  const items = realProofItems(proof.items);
+  if (items.length === 0) return null;
+  return (
+    <section
+      id={proof.id}
+      className="border-t border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)]"
+      aria-labelledby="proof-heading"
+    >
+      <div className="mx-auto max-w-6xl px-6 py-16 sm:py-20">
+        <h2 id="proof-heading" className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          {proof.heading}
+        </h2>
+        <ul className="mt-10 grid gap-4 sm:grid-cols-3">
+          {items.map((item) => (
+            <li
+              key={item.title}
+              className="border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5"
+              style={{ borderRadius: tokens.radius }}
+            >
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+                {item.label}
+              </p>
+              <h3 className="mt-3 text-base font-semibold">{item.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
+                {item.body}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 export function LaunchHome() {
   return (
     <MarketingChrome
       wide
       actions={
         <>
+          <Link href={LAUNCH.showsNavHref} className={quietLink}>
+            {LAUNCH.showsNav}
+          </Link>
           <Link href={LAUNCH.secondaryHref} className={quietLink}>
             {LAUNCH.pricingNav}
           </Link>
@@ -87,37 +134,7 @@ export function LaunchHome() {
           <ProductShot />
         </section>
 
-        <section
-          id={LAUNCH.proof.id}
-          className="border-t border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)]"
-          aria-labelledby="proof-heading"
-        >
-          <div className="mx-auto max-w-6xl px-6 py-16 sm:py-20">
-            <h2 id="proof-heading" className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              {LAUNCH.proof.heading}
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)] sm:text-base">
-              {LAUNCH.proof.sub}
-            </p>
-            <ul className="mt-10 grid gap-4 sm:grid-cols-3">
-              {LAUNCH.proof.items.map((item) => (
-                <li
-                  key={item.title}
-                  className="border border-dashed border-[var(--ts-ink-on-paper)]/30 bg-[var(--ts-paper)] p-5"
-                  style={{ borderRadius: tokens.radius }}
-                >
-                  <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
-                    {item.label}
-                  </p>
-                  <h3 className="mt-3 text-base font-semibold">{item.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
-                    {item.body}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
+        <ProofSection proof={LAUNCH.proof} />
 
         <section
           id={LAUNCH.pricing.id}
@@ -168,11 +185,15 @@ export function LaunchHome() {
                 </li>
               ))}
             </ul>
-            <p className="mt-8 max-w-2xl text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
-              {LAUNCH.pricing.showsNote}{" "}
+            <p
+              id="shows"
+              className="mt-8 max-w-2xl scroll-mt-16 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]"
+            >
+              {LAUNCH.pricing.showsNoteLead}{" "}
               <Link href={LAUNCH.pricing.showsHref} className="text-[var(--ts-accent)] hover:underline">
-                {LAUNCH.pricing.showsCta}
-              </Link>
+                {LAUNCH.pricing.showsLogin}
+              </Link>{" "}
+              {LAUNCH.pricing.showsNoteTail}
             </p>
           </div>
         </section>

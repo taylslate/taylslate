@@ -33,7 +33,8 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-import { LaunchHome } from "./launch-home";
+import { LaunchHome, ProofSection } from "./launch-home";
+import { LAUNCH } from "@/lib/marketing/launch-copy";
 
 describe("LaunchHome", () => {
   afterEach(() => {
@@ -61,13 +62,16 @@ describe("LaunchHome", () => {
     expect(document.querySelector('img[src="/mark.png"]')).not.toBeNull();
   });
 
-  it("marks proof as placeholders and lists launch pricing", () => {
+  it("hides proof while every slot is a placeholder and lists pricing", () => {
     render(<LaunchHome />);
 
-    expect(screen.getByRole("heading", { level: 2, name: "Proof" })).toBeInTheDocument();
-    expect(screen.getAllByText("Placeholder")).toHaveLength(3);
-    expect(screen.getByText(/nothing below is a customer claim/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: "Proof" })).toBeNull();
+    expect(screen.queryByText("Placeholder")).toBeNull();
+    expect(screen.queryByText(/nothing below is a customer claim/i)).toBeNull();
 
+    expect(screen.getByRole("heading", { level: 2, name: "Pricing" })).toBeInTheDocument();
+    expect(screen.queryByText(/January 2027 launch/i)).toBeNull();
+    expect(screen.queryByText(/launch pricing for January 2027/i)).toBeNull();
     expect(screen.getByRole("heading", { level: 3, name: "Free" })).toBeInTheDocument();
     expect(screen.getByText("10% card / 7% bank")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "Starter" })).toBeInTheDocument();
@@ -81,11 +85,40 @@ describe("LaunchHome", () => {
     expect(
       screen.getByText(/the brand pays the platform fee on top of each deal/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/shows are free/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Show log in" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "For shows" })).toHaveAttribute(
       "href",
-      "/login",
+      "#shows",
     );
+    const shows = document.getElementById("shows");
+    expect(shows).not.toBeNull();
+    expect(shows).toHaveTextContent("Shows are free.");
+    expect(shows).toHaveTextContent("Log in");
+    expect(shows).toHaveTextContent("when a brand sends an offer.");
+    expect(shows?.querySelector("a")).toHaveAttribute("href", "/login");
+  });
+
+  it("renders proof once one entry is real and skips placeholder slots", () => {
+    render(
+      <ProofSection
+        proof={{
+          ...LAUNCH.proof,
+          items: [
+            LAUNCH.proof.items[0],
+            {
+              label: "Northwind",
+              title: "A real quote",
+              body: "We ran the test.",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { level: 2, name: "Proof" })).toBeInTheDocument();
+    expect(screen.getByText("A real quote")).toBeInTheDocument();
+    expect(screen.getByText("We ran the test.")).toBeInTheDocument();
+    expect(screen.queryByText("Placeholder")).toBeNull();
+    expect(screen.queryByText("Brand logo")).toBeNull();
   });
 
   it("has no em dashes in the rendered copy", () => {

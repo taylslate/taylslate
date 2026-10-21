@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LAUNCH, planFee } from "./launch-copy";
+import { LAUNCH, planFee, realProofItems, showsLandingPath } from "./launch-copy";
 
 const EM_DASH = "\u2014";
 
@@ -55,20 +55,51 @@ describe("launch copy", () => {
     expect(planFee(operator.cardFee, operator.bankFee)).toBe(
       "6% card / 3% bank",
     );
-    expect(LAUNCH.pricing.sub).toContain(
+    expect(LAUNCH.pricing.heading).toBe("Pricing");
+    expect(LAUNCH.pricing.sub).toBe(
       "The brand pays the platform fee on top of each deal.",
     );
-    expect(LAUNCH.pricing.sub).toContain("Shows are free.");
+    expect(LAUNCH.pricing.sub).not.toMatch(/January 2027/);
+    expect(LAUNCH.pricing.showsNoteLead).toBe("Shows are free.");
+    expect(LAUNCH.pricing.showsLogin).toBe("Log in");
+    expect(LAUNCH.pricing.showsNoteTail).toBe("when a brand sends an offer.");
+    expect(LAUNCH.pricing.showsHref).toBe("/login");
+    expect(LAUNCH.showsNav).toBe("For shows");
+    expect(LAUNCH.showsNavHref).toBe("#shows");
   });
 
-  it("marks proof slots as placeholders and not customer claims", () => {
-    expect(LAUNCH.proof.sub).toMatch(/Placeholders/);
-    expect(LAUNCH.proof.sub).toMatch(/Nothing below is a customer claim/);
+  it("keeps placeholder proof in the data and hides it until one entry is real", () => {
     expect(LAUNCH.proof.items.map((item) => item.label)).toEqual([
       "Placeholder",
       "Placeholder",
       "Placeholder",
     ]);
+    expect(LAUNCH.proof.items[0]).toMatchObject({
+      label: "Placeholder",
+      title: "Brand logo",
+      body: expect.any(String),
+    });
+    expect(realProofItems(LAUNCH.proof.items)).toEqual([]);
+    expect(
+      realProofItems([
+        ...LAUNCH.proof.items,
+        {
+          label: "Northwind",
+          title: "A real quote",
+          body: "We ran the test.",
+        },
+      ]).map((item) => item.title),
+    ).toEqual(["A real quote"]);
+  });
+
+  it("sends /?for=shows to the shows anchor", () => {
+    expect(showsLandingPath("shows")).toBe("/#shows");
+    expect(showsLandingPath(["shows"])).toBe("/#shows");
+    expect(showsLandingPath(["shows", "brands"])).toBe("/#shows");
+    expect(showsLandingPath(undefined)).toBeNull();
+    expect(showsLandingPath(null)).toBeNull();
+    expect(showsLandingPath("")).toBeNull();
+    expect(showsLandingPath("brands")).toBeNull();
   });
 
   it("labels the product shot as sample data", () => {

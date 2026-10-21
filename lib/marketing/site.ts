@@ -19,7 +19,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
     path: "/",
     title: "Make 2027 the year you win with podcast ads | Taylslate",
     description:
-      "Find shows worth testing, score the fit, build the media plan, and pay the host when the read runs. January 2027 launch.",
+      "Find shows worth testing, score the fit, build the media plan, and pay the host when the read runs.",
     marketing: true,
     metadataFile: "app/page.tsx",
     pageFile: "app/page.tsx",

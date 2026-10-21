@@ -76,6 +76,11 @@ describe("public page metadata", () => {
     const urls = sitemap().map((entry) => entry.url);
     expect(urls).toEqual(pages.map((page) => absoluteUrl(page.path)));
     expect(urls).toEqual([SITE_ORIGIN]);
+    const home = pages[0];
+    expect(home?.description).not.toMatch(/January 2027/);
+    expect(publicMetadata("/").description).toBe(
+      "Find shows worth testing, score the fit, build the media plan, and pay the host when the read runs.",
+    );
   });
 
   it("keeps auth pages out of the sitemap and out of the index", () => {
