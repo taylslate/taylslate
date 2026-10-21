@@ -31,6 +31,7 @@ vi.mock("@/lib/podscan/lookup", () => ({
 }));
 
 import { GET, PUT, sanitizeShowProfilePatch } from "./route";
+import { SHOW_PROFILE_PODSCAN_ID_LABEL } from "@/lib/shows/profile-podscan";
 import { POST as LOOKUP_POST } from "./lookup/route";
 
 function jsonRequest(body: unknown): Request {
@@ -47,11 +48,11 @@ describe("sanitizeShowProfilePatch", () => {
       feed_url: "  https://example.com/rss  ",
       show_name: " My Show ",
       show_description: "desc",
-      podscan_id: "abc123",
+      podscan_id: "pd_smartless",
     });
     expect(patch.feed_url).toBe("https://example.com/rss");
     expect(patch.show_name).toBe("My Show");
-    expect(patch.podscan_id).toBe("abc123");
+    expect(patch.podscan_id).toBeUndefined();
   });
 
   it("collapses empty strings to null", () => {
@@ -248,6 +249,7 @@ describe("GET /api/show-profile", () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.show_profile.id).toBe("sp1");
+    expect(body.podscan_id_label).toBe(SHOW_PROFILE_PODSCAN_ID_LABEL);
   });
 });
 
@@ -279,6 +281,22 @@ describe("PUT /api/show-profile", () => {
     expect(call[0]).toBe("u1");
     expect(call[1]).toEqual({ show_name: "Saunas", audience_size: 12000 });
     expect(applyAudienceGeographyToShow).not.toHaveBeenCalled();
+  });
+
+  it("does not save a client podscan id for another show", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u1", email: "u@x.co" });
+    ensureProfile.mockResolvedValue({});
+    upsertShowProfile.mockResolvedValue({ id: "sp1", user_id: "u1", show_name: "Mine" });
+
+    const res = await PUT(
+      jsonRequest({
+        show_name: "Mine",
+        podscan_id: "pd_smartless",
+      }) as never
+    );
+
+    expect(res.status).toBe(200);
+    expect(upsertShowProfile.mock.calls[0][1]).toEqual({ show_name: "Mine" });
   });
 
   it("parses a media kit into country shares and copies them onto the show", async () => {
@@ -361,6 +379,7 @@ describe("POST /api/show-profile/lookup", () => {
     expect(body.found).toBe(true);
     expect(body.podcast).toEqual({
       podscan_id: "p1",
+      podscan_id_label: SHOW_PROFILE_PODSCAN_ID_LABEL,
       show_name: "My Show",
       show_description: "desc",
       show_image_url: "https://img/x.jpg",

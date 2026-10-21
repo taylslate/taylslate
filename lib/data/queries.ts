@@ -37,6 +37,7 @@ import type {
   UserRole,
 } from "./types";
 import { isBriefV2 } from "./types";
+import { omitClientPodscanId } from "@/lib/shows/profile-podscan";
 
 export const VIEW_AS_COOKIE = "taylslate_view_as";
 
@@ -1872,13 +1873,17 @@ export async function upsertShowProfile(
   patch: Partial<Omit<ShowProfile, "id" | "user_id" | "created_at" | "updated_at">>
 ): Promise<ShowProfile | null> {
   const supabase = await createClient();
+  // The user client can update this row. A client-supplied podscan_id is
+  // omitted. Migration 046 is the Data API backstop: a new value is kept
+  // only when it already matches a show this profile is tied to.
+  const safePatch = omitClientPodscanId(patch);
 
   const existing = await getShowProfileByUserId(userId);
 
   if (existing) {
     const { data, error } = await supabase
       .from("show_profiles")
-      .update({ ...patch, updated_at: new Date().toISOString() })
+      .update({ ...safePatch, updated_at: new Date().toISOString() })
       .eq("user_id", userId)
       .select()
       .single();
@@ -1891,7 +1896,7 @@ export async function upsertShowProfile(
 
   const { data, error } = await supabase
     .from("show_profiles")
-    .insert({ user_id: userId, ...patch })
+    .insert({ user_id: userId, ...safePatch })
     .select()
     .single();
   if (error || !data) {

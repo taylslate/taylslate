@@ -7,6 +7,7 @@ import { logEvent } from "@/lib/data/events";
 import { deliverAndChargeLine } from "@/lib/delivery/mark-delivered";
 import type { ChargeForEpisodeResult } from "@/lib/stripe/payment-intent";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { runMakeGoodDetectionHook } from "./detect";
 import {
   findAircheckByLine,
   saveAircheckReview,
@@ -104,6 +105,7 @@ export async function confirmAircheck(
 ): Promise<ConfirmAircheckResult> {
   const existing = await requireAircheck(input.ioLineItemId);
   if (existing.review_decision === "confirmed") {
+    await runMakeGoodDetectionHook(input.ioLineItemId);
     return {
       ok: true,
       alreadyCharged: true,
@@ -131,6 +133,7 @@ export async function confirmAircheck(
         already_charged: true,
       },
     });
+    await runMakeGoodDetectionHook(input.ioLineItemId);
     return { ok: true, alreadyCharged: true, aircheck, charge: null };
   }
 
@@ -171,6 +174,7 @@ export async function confirmAircheck(
       stripe_payment_intent_id: delivered.charge.stripePaymentIntentId,
     },
   });
+  await runMakeGoodDetectionHook(input.ioLineItemId);
   return {
     ok: true,
     alreadyCharged: false,
@@ -207,5 +211,6 @@ export async function rejectAircheck(input: RejectInput): Promise<AircheckRow> {
       reason,
     },
   });
+  await runMakeGoodDetectionHook(input.ioLineItemId);
   return aircheck;
 }

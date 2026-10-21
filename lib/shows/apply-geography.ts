@@ -9,11 +9,8 @@
 //   2. the private show_owner row (data_sources contains show_owner)
 //      whose contact_email matches the profile owner's login
 //
-// show_profiles.podscan_id is not a tie. PUT /api/show-profile copies
-// a client-supplied id, onboarding echoes the lookup response back
-// through that PUT, and a user can update their own row directly.
-// Nothing records a verified claim of that id, so a matching
-// podscan_id must not write or score another show.
+// show_profiles.podscan_id is self-reported. It is not a tie. A profile
+// that stores another show's Podscan id does not read or write that show.
 //
 // show_slug / generateSlug(show_name) is display-only. A profile
 // named after a catalog show must not write that show's demographics.
@@ -31,7 +28,8 @@ import {
   mergeGeographyIntoDemographics,
 } from "@/lib/shows/media-kit-geo";
 
-type GeoProfile = Pick<ShowProfile, "id" | "user_id" | "audience_geography">;
+/** `podscan_id` may be present on the row. Geography ignores it. */
+type GeoProfile = Pick<ShowProfile, "id" | "user_id" | "podscan_id" | "audience_geography">;
 
 interface GeoShow {
   id: string;
@@ -42,16 +40,18 @@ interface GeoShow {
 export interface ShowGeoIdentity {
   /** Catalog `shows.id` from the stored row. Never a discovery candidate id. */
   showId?: string;
-  /**
-   * Present on discovery candidates. Not a geography tie: the matching
-   * show_profiles.podscan_id can be set by the client.
-   */
+  /** Catalog `shows.podscan_id`. Not a join onto show_profiles. */
   podscanId?: string;
   contactEmail?: string;
   dataSources?: string[];
 }
 
 export interface VerifiedGeography {
+  /**
+   * Ignored by geographyForIdentity. A Podscan id is not a profile tie.
+   * Callers match on showId.
+   */
+  podscanId?: string;
   showId?: string;
   geography: AudienceGeography;
 }
@@ -99,7 +99,7 @@ export async function applyAudienceGeographyToShow(profile: GeoProfile): Promise
 
 /**
  * Country shares from show_profiles that have a verified tie to one of
- * these catalog identities. A shared name or slug is not a tie.
+ * these catalog identities. A shared name, slug, or podscan id is not a tie.
  */
 export async function getVerifiedAudienceGeography(
   identities: ShowGeoIdentity[]
@@ -198,7 +198,7 @@ export async function getVerifiedProfileTies(
   return out;
 }
 
-/** Geography tied to this catalog show id. A podscan id is not a tie. */
+/** Geography tied to this catalog show id. A podscan-id-only row is ignored. */
 export function geographyForIdentity(
   identity: ShowGeoIdentity,
   rows: VerifiedGeography[]
