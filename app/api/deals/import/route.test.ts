@@ -4,9 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IO_EXTRACTION_SYSTEM_PROMPT } from "@/lib/prompts/io-extraction";
 import { getLLMModel } from "@/lib/llm/client";
 
-const { mockCreate, ctorState } = vi.hoisted(() => ({
+const { mockCreate, ctorState, getAuthenticatedUser, getUserProfile, createLLMClient } = vi.hoisted(() => ({
   mockCreate: vi.fn(),
   ctorState: { throwOnConstruct: false },
+  getAuthenticatedUser: vi.fn(),
+  getUserProfile: vi.fn(),
+  createLLMClient: vi.fn(),
 }));
 
 vi.mock("@anthropic-ai/sdk", () => ({
@@ -20,9 +23,23 @@ vi.mock("@anthropic-ai/sdk", () => ({
   },
 }));
 
+vi.mock("@/lib/data/queries", () => ({
+  getAuthenticatedUser: (...args: unknown[]) => getAuthenticatedUser(...args),
+  getUserProfile: (...args: unknown[]) => getUserProfile(...args),
+}));
+
+vi.mock("@/lib/llm/client", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/llm/client")>("@/lib/llm/client");
+  return {
+    ...actual,
+    createLLMClient: (...args: unknown[]) => createLLMClient(...args),
+  };
+});
+
 import { POST } from "./route";
 
 const FIXTURE = path.join(process.cwd(), "lib/imports/fixtures");
+const USER_ID = "11111111-1111-4111-8111-111111111111";
 
 const COLUMN_MAP = {
   show_name: "Podcast Title",
@@ -79,6 +96,17 @@ afterEach(() => {
 beforeEach(() => {
   mockCreate.mockReset();
   ctorState.throwOnConstruct = false;
+  getAuthenticatedUser.mockReset();
+  getUserProfile.mockReset();
+  createLLMClient.mockReset();
+  getAuthenticatedUser.mockResolvedValue({ id: USER_ID, email: "brand@taylslate.com" });
+  getUserProfile.mockResolvedValue({ id: USER_ID, role: "brand", email: "brand@taylslate.com" });
+  createLLMClient.mockImplementation(() => {
+    if (ctorState.throwOnConstruct) {
+      throw new Error("Could not resolve authentication method");
+    }
+    return { messages: { create: mockCreate } };
+  });
   vi.stubEnv("LLM_MODEL", "claude-test-model");
   mockCreate.mockImplementation(async (params: { messages: { content: unknown }[] }) => {
     const content = params.messages[0]?.content;
@@ -105,6 +133,8 @@ describe("POST /api/deals/import existing paths", () => {
     expect(payload.system).toBe(IO_EXTRACTION_SYSTEM_PROMPT);
     expect(payload.messages[0].content[0].type).toBe("document");
     expect(options).toBeUndefined();
+    expect(getAuthenticatedUser).not.toHaveBeenCalled();
+    expect(createLLMClient).not.toHaveBeenCalled();
   });
 
   it("keeps manual JSON entry off the model", async () => {
@@ -121,6 +151,7 @@ describe("POST /api/deals/import existing paths", () => {
     expect(body.io.advertiser_name).toBe("SaunaBox");
     expect(body.drafts).toBeUndefined();
     expect(mockCreate).not.toHaveBeenCalled();
+    expect(getAuthenticatedUser).not.toHaveBeenCalled();
   });
 
   it("still rejects a non-pdf upload and an unknown content type", async () => {
@@ -138,6 +169,7 @@ describe("POST /api/deals/import existing paths", () => {
     );
     expect(plain.status).toBe(415);
     expect(mockCreate).not.toHaveBeenCalled();
+    expect(getAuthenticatedUser).not.toHaveBeenCalled();
   });
 });
 
@@ -193,9 +225,41 @@ describe("POST /api/deals/import mode=past_campaign", () => {
       spend: 250,
       matched_show_id: null,
     });
+    expect(createLLMClient).toHaveBeenCalledTimes(1);
     expect(mockCreate.mock.calls[0][0].model).toBe("claude-sonnet-4-20250514");
     expect(mockCreate.mock.calls[0][0].messages[0].content[0].type).toBe("document");
     expect(mockCreate.mock.calls[0][1]).toBeUndefined();
+  });
+
+  it("requires a signed-in brand or agency", async () => {
+    const csv = new Uint8Array(readFileSync(path.join(FIXTURE, "past-campaign.csv")));
+
+    getAuthenticatedUser.mockResolvedValue(null);
+    const signedOut = await POST(upload("past-campaign.csv", "text/csv", csv, "past_campaign") as never);
+    expect(signedOut.status).toBe(401);
+    expect(mockCreate).not.toHaveBeenCalled();
+
+    getAuthenticatedUser.mockResolvedValue({ id: USER_ID, email: "show@taylslate.com" });
+    getUserProfile.mockResolvedValue({ id: USER_ID, role: "show" });
+    const show = await POST(upload("past-campaign.csv", "text/csv", csv, "past_campaign") as never);
+    expect(show.status).toBe(403);
+
+    getUserProfile.mockResolvedValue({ id: USER_ID, role: "agent" });
+    const agent = await POST(upload("past-campaign.csv", "text/csv", csv, "past_campaign") as never);
+    expect(agent.status).toBe(403);
+
+    getUserProfile.mockResolvedValue(null);
+    const missing = await POST(upload("past-campaign.csv", "text/csv", csv, "past_campaign") as never);
+    expect(missing.status).toBe(403);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("allows an agency account to parse", async () => {
+    getUserProfile.mockResolvedValue({ id: USER_ID, role: "agency", email: "agency@taylslate.com" });
+    const csv = new Uint8Array(readFileSync(path.join(FIXTURE, "past-campaign.csv")));
+    const res = await POST(upload("past-campaign.csv", "text/csv", csv, "past_campaign") as never);
+    expect(res.status).toBe(200);
+    expect((await res.json()).drafts[0].show_name).toBe("Acquired");
   });
 
   it("rejects an oversized file, a mime mismatch, and too many rows", async () => {

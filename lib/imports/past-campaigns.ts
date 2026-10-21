@@ -6,6 +6,13 @@ import { callLLMWithFallback, loadPrompt } from "@/lib/llm/client";
 import { buildPartialIO, validateIOData } from "@/lib/validation/io-validation";
 import { dealsFromImportedIO } from "@/lib/deals/import-deals";
 import { parseCSV } from "@/lib/imports/csv";
+import {
+  assertXlsxUncompressedCap,
+  PAST_CAMPAIGN_MAX_XLSX_UNCOMPRESSED_BYTES,
+  XlsxCapError,
+} from "@/lib/imports/xlsx-limit";
+
+export { PAST_CAMPAIGN_MAX_XLSX_UNCOMPRESSED_BYTES };
 
 export const PAST_CAMPAIGN_MAX_BYTES = 10 * 1024 * 1024;
 export const PAST_CAMPAIGN_MAX_ROWS = 2000;
@@ -133,7 +140,21 @@ export async function parseCsv(text: string): Promise<PastCampaignDraft[]> {
   return draftsFromMatrix(table);
 }
 
-export async function parseXlsx(bytes: Uint8Array): Promise<PastCampaignDraft[]> {
+export async function parseXlsx(
+  bytes: Uint8Array,
+  options?: { maxUncompressedBytes?: number }
+): Promise<PastCampaignDraft[]> {
+  try {
+    await assertXlsxUncompressedCap(
+      bytes,
+      options?.maxUncompressedBytes ?? PAST_CAMPAIGN_MAX_XLSX_UNCOMPRESSED_BYTES
+    );
+  } catch (err) {
+    if (err instanceof XlsxCapError) {
+      throw new PastCampaignImportError(err.message, 400);
+    }
+    throw err;
+  }
   const workbook = new ExcelJS.Workbook();
   // exceljs types a pre-generic Node Buffer. The bytes are unchanged.
   const body = Buffer.from(bytes) as unknown as Parameters<ExcelJS.Xlsx["load"]>[0];

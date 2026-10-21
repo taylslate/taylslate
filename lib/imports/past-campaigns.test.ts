@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { crc32, deflateRawSync } from "node:zlib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ExcelJS from "exceljs";
 
@@ -220,7 +221,57 @@ describe("parseXlsx", () => {
     expect(drafts[0].raw["Podcast Title"]).toBe("Acquired");
     expect(JSON.stringify(drafts)).not.toContain("Ghost Show");
   });
+
+  it("rejects an inflated zip before exceljs parses a workbook", async () => {
+    const payload = Buffer.alloc(8_000, 0);
+    const bomb = zipDeflate("xl/worksheets/sheet1.xml", payload, payload.length);
+    await expect(parseXlsx(bomb, { maxUncompressedBytes: 1_000 })).rejects.toThrow(
+      /expands past the import size limit/
+    );
+
+    const underReported = zipDeflate("xl/worksheets/sheet1.xml", payload, 10);
+    await expect(parseXlsx(underReported, { maxUncompressedBytes: 1_000 })).rejects.toThrow(
+      PastCampaignImportError
+    );
+    await expect(parseXlsx(underReported, { maxUncompressedBytes: 1_000 })).rejects.toThrow(
+      /expands past the import size limit/
+    );
+  });
 });
+
+function zipDeflate(name: string, data: Buffer, declaredUncompressed: number): Uint8Array {
+  const compressed = deflateRawSync(data);
+  const crc = crc32(data);
+  const fileName = Buffer.from(name);
+  const local = Buffer.alloc(30 + fileName.length);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(8, 8);
+  local.writeUInt32LE(crc, 14);
+  local.writeUInt32LE(compressed.length, 18);
+  local.writeUInt32LE(declaredUncompressed, 22);
+  local.writeUInt16LE(fileName.length, 26);
+  fileName.copy(local, 30);
+
+  const central = Buffer.alloc(46 + fileName.length);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt16LE(8, 10);
+  central.writeUInt32LE(crc, 16);
+  central.writeUInt32LE(compressed.length, 20);
+  central.writeUInt32LE(declaredUncompressed, 24);
+  central.writeUInt16LE(fileName.length, 28);
+  fileName.copy(central, 46);
+
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(1, 8);
+  eocd.writeUInt16LE(1, 10);
+  eocd.writeUInt32LE(central.length, 12);
+  eocd.writeUInt32LE(local.length + compressed.length, 16);
+  return new Uint8Array(Buffer.concat([local, compressed, central, eocd]));
+}
 
 describe("parsePdf", () => {
   it("maps an extracted IO into one draft per show", async () => {

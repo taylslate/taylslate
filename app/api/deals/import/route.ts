@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { IO_EXTRACTION_SYSTEM_PROMPT, IO_EXTRACTION_USER_PROMPT } from "@/lib/prompts/io-extraction";
 import { validateIOData, buildPartialIO } from "@/lib/validation/io-validation";
+import { createLLMClient } from "@/lib/llm/client";
+import { getAuthenticatedUser, getUserProfile } from "@/lib/data/queries";
 import {
   detectPastCampaignKind,
   parsePastCampaignFile,
@@ -148,6 +150,18 @@ export async function POST(request: NextRequest) {
 }
 
 async function handlePastCampaignImport(formData: FormData) {
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const profile = await getUserProfile(user.id);
+  if (!profile || (profile.role !== "brand" && profile.role !== "agency")) {
+    return NextResponse.json(
+      { error: "Only brand and agency accounts can import past campaigns" },
+      { status: 403 }
+    );
+  }
+
   const file = uploadedFile(formData.get("file"));
   if (!file) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -188,11 +202,12 @@ function uploadedFile(value: FormDataEntryValue | null): File | null {
   return value;
 }
 
-// Same model, prompt, and document block as the IO PDF path above.
+// createLLMClient() owns the SDK constructor. The model stays the IO PDF
+// model above, passed explicitly so this path does not follow LLM_MODEL.
 async function extractIoPdf(bytes: Uint8Array): Promise<Record<string, unknown>> {
-  let client: Anthropic;
+  let client: ReturnType<typeof createLLMClient>;
   try {
-    client = new Anthropic();
+    client = createLLMClient();
   } catch {
     throw new PastCampaignImportError(
       "PDF extraction is not configured. Add an ANTHROPIC_API_KEY environment variable, or use manual entry instead.",
