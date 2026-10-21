@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+
+vi.mock("next/font/google", () => ({
+  Fraunces: () => ({ variable: "--font-app-display", className: "font-display" }),
+  Figtree: () => ({ variable: "--font-app-sans", className: "font-body" }),
+}));
+import { act, render, screen, cleanup, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 vi.mock("next/image", () => ({
@@ -59,6 +64,10 @@ describe("LaunchHome", () => {
       "href",
       "/signup",
     );
+    expect(screen.getAllByRole("link", { name: "Start free" })[0].className).toContain(
+      "bg-[var(--ts-accent)]",
+    );
+    expect(document.querySelector(".brand-app")).not.toBeNull();
     expect(document.querySelector('img[src="/mark.png"]')).not.toBeNull();
   });
 
@@ -119,6 +128,77 @@ describe("LaunchHome", () => {
     expect(screen.getByText("We ran the test.")).toBeInTheDocument();
     expect(screen.queryByText("Placeholder")).toBeNull();
     expect(screen.queryByText("Brand logo")).toBeNull();
+  });
+
+  it("keeps the film slate visible and claps between brands and shows", async () => {
+    vi.useFakeTimers();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      media: "(prefers-reduced-motion: reduce)",
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }) as unknown as typeof window.matchMedia;
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+    Element.prototype.scrollIntoView = vi.fn();
+
+    render(<LaunchHome />);
+    const open = screen.getByRole("button", { name: "Switch to shows" });
+    expect(open.querySelector(".ts-clap-stick")).not.toBeNull();
+    expect(open).not.toHaveClass("is-clapping");
+    const audience = screen.getByRole("group", { name: "Audience" });
+    expect(audience.parentElement).toHaveClass("justify-center");
+    expect(screen.getByRole("button", { name: "For brands" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "For shows" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+
+    fireEvent.click(open);
+    expect(screen.getByRole("button", { name: "Switch to shows" })).toHaveClass(
+      "is-clapping",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    const closed = screen.getByRole("button", { name: "Switch to brands" });
+    expect(closed).toBeInTheDocument();
+    expect(closed).not.toHaveClass("is-clapping");
+    expect(closed.querySelector(".ts-clap-stick")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "For brands" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "For shows" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    vi.useRealTimers();
+  });
+
+  it("still shows the slate when reduced motion skips the snap", () => {
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: true,
+      media: "(prefers-reduced-motion: reduce)",
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }) as unknown as typeof window.matchMedia;
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+    Element.prototype.scrollIntoView = vi.fn();
+
+    render(<LaunchHome />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to shows" }));
+    const slate = screen.getByRole("button", { name: "Switch to brands" });
+    expect(slate.querySelector(".ts-clap-stick")).not.toBeNull();
+    expect(slate).not.toHaveClass("is-clapping");
+    expect(screen.getByRole("button", { name: "For shows" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("has no em dashes in the rendered copy", () => {

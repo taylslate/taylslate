@@ -10,7 +10,7 @@ function ScoreBar({ value }: { value: number }) {
       style={{ borderRadius: tokens.radius }}
     >
       <div
-        className="h-full bg-[var(--ts-ink-on-paper)]"
+        className="h-full bg-[var(--ts-accent)]"
         style={{ width: `${value}%` }}
       />
     </div>
@@ -36,12 +36,12 @@ export function ProductShot() {
             style={{ borderRadius: tokens.radius }}
           >
             <div className="hidden w-[168px] shrink-0 flex-col border-r border-[var(--ts-hairline-on-paper)] lg:flex">
-              <div className="border-b border-[var(--ts-hairline-on-paper)] px-4 py-4 text-[15px] font-semibold tracking-tight">
+              <div className="ts-wordmark border-b border-[var(--ts-hairline-on-paper)] px-4 py-4 text-[15px] tracking-tight">
                 taylslate
               </div>
               <div className="px-3 pt-3">
                 <div
-                  className="bg-[var(--ts-ink-on-paper)] px-2 py-2 text-center text-xs font-medium text-[var(--ts-paper)]"
+                  className="bg-[var(--ts-accent)] px-2 py-2 text-center text-xs font-medium text-[var(--ts-accent-foreground)]"
                   style={{ borderRadius: tokens.radius }}
                 >
                   {shot.newCampaign}
@@ -55,7 +55,7 @@ export function ProductShot() {
                       key={item}
                       className={
                         active
-                          ? "bg-[var(--ts-band-brands)] px-2.5 py-2 font-medium"
+                          ? "bg-[var(--ts-band-brands)] px-2.5 py-2 font-medium shadow-[inset_3px_0_0_var(--ts-gold)]"
                           : "px-2.5 py-2 text-[var(--ts-ink-muted-on-paper)]"
                       }
                       style={{ borderRadius: tokens.radius }}
