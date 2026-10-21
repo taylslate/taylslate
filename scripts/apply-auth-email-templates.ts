@@ -39,9 +39,11 @@ async function readAuthConfig(token: string): Promise<Record<string, unknown>> {
 }
 
 async function main(): Promise<void> {
-  // Code email for shows. Supabase has no separate OTP config field, so this
-  // checks the template in auth.ts and leaves the magic-link slot as a link.
-  // The message that actually sends is Resend (lib/email/templates/login-otp.ts).
+  // Code email for brands and shows. Supabase has no separate OTP config
+  // field, so this checks the template in auth.ts and leaves the magic-link
+  // slot as a link. The message /login actually sends is Resend
+  // (lib/email/templates/login-otp.ts). Do not point the magic-link slot at
+  // the code body. Handoff and other link mail still need that slot.
   assertShowOtpTemplate();
   console.log("otp template ok — magic link slot unchanged");
 

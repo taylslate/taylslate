@@ -118,13 +118,18 @@ describe("POST /api/auth/login/otp", () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
-  it("does not email a brand account", async () => {
+  it("emails a 6-digit code for an existing brand", async () => {
     profile = { id: "brand-1", role: "brand" };
     const res = await POST(req({ email: "brand@example.com" }));
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "not_show" });
-    expect(generateLink).not.toHaveBeenCalled();
-    expect(sendEmail).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(generateLink).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "brand@example.com", type: "magiclink" }),
+    );
+    expect(createUser).not.toHaveBeenCalled();
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail.mock.calls[0][0].to).toBe("brand@example.com");
+    expect(sendEmail.mock.calls[0][0].html).toContain("482913");
   });
 
   it("returns no_account for an unknown email and does not create a user", async () => {

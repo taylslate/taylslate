@@ -1,6 +1,6 @@
-// Show / creator sign-in code. Sent from POST /api/auth/login/otp.
-// One subject, one sentence, the 6-digit code. The magic-link email stays
-// a separate message.
+// Sign-in code for brands and shows. Sent from POST /api/auth/login/otp.
+// One subject, one sentence, the 6-digit code, on the shared white layout.
+// Handoff and pitch setup still send the separate magic-link email.
 
 import { emailColors, emailParagraph, escapeHtml, renderEmailLayout } from "@/lib/email/layout";
 

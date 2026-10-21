@@ -322,8 +322,8 @@ function UnonboardedActions({
           defaultEmail={email}
           outreachToken={token}
           nextPath="/onboarding/show"
-          onVerified={() => {
-            window.location.assign("/onboarding/show");
+          onVerified={(nextPath) => {
+            window.location.assign(nextPath);
           }}
         />
         <button

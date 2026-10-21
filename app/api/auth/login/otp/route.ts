@@ -1,7 +1,8 @@
-// POST /api/auth/login/otp — email a 6-digit sign-in code to a show.
-// Brands stay on the magic-link path. Unknown emails are not created
-// unless the body carries a valid outreach token AND the address matches
-// that outreach's show contact email (sent_to_email).
+// POST /api/auth/login/otp — email a 6-digit sign-in code.
+// Any existing profile can use it (brand, agency, show, agent). Unknown
+// emails are not created unless the body carries a valid outreach token
+// AND the address matches that outreach's show contact email (sent_to_email).
+// That created account is a show, same as the pitch setup link.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -23,7 +24,6 @@ import {
 import {
   isSixDigitCode,
   LOGIN_OTP_NO_ACCOUNT,
-  LOGIN_OTP_NOT_SHOW,
   LOGIN_OTP_RESEND_SEC,
   LOGIN_OTP_RESEND_WAIT,
 } from "@/lib/auth/login-otp";
@@ -82,9 +82,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "send_failed" }, { status: 500 });
   }
   const profile = existing as ProfileHit | null;
-  if (profile && profile.role !== "show") {
-    return NextResponse.json({ error: LOGIN_OTP_NOT_SHOW }, { status: 403 });
-  }
   // A pitch token is not a blank check. Only the show contact on that
   // outreach may be turned into an account.
   if (!profile && outreachContactEmail !== email) {

@@ -5,12 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { tokens } from "@/lib/brand/tokens";
-import {
-  AuthShell,
-  inputClass,
-  labelClass,
-  primaryBtnClass,
-} from "@/components/auth/auth-shell";
+import { AuthShell, inputClass } from "@/components/auth/auth-shell";
+import { ShowEmailCode } from "@/components/auth/show-email-code";
 import {
   TurnstileWidget,
   type TurnstileHandle,
@@ -20,11 +16,6 @@ import {
   isCaptchaError,
   CAPTCHA_RETRY_MESSAGE,
 } from "@/lib/auth/turnstile";
-import {
-  isValidLoginEmail,
-  normalizeLoginEmail,
-  LOGIN_MAGIC_NO_ACCOUNT,
-} from "@/lib/auth/login-magic";
 
 function LoginForm() {
   const router = useRouter();
@@ -32,65 +23,15 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState<"magic" | "password" | null>(
-    null,
-  );
-  const [sent, setSent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [usePassword, setUsePassword] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
   const turnstileRef = useRef<TurnstileHandle>(null);
 
-  const handleMagicSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    const normalized = normalizeLoginEmail(email);
-    if (!normalized || !isValidLoginEmail(normalized)) {
-      setError("Enter your email.");
-      return;
-    }
-
-    setSubmitting("magic");
-    try {
-      const res = await fetch("/api/auth/login/magic", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: normalized,
-          next: searchParams.get("next"),
-        }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        turnstileRef.current?.reset();
-        setCaptchaToken(undefined);
-        if (data?.error === LOGIN_MAGIC_NO_ACCOUNT) {
-          setError(LOGIN_MAGIC_NO_ACCOUNT);
-          return;
-        }
-        setError(
-          data?.error === "email required" || data?.error === "invalid email"
-            ? "Enter your email."
-            : "Could not send the link. Try again.",
-        );
-        return;
-      }
-      setSent(true);
-    } catch {
-      turnstileRef.current?.reset();
-      setCaptchaToken(undefined);
-      setError("Could not send the link. Try again.");
-    } finally {
-      setSubmitting(null);
-    }
-  };
-
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setSubmitting("password");
+    setSubmitting(true);
 
     const supabase = createClient();
     const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -107,7 +48,7 @@ function LoginForm() {
           ? CAPTCHA_RETRY_MESSAGE
           : signInError.message,
       );
-      setSubmitting(null);
+      setSubmitting(false);
       return;
     }
 
@@ -116,85 +57,24 @@ function LoginForm() {
     router.refresh();
   };
 
-  if (sent) {
-    return (
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">Check your email</h1>
-        <p className="mt-3 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
-          If that address has an account, the link is on its way.
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            setSent(false);
-            setError(null);
-          }}
-          className="mt-8 text-sm text-[var(--ts-accent-text)] hover:underline"
-        >
-          Use a different email
-        </button>
-      </div>
-    );
-  }
-
   return (
     <>
       <div className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Log in</h1>
+        <p className="mt-2 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
+          We&apos;ll email a 6-digit code.
+        </p>
       </div>
 
-      {error === LOGIN_MAGIC_NO_ACCOUNT ? (
-        <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
-          No account for that email.{" "}
-          <Link href="/signup" className="text-[var(--ts-accent-text)] hover:underline">
-            Sign up instead.
-          </Link>
-        </p>
-      ) : error ? (
-        <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      <form onSubmit={handleMagicSubmit} className="space-y-4">
-        <div>
-          <label htmlFor="email" className={labelClass}>
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-            className={inputClass}
-            style={{ borderRadius: tokens.radius }}
-            placeholder="you@example.com"
-          />
-        </div>
-
-        <TurnstileWidget
-          ref={turnstileRef}
-          onVerify={setCaptchaToken}
-          onExpire={() => setCaptchaToken(undefined)}
-          onError={() => setCaptchaToken(undefined)}
-        />
-
-        <button
-          type="submit"
-          disabled={submitting !== null}
-          className={primaryBtnClass}
-          style={{ borderRadius: tokens.radius }}
-        >
-          {submitting === "magic" ? "Sending…" : "Send magic link"}
-        </button>
-      </form>
-
-      <p className="mt-4 text-sm text-[var(--ts-ink-muted-on-paper)]">
-        <Link href="/login/show" className="text-[var(--ts-accent-text)] hover:underline">
-          Show or creator? Sign in with an email code
-        </Link>
-      </p>
+      <ShowEmailCode
+        emailValue={email}
+        onEmailChange={setEmail}
+        nextPath={searchParams.get("next")}
+        onVerified={(nextPath) => {
+          router.push(nextPath);
+          router.refresh();
+        }}
+      />
 
       <div className="mt-6">
         <button
@@ -211,6 +91,11 @@ function LoginForm() {
 
         {usePassword ? (
           <form onSubmit={handlePasswordSubmit} className="mt-4 space-y-4">
+            {error ? (
+              <p className="text-sm text-[var(--ts-ink-on-paper)]" role="alert">
+                {error}
+              </p>
+            ) : null}
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <label htmlFor="password" className="text-sm font-medium">
@@ -235,13 +120,19 @@ function LoginForm() {
                 placeholder="Your password"
               />
             </div>
+            <TurnstileWidget
+              ref={turnstileRef}
+              onVerify={setCaptchaToken}
+              onExpire={() => setCaptchaToken(undefined)}
+              onError={() => setCaptchaToken(undefined)}
+            />
             <button
               type="submit"
-              disabled={submitting !== null}
+              disabled={submitting}
               className="w-full border border-[var(--ts-ink-on-paper)]/20 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-ink-on-paper)]/5 disabled:cursor-not-allowed disabled:opacity-50"
               style={{ borderRadius: tokens.radius }}
             >
-              {submitting === "password" ? "Logging in..." : "Log in"}
+              {submitting ? "Logging in..." : "Log in"}
             </button>
           </form>
         ) : null}

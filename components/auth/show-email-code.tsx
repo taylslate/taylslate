@@ -7,7 +7,7 @@ import { inputClass, labelClass, primaryBtnClass } from "@/components/auth/auth-
 import { isValidLoginEmail, normalizeLoginEmail } from "@/lib/auth/login-magic";
 import {
   isSixDigitCode,
-  LOGIN_OTP_NOT_SHOW,
+  LOGIN_OTP_NO_ACCOUNT,
   LOGIN_OTP_RESEND_SEC,
   LOGIN_OTP_RESEND_WAIT,
   loginOtpErrorMessage,
@@ -16,6 +16,9 @@ import {
 
 interface ShowEmailCodeProps {
   defaultEmail?: string;
+  /** Controlled email. Login shares this value with the password form. */
+  emailValue?: string;
+  onEmailChange?: (email: string) => void;
   /** Pitch token. Present only on show setup, where a new show may be created. */
   outreachToken?: string;
   nextPath?: string | null;
@@ -24,11 +27,18 @@ interface ShowEmailCodeProps {
 
 export function ShowEmailCode({
   defaultEmail = "",
+  emailValue,
+  onEmailChange,
   outreachToken,
   nextPath,
   onVerified,
 }: ShowEmailCodeProps) {
-  const [email, setEmail] = useState(defaultEmail);
+  const [uncontrolledEmail, setUncontrolledEmail] = useState(defaultEmail);
+  const email = emailValue ?? uncontrolledEmail;
+  const setEmail = (value: string) => {
+    onEmailChange?.(value);
+    if (emailValue === undefined) setUncontrolledEmail(value);
+  };
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
   const [error, setError] = useState<string | null>(null);
@@ -127,17 +137,18 @@ export function ShowEmailCode({
     }
   };
 
-  const notShow = error === loginOtpErrorMessage(LOGIN_OTP_NOT_SHOW, "request");
+  const noAccount =
+    !outreachToken && error === loginOtpErrorMessage(LOGIN_OTP_NO_ACCOUNT, "request");
 
   return (
     <div>
       {error ? (
         <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
-          {notShow ? (
+          {noAccount ? (
             <>
-              That email uses a brand login.{" "}
-              <Link href="/login" className="text-[var(--ts-accent-text)] hover:underline">
-                Use the magic link instead.
+              No account for that email.{" "}
+              <Link href="/signup" className="text-[var(--ts-accent-text)] hover:underline">
+                Sign up instead.
               </Link>
             </>
           ) : (
@@ -169,7 +180,7 @@ export function ShowEmailCode({
               autoComplete="email"
               className={inputClass}
               style={{ borderRadius: tokens.radius }}
-              placeholder="you@yourshow.com"
+              placeholder="you@example.com"
             />
           </div>
           <button

@@ -102,11 +102,38 @@ describe("POST /api/auth/login/otp/verify", () => {
     expect(verifyOtp).not.toHaveBeenCalled();
   });
 
-  it("signs out when the verified user is not a show", async () => {
+  it("signs a brand in and sends show onboarding back to the dashboard", async () => {
     profile = { id: "brand-1", role: "brand" };
+    verifyOtp.mockResolvedValue({
+      data: { user: { id: "brand-1" } },
+      error: null,
+    });
+    const res = await POST(
+      req({ email: "brand@example.com", code: "482913", next: "/onboarding/show" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, next: "/dashboard" });
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it("keeps a brand's own next path", async () => {
+    profile = { id: "brand-1", role: "brand" };
+    verifyOtp.mockResolvedValue({
+      data: { user: { id: "brand-1" } },
+      error: null,
+    });
+    const res = await POST(
+      req({ email: "brand@example.com", code: "482913", next: "/campaigns/abc" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, next: "/campaigns/abc" });
+  });
+
+  it("signs out when the verified user has no profile role", async () => {
+    profile = null;
     const res = await POST(req({ email: "brand@example.com", code: "482913" }));
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "not_show" });
+    expect(await res.json()).toEqual({ error: "verify_failed" });
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 

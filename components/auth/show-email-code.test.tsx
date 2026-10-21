@@ -93,21 +93,22 @@ describe("ShowEmailCode", () => {
     expect(screen.getByRole("button", { name: "Resend code" })).toBeEnabled();
   });
 
-  it("points a brand email at the magic link and stays on the email step", async () => {
+  it("points an unknown email at signup and stays on the email step", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
-      status: 403,
-      json: async () => ({ error: "not_show" }),
+      status: 404,
+      json: async () => ({ error: "no_account" }),
     });
     renderForm();
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "brand@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Send code" }));
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("That email uses a brand login.");
-    expect(screen.getByRole("link", { name: "Use the magic link instead." })).toHaveAttribute(
+    expect(alert).toHaveTextContent("No account for that email.");
+    expect(screen.getByRole("link", { name: "Sign up instead." })).toHaveAttribute(
       "href",
-      "/login",
+      "/signup",
     );
+    expect(screen.queryByText(/magic link/i)).toBeNull();
     expect(screen.queryByLabelText("Code")).toBeNull();
   });
 });

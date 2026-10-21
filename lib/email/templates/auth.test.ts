@@ -45,7 +45,7 @@ describe("Supabase auth email templates", () => {
     expect(code.html).not.toContain(".ConfirmationURL");
   });
 
-  it("keeps the show OTP template as a code on the shared layout", () => {
+  it("keeps the sign-in code template on the shared white layout", () => {
     const otp = byId.otp;
     expect(otp.subject).toBe("Your Taylslate sign-in code");
     expect(otp.html).toContain("{{ .Token }}");

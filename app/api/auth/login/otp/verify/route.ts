@@ -1,5 +1,7 @@
-// POST /api/auth/login/otp/verify — exchange a 6-digit show code for a session.
+// POST /api/auth/login/otp/verify — exchange a 6-digit code for a session.
 // verifyOtp runs on the server client so the session cookies are set here.
+// Brand and show profiles both stay signed in. /dashboard applies the
+// existing role redirects.
 
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -17,7 +19,7 @@ import {
   isSixDigitCode,
   LOGIN_OTP_EXPIRED,
   LOGIN_OTP_INVALID,
-  LOGIN_OTP_NOT_SHOW,
+  nextAfterCodeLogin,
   normalizeLoginOtp,
 } from "@/lib/auth/login-otp";
 import {
@@ -76,9 +78,9 @@ export async function POST(request: NextRequest) {
     await supabase.auth.signOut();
     return NextResponse.json({ error: "verify_failed" }, { status: 500 });
   }
-  if (!profile || profile.role !== "show") {
+  if (!profile?.role) {
     await supabase.auth.signOut();
-    return NextResponse.json({ error: LOGIN_OTP_NOT_SHOW }, { status: 403 });
+    return NextResponse.json({ error: "verify_failed" }, { status: 403 });
   }
 
   const outreachToken =
@@ -97,6 +99,6 @@ export async function POST(request: NextRequest) {
   }
 
   const origin = siteOriginFromRequest(request.url);
-  const next = safeLoginNext(body.next, origin);
+  const next = nextAfterCodeLogin(profile.role, safeLoginNext(body.next, origin));
   return NextResponse.json({ ok: true, next });
 }
