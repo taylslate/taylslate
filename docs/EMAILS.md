@@ -1,6 +1,6 @@
 # Taylslate emails
 
-Every message Taylslate sends uses `lib/email/layout.ts`: a white field (`#ffffff`), a thin ink header bar (`#1c1915`), the mark at `https://www.taylslate.com/mark.png`, the wordmark, a footer, and a plain-text part. Copper `#c17a45` is for links. Buttons are ink with white text.
+Every message Taylslate sends uses `lib/email/layout.ts`: a white field (`#ffffff`), a thin ink header bar (`#1c1915`), the mark at `https://www.taylslate.com/mark.png`, the wordmark, a footer, and a plain-text part. Gold `#8c6e1f` is for links on the white field. Gold on the canvas field is `#7a5f17`. Buttons are ink with white text.
 
 Regenerate HTML previews with:
 
