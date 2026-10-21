@@ -14,7 +14,7 @@ import type { Show } from "@/lib/data/types";
 export const TRUSTED_HOST_COMPOSITE_BUMP = 2;
 
 export const TRUSTED_HOST_NOTE =
-  "Trusted host — weighted a little higher because this brand is buying its first campaign.";
+  "Trusted host, weighted a little higher because this brand is buying its first campaign.";
 
 export function isTrustedHost(show: Pick<Show, "is_verified" | "current_sponsors" | "past_sponsors">): boolean {
   if (show.is_verified) return true;

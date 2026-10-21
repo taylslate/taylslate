@@ -262,12 +262,12 @@ describe("appendGuidanceLines", () => {
     const out = appendGuidanceLines("Probable fit — strong topical overlap with this ring.", [
       "Audience geography: 68% US, 8% UK.",
       "True Crime purchase-rate benchmark: 4% (Cited study, as of 2024-06-01). Guidance only.",
-      "Trusted host — weighted a little higher because this brand is buying its first campaign.",
+      "Trusted host, weighted a little higher because this brand is buying its first campaign.",
     ]);
     expect(out).toContain("Probable fit");
     expect(out).toContain("Audience geography: 68% US, 8% UK.");
     expect(out).toContain("purchase-rate benchmark: 4%");
-    expect(out).toContain("Trusted host —");
+    expect(out).toContain("Trusted host,");
   });
 
   it("does not repeat a line the prose already includes", () => {

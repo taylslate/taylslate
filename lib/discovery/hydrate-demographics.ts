@@ -94,6 +94,14 @@ export function hasDemographics(d: ShowDemographics | undefined | null): boolean
 // anything else talking to Podscan while a discovery run is in flight.
 const FETCH_CONCURRENCY = 5;
 
+/** Catalog `shows.id`. Discovery ids (`discovered-podscan-…`) are not ties. */
+const CATALOG_SHOW_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function catalogShowId(id: string | undefined): string | undefined {
+  return id && CATALOG_SHOW_ID.test(id) ? id : undefined;
+}
+
 /**
  * Fill candidate demographics in place (mirrors fillPurchasePower's
  * mutate-in-place contract). Never throws.
@@ -205,12 +213,13 @@ export async function hydrateCandidateDemographics(
     try {
       const identityOf = new Map<Show, ShowGeoIdentity>();
       for (const candidate of candidates) {
-        const row = rowBySlug.get(slugOf.get(candidate)!);
+        // The catalog id is the candidate's own id when this show is already
+        // a shows row. A slug from the name is not a tie.
         identityOf.set(candidate, {
-          showId: row?.id,
-          podscanId: candidate.podscan_id || row?.podscan_id || undefined,
-          contactEmail: row?.contact?.email || undefined,
-          dataSources: row?.data_sources,
+          showId: catalogShowId(candidate.id),
+          podscanId: candidate.podscan_id || undefined,
+          contactEmail: candidate.contact?.email || undefined,
+          dataSources: candidate.data_sources,
         });
       }
       const geoRows = await deps.lookupGeography([...identityOf.values()]);

@@ -285,12 +285,12 @@ describe("hydrateCandidateDemographics", () => {
     deps.lookupGeography = async (identities) => {
       expect(identities).toEqual([
         expect.objectContaining({
-          showId: "cat-recovery",
-          contactEmail: "host@recovery.test",
+          podscanId: undefined,
         }),
       ]);
+      expect(identities[0]?.showId).toBeUndefined();
       expect(identities.some((row) => "slug" in row)).toBe(false);
-      return [{ geography: { uk: 99 } }];
+      return [{ showId: "cat-recovery", geography: { uk: 99 } }];
     };
     await hydrateCandidateDemographics([candidate], deps);
     expect(candidate.demographics.male).toBe(60);
@@ -314,8 +314,10 @@ describe("hydrateCandidateDemographics", () => {
     expect(candidate.demographics.us).toBe(80);
   });
 
-  it("fills missing country shares when a deal or owner tie returns geography", async () => {
+  it("fills missing country shares when the candidate id is the catalog show", async () => {
+    const catalogId = "11111111-1111-4111-8111-111111111111";
     const candidate = makeShow({
+      id: catalogId,
       name: "Recovery Lab",
       podscan_id: "pd_recovery",
       demographics: { male: 60, us: 80 },
@@ -324,7 +326,7 @@ describe("hydrateCandidateDemographics", () => {
       rows: [
         {
           ...makeShow({
-            id: "cat-recovery",
+            id: "22222222-2222-4222-8222-222222222222",
             name: "Recovery Lab",
             demographics: { male: 60, us: 80 },
           }),
@@ -332,9 +334,10 @@ describe("hydrateCandidateDemographics", () => {
         },
       ],
     });
-    deps.lookupGeography = async () => [
-      { showId: "cat-recovery", geography: { us: 10, uk: 9 } },
-    ];
+    deps.lookupGeography = async (identities) => {
+      expect(identities[0]?.showId).toBe(catalogId);
+      return [{ showId: catalogId, geography: { us: 10, uk: 9 } }];
+    };
     await hydrateCandidateDemographics([candidate], deps);
     expect(candidate.demographics.male).toBe(60);
     expect(candidate.demographics.us).toBe(80);
