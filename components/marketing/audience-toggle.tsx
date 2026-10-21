@@ -48,13 +48,18 @@ export function AudienceToggle() {
       : "text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]";
 
   return (
-    <div className="mb-6">
+    <div className="mb-6 flex justify-center">
       <div
         className="inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] sm:gap-3"
         role="group"
         aria-label="Audience"
       >
-        <button type="button" className={labelClass(guest === "brands")} onClick={() => void select("brands")}>
+        <button
+          type="button"
+          className={labelClass(guest === "brands")}
+          aria-pressed={guest === "brands"}
+          onClick={() => void select("brands")}
+        >
           For brands
         </button>
         <SlateClap
@@ -64,7 +69,12 @@ export function AudienceToggle() {
             void select(nextGuest);
           }}
         />
-        <button type="button" className={labelClass(guest === "shows")} onClick={() => void select("shows")}>
+        <button
+          type="button"
+          className={labelClass(guest === "shows")}
+          aria-pressed={guest === "shows"}
+          onClick={() => void select("shows")}
+        >
           For shows
         </button>
       </div>

@@ -145,7 +145,16 @@ describe("LaunchHome", () => {
     const open = screen.getByRole("button", { name: "Switch to shows" });
     expect(open.querySelector(".ts-clap-stick")).not.toBeNull();
     expect(open).not.toHaveClass("is-clapping");
-    expect(screen.getByRole("group", { name: "Audience" })).toBeInTheDocument();
+    const audience = screen.getByRole("group", { name: "Audience" });
+    expect(audience.parentElement).toHaveClass("justify-center");
+    expect(screen.getByRole("button", { name: "For brands" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "For shows" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
 
     fireEvent.click(open);
     expect(screen.getByRole("button", { name: "Switch to shows" })).toHaveClass(
@@ -160,6 +169,14 @@ describe("LaunchHome", () => {
     expect(closed).toBeInTheDocument();
     expect(closed).not.toHaveClass("is-clapping");
     expect(closed.querySelector(".ts-clap-stick")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "For brands" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "For shows" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     vi.useRealTimers();
   });
 
@@ -178,6 +195,10 @@ describe("LaunchHome", () => {
     const slate = screen.getByRole("button", { name: "Switch to brands" });
     expect(slate.querySelector(".ts-clap-stick")).not.toBeNull();
     expect(slate).not.toHaveClass("is-clapping");
+    expect(screen.getByRole("button", { name: "For shows" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("has no em dashes in the rendered copy", () => {
