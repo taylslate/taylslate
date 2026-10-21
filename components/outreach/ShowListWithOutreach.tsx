@@ -29,7 +29,7 @@ const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
 const panelClass =
   "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const inkBtnClass =
-  "inline-flex items-center justify-center bg-[var(--ts-ink-on-paper)] px-4 py-2 text-xs font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center justify-center bg-[var(--ts-accent)] px-4 py-2 text-xs font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
 
 const STATUS_LABEL: Record<OutreachResponseStatus, string> = {
   pending: "Awaiting reply",

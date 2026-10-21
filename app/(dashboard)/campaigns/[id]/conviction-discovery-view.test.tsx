@@ -726,8 +726,8 @@ describe("ConvictionDiscoveryView — paper/ink chrome", () => {
     expect(checkbox.className).toContain("accent-[var(--ts-accent)]");
 
     const cta = screen.getByRole("button", { name: /media plan/i });
-    expect(cta.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(cta.className).toContain("text-[var(--ts-paper)]");
+    expect(cta.className).toContain("bg-[var(--ts-accent)]");
+    expect(cta.className).toContain("text-[var(--ts-accent-foreground)]");
     expect(cta).toHaveStyle({ borderRadius: "var(--ts-radius)" });
     expect(cta.className).not.toMatch(/--brand-/);
 
@@ -747,8 +747,8 @@ describe("ConvictionDiscoveryView — paper/ink chrome", () => {
     expect(emptyBody.className).toContain("animate-pulse");
     expect(emptyBody.className).toContain("text-[var(--ts-ink-muted-on-paper)]");
     const retry = screen.getByRole("button", { name: /Re-run discovery/i });
-    expect(retry.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(retry.className).toContain("text-[var(--ts-paper)]");
+    expect(retry.className).toContain("bg-[var(--ts-accent)]");
+    expect(retry.className).toContain("text-[var(--ts-accent-foreground)]");
     expect(retry).toHaveStyle({ borderRadius: "var(--ts-radius)" });
     expect(global.fetch).not.toHaveBeenCalled();
     unmount();
@@ -809,9 +809,9 @@ describe("ConvictionDiscoveryView — paper/ink chrome", () => {
     const block = screen.getByTestId("founder-annotations");
     expect(block.className).toContain("border-[var(--ts-hairline-on-paper)]");
     expect(block.className).not.toMatch(/--brand-/);
-    expect(screen.getByText("Founder notes").className).toContain("text-[var(--ts-accent)]");
+    expect(screen.getByText("Founder notes").className).toContain("text-[var(--ts-accent-text)]");
     expect(screen.getByRole("button", { name: "+ Add note" }).className).toContain(
-      "text-[var(--ts-accent)]"
+      "text-[var(--ts-accent-text)]"
     );
   });
 });

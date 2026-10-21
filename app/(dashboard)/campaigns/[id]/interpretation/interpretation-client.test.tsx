@@ -471,8 +471,8 @@ describe("InterpretationClient — paper/ink", () => {
     const confirm = screen.getByRole("button", {
       name: /confirm interpretation and discover shows/i,
     });
-    expect(confirm.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(confirm.className).toContain("text-[var(--ts-paper)]");
+    expect(confirm.className).toContain("bg-[var(--ts-accent)]");
+    expect(confirm.className).toContain("text-[var(--ts-accent-foreground)]");
     expect(confirm).toHaveStyle({ borderRadius: "var(--ts-radius)" });
 
     await user.click(screen.getByRole("button", { name: /not quite right/i }));
@@ -484,8 +484,8 @@ describe("InterpretationClient — paper/ink", () => {
     expect(refine).toHaveStyle({ borderRadius: "var(--ts-radius)" });
 
     const submit = screen.getByRole("button", { name: "Submit refinement" });
-    expect(submit.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(submit.className).toContain("text-[var(--ts-paper)]");
+    expect(submit.className).toContain("bg-[var(--ts-accent)]");
+    expect(submit.className).toContain("text-[var(--ts-accent-foreground)]");
 
     await user.click(screen.getByRole("button", { name: /add a ring i missed/i }));
     const add = screen.getByLabelText("Add a ring I missed");
@@ -530,7 +530,7 @@ describe("InterpretationClient — paper/ink", () => {
     const confirming = screen.getByText("Confirming…");
     expect(confirming.className).toContain("animate-pulse");
     expect(confirming.closest("button")?.className).toContain(
-      "bg-[var(--ts-ink-on-paper)]"
+      "bg-[var(--ts-accent)]"
     );
     expectPaperInk(container);
   });
@@ -549,7 +549,7 @@ describe("InterpretationClient — paper/ink", () => {
     const disabledConfirm = screen.getByRole("button", {
       name: /confirm interpretation and discover shows/i,
     });
-    expect(disabledConfirm.className).toContain("bg-[var(--ts-ink-on-paper)]");
+    expect(disabledConfirm.className).toContain("bg-[var(--ts-accent)]");
     expect(disabledConfirm).toBeDisabled();
     expectPaperInk(empty.container);
     empty.unmount();

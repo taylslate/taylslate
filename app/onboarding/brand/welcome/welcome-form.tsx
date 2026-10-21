@@ -73,7 +73,7 @@ export default function WelcomeForm({ initialValue }: { initialValue: string }) 
         Leave blank if you don&apos;t have one yet.
       </p>
       {!valid && (
-        <p className="mt-2 text-xs text-[var(--ts-accent)]">
+        <p className="mt-2 text-xs text-[var(--ts-accent-text)]">
           That doesn&apos;t look like a valid URL.
         </p>
       )}

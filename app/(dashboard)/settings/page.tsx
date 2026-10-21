@@ -15,17 +15,17 @@ const radiusStyle = { borderRadius: tokens.radius };
 
 const inkText = "text-[var(--ts-ink-on-paper)]";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
-const accentText = "text-[var(--ts-accent)]";
+const accentText = "text-[var(--ts-accent-text)]";
 const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
 const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const inkBtnClass =
-  "inline-flex items-center bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90";
+  "inline-flex items-center bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90";
 const ghostBtnClass =
   "inline-flex items-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:cursor-not-allowed disabled:opacity-50";
 const fieldClass =
   "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none disabled:bg-[var(--ts-band-shows)] disabled:text-[var(--ts-ink-muted-on-paper)]";
 const kickerClass =
-  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]";
 
 export default function SettingsPage() {
   const [role, setRole] = useState<UserRole | null>(null);

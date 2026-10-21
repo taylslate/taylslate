@@ -58,7 +58,7 @@ export function ProofSection({
               className="border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5"
               style={{ borderRadius: tokens.radius }}
             >
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
                 {item.label}
               </p>
               <h3 className="mt-3 text-base font-semibold">{item.title}</h3>
@@ -100,7 +100,7 @@ export function LaunchHome() {
     >
       <main className="flex-1">
         <section className="mx-auto max-w-6xl px-6 pt-16 pb-16 sm:pt-20">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
             {LAUNCH.eyebrow}
           </p>
           <h1 className="mt-4 max-w-4xl text-balance text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
@@ -190,7 +190,7 @@ export function LaunchHome() {
               className="mt-8 max-w-2xl scroll-mt-16 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]"
             >
               {LAUNCH.pricing.showsNoteLead}{" "}
-              <Link href={LAUNCH.pricing.showsHref} className="text-[var(--ts-accent)] hover:underline">
+              <Link href={LAUNCH.pricing.showsHref} className="text-[var(--ts-accent-text)] hover:underline">
                 {LAUNCH.pricing.showsLogin}
               </Link>{" "}
               {LAUNCH.pricing.showsNoteTail}

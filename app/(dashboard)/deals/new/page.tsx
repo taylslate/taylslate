@@ -9,7 +9,7 @@ const radiusStyle = { borderRadius: tokens.radius };
 const inkText = "text-[var(--ts-ink-on-paper)]";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
 const kickerClass =
-  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]";
 const inputClass =
   "min-w-0 w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
 const labelClass = "mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper)]";
@@ -19,11 +19,11 @@ const chipOn =
 const chipOff =
   "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:bg-[var(--ts-band-shows)]";
 const linkClass =
-  "mt-2 flex items-center gap-1.5 text-sm font-medium text-[var(--ts-accent)] hover:underline";
+  "mt-2 flex items-center gap-1.5 text-sm font-medium text-[var(--ts-accent-text)] hover:underline";
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
-  return <p className="mt-1.5 text-xs text-[var(--ts-accent)]">{message}</p>;
+  return <p className="mt-1.5 text-xs text-[var(--ts-accent-text)]">{message}</p>;
 }
 
 export default function NewDealPage() {
@@ -217,7 +217,7 @@ export default function NewDealPage() {
             ))}
           </select>
           <FieldError message={fieldErrors.show_id} />
-          {showsError && <p className="mt-1.5 text-xs text-[var(--ts-accent)]">{showsError}</p>}
+          {showsError && <p className="mt-1.5 text-xs text-[var(--ts-accent-text)]">{showsError}</p>}
         </div>
 
         {/* Brand Name */}
@@ -467,7 +467,7 @@ export default function NewDealPage() {
                   <button
                     type="button"
                     onClick={() => removePostDate(index)}
-                    className="rounded-[var(--ts-radius)] p-2 text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-accent)]"
+                    className="rounded-[var(--ts-radius)] p-2 text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-accent-text)]"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M18 6 6 18M6 6l12 12" />
@@ -559,12 +559,12 @@ export default function NewDealPage() {
         {/* Submit */}
         <div className="border-t border-[var(--ts-hairline-on-paper)] pt-6">
           {submitError && (
-            <p className="mb-3 text-sm text-[var(--ts-accent)]">{submitError}</p>
+            <p className="mb-3 text-sm text-[var(--ts-accent-text)]">{submitError}</p>
           )}
           <button
             type="submit"
             disabled={isSubmitting || !showId || !brandName}
-            className="flex w-full items-center justify-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] py-3 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] py-3 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSubmitting ? (
               <>

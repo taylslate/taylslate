@@ -8,10 +8,10 @@ import { tokens } from "@/lib/brand/tokens";
 const radiusStyle = { borderRadius: tokens.radius };
 const inkText = "text-[var(--ts-ink-on-paper)]";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
-const accentText = "text-[var(--ts-accent)]";
+const accentText = "text-[var(--ts-accent-text)]";
 const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const inkBtnClass =
-  "inline-flex items-center bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 const ghostBtnClass =
   "inline-flex items-center justify-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -100,7 +100,7 @@ export default function BillingClient({
         <div
           className={`mb-6 border p-4 text-sm ${
             error
-              ? "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] text-[var(--ts-accent)]"
+              ? "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] text-[var(--ts-accent-text)]"
               : "border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] text-[var(--ts-ink-on-paper)]"
           }`}
           style={radiusStyle}

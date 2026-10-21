@@ -23,7 +23,12 @@
 
   globals.css still defines --brand-*. No page uses those variables.
 
-  Accent is copper only. Do not add a second accent.
+  :root is the marketing, auth, pitch, and email-adjacent palette.
+  Paper stays #f2ebe1 and accent stays copper. Email templates assert
+  that paper hex. Do not retint :root.
+
+  Logged-in chrome (.brand-app) is Ink & Gold: navy buttons, antique
+  gold marks, white cards on a warm canvas, Fraunces headings.
 */
 
 :root {
@@ -31,15 +36,58 @@
   --ts-ink: #f3efe8;
   --ts-ink-muted: #9a9388;
   --ts-paper: #f2ebe1;
+  --ts-canvas: var(--ts-paper);
   --ts-ink-on-paper: #1c1915;
   --ts-ink-muted-on-paper: #5c564c;
   --ts-accent: #c17a45;
+  --ts-accent-foreground: var(--ts-ink);
+  /* Small accent text. Outside the app this is copper, same as --ts-accent. */
+  --ts-accent-text: var(--ts-accent);
+  /* Non-text marks. #8C6E1F is the Ink & Gold mark; it is too light for small text. */
+  --ts-gold: #8c6e1f;
   --ts-hairline: rgb(243 239 232 / 0.12);
   --ts-hairline-on-paper: rgb(28 25 21 / 0.12);
   --ts-radius: 4px;
   /* Step-band washes. Derived from paper + existing tokens, not a second accent. */
   --ts-band-brands: color-mix(in srgb, var(--ts-accent) 12%, var(--ts-paper));
   --ts-band-shows: color-mix(in srgb, var(--ts-ink-on-paper) 7%, var(--ts-paper));
+}
+
+/* Ink & Gold. HubSpot structure: white cards, navy actions, gold marks. */
+.brand-app {
+  --ts-canvas: #f6f5f2;
+  --ts-paper: #ffffff;
+  --ts-ink-on-paper: #141c2b;
+  --ts-ink-muted-on-paper: #46526a;
+  --ts-accent: #1b2a4a;
+  --ts-accent-foreground: #fbf7ee;
+  /* Small text gold. #7A5F17 is 5.54:1 on canvas #F6F5F2 and 5.16:1 on #F4EDD8.
+     #8C6E1F stays on --ts-gold for marks and large text (4.41:1 / 4.11:1, fails AA body text). */
+  --ts-accent-text: #7a5f17;
+  --ts-gold: #8c6e1f;
+  --ts-hairline-on-paper: #ddd8ce;
+  --ts-band-brands: #f4edd8;
+  --ts-band-shows: #eeebe4;
+  --ts-radius: 8px;
+  --ts-field: #1b2a4a;
+  --ts-ink: #fbf7ee;
+  --ts-ink-muted: #c9c2b4;
+  font-family: var(--font-app-sans), Figtree, sans-serif;
+}
+
+.brand-app :is(h1, h2, h3) {
+  font-family: var(--font-app-display), Georgia, "Iowan Old Style", serif;
+  font-weight: 640;
+}
+
+.brand-app :is(h1, h2, h3):not([class*="uppercase"]) {
+  letter-spacing: -0.045em;
+}
+
+.brand-app .ts-wordmark {
+  font-family: var(--font-app-display), Georgia, "Iowan Old Style", serif;
+  font-weight: 640;
+  letter-spacing: -0.03em;
 }
 
 .marketing-page *:focus-visible,

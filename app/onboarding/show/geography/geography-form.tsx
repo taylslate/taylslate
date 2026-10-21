@@ -102,7 +102,7 @@ export default function GeographyForm({ initialText }: { initialText: string }) 
         </p>
       )}
       {note && (
-        <p className="mt-2 text-sm text-[var(--ts-accent)]" role="status">
+        <p className="mt-2 text-sm text-[var(--ts-accent-text)]" role="status">
           {note}
         </p>
       )}

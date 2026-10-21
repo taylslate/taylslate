@@ -86,7 +86,7 @@ afterEach(() => {
 });
 
 describe("Sidebar chrome", () => {
-  it("uses the slate mark, ink primary CTA, and paper tokens for a brand", () => {
+  it("uses the slate mark, accent primary CTA, and paper tokens for a brand", () => {
     const { container } = render(<Sidebar role="brand" displayName="Chris Taylor" />);
 
     expect(container.querySelector('img[src="/mark.png"]')).not.toBeNull();
@@ -98,8 +98,8 @@ describe("Sidebar chrome", () => {
 
     const cta = screen.getByRole("link", { name: "New Campaign" });
     expect(cta).toHaveAttribute("href", "/campaigns/new");
-    expect(cta.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(cta.className).toContain("text-[var(--ts-paper)]");
+    expect(cta.className).toContain("bg-[var(--ts-accent)]");
+    expect(cta.className).toContain("text-[var(--ts-accent-foreground)]");
 
     const dashboard = screen.getByRole("link", { name: "Dashboard" });
     expect(dashboard.className).toContain("bg-[var(--ts-band-brands)]");
@@ -107,7 +107,7 @@ describe("Sidebar chrome", () => {
     expect(screen.getByRole("link", { name: "Campaigns" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Shows" })).toBeNull();
     expect(screen.getByRole("link", { name: "Upgrade" })).toHaveClass(
-      "text-[var(--ts-accent)]",
+      "text-[var(--ts-accent-text)]",
     );
     expect(screen.getByText("CT")).toBeInTheDocument();
 

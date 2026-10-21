@@ -11,7 +11,7 @@ const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
 const panelClass =
   "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const inkBtnClass =
-  "inline-flex items-center bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 const ghostBtnClass =
   "inline-flex items-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:cursor-not-allowed disabled:opacity-50";
 const fieldClass =
@@ -123,7 +123,7 @@ export default function AircheckReviewClient({
 
   return (
     <div className="min-w-0 max-w-2xl p-4 sm:p-8">
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
         Aircheck
       </p>
       <h1 className={`mt-2 text-2xl font-semibold tracking-tight ${inkText}`}>
@@ -167,7 +167,7 @@ export default function AircheckReviewClient({
       {notice ? (
         <p
           role={notice.tone === "error" ? "alert" : "status"}
-          className={`mt-6 text-sm ${notice.tone === "error" ? "text-[var(--ts-accent)]" : inkText}`}
+          className={`mt-6 text-sm ${notice.tone === "error" ? "text-[var(--ts-accent-text)]" : inkText}`}
         >
           {notice.text}
         </p>
@@ -175,7 +175,7 @@ export default function AircheckReviewClient({
         <p
           role={view.chargeError && !confirmed ? "alert" : "status"}
           className={`mt-6 text-sm ${
-            view.chargeError && !confirmed ? "text-[var(--ts-accent)]" : inkText
+            view.chargeError && !confirmed ? "text-[var(--ts-accent-text)]" : inkText
           }`}
         >
           {durable}

@@ -133,7 +133,7 @@ export default function OnboardingShell({
           <div className="mb-8">{children}</div>
 
           {error && (
-            <div className="mb-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-3 text-sm text-[var(--ts-accent)]">
+            <div className="mb-4 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] p-3 text-sm text-[var(--ts-accent-text)]">
               {error}
             </div>
           )}

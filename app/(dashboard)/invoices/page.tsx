@@ -21,17 +21,17 @@ interface Deal {
 
 const inkText = "text-[var(--ts-ink-on-paper)]";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
-const accentText = "text-[var(--ts-accent)]";
+const accentText = "text-[var(--ts-accent-text)]";
 const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
 const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const radiusClass = "rounded-[var(--ts-radius)]";
 const inkBtnClass =
-  "inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] px-4 py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 const ghostBtnClass =
   "inline-flex items-center gap-2 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-ink-on-paper)]/[0.04] disabled:cursor-not-allowed disabled:opacity-50";
 const pulseClass = "animate-pulse rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)]/10";
 const textLinkClass =
-  "inline-flex items-center gap-1.5 text-xs font-medium text-[var(--ts-accent)] hover:underline disabled:opacity-50";
+  "inline-flex items-center gap-1.5 text-xs font-medium text-[var(--ts-accent-text)] hover:underline disabled:opacity-50";
 const pillBase =
   "inline-block rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-2.5 py-1 text-xs font-medium";
 
@@ -265,7 +265,7 @@ export default function InvoicesPage() {
 
   if (loading) {
     return (
-      <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
+      <div className={`bg-[var(--ts-canvas)] p-8 w-full ${inkText}`}>
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
@@ -295,7 +295,7 @@ export default function InvoicesPage() {
 
   if (error) {
     return (
-      <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
+      <div className={`bg-[var(--ts-canvas)] p-8 w-full ${inkText}`}>
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>
@@ -320,7 +320,7 @@ export default function InvoicesPage() {
   const hasInvoices = invoices.length > 0;
 
   return (
-    <div className={`bg-[var(--ts-paper)] p-8 w-full ${inkText}`}>
+    <div className={`bg-[var(--ts-canvas)] p-8 w-full ${inkText}`}>
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className={`text-2xl font-bold tracking-tight ${inkText}`}>Invoices</h1>

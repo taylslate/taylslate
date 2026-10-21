@@ -77,8 +77,8 @@ describe("CampaignsClient", () => {
 
     const cta = screen.getByRole("link", { name: "New Campaign" });
     expect(cta).toHaveAttribute("href", "/campaigns/new");
-    expect(cta.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(cta.className).toContain("text-[var(--ts-paper)]");
+    expect(cta.className).toContain("bg-[var(--ts-accent)]");
+    expect(cta.className).toContain("text-[var(--ts-accent-foreground)]");
     expect(cta).toHaveStyle({ borderRadius: "var(--ts-radius)" });
 
     expect(container.innerHTML).not.toMatch(BANNED);
@@ -142,7 +142,7 @@ describe("CampaignsClient", () => {
 
     const active = screen.getByText("Active");
     expect(active.className).toContain("border-[var(--ts-hairline-on-paper)]");
-    expect(active).toHaveStyle({ color: "var(--ts-accent)" });
+    expect(active).toHaveStyle({ color: "var(--ts-accent-text)" });
     expect(screen.getByText("Draft")).toHaveStyle({
       color: "var(--ts-ink-muted-on-paper)",
     });
@@ -167,8 +167,8 @@ describe("CampaignsClient", () => {
 
     const emptyCta = screen.getByRole("link", { name: "New campaign" });
     expect(emptyCta).toHaveAttribute("href", "/campaigns/new");
-    expect(emptyCta.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(emptyCta.className).toContain("text-[var(--ts-paper)]");
+    expect(emptyCta.className).toContain("bg-[var(--ts-accent)]");
+    expect(emptyCta.className).toContain("text-[var(--ts-accent-foreground)]");
     expect(container.innerHTML).not.toMatch(/border-dashed|rounded-2xl/);
     expect(container.innerHTML).not.toContain(FLAG_PATH);
     expect(container.innerHTML).not.toMatch(BANNED);

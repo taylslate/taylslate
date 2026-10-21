@@ -57,7 +57,7 @@ export default function ReturningCheckIn({
   return (
     <div className="max-w-2xl p-4 sm:p-8">
       <div className="mb-8">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
           For brands
         </p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">
@@ -87,12 +87,12 @@ export default function ReturningCheckIn({
           <button
             type="button"
             onClick={onNothingChanged}
-            className="flex w-full items-center justify-between border border-[var(--ts-ink-on-paper)] bg-[var(--ts-ink-on-paper)] p-4 text-left text-[var(--ts-paper)] hover:opacity-90"
+            className="flex w-full items-center justify-between border border-[var(--ts-accent)] bg-[var(--ts-accent)] p-4 text-left text-[var(--ts-accent-foreground)] hover:opacity-90"
             style={radiusStyle}
           >
             <div>
               <div className="font-medium">Nothing has changed</div>
-              <div className="mt-0.5 text-xs text-[var(--ts-paper)]/80">
+              <div className="mt-0.5 text-xs text-[var(--ts-accent-foreground)]/80">
                 Jump straight to goals, budget, and timing.
               </div>
             </div>
@@ -176,7 +176,7 @@ export default function ReturningCheckIn({
                     exclusionsText: exclusionsText.trim(),
                   })
                 }
-                className="inline-flex items-center gap-2 bg-[var(--ts-ink-on-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90"
+                className="inline-flex items-center gap-2 bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90"
                 style={radiusStyle}
               >
                 Continue with this update
@@ -192,7 +192,7 @@ export default function ReturningCheckIn({
       <button
         type="button"
         onClick={onStartFresh}
-        className="mt-4 text-sm font-medium text-[var(--ts-accent)] hover:underline"
+        className="mt-4 text-sm font-medium text-[var(--ts-accent-text)] hover:underline"
       >
         Actually, treat this as a new brief →
       </button>

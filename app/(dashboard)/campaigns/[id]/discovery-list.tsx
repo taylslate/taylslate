@@ -181,7 +181,7 @@ export default function DiscoveryList({ campaign, surfacesByShowId = {} }: Disco
   }, [shows, selectedIds]);
 
   return (
-    <div className="flex h-[calc(100vh-64px)] flex-col bg-[var(--ts-paper)] text-[var(--ts-ink-on-paper)]">
+    <div className="flex h-[calc(100vh-64px)] flex-col bg-[var(--ts-canvas)] text-[var(--ts-ink-on-paper)]">
       {/* ---- Brief summary bar ---- */}
       <div className="px-8 pt-6 pb-4 border-b border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]">
         <div className="flex items-center gap-3 mb-1">
@@ -233,7 +233,7 @@ export default function DiscoveryList({ campaign, surfacesByShowId = {} }: Disco
             onClick={() => setActiveCategory("all")}
             className={`whitespace-nowrap rounded-[var(--ts-radius)] px-3 py-1.5 text-xs font-medium transition-all ${
               activeCategory === "all"
-                ? "bg-[var(--ts-ink-on-paper)] text-[var(--ts-paper)]"
+                ? "bg-[var(--ts-accent)] text-[var(--ts-accent-foreground)]"
                 : "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
             }`}
           >
@@ -245,7 +245,7 @@ export default function DiscoveryList({ campaign, surfacesByShowId = {} }: Disco
               onClick={() => setActiveCategory(activeCategory === cat ? "all" : cat)}
               className={`whitespace-nowrap rounded-[var(--ts-radius)] px-3 py-1.5 text-xs font-medium capitalize transition-all ${
                 activeCategory === cat
-                  ? "bg-[var(--ts-ink-on-paper)] text-[var(--ts-paper)]"
+                  ? "bg-[var(--ts-accent)] text-[var(--ts-accent-foreground)]"
                   : "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
               }`}
             >
@@ -268,7 +268,7 @@ export default function DiscoveryList({ campaign, surfacesByShowId = {} }: Disco
 
         {/* Select all / clear */}
         <div className="flex items-center gap-2 text-xs">
-          <button onClick={selectAll} className="text-[var(--ts-accent)] hover:underline">
+          <button onClick={selectAll} className="text-[var(--ts-accent-text)] hover:underline">
             Select all
           </button>
           <span className="text-[var(--ts-hairline-on-paper)]">|</span>
@@ -325,7 +325,7 @@ export default function DiscoveryList({ campaign, surfacesByShowId = {} }: Disco
         <button
           onClick={() => router.push(`/campaigns/${campaign.id}/plan`)}
           disabled={planSummary.count === 0}
-          className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-6 py-2.5 text-sm font-semibold text-[var(--ts-paper)] transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] px-6 py-2.5 text-sm font-semibold text-[var(--ts-accent-foreground)] transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Build media plan
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

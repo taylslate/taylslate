@@ -26,7 +26,7 @@ function ShowCodeLogin() {
         }}
       />
       <p className="mt-8 text-sm text-[var(--ts-ink-muted-on-paper)]">
-        <Link href="/login" className="text-[var(--ts-accent)] hover:underline">
+        <Link href="/login" className="text-[var(--ts-accent-text)] hover:underline">
           Use a magic link instead
         </Link>
       </p>

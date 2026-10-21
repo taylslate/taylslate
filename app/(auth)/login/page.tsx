@@ -129,7 +129,7 @@ function LoginForm() {
             setSent(false);
             setError(null);
           }}
-          className="mt-8 text-sm text-[var(--ts-accent)] hover:underline"
+          className="mt-8 text-sm text-[var(--ts-accent-text)] hover:underline"
         >
           Use a different email
         </button>
@@ -146,7 +146,7 @@ function LoginForm() {
       {error === LOGIN_MAGIC_NO_ACCOUNT ? (
         <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
           No account for that email.{" "}
-          <Link href="/signup" className="text-[var(--ts-accent)] hover:underline">
+          <Link href="/signup" className="text-[var(--ts-accent-text)] hover:underline">
             Sign up instead.
           </Link>
         </p>
@@ -191,7 +191,7 @@ function LoginForm() {
       </form>
 
       <p className="mt-4 text-sm text-[var(--ts-ink-muted-on-paper)]">
-        <Link href="/login/show" className="text-[var(--ts-accent)] hover:underline">
+        <Link href="/login/show" className="text-[var(--ts-accent-text)] hover:underline">
           Show or creator? Sign in with an email code
         </Link>
       </p>
@@ -218,7 +218,7 @@ function LoginForm() {
                 </label>
                 <Link
                   href="/forgot-password"
-                  className="text-xs text-[var(--ts-accent)] hover:underline"
+                  className="text-xs text-[var(--ts-accent-text)] hover:underline"
                 >
                   Forgot password?
                 </Link>
@@ -249,7 +249,7 @@ function LoginForm() {
 
       <p className="mt-8 text-sm text-[var(--ts-ink-muted-on-paper)]">
         Don&apos;t have an account?{" "}
-        <Link href="/signup" className="text-[var(--ts-accent)] hover:underline">
+        <Link href="/signup" className="text-[var(--ts-accent-text)] hover:underline">
           Sign up
         </Link>
       </p>

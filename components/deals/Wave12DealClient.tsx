@@ -74,14 +74,14 @@ const radiusStyle = { borderRadius: tokens.radius };
 
 const inkText = "text-[var(--ts-ink-on-paper)]";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
-const accentText = "text-[var(--ts-accent)]";
+const accentText = "text-[var(--ts-accent-text)]";
 const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
 const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const sectionHead = `mb-3 text-xs font-medium uppercase tracking-wider ${mutedText}`;
 const kickerClass =
-  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]";
 const inkBtnClass =
-  "inline-flex w-full items-center justify-center bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex w-full items-center justify-center bg-[var(--ts-accent)] px-4 py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 const ghostBtnClass =
   "inline-flex items-center justify-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:cursor-not-allowed disabled:opacity-50";
 const fieldClass =
@@ -154,10 +154,10 @@ function DealCardSetupForm({
               base: {
                 fontSize: "14px",
                 // Stripe paints this field in a cross-origin iframe, so it
-                // cannot read --ts-* variables. Matches --ts-ink-on-paper
-                // and --ts-ink-muted-on-paper.
-                color: "#1c1915",
-                "::placeholder": { color: "#5c564c" },
+                // cannot read --ts-* variables. Matches .brand-app
+                // --ts-ink-on-paper (#141C2B) and --ts-ink-muted-on-paper (#46526A).
+                color: "#141C2B",
+                "::placeholder": { color: "#46526A" },
               },
             },
           }}
@@ -422,7 +422,7 @@ export default function Wave12DealClient({
   const activeCardSecret = resolvedSecret ?? deal.setup_intent_client_secret ?? null;
 
   return (
-    <div className={`min-h-screen bg-[var(--ts-paper)] ${inkText}`}>
+    <div className={`min-h-screen bg-[var(--ts-canvas)] ${inkText}`}>
       <div className={`border-b ${hairlineRule} bg-[var(--ts-paper)] px-4 pt-6 pb-5 sm:px-8`}>
         <div className="mb-3 flex items-center gap-3">
           <Link

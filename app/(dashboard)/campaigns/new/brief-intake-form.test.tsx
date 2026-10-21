@@ -540,8 +540,8 @@ describe("BriefIntakeForm — paper/ink", () => {
     expect(goal).toHaveStyle({ borderRadius: "var(--ts-radius)" });
 
     const submit = screen.getByRole("button", { name: /See how I/ });
-    expect(submit.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(submit.className).toContain("text-[var(--ts-paper)]");
+    expect(submit.className).toContain("bg-[var(--ts-accent)]");
+    expect(submit.className).toContain("text-[var(--ts-accent-foreground)]");
     expect(submit).toHaveStyle({ borderRadius: "var(--ts-radius)" });
 
     await deriveViaUrl(user);
@@ -569,13 +569,13 @@ describe("BriefIntakeForm — paper/ink", () => {
     expect(welcome).toHaveStyle({ borderRadius: "var(--ts-radius)" });
 
     const nothing = screen.getByRole("button", { name: /Nothing has changed/ });
-    expect(nothing.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(nothing.className).toContain("text-[var(--ts-paper)]");
+    expect(nothing.className).toContain("bg-[var(--ts-accent)]");
+    expect(nothing.className).toContain("text-[var(--ts-accent-foreground)]");
     expect(nothing.className).not.toContain("border-2");
     expect(nothing).toHaveStyle({ borderRadius: "var(--ts-radius)" });
 
     const fresh = screen.getByRole("button", { name: /treat this as a new brief/ });
-    expect(fresh.className).toContain("text-[var(--ts-accent)]");
+    expect(fresh.className).toContain("text-[var(--ts-accent-text)]");
 
     expectPaperInk(container);
   });
@@ -592,8 +592,8 @@ describe("BriefIntakeForm — paper/ink", () => {
       )
     ).toBeInTheDocument();
     const fastSubmit = screen.getByRole("button", { name: /See how I/ });
-    expect(fastSubmit.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(fastSubmit.className).toContain("text-[var(--ts-paper)]");
+    expect(fastSubmit.className).toContain("bg-[var(--ts-accent)]");
+    expect(fastSubmit.className).toContain("text-[var(--ts-accent-foreground)]");
     expectPaperInk(nothing.container);
     nothing.unmount();
 
@@ -603,8 +603,8 @@ describe("BriefIntakeForm — paper/ink", () => {
     expect(productUrl.className).toContain("bg-[var(--ts-paper)]");
     expect(productUrl.className).toContain("focus:border-[var(--ts-accent)]");
     const continueBtn = screen.getByRole("button", { name: /Continue with this update/ });
-    expect(continueBtn.className).toContain("bg-[var(--ts-ink-on-paper)]");
-    expect(continueBtn.className).toContain("text-[var(--ts-paper)]");
+    expect(continueBtn.className).toContain("bg-[var(--ts-accent)]");
+    expect(continueBtn.className).toContain("text-[var(--ts-accent-foreground)]");
     expect(continueBtn).toHaveStyle({ borderRadius: "var(--ts-radius)" });
     expectPaperInk(delta.container);
     delta.unmount();

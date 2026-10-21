@@ -50,15 +50,15 @@ const radiusStyle = { borderRadius: tokens.radius };
 
 const inkText = "text-[var(--ts-ink-on-paper)]";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
-const accentText = "text-[var(--ts-accent)]";
+const accentText = "text-[var(--ts-accent-text)]";
 const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
 const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const inkBtnClass =
-  "inline-flex items-center gap-2 bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90";
+  "inline-flex items-center gap-2 bg-[var(--ts-accent)] px-4 py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90";
 const ghostBtnClass =
   "inline-flex items-center gap-2 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)]";
 const kickerClass =
-  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]";
 const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
 
 function statusChipClass(status: string): string {
@@ -118,7 +118,7 @@ function DealCard({
         <div className="min-w-0 flex-1">
           <Link
             href={`/deals/${deal.id}`}
-            className={`block truncate text-sm font-medium ${inkText} hover:text-[var(--ts-accent)]`}
+            className={`block truncate text-sm font-medium ${inkText} hover:text-[var(--ts-accent-text)]`}
             onClick={(e) => e.stopPropagation()}
           >
             {showName}

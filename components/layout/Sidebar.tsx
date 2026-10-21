@@ -182,7 +182,7 @@ export default function Sidebar({
             className="h-7 w-7"
             priority
           />
-          <span className="text-[15px] font-semibold tracking-tight">
+          <span className="ts-wordmark text-[15px]">
             taylslate
           </span>
         </Link>
@@ -191,7 +191,7 @@ export default function Sidebar({
       <div className="px-3 pt-4 pb-2">
         <Link
           href={primary.href}
-          className="flex w-full items-center justify-center gap-2 bg-[var(--ts-ink-on-paper)] py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90"
+          className="flex w-full items-center justify-center gap-2 bg-[var(--ts-accent)] py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90"
           style={{ borderRadius: tokens.radius }}
         >
           <Icon name={primary.iconKey} />
@@ -208,7 +208,7 @@ export default function Sidebar({
               href={item.href}
               className={`${navRow} ${
                 isActive
-                  ? "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)]"
+                  ? "bg-[var(--ts-band-brands)] text-[var(--ts-ink-on-paper)] shadow-[inset_3px_0_0_var(--ts-gold)]"
                   : quietRow
               }`}
               style={{ borderRadius: tokens.radius }}
@@ -287,7 +287,7 @@ export default function Sidebar({
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">Free Plan</div>
-            <Link href="/settings" className="text-xs text-[var(--ts-accent)] hover:underline">Upgrade</Link>
+            <Link href="/settings" className="text-xs text-[var(--ts-accent-text)] hover:underline">Upgrade</Link>
           </div>
         </div>
       </div>

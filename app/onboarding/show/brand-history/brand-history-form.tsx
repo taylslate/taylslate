@@ -82,7 +82,7 @@ export default function BrandHistoryForm({ initialValue }: { initialValue: ShowB
                   type="button"
                   onClick={() => removeRow(index)}
                   aria-label={`Remove advertiser ${index + 1}`}
-                  className="rounded-[var(--ts-radius)] p-1.5 text-[var(--ts-ink-muted-on-paper)] transition-all hover:text-[var(--ts-accent)]"
+                  className="rounded-[var(--ts-radius)] p-1.5 text-[var(--ts-ink-muted-on-paper)] transition-all hover:text-[var(--ts-accent-text)]"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M18 6 6 18M6 6l12 12" />
@@ -132,7 +132,7 @@ export default function BrandHistoryForm({ initialValue }: { initialValue: ShowB
           <button
             type="button"
             onClick={addRow}
-            className="flex items-center gap-1.5 text-sm font-medium text-[var(--ts-accent)] transition-colors hover:opacity-80"
+            className="flex items-center gap-1.5 text-sm font-medium text-[var(--ts-accent-text)] transition-colors hover:opacity-80"
           >
             + Add another advertiser
           </button>

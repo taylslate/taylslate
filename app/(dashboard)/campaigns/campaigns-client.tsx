@@ -20,7 +20,7 @@ const statusBadge: Record<CampaignStatus, { tone: BadgeTone; label: string }> = 
 const badgeColor: Record<BadgeTone, string> = {
   ink: "var(--ts-ink-on-paper)",
   muted: "var(--ts-ink-muted-on-paper)",
-  accent: "var(--ts-accent)",
+  accent: "var(--ts-accent-text)",
 };
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
@@ -35,7 +35,7 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
 const cardClass =
   "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)]";
 const inkBtnClass =
-  "inline-flex items-center gap-2 bg-[var(--ts-ink-on-paper)] px-4 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90";
+  "inline-flex items-center gap-2 bg-[var(--ts-accent)] px-4 py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
 const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
 const fieldClass =
@@ -144,7 +144,7 @@ export default function CampaignsClient({
     <div className="w-full p-4 sm:p-8">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0 w-full sm:w-auto">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
             For brands
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">Campaigns</h1>

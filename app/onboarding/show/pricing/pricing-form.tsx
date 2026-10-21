@@ -107,7 +107,7 @@ export default function PricingForm({
               .
             </div>
             {verdict === "above_market" && (
-              <p className="mt-2 text-xs text-[var(--ts-accent)]">
+              <p className="mt-2 text-xs text-[var(--ts-accent-text)]">
                 That&apos;s above the typical range for this tier. You can still set your own rate —
                 but advertisers may push back, and deals might take longer to close.
               </p>

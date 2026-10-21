@@ -11,7 +11,7 @@ export default function MarketSignals({ signals }: { signals: MarketSignal[] }) 
       data-testid="market-signals"
       className="mt-3 border-t border-[var(--ts-hairline-on-paper)] pt-3"
     >
-      <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]">
+      <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
         Market signals
       </div>
       <dl className="mt-2 space-y-2">

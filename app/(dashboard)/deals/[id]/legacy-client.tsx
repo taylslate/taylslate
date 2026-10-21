@@ -13,9 +13,9 @@ const inkText = "text-[var(--ts-ink-on-paper)]";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
 const hairlineRule = "border-[var(--ts-hairline-on-paper)]";
 const kickerClass =
-  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]";
 const inkBtnClass =
-  "inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] px-5 py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 const ghostBtnClass =
   "inline-flex items-center gap-2 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)]";
 const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
@@ -114,7 +114,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
 
   if (error || !deal) {
     return (
-      <div className={`min-h-screen bg-[var(--ts-paper)] p-4 sm:p-8 ${inkText}`}>
+      <div className={`min-h-screen bg-[var(--ts-canvas)] p-4 sm:p-8 ${inkText}`}>
         <Link href="/deals" className={`mb-4 flex items-center gap-1.5 text-xs ${mutedText} hover:text-[var(--ts-ink-on-paper)]`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
           Deals
@@ -229,7 +229,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
   const editTotalNet = editNetPerEp * (Number(editNumEpisodes) || 0);
 
   return (
-    <div className={`min-h-screen bg-[var(--ts-paper)] p-4 sm:p-8 ${inkText}`}>
+    <div className={`min-h-screen bg-[var(--ts-canvas)] p-4 sm:p-8 ${inkText}`}>
       <div className="mb-8 w-full">
         <div className="mb-3 flex items-center gap-3">
           <Link

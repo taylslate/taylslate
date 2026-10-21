@@ -40,7 +40,7 @@ const panelClass =
 const fieldClass =
   "w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
 const inkBtnClass =
-  "inline-flex items-center justify-center bg-[var(--ts-ink-on-paper)] px-5 py-2 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center justify-center bg-[var(--ts-accent)] px-5 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
 const ghostBtnClass =
   "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:opacity-50";
 

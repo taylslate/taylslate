@@ -13,7 +13,7 @@ const radiusStyle = { borderRadius: tokens.radius };
 const inkText = "text-[var(--ts-ink-on-paper)]";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
 const kickerClass =
-  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent)]";
+  "text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]";
 const inputClass =
   "min-w-0 w-full rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2.5 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none";
 const labelClass = "mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper)]";
@@ -22,11 +22,11 @@ const chipOn =
   "rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] px-3 py-1.5 text-xs font-medium text-[var(--ts-ink-on-paper)]";
 const chipOff =
   "rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-1.5 text-xs font-medium text-[var(--ts-ink-muted-on-paper)] hover:bg-[var(--ts-band-shows)]";
-const linkClass = "text-sm font-medium text-[var(--ts-accent)] hover:underline";
+const linkClass = "text-sm font-medium text-[var(--ts-accent-text)] hover:underline";
 const errorClass =
-  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm text-[var(--ts-accent)]";
+  "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm text-[var(--ts-accent-text)]";
 const inkBtnClass =
-  "inline-flex items-center justify-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-paper)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-accent)] px-5 py-2.5 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 const ghostBtnClass =
   "inline-flex items-center justify-center rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-5 py-2.5 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)]";
 
@@ -686,7 +686,7 @@ export default function ImportIOPage() {
                       <button
                         type="button"
                         onClick={() => removeLineItem(index)}
-                        className={`rounded-[var(--ts-radius)] p-1.5 ${mutedText} hover:text-[var(--ts-accent)]`}
+                        className={`rounded-[var(--ts-radius)] p-1.5 ${mutedText} hover:text-[var(--ts-accent-text)]`}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M18 6 6 18M6 6l12 12" />
@@ -938,7 +938,7 @@ export default function ImportIOPage() {
             {savedCount} deal{savedCount === 1 ? "" : "s"} saved
           </p>
           {failedDeals.length > 0 && (
-            <div className="mb-6 text-sm text-[var(--ts-accent)]">
+            <div className="mb-6 text-sm text-[var(--ts-accent-text)]">
               {failedDeals.map((item) => (
                 <p key={item.label}>
                   {item.label}: {item.error}

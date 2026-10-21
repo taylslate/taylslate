@@ -83,7 +83,7 @@ export default function ForgotPasswordPage() {
           </p>
           <Link
             href="/login"
-            className="mt-8 inline-block text-sm text-[var(--ts-accent)] hover:underline"
+            className="mt-8 inline-block text-sm text-[var(--ts-accent-text)] hover:underline"
           >
             Back to login
           </Link>
@@ -145,7 +145,7 @@ export default function ForgotPasswordPage() {
 
       <p className="mt-8 text-sm text-[var(--ts-ink-muted-on-paper)]">
         Remember your password?{" "}
-        <Link href="/login" className="text-[var(--ts-accent)] hover:underline">
+        <Link href="/login" className="text-[var(--ts-accent-text)] hover:underline">
           Log in
         </Link>
       </p>

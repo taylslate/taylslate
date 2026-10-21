@@ -6,7 +6,7 @@ export default function OutreachNotFound() {
   return (
     <div className="mx-auto max-w-lg px-4 py-20 text-center">
       <div
-        className="border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm text-[var(--ts-accent)]"
+        className="border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm text-[var(--ts-accent-text)]"
         style={radiusStyle}
       >
         This link isn&apos;t valid.
