@@ -1274,11 +1274,43 @@ export async function claimShow(
   return data as AgentShowRelationship;
 }
 
+type ImportShowRow = Partial<Show> & {
+  name: string;
+  platform: Platform;
+  /**
+   * Roster exclusivity. Omitted means exclusive. False is the only opt-out.
+   * This is not a shows column. It is stripped before the show insert.
+   */
+  is_exclusive?: boolean;
+};
+
+/**
+ * Import a roster for the signed-in agent. The agent id is the session user.
+ * Each link is pending, source import, and exclusive unless the row sets
+ * is_exclusive to false. The show insert stays on the user client. The
+ * roster link is service_role, which would otherwise accept any agent id.
+ */
 export async function importShows(
-  shows: (Partial<Show> & { name: string; platform: Platform })[],
-  agentId: string
+  shows: ImportShowRow[]
 ): Promise<{ imported: Show[]; skipped: string[]; errors: string[] }> {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    throw new Error("Sign in to import shows.");
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (profileError || !profile || profile.role !== "agent") {
+    throw new Error("Only agents can import shows.");
+  }
+
+  const agentId = user.id;
   const imported: Show[] = [];
   const skipped: string[] = [];
   const errors: string[] = [];
@@ -1309,6 +1341,12 @@ export async function importShows(
       is_claimed: true,
       is_verified: false,
     });
+    // Relationship fields are not show columns. agent_id on the show row
+    // is not the roster link, and a body value is not the session user.
+    delete dbRow.is_exclusive;
+    delete dbRow.agent_id;
+
+    const isExclusive = showData.is_exclusive !== false;
 
     const { data: newShow, error: showError } = await supabase
       .from("shows")
@@ -1322,14 +1360,13 @@ export async function importShows(
     }
 
     // Roster link is service_role. Authenticated can no longer insert.
-    // Pending until an admin approves. agentId is the signed-in user,
-    // passed by the import route.
+    // Pending until an admin approves. agent_id is the signed-in user.
     const { error: relError } = await supabaseAdmin
       .from("agent_show_relationships")
       .insert({
         agent_id: agentId,
         show_id: newShow.id,
-        is_exclusive: false,
+        is_exclusive: isExclusive,
         status: "pending",
         source: "import",
       });
