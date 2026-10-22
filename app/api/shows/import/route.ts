@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No valid shows found in file" }, { status: 400 });
     }
 
-    // importShows handles dedup and agent relationship creation internally
-    const result = await importShows(shows, user.id);
+    // importShows reads the agent from the session. A body agent id is ignored.
+    const result = await importShows(shows);
 
     return NextResponse.json({
       imported: result.imported.length,

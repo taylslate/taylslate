@@ -128,6 +128,44 @@ Covers the migration grants, revokes, RLS, and the select policy; authenticated 
 - Old rate windows for a key are deleted on that key's next increment once they are an hour old. Windows for idle keys stay until the key is used again or the key row is deleted.
 - `listKeys` and `revokeKey` are service-role helpers. Nothing in the app calls them yet.
 
+## R2: Rep store and API
+
+### What was built
+
+Rep read API for roster, participant deals, and one approved show. `importShows` no longer takes an agent id. It reads the signed-in user, requires role `agent`, and writes the roster link as service role with status `pending`, source `import`, and `is_exclusive` true unless the row sets `is_exclusive` to false. A body `agent_id` is not written onto the show or the link.
+
+`GET /api/reps/roster`, `GET /api/reps/deals`, and `GET /api/reps/shows/[showId]` take the agent id from the session. A missing session is 401. Any other role is 403. Query, body, and headers are ignored.
+
+An approved roster link can read that show's deals as id, status, flight_start, flight_end, and brand display name. Brand display name is `brand_profiles.brand_name`, then `profiles.company_name`, then `profiles.full_name`. Price, CPM, totals, and payment fields are not selected. Pending and rejected links see none of that, and the show route returns 404. `GET /api/reps/deals` is the participant list (`deals.agent_id`), the full row, same as a deal the rep is already on.
+
+No migration and no RLS change. Roster-show deals are not visible under deals RLS, so that read uses the service role only after `getAgentShowRelationship` returns an approved link.
+
+### Where
+
+- `lib/reps/store.ts`
+- `lib/reps/session.ts`
+- `lib/reps/store.test.ts`
+- `app/api/reps/roster/route.ts`
+- `app/api/reps/deals/route.ts`
+- `app/api/reps/shows/[showId]/route.ts`
+- `lib/data/queries.ts` (`importShows` only)
+- `app/api/shows/import/route.ts`
+- `lib/data/roster-links.test.ts`
+
+### Tests
+
+`npx vitest run lib/reps lib/data/roster-links.test.ts app/api/reps app/api/shows/import` (32 passed). `npx tsc --noEmit` is clean. The full suite passed (1940).
+
+Covers session binding, 403 for non-agents, exclusive default and an explicit false, pending and rejected links seeing nothing, and an approved link returning status and flight with no amount keys. Supabase is mocked. No live writes.
+
+### Known gaps
+
+- No page was added or changed. The admin mockups are still fixtures.
+- 055 and 056 are applied. These reads select `status` and `source`.
+- There is no single route that lists limited deals for every approved show. The show route is one show at a time.
+- The per-show payload is name, platform, description, audience size, categories, and the approved link. Rate card and contact stay off this response.
+- Approval of a pending import is still a later job. This PR does not add a roster write other than the import fix.
+
 ## A2: Public API v1 read endpoints
 
 ### What was built
