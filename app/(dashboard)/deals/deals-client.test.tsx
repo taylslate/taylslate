@@ -51,43 +51,61 @@ afterEach(() => {
 });
 
 describe("Deals list show name", () => {
-  it("links the show name to CRM for a brand or agency with a show id", () => {
+  it("keeps the deal link and adds a CRM link for a brand or agency with a show id", () => {
     for (const role of ["brand", "agency"] as const) {
       cleanup();
       renderDeals(role);
-      const link = screen.getByRole("link", { name: "Acquired" });
-      expect(link).toHaveAttribute("href", `/crm/${SHOW}`);
-      expect(link.className).toContain("truncate");
-      expect(link.className).toContain("text-sm");
-      expect(link.className).toContain("font-medium");
+      const name = screen.getByRole("link", { name: "Acquired" });
+      expect(name).toHaveAttribute("href", "/deals/deal-1");
+      expect(name.className).toContain("truncate");
+      expect(name.className).toContain("text-sm");
+      expect(name.className).toContain("font-medium");
+      const crm = screen.getByRole("link", { name: "CRM" });
+      expect(crm).toHaveAttribute("href", `/crm/${SHOW}`);
+      expect(crm.className).toContain("text-xs");
+      expect(crm.className).toContain("font-medium");
+      expect(crm.className).toContain("hover:underline");
     }
   });
 
-  it("keeps the deal link for a show user, an agent, and a deal with no show id", () => {
+  it("places the CRM link before View IO", () => {
+    renderDeals("brand", sampleDeal({ status: "live" }));
+    const crm = screen.getByRole("link", { name: "CRM" });
+    const io = screen.getByRole("link", { name: "View IO" });
+    expect(crm.parentElement).toBe(io.parentElement);
+    expect(crm.parentElement?.className).toContain("ml-auto");
+    expect(crm.compareDocumentPosition(io) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Acquired" })).toHaveAttribute("href", "/deals/deal-1");
+  });
+
+  it("shows no CRM link for a show user, an agent, and a deal with no show id", () => {
     renderDeals("show");
     expect(screen.getByRole("link", { name: "Acquired" })).toHaveAttribute("href", "/deals/deal-1");
+    expect(screen.queryByRole("link", { name: "CRM" })).not.toBeInTheDocument();
     cleanup();
 
     renderDeals("agent");
     expect(screen.getByRole("link", { name: "Acquired" })).toHaveAttribute("href", "/deals/deal-1");
+    expect(screen.queryByRole("link", { name: "CRM" })).not.toBeInTheDocument();
     cleanup();
 
     renderDeals("brand", sampleDeal({ show_id: "" }));
     expect(screen.getByRole("link", { name: "Acquired" })).toHaveAttribute("href", "/deals/deal-1");
-    expect(screen.queryByRole("link", { name: "Acquired" })).not.toHaveAttribute("href", `/crm/${SHOW}`);
+    expect(screen.queryByRole("link", { name: "CRM" })).not.toBeInTheDocument();
   });
 
   it("follows the CRM nav item when no role is passed", async () => {
     const nav = document.createElement("nav");
     const anchor = document.createElement("a");
     anchor.setAttribute("href", "/crm");
-    anchor.textContent = "CRM";
+    anchor.textContent = "Shows CRM";
     nav.appendChild(anchor);
     document.body.appendChild(nav);
 
     render(<DealsClient initialDeals={[sampleDeal()]} />);
+    expect(screen.getByRole("link", { name: "Acquired" })).toHaveAttribute("href", "/deals/deal-1");
     await waitFor(() => {
-      expect(screen.getByRole("link", { name: "Acquired" })).toHaveAttribute("href", `/crm/${SHOW}`);
+      expect(screen.getByRole("link", { name: "CRM" })).toHaveAttribute("href", `/crm/${SHOW}`);
     });
   });
 });

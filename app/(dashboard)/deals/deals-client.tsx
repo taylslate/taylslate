@@ -41,7 +41,7 @@ function catalogShowId(showId: string | null | undefined): string | null {
 }
 
 // The deals page does not pass a role. Brand chrome already renders a CRM nav
-// item only for isBrandSide, so the show-name link follows that same signal
+// item only for isBrandSide, so the footer CRM link follows that same signal
 // when no role is passed in (tests pass a role directly).
 function useBrandSide(viewerRole?: UserRole | null): boolean {
   const [fromChrome, setFromChrome] = useState(false);
@@ -138,7 +138,7 @@ function DealCard({
         )}
         <div className="min-w-0 flex-1">
           <Link
-            href={brandSide && showId ? `/crm/${showId}` : `/deals/${deal.id}`}
+            href={`/deals/${deal.id}`}
             className={`block truncate text-sm font-medium ${inkText} hover:text-[var(--ts-accent-text)]`}
             onClick={(e) => e.stopPropagation()}
           >
@@ -175,15 +175,29 @@ function DealCard({
         <span className={`text-xs ${mutedText}`}>
           {deal.num_episodes} ep{deal.num_episodes !== 1 ? "s" : ""} · {deal.placement}
         </span>
-        {["io_sent", "brand_signed", "show_signed", "live", "delivering", "completed"].includes(deal.status) && (
-          <Link
-            href={`/deals/${deal.id}/io`}
-            className={`ml-auto text-xs font-medium ${accentText} hover:underline`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            View IO
-          </Link>
-        )}
+        {(brandSide && showId) ||
+        ["io_sent", "brand_signed", "show_signed", "live", "delivering", "completed"].includes(deal.status) ? (
+          <span className="ml-auto flex gap-2">
+            {brandSide && showId ? (
+              <Link
+                href={`/crm/${showId}`}
+                className={`text-xs font-medium ${accentText} hover:underline`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                CRM
+              </Link>
+            ) : null}
+            {["io_sent", "brand_signed", "show_signed", "live", "delivering", "completed"].includes(deal.status) ? (
+              <Link
+                href={`/deals/${deal.id}/io`}
+                className={`text-xs font-medium ${accentText} hover:underline`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                View IO
+              </Link>
+            ) : null}
+          </span>
+        ) : null}
       </div>
     </div>
   );

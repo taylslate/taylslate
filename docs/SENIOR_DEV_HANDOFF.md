@@ -326,3 +326,4 @@ Covers the CRM show-name link for brand and agency, the existing deal link for s
 - The deals page and the legacy detail page do not pass a role. The first paint uses the non-brand treatment until the CRM nav item is read.
 - `lib/crm/store.ts` still uses `.single()` and still drops `error.code`. The 404 uses the code when it is still on the error, and the single-row message when the store has wrapped it.
 - Legacy price type copy used an em dash. This file now uses a hyphen so the changed file has none.
+- Correction: the Deals list show name always links to `/deals/[id]`, for every status. A brand-side card with a show id adds a separate CRM link in the card footer, before View IO. That footer link is the only Deals-list path to `/crm/[showId]`. Show users, agent users, and deals with no show id do not get it.
