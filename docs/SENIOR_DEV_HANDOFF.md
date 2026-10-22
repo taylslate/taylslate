@@ -249,3 +249,45 @@ No screenshots. This job has no UI.
 - Category coverage for unmatched rows. A record with no `matched_show_id`, or a matched show with no category, never enters the pool. It can still show in that brand's private history. It does not score a catalog show unless `matched_show_id` is set, and that id is only a hint for this brand plus the category lookup.
 - Migration 058 is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, then run the introspection query in the file header. Do not run the refresh from that apply unless Chris asks.
 - A pooled group with no positive median conversions per 1,000 downloads does not nudge. The group has to exist and the median has to be above zero.
+
+## C3
+
+### What was built
+
+Brand CRM screens for Starter, Operator, and the legacy agency plan. `/crm` lists the signed-in brand's shows from `listCrmShows`. `/crm/[showId]` has Contacts (add, edit, delete), Notes (add, newest first), and read-only Deal history. A Free brand sees only the upgrade card. The card uses the approved copy, reads the Starter price and campaign caps from `PLANS`, and links to `/settings/billing`. It does not call the CRM store.
+
+The sidebar gains one brand nav item, CRM, after Deals. It reuses the existing shows icon. Show and agent navs are unchanged. A show or agent who opens `/crm` is sent to `/dashboard`.
+
+API routes under `/api/crm` require a session (401), a brand-side role (403), and `canUseCrm` (403). `brandId` is the session user. A `brandId` in the body or query is ignored. Input is checked against the store limits before the store is called.
+
+Client adds are optimistic. A failed request rolls the row back and restores the draft.
+
+### Where
+
+- `app/(dashboard)/crm/page.tsx` at `/crm`
+- `app/(dashboard)/crm/crm-client.tsx`
+- `app/(dashboard)/crm/[showId]/page.tsx` at `/crm/[showId]`
+- `app/(dashboard)/crm/[showId]/show-client.tsx`
+- `app/(dashboard)/crm/access.ts`
+- `app/(dashboard)/crm/components/` (chrome, upgrade card, contacts, notes, deal history)
+- `app/api/crm/shows/route.ts`
+- `app/api/crm/shows/[showId]/contacts/route.ts`
+- `app/api/crm/shows/[showId]/contacts/[contactId]/route.ts`
+- `app/api/crm/shows/[showId]/notes/route.ts`
+- `app/api/crm/shows/[showId]/deals/route.ts`
+- `lib/nav/items.ts` (CRM const and its place in `BRAND_NAV` only)
+
+### Tests
+
+`npx vitest run` (2034 passed). Includes `app/(dashboard)/crm`, `app/api/crm`, and `lib/nav`.
+
+Covers 401, 403 for show and agent, 403 on Free, Starter / Operator / agency allowed, session `brandId` when the body or query names another brand, store limits, render of the index, the show page, and the upgrade card, optimistic add and delete with rollback, no em dash, and no import of the admin mockups. `npx tsc --noEmit` is clean. Supabase is mocked. No live writes.
+
+### Known gaps
+
+- Migration 053 is in the repo and is not applied. Contacts and notes fail against the live database until Chris applies it after merge and an OK. Deal history reads `deals`, which already exists.
+- `listCrmShows` returns id and name only. The index does not show the medium line from the mockup.
+- Notes cannot be deleted. The store has no delete, and this job did not add one. The mockup's local Remove note button is not in the product.
+- The upgrade link opens billing. It does not change the plan.
+- The homepage sample dashboard still lists the five-item nav. That copy lives in `lib/marketing/launch-copy.ts`, which this job does not own.
+- Show and agent accounts are not given a `/crm` route rule in `isRouteAllowedForRole`. The page redirects them. The nav item is brand-side only.

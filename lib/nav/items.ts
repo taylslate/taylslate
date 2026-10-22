@@ -32,8 +32,9 @@ const DEALS: NavItem = { label: "Deals", href: "/deals", iconKey: "deals" };
 const INVOICES: NavItem = { label: "Invoices", href: "/invoices", iconKey: "invoices" };
 const SHOWS: NavItem = { label: "Shows", href: "/shows", iconKey: "shows" };
 const SETTINGS: NavItem = { label: "Settings", href: "/settings", iconKey: "settings" };
+const CRM: NavItem = { label: "CRM", href: "/crm", iconKey: "shows" };
 
-const BRAND_NAV: NavItem[] = [DASHBOARD, CAMPAIGNS, DEALS, INVOICES, SETTINGS];
+const BRAND_NAV: NavItem[] = [DASHBOARD, CAMPAIGNS, DEALS, CRM, INVOICES, SETTINGS];
 const SHOW_NAV: NavItem[] = [DASHBOARD, SHOWS, DEALS, INVOICES, SETTINGS];
 
 export function getNavItemsForRole(role: UserRole): NavItem[] {

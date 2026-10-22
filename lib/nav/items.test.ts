@@ -10,10 +10,16 @@ import type { UserRole } from "@/lib/data/types";
 const ALL_ROLES: UserRole[] = ["brand", "agency", "agent", "show"];
 
 describe("getNavItemsForRole", () => {
-  it("brand sees Dashboard, Campaigns, Deals, Invoices, Settings (no Shows)", () => {
-    const labels = getNavItemsForRole("brand").map((i) => i.label);
-    expect(labels).toEqual(["Dashboard", "Campaigns", "Deals", "Invoices", "Settings"]);
+  it("brand sees Dashboard, Campaigns, Deals, CRM, Invoices, Settings (no Shows)", () => {
+    const items = getNavItemsForRole("brand");
+    const labels = items.map((i) => i.label);
+    expect(labels).toEqual(["Dashboard", "Campaigns", "Deals", "CRM", "Invoices", "Settings"]);
     expect(labels).not.toContain("Shows");
+    expect(items.find((i) => i.label === "CRM")).toEqual({
+      label: "CRM",
+      href: "/crm",
+      iconKey: "shows",
+    });
   });
 
   it("agency mirrors brand", () => {
@@ -28,6 +34,28 @@ describe("getNavItemsForRole", () => {
 
   it("agent mirrors show", () => {
     expect(getNavItemsForRole("agent")).toEqual(getNavItemsForRole("show"));
+  });
+
+  it("show and agent navs are unchanged", () => {
+    const showNav = getNavItemsForRole("show");
+    const agentNav = getNavItemsForRole("agent");
+    expect(showNav.map((item) => item.label)).toEqual([
+      "Dashboard",
+      "Shows",
+      "Deals",
+      "Invoices",
+      "Settings",
+    ]);
+    expect(showNav.map((item) => item.href)).toEqual([
+      "/dashboard",
+      "/shows",
+      "/deals",
+      "/invoices",
+      "/settings",
+    ]);
+    expect(agentNav).toEqual(showNav);
+    expect(showNav.map((item) => item.href)).not.toContain("/crm");
+    expect(agentNav.map((item) => item.label)).not.toContain("CRM");
   });
 });
 
