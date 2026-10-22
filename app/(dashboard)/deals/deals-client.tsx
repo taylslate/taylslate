@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { Deal, DealStatus } from "@/lib/data";
+import type { Deal, DealStatus, UserRole } from "@/lib/data";
 import { tokens } from "@/lib/brand/tokens";
+import { isBrandSide } from "@/lib/nav/items";
 
 type ColumnKey = "planning" | "io_sent" | "live" | "completed";
 
@@ -34,6 +35,23 @@ const statusToColumn: Record<string, ColumnKey> = {
 };
 
 const columnOf = (status: string): ColumnKey => statusToColumn[status] ?? "planning";
+
+function catalogShowId(showId: string | null | undefined): string | null {
+  return typeof showId === "string" && showId.length > 0 ? showId : null;
+}
+
+// The deals page does not pass a role. Brand chrome already renders a CRM nav
+// item only for isBrandSide, so the footer CRM link follows that same signal
+// when no role is passed in (tests pass a role directly).
+function useBrandSide(viewerRole?: UserRole | null): boolean {
+  const [fromChrome, setFromChrome] = useState(false);
+  useEffect(() => {
+    if (viewerRole !== undefined) return;
+    setFromChrome(document.querySelector('nav a[href="/crm"]') !== null);
+  }, [viewerRole]);
+  if (viewerRole !== undefined) return Boolean(viewerRole && isBrandSide(viewerRole));
+  return fromChrome;
+}
 
 const statusLabels: Record<string, string> = {
   planning: "Planning",
@@ -82,12 +100,15 @@ function statusChipClass(status: string): string {
 
 function DealCard({
   deal,
+  brandSide,
   onDragStart,
 }: {
-  deal: Deal & { show_name?: string; image_url?: string };
+  deal: Omit<Deal, "show_id"> & { show_id?: string | null; show_name?: string; image_url?: string };
+  brandSide: boolean;
   onDragStart: (e: React.DragEvent, dealId: string) => void;
 }) {
   const showName = deal.show_name ?? "Unknown Show";
+  const showId = catalogShowId(deal.show_id);
   const initial = showName.charAt(0).toUpperCase();
 
   return (
@@ -154,21 +175,42 @@ function DealCard({
         <span className={`text-xs ${mutedText}`}>
           {deal.num_episodes} ep{deal.num_episodes !== 1 ? "s" : ""} · {deal.placement}
         </span>
-        {["io_sent", "brand_signed", "show_signed", "live", "delivering", "completed"].includes(deal.status) && (
-          <Link
-            href={`/deals/${deal.id}/io`}
-            className={`ml-auto text-xs font-medium ${accentText} hover:underline`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            View IO
-          </Link>
-        )}
+        {(brandSide && showId) ||
+        ["io_sent", "brand_signed", "show_signed", "live", "delivering", "completed"].includes(deal.status) ? (
+          <span className="ml-auto flex gap-2">
+            {brandSide && showId ? (
+              <Link
+                href={`/crm/${showId}`}
+                className={`text-xs font-medium ${accentText} hover:underline`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                CRM
+              </Link>
+            ) : null}
+            {["io_sent", "brand_signed", "show_signed", "live", "delivering", "completed"].includes(deal.status) ? (
+              <Link
+                href={`/deals/${deal.id}/io`}
+                className={`text-xs font-medium ${accentText} hover:underline`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                View IO
+              </Link>
+            ) : null}
+          </span>
+        ) : null}
       </div>
     </div>
   );
 }
 
-export default function DealsClient({ initialDeals }: { initialDeals?: Deal[] }) {
+export default function DealsClient({
+  initialDeals,
+  viewerRole,
+}: {
+  initialDeals?: Deal[];
+  viewerRole?: UserRole | null;
+}) {
+  const brandSide = useBrandSide(viewerRole);
   const [dealList, setDealList] = useState<Deal[]>(initialDeals ?? []);
   const [isLoading, setIsLoading] = useState(initialDeals === undefined);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
@@ -370,6 +412,7 @@ export default function DealsClient({ initialDeals }: { initialDeals?: Deal[] })
                     <DealCard
                       key={deal.id}
                       deal={deal}
+                      brandSide={brandSide}
                       onDragStart={handleDragStart}
                     />
                   ))}

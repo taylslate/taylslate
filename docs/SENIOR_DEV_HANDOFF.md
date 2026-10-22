@@ -226,7 +226,7 @@ The learning review gets a separate `importedHistory` list, source `imported`, l
 
 ### Where
 
-- `supabase/migrations/058_pooled_import_priors.sql` (not applied)
+- `supabase/migrations/058_pooled_import_priors.sql` (applied live)
 - `supabase/migrations/058_pooled_import_priors.test.ts`
 - `lib/learning/past-imports.ts`
 - `lib/learning/pooled-priors.ts`
@@ -247,7 +247,7 @@ No screenshots. This job has no UI.
 - Refresh scheduling. `refresh_pooled_import_priors` is in the migration and `refreshPooledImportPriors` can call it. Nothing schedules it. Do not add a cron or a deploy hook until Chris asks. Run it by hand after 058 is applied and there is consented data.
 - Pool display. No UI. `importedHistory` is on the learning review object and the learning page does not render it. The pooled prior is not shown anywhere.
 - Category coverage for unmatched rows. A record with no `matched_show_id`, or a matched show with no category, never enters the pool. It can still show in that brand's private history. It does not score a catalog show unless `matched_show_id` is set, and that id is only a hint for this brand plus the category lookup.
-- Migration 058 is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, then run the introspection query in the file header. Do not run the refresh from that apply unless Chris asks.
+- Migration 058 is applied live. Do not run the refresh unless Chris asks.
 - A pooled group with no positive median conversions per 1,000 downloads does not nudge. The group has to exist and the median has to be above zero.
 
 ## C3
@@ -285,9 +285,45 @@ Covers 401, 403 for show and agent, 403 on Free, Starter / Operator / agency all
 
 ### Known gaps
 
-- Migration 053 is in the repo and is not applied. Contacts and notes fail against the live database until Chris applies it after merge and an OK. Deal history reads `deals`, which already exists.
+- Migration 053 is applied live. Deal history reads `deals`, which already exists.
 - `listCrmShows` returns id and name only. The index does not show the medium line from the mockup.
 - Notes cannot be deleted. The store has no delete, and this job did not add one. The mockup's local Remove note button is not in the product.
 - The upgrade link opens billing. It does not change the plan.
 - The homepage sample dashboard still lists the five-item nav. That copy lives in `lib/marketing/launch-copy.ts`, which this job does not own.
 - Show and agent accounts are not given a `/crm` route rule in `isRouteAllowedForRole`. The page redirects them. The nav item is brand-side only.
+
+## C3b
+
+### What was built
+
+A brand-side viewer can open a show's CRM page from the show name on the Deals list and on the legacy deal detail. Show and agent viewers keep the show name as it was: the list still links to the deal, and the legacy detail stays plain text. A deal with no show id stays that way too. Each CRM deal history row links to `/deals/[id]`, the same href the Deals list uses. A Free brand who follows a CRM link still sees the existing upgrade card. No new gate.
+
+`crmFailure` maps PostgREST code `PGRST116` to 404 `{ error: "Not found" }`. The CRM store throws `new Error(error.message)` from `.single()`, which drops the code, so the same 404 is returned when the message is the PostgREST single-row message. Every other CRM error is unchanged. PATCH on another brand's contact now returns 404. DELETE already returned 404 when no row matched.
+
+Migrations 053 and 058 are applied live. The status lines in the I4 and C3 sections say so.
+
+### Where
+
+- `app/(dashboard)/deals/deals-client.tsx` (show name href only)
+- `app/(dashboard)/deals/[id]/legacy-client.tsx` (show name on the legacy deal detail)
+- `app/(dashboard)/crm/components/show-panels.tsx` (`DealsPanel` row link)
+- `app/api/crm/http.ts`
+- `app/api/crm/http.test.ts`
+- `app/api/crm/shows/[showId]/contacts/[contactId]/route.test.ts`
+
+Brand-side is `isBrandSide` when a role is passed. The deals page and the legacy detail page do not pass one. Those clients then follow the dashboard nav CRM item, which is already rendered only for `isBrandSide`.
+
+### Tests
+
+`npx vitest run`
+
+Covers the CRM show-name link for brand and agency, the existing deal link for show and agent users and for a deal with no show id, plain text on the legacy detail in those cases, the CRM history href `/deals/[id]`, and PATCH plus DELETE of another brand's contact returning 404. Supabase is mocked. No live writes.
+
+### Known gaps
+
+- Outreach deal detail renders the show name in `components/deals/Wave12DealClient.tsx` as `{brandName} x {showName}`. That file is outside this job. The heading there stays plain text. `deals.show_id` is on the loaded row, and `viewerRole` is already `brand` or `show`.
+- On the Deals list, a brand-side show name with a show id points at `/crm/[showId]`. That name was the link into the deal. Planning cards have no other deal link. Later statuses still have View IO. Show and agent cards keep the deal link.
+- The deals page and the legacy detail page do not pass a role. The first paint uses the non-brand treatment until the CRM nav item is read.
+- `lib/crm/store.ts` still uses `.single()` and still drops `error.code`. The 404 uses the code when it is still on the error, and the single-row message when the store has wrapped it.
+- Legacy price type copy used an em dash. This file now uses a hyphen so the changed file has none.
+- Correction: the Deals list show name always links to `/deals/[id]`, for every status. A brand-side card with a show id adds a separate CRM link in the card footer, before View IO. That footer link is the only Deals-list path to `/crm/[showId]`. Show users, agent users, and deals with no show id do not get it.

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
+import Link from "next/link";
 import { crmRequest, jsonInit } from "./api";
 import {
   crmCard,
@@ -16,10 +17,10 @@ import { formatDay, formatFlight, formatUsd, labelOf } from "./format";
 import { CRM_NAME_MAX, CRM_NOTE_MAX, CRM_PHONE_MAX, CRM_ROLE_MAX, EMAIL_RE } from "./limits";
 import { toContactView, toNoteView, type CrmContactView, type CrmDealView, type CrmNoteView } from "./types";
 
-function StatusPill({ children }: { children: string }) {
+function StatusPill({ children, className = "" }: { children: string; className?: string }) {
   return (
     <span
-      className="inline-flex items-center bg-[var(--ts-band-shows)] px-2 py-0.5 text-xs font-medium text-[var(--ts-ink-on-paper)]"
+      className={`inline-flex items-center bg-[var(--ts-band-shows)] px-2 py-0.5 text-xs font-medium text-[var(--ts-ink-on-paper)] ${className}`.trim()}
       style={crmRadius}
     >
       {children}
@@ -483,7 +484,9 @@ export function DealsPanel({ deals }: { deals: CrmDealView[] }) {
           {deals.map((deal) => (
             <tr key={deal.id} className="border-b border-[var(--ts-hairline-on-paper)]">
               <td className="py-3 pr-3">
-                <StatusPill>{labelOf(deal.status)}</StatusPill>
+                <Link href={`/deals/${deal.id}`} className="text-inherit">
+                  <StatusPill className="hover:underline">{labelOf(deal.status)}</StatusPill>
+                </Link>
               </td>
               <td className="py-3 pr-3">{deal.placement ? labelOf(deal.placement) : "Unset"}</td>
               <td className="py-3 pr-3">{deal.numEpisodes ?? "Unset"}</td>

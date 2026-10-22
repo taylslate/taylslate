@@ -18,6 +18,17 @@ export async function readJson(
   }
 }
 
+const PGRST_SINGLE_ROW = "JSON object requested, multiple (or no) rows returned";
+
+function isMissingRow(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { code?: unknown; message?: unknown };
+  if (record.code === "PGRST116") return true;
+  // lib/crm/store.ts throws new Error(error.message) from .single(), which
+  // drops the PostgREST code. The single-row message is that same PGRST116.
+  return record.message === PGRST_SINGLE_ROW;
+}
+
 export function crmFailure(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "";
   if (message === "not signed in") return jsonError("Sign in required.", 401);
@@ -26,6 +37,7 @@ export function crmFailure(error: unknown): NextResponse {
   }
   if (message === "contact not found") return jsonError("Contact not found.", 404);
   if (message === "note not found") return jsonError("Note not found.", 404);
+  if (isMissingRow(error)) return jsonError("Not found", 404);
 
   const lower = message.toLowerCase();
   if (
