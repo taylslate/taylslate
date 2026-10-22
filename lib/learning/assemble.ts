@@ -5,6 +5,7 @@
 import { buildTrackingLink } from "@/lib/io/tracking-link";
 import { normalizePlacement, normalizeReader } from "./styles";
 import type {
+  ImportedHistoryInput,
   LearningDeal,
   LearningOverrideInput,
   LearningReviewInput,
@@ -84,6 +85,17 @@ export interface RawOutreach {
   show_name?: string | null;
 }
 
+export interface RawImportedRecord {
+  id: string;
+  show_name: string | null;
+  matched_show_id: string | null;
+  placement: string | null;
+  price_type: string | null;
+  spend: number | null;
+  conversions: number | null;
+  downloads: number | null;
+}
+
 export interface AssembleLearningInput {
   campaignStatus: string;
   brandWebsite: string | null;
@@ -97,6 +109,8 @@ export interface AssembleLearningInput {
   rings: RawRing[];
   reports: RawReport[];
   overrides: RawOverride[];
+  /** Confirmed imports for this brand. Omitted means none. */
+  imported?: RawImportedRecord[];
 }
 
 const AUTHOR_ROLES = new Set<OverrideAuthorRole>(["brand", "rep"]);
@@ -207,6 +221,11 @@ export function assembleLearningInput(raw: AssembleLearningInput): LearningRevie
   for (const [id, name] of showNames) names[id] = name;
   for (const show of scaleShows) names[show.showId] = show.showName;
 
+  const imported = groupImported(raw.imported, showNames);
+  for (const row of imported) {
+    if (!names[row.showId]) names[row.showId] = row.showName;
+  }
+
   return {
     campaignStatus: raw.campaignStatus,
     deals,
@@ -214,7 +233,47 @@ export function assembleLearningInput(raw: AssembleLearningInput): LearningRevie
     scaleShows,
     overrides: raw.overrides.flatMap(presentOverride),
     showNames: names,
+    imported,
   };
+}
+
+function groupImported(
+  records: RawImportedRecord[] | undefined,
+  showNames: Map<string, string>
+): ImportedHistoryInput[] {
+  const groups = new Map<string, ImportedHistoryInput>();
+  for (const record of records ?? []) {
+    const matched = record.matched_show_id?.trim() || null;
+    const recordedName = record.show_name?.trim() || "";
+    const showName =
+      (matched ? showNames.get(matched) : undefined) ||
+      recordedName ||
+      (matched ? "Show unavailable" : "");
+    if (!showName) continue;
+    const showId = matched ?? `name:${showName.toLowerCase()}`;
+    const current = groups.get(showId) ?? {
+      showId,
+      showName,
+      records: 0,
+      conversions: null,
+      spend: null,
+      downloads: null,
+      source: "imported" as const,
+    };
+    current.records += 1;
+    current.conversions = addAmount(current.conversions, record.conversions);
+    current.spend = addAmount(current.spend, record.spend);
+    current.downloads = addAmount(current.downloads, record.downloads);
+    groups.set(showId, current);
+  }
+  return [...groups.values()].sort(
+    (a, b) => a.showName.localeCompare(b.showName) || a.showId.localeCompare(b.showId)
+  );
+}
+
+function addAmount(current: number | null, value: number | null): number | null {
+  if (value == null || !Number.isFinite(value) || value < 0) return current;
+  return (current ?? 0) + value;
 }
 
 function presentRing(ring: RawRing): LearningRing {

@@ -151,6 +151,28 @@ export interface LearningOverrideInput {
   note: string;
 }
 
+/** Confirmed import rows for this brand. Prior history, not a verified flight. */
+export interface ImportedHistoryInput {
+  showId: string;
+  showName: string;
+  records: number;
+  conversions: number | null;
+  spend: number | null;
+  downloads: number | null;
+  source: "imported";
+}
+
+export interface ImportedHistoryItem {
+  showId: string;
+  showName: string;
+  records: number;
+  conversions: number | null;
+  spend: number | null;
+  downloads: number | null;
+  source: "imported";
+  label: "From your past campaigns";
+}
+
 export interface LearningReviewInput {
   campaignStatus: string;
   deals: LearningDeal[];
@@ -158,6 +180,8 @@ export interface LearningReviewInput {
   scaleShows: LearningScaleCandidate[];
   overrides: LearningOverrideInput[];
   showNames: Record<string, string>;
+  /** Absent or empty means this brand has no confirmed imports. */
+  imported?: ImportedHistoryInput[];
 }
 
 export interface LearningReview {
@@ -170,6 +194,8 @@ export interface LearningReview {
   weight: LearningSection<WeightCall>;
   deals: DealLearningRow[];
   overrides: LearningOverrideView[];
+  /** This brand's confirmed imports. Not merged into reported conversions. */
+  importedHistory: ImportedHistoryItem[];
 }
 
 interface RingBucket {
@@ -193,6 +219,7 @@ export function buildLearningReview(input: LearningReviewInput): LearningReview 
   const overrides = input.overrides.map((override) =>
     presentOverride(override, input)
   );
+  const importedHistory = presentImported(input);
   const ready = isReady(input);
   if (!ready) {
     return {
@@ -205,6 +232,7 @@ export function buildLearningReview(input: LearningReviewInput): LearningReview 
       weight: missing(),
       deals: [],
       overrides,
+      importedHistory,
     };
   }
 
@@ -235,6 +263,7 @@ export function buildLearningReview(input: LearningReviewInput): LearningReview 
     weight,
     deals: active.map(presentDeal),
     overrides,
+    importedHistory,
   };
 }
 
@@ -614,6 +643,39 @@ function weightSection(
 
   if (items.length === 0) return missing();
   return answered(items);
+}
+
+const IMPORTED_LABEL = "From your past campaigns" as const;
+
+function presentImported(input: LearningReviewInput): ImportedHistoryItem[] {
+  const items: ImportedHistoryItem[] = [];
+  for (const row of input.imported ?? []) {
+    if (row.source !== "imported") continue;
+    const showId = row.showId?.trim();
+    const showName = row.showName?.trim();
+    if (!showId || !showName) continue;
+    items.push({
+      showId,
+      showName,
+      records: finiteWhole(row.records) ?? 0,
+      conversions: finiteWhole(row.conversions),
+      spend: finiteAmount(row.spend),
+      downloads: finiteWhole(row.downloads),
+      source: "imported",
+      label: IMPORTED_LABEL,
+    });
+  }
+  return items;
+}
+
+function finiteWhole(value: number | null): number | null {
+  if (value == null || !Number.isFinite(value) || value < 0) return null;
+  return Math.trunc(value);
+}
+
+function finiteAmount(value: number | null): number | null {
+  if (value == null || !Number.isFinite(value) || value < 0) return null;
+  return value;
 }
 
 function presentDeal(deal: LearningDeal): DealLearningRow {

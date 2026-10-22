@@ -10,11 +10,13 @@ import {
 } from "@/lib/data/queries";
 import { getLatestCampaignPatternForCampaign } from "@/lib/data/reasoning-log";
 import type { Campaign, UserRole } from "@/lib/data/types";
+import { loadConfirmedImportRecords } from "./past-imports";
 import {
   assembleLearningInput,
   type AssembleLearningInput,
   type RawAircheck,
   type RawDeal,
+  type RawImportedRecord,
   type RawIo,
   type RawLine,
   type RawOverride,
@@ -240,6 +242,7 @@ async function loadRaw(campaign: Campaign): Promise<AssembleLearningInput> {
     "deal_id, reported_conversions"
   );
   const overrides = await optionalCampaignOverrides(campaign.id);
+  const imported = await loadImportedRecords(campaign.user_id);
 
   return {
     campaignStatus: campaign.status,
@@ -254,7 +257,22 @@ async function loadRaw(campaign: Campaign): Promise<AssembleLearningInput> {
     rings,
     reports,
     overrides,
+    imported,
   };
+}
+
+async function loadImportedRecords(brandUserId: string): Promise<RawImportedRecord[]> {
+  const rows = await loadConfirmedImportRecords(brandUserId);
+  return rows.map((row) => ({
+    id: row.id,
+    show_name: row.showName,
+    matched_show_id: row.matchedShowId,
+    placement: row.placement,
+    price_type: row.priceType,
+    spend: row.spend,
+    conversions: row.conversions,
+    downloads: row.downloads,
+  }));
 }
 
 async function loadBrandWebsite(campaign: Campaign): Promise<string | null> {

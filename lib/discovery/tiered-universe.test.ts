@@ -8,7 +8,19 @@ vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin: { from: vi.fn() } }));
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { loadPostAirConversionsByShow } from "@/lib/learning/post-air-outcomes";
+import { loadImportSignalsByShow } from "@/lib/learning/past-imports";
 import {
+  buildPooledPriors,
+  priorMapKey,
+  type PooledPrior,
+  type PooledPriorSourceRow,
+} from "@/lib/learning/pooled-priors";
+import {
+  IMPORT_BRAND_LIFT_POINTS,
+  IMPORT_POOL_LIFT_POINTS,
+} from "@/lib/scoring/import-lift";
+import {
+  defaultDeps,
   getTieredUniverse,
   type TieredUniverseDeps,
 } from "./tiered-universe";
@@ -662,5 +674,417 @@ describe("getTieredUniverse — post-air lift", () => {
           )
       )
     ).toBe(true);
+  });
+});
+
+function goldenRows(): ConvictionScoreWithShow[] {
+  return [
+    makeRow({
+      id: "cs-golden-test",
+      show_id: "g-test",
+      composite_score: 72,
+      tier: "test",
+      conviction_band: "medium",
+      reasoning: "golden test prose",
+      per_spot_cents: 20000,
+      three_spot_cents: 60000,
+      show: makeShow({
+        id: "g-test",
+        name: "Golden Test",
+        categories: ["True Crime"],
+        price_type: "cpm",
+      }),
+    }),
+    makeRow({
+      id: "cs-golden-scale",
+      show_id: "g-scale",
+      composite_score: 61,
+      tier: "scale",
+      conviction_band: "low",
+      reasoning: "golden scale prose",
+      per_spot_cents: 200000,
+      three_spot_cents: 600000,
+      show: makeShow({
+        id: "g-scale",
+        name: "Golden Scale",
+        categories: ["Business"],
+        price_type: "flat_rate",
+        audience_size: 80000,
+      }),
+    }),
+    makeRow({
+      id: "cs-golden-bench",
+      show_id: "g-bench",
+      composite_score: 40,
+      tier: "dropped",
+      conviction_band: "speculative",
+      reasoning: "golden bench prose",
+      needs_quote: true,
+      per_spot_cents: null,
+      three_spot_cents: null,
+      show: makeShow({
+        id: "g-bench",
+        name: "Golden Bench",
+        categories: [],
+      }),
+    }),
+  ];
+}
+
+// Captured from getTieredUniverse on main (1f06f63) before the import lift.
+const GOLDEN_UNIVERSE = JSON.parse(`{
+  "test": [
+    {
+      "showId": "g-test",
+      "show": {
+        "id": "g-test",
+        "name": "Golden Test",
+        "platform": "podcast",
+        "audience_size": 50000,
+        "rate_card": { "midroll_cpm": 25 },
+        "price_type": "cpm",
+        "min_buy": 0,
+        "categories": ["True Crime"]
+      },
+      "ringHypothesisId": "ring-a",
+      "band": "medium",
+      "audienceFit": 50,
+      "topicalRelevance": 80,
+      "purchasePower": 60,
+      "composite": 72,
+      "reasoning": "golden test prose",
+      "tier": "test",
+      "perSpotCents": 20000,
+      "threeSpotCents": 60000,
+      "cpmUsedCents": 2000,
+      "costBasis": "derived",
+      "isEstimate": true,
+      "needsQuote": false,
+      "placement": "midroll",
+      "budgetDeltaCents": null,
+      "brandSaved": false,
+      "brandDismissed": false,
+      "computedOnRead": false,
+      "postAirDelta": 0,
+      "postAirAdjusted": 72,
+      "postAirReasoning": null
+    }
+  ],
+  "scale": [
+    {
+      "showId": "g-scale",
+      "show": {
+        "id": "g-scale",
+        "name": "Golden Scale",
+        "platform": "podcast",
+        "audience_size": 80000,
+        "rate_card": { "midroll_cpm": 25 },
+        "price_type": "flat_rate",
+        "min_buy": 0,
+        "categories": ["Business"]
+      },
+      "ringHypothesisId": "ring-a",
+      "band": "low",
+      "audienceFit": 50,
+      "topicalRelevance": 80,
+      "purchasePower": 60,
+      "composite": 61,
+      "reasoning": "golden scale prose",
+      "tier": "scale",
+      "perSpotCents": 200000,
+      "threeSpotCents": 600000,
+      "cpmUsedCents": 2000,
+      "costBasis": "derived",
+      "isEstimate": true,
+      "needsQuote": false,
+      "placement": "midroll",
+      "budgetDeltaCents": 350000,
+      "brandSaved": false,
+      "brandDismissed": false,
+      "computedOnRead": false,
+      "postAirDelta": 0,
+      "postAirAdjusted": 61,
+      "postAirReasoning": null
+    }
+  ],
+  "bench": [
+    {
+      "showId": "g-bench",
+      "show": {
+        "id": "g-bench",
+        "name": "Golden Bench",
+        "platform": "podcast",
+        "audience_size": 50000,
+        "rate_card": { "midroll_cpm": 25 },
+        "price_type": "cpm",
+        "min_buy": 0,
+        "categories": []
+      },
+      "ringHypothesisId": "ring-a",
+      "band": "speculative",
+      "audienceFit": 50,
+      "topicalRelevance": 80,
+      "purchasePower": 60,
+      "composite": 40,
+      "reasoning": "golden bench prose",
+      "tier": "dropped",
+      "perSpotCents": null,
+      "threeSpotCents": null,
+      "cpmUsedCents": 2000,
+      "costBasis": "derived",
+      "isEstimate": true,
+      "needsQuote": true,
+      "placement": "midroll",
+      "budgetDeltaCents": null,
+      "brandSaved": false,
+      "brandDismissed": false,
+      "computedOnRead": false,
+      "postAirDelta": 0,
+      "postAirAdjusted": 40,
+      "postAirReasoning": null
+    }
+  ],
+  "testBudgetCents": 1000000,
+  "testUnderfilled": true,
+  "hasScores": true
+}`) as unknown;
+
+function priorMap(rows: PooledPriorSourceRow[]): Map<string, PooledPrior> {
+  const map = new Map<string, PooledPrior>();
+  for (const prior of buildPooledPriors(rows)) {
+    map.set(priorMapKey(prior.category, prior.placement, prior.priceType), prior);
+  }
+  return map;
+}
+
+function consentedRow(brandId: string): PooledPriorSourceRow {
+  return {
+    brandId,
+    status: "confirmed",
+    poolingConsent: true,
+    matchedShowId: "show-s",
+    categories: ["True Crime"],
+    placement: "mid-roll",
+    priceType: "cpm",
+    rate: 25,
+    conversions: 10,
+    downloads: 1000,
+  };
+}
+
+describe("getTieredUniverse — import lift", () => {
+  const signal = { records: 2, conversions: 5, spend: 800, downloads: 20000 };
+
+  function scoredRows(): ConvictionScoreWithShow[] {
+    return [
+      makeRow({
+        show_id: "show-s",
+        composite_score: 70,
+        tier: "test",
+        show: makeShow({
+          id: "show-s",
+          name: "Shared",
+          categories: ["True Crime"],
+          price_type: "cpm",
+        }),
+      }),
+      makeRow({
+        show_id: "show-other",
+        composite_score: 71,
+        tier: "test",
+        show: makeShow({
+          id: "show-other",
+          name: "Other",
+          categories: ["Comedy"],
+          price_type: "cpm",
+        }),
+      }),
+    ];
+  }
+
+  it("lifts only the brand that imported conversions, and keeps both shows", async () => {
+    const rows = scoredRows();
+    const asBrand = async (brandUserId: string) => {
+      const deps = makeDeps(rows);
+      deps.loadBrandUserId = async () => brandUserId;
+      deps.loadImportSignalsByShow = async () =>
+        brandUserId === "brand-a" ? new Map([["show-s", signal]]) : new Map();
+      return getTieredUniverse(PATTERN, deps);
+    };
+
+    const brandB = await asBrand("brand-b");
+    const brandA = await asBrand("brand-a");
+
+    expect(brandB.test.map((show) => show.showId)).toEqual(["show-other", "show-s"]);
+    expect(brandB.test.map((show) => show.tier)).toEqual(["test", "test"]);
+    const sharedB = brandB.test.find((show) => show.showId === "show-s");
+    expect(sharedB?.composite).toBe(70);
+    expect(sharedB?.tier).toBe("test");
+    expect(sharedB).not.toHaveProperty("importDelta");
+
+    const sharedA = brandA.test.find((show) => show.showId === "show-s");
+    expect(sharedA?.composite).toBe(70);
+    expect(sharedA?.tier).toBe("test");
+    expect(sharedA?.importDelta).toBe(IMPORT_BRAND_LIFT_POINTS);
+    expect(sharedA?.importAdjusted).toBe(70 + IMPORT_BRAND_LIFT_POINTS);
+    expect(sharedA?.importReasoning).toContain("From your past campaigns");
+    expect(brandA.test.map((show) => show.showId)).toEqual(["show-s", "show-other"]);
+    expect(brandA.test.find((show) => show.showId === "show-other")).not.toHaveProperty(
+      "importDelta"
+    );
+  });
+
+  it("gives every brand only the pooled nudge once five brands have consented", async () => {
+    const rows = scoredRows();
+    const four = ["b1", "b2", "b3", "b4"].map(consentedRow);
+    const five = [...four, consentedRow("b5")];
+
+    const run = async (poolRows: PooledPriorSourceRow[], brandUserId: string) => {
+      const deps = makeDeps(rows);
+      deps.loadBrandUserId = async () => brandUserId;
+      deps.loadImportSignalsByShow = loadImportSignalsByShow;
+      deps.loadPooledPriors = async () => priorMap(poolRows);
+      return getTieredUniverse(PATTERN, deps);
+    };
+
+    vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+      const filters: { column: string; value: unknown }[] = [];
+      const builder = {
+        select: () => builder,
+        eq: (column: string, value: unknown) => {
+          filters.push({ column, value });
+          return builder;
+        },
+        in: () => builder,
+        then: (
+          resolve: (value: { data: unknown; error: { message: string } | null }) => unknown,
+          reject?: (reason: unknown) => unknown
+        ) => {
+          const brand = filters.find((filter) => filter.column === "brand_id")?.value;
+          if (table === "past_campaign_imports") {
+            const data =
+              brand === "brand-a"
+                ? [{ id: "imp-a", brand_id: "brand-a", status: "confirmed" }]
+                : [];
+            return Promise.resolve({ data, error: null }).then(resolve, reject);
+          }
+          if (table === "past_campaign_records") {
+            const data =
+              brand === "brand-a"
+                ? [
+                    {
+                      import_id: "imp-a",
+                      brand_id: "brand-a",
+                      matched_show_id: "show-s",
+                      conversions: 5,
+                      spend: 800,
+                      downloads: 20000,
+                    },
+                  ]
+                : [];
+            return Promise.resolve({ data, error: null }).then(resolve, reject);
+          }
+          return Promise.resolve({
+            data: null,
+            error: { message: `unexpected ${table}` },
+          }).then(resolve, reject);
+        },
+      };
+      return builder;
+    }) as never);
+
+    const brandBQuiet = await run(four, "brand-b");
+    const quiet = brandBQuiet.test.find((show) => show.showId === "show-s");
+    expect(buildPooledPriors(four)).toEqual([]);
+    expect(quiet?.composite).toBe(70);
+    expect(quiet?.tier).toBe("test");
+    expect(quiet).not.toHaveProperty("importDelta");
+    expect(brandBQuiet.test.map((show) => show.showId)).toEqual(["show-other", "show-s"]);
+
+    const brandBPool = await run(five, "brand-b");
+    const nudged = brandBPool.test.find((show) => show.showId === "show-s");
+    expect(buildPooledPriors(five)).toHaveLength(1);
+    expect(JSON.stringify(buildPooledPriors(five))).not.toContain("b1");
+    expect(nudged?.composite).toBe(70);
+    expect(nudged?.tier).toBe("test");
+    expect(nudged?.importDelta).toBe(IMPORT_POOL_LIFT_POINTS);
+    expect(nudged?.importAdjusted).toBe(70 + IMPORT_POOL_LIFT_POINTS);
+    expect(nudged?.importReasoning).toBe(
+      `Pattern across brands. Score lifted +${IMPORT_POOL_LIFT_POINTS}.`
+    );
+    expect(nudged?.importReasoning).not.toContain("From your past campaigns");
+    expect(brandBPool.test.map((show) => show.showId)).toEqual(["show-s", "show-other"]);
+
+    const brandAPool = await run(five, "brand-a");
+    const own = brandAPool.test.find((show) => show.showId === "show-s");
+    expect(own?.composite).toBe(70);
+    expect(own?.tier).toBe("test");
+    expect(own?.importDelta).toBe(IMPORT_BRAND_LIFT_POINTS + IMPORT_POOL_LIFT_POINTS);
+    expect(own?.importAdjusted).toBe(
+      70 + IMPORT_BRAND_LIFT_POINTS + IMPORT_POOL_LIFT_POINTS
+    );
+    expect(brandAPool.test.find((show) => show.showId === "show-other")?.composite).toBe(71);
+    expect(brandAPool.test.find((show) => show.showId === "show-other")).not.toHaveProperty(
+      "importDelta"
+    );
+  });
+
+  it("keeps a null composite null and does not drop the show", async () => {
+    const rows = [
+      makeRow({
+        show_id: "blank",
+        composite_score: null,
+        tier: "test",
+        show: makeShow({ id: "blank", categories: ["True Crime"], price_type: "cpm" }),
+      }),
+    ];
+    const deps = makeDeps(rows);
+    deps.loadBrandUserId = async () => "brand-a";
+    deps.loadImportSignalsByShow = async () => new Map([["blank", signal]]);
+    deps.loadPooledPriors = async () => priorMap(["b1", "b2", "b3", "b4", "b5"].map(consentedRow));
+    const universe = await getTieredUniverse(PATTERN, deps);
+    expect(universe.test).toHaveLength(1);
+    expect(universe.test[0].composite).toBeNull();
+    expect(universe.test[0].postAirAdjusted).toBeNull();
+    expect(universe.test[0].importAdjusted).toBeUndefined();
+    expect(universe.test[0].tier).toBe("test");
+  });
+});
+
+describe("getTieredUniverse — golden snapshot with no imports", () => {
+  it("matches today's output with no import deps, empty deps, and stubbed defaults", async () => {
+    const rows = goldenRows();
+    const noImports = await getTieredUniverse(PATTERN, makeDeps(rows));
+
+    const emptyDeps = makeDeps(rows);
+    emptyDeps.loadBrandUserId = async () => "brand-a";
+    emptyDeps.loadPostAirByShow = async () => new Map();
+    emptyDeps.loadImportSignalsByShow = async () => new Map();
+    emptyDeps.loadPooledPriors = async () => new Map();
+    const empty = await getTieredUniverse(PATTERN, emptyDeps);
+
+    const stubbed: TieredUniverseDeps = {
+      ...defaultDeps,
+      loadScoresWithShows: async () => rows,
+      loadConfirmedRings: async () =>
+        [{ id: "ring-a" } as RingHypothesisRow],
+      loadCampaignCtx: async () => ({
+        campaignId: "camp-1",
+        budgetTotalDollars: BUDGET_DOLLARS,
+        testSpotCount: null,
+        testPlacement: null,
+      }),
+      loadPostAirByShow: async () => new Map(),
+      loadBrandUserId: async () => "brand-a",
+      loadImportSignalsByShow: async () => new Map(),
+      loadPooledPriors: async () => new Map(),
+    };
+    const defaultsStubbed = await getTieredUniverse(PATTERN, stubbed);
+
+    expect(defaultDeps.loadImportSignalsByShow).toBe(loadImportSignalsByShow);
+    expect(JSON.stringify(noImports)).toBe(JSON.stringify(GOLDEN_UNIVERSE));
+    expect(JSON.stringify(empty)).toBe(JSON.stringify(noImports));
+    expect(JSON.stringify(defaultsStubbed)).toBe(JSON.stringify(noImports));
+    expect(JSON.stringify(noImports)).not.toContain("importDelta");
   });
 });

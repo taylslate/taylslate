@@ -43,6 +43,7 @@ import {
   rollupShowComposite,
   THREE_SPOT_THRESHOLD,
   MIN_TEST_SHOWS,
+  type ShowRollup,
 } from "./tier-portfolio";
 import {
   deriveSpotCost,
@@ -51,10 +52,21 @@ import {
   type Placement,
 } from "./spot-cost";
 import { applyPostAirLift } from "@/lib/scoring/post-air-lift";
+import { applyImportLift } from "@/lib/scoring/import-lift";
+import type { ImportBrandSignal } from "@/lib/scoring/import-lift";
 import {
   loadCampaignBrandUserId,
   loadPostAirConversionsByShow,
 } from "@/lib/learning/post-air-outcomes";
+import { loadImportSignalsByShow } from "@/lib/learning/past-imports";
+import {
+  loadPooledPriors,
+  priorMapKey,
+  toPoolPlacement,
+  toPoolPriceType,
+  type PooledPrior,
+  type PooledPriorKey,
+} from "@/lib/learning/pooled-priors";
 
 /** One show in a tier partition: the 2B conviction read + the per-show cost
  *  (persisted, or computed on read) the Layer 4 card renders. */
@@ -96,6 +108,14 @@ export interface TieredShow {
   postAirDelta?: number;
   postAirAdjusted?: number | null;
   postAirReasoning?: string | null;
+  /**
+   * Import lift, applied after the post-air lift. Omitted when this brand
+   * has no converting import on the show and no pooled prior matches.
+   * composite and tier stay as scored.
+   */
+  importDelta?: number;
+  importAdjusted?: number | null;
+  importReasoning?: string | null;
 }
 
 export interface TieredUniverse {
@@ -138,14 +158,31 @@ export interface TieredUniverseDeps {
    * together with the loader → no lift. The default reads that column.
    */
   loadBrandUserId?: (campaignId: string) => Promise<string | null>;
+  /**
+   * This brand's confirmed import totals, keyed by catalog show id.
+   * Omitted or empty leaves scores unchanged. The default loader is
+   * fail-soft and filters brand_id to the brand who is looking.
+   */
+  loadImportSignalsByShow?: (
+    showIds: string[],
+    brandUserId: string
+  ) => Promise<Map<string, ImportBrandSignal>>;
+  /**
+   * Anonymized pooled priors for these (category, placement, price type)
+   * keys. Omitted or empty leaves scores unchanged. The default reads
+   * pooled_import_priors as service_role and is fail-soft.
+   */
+  loadPooledPriors?: (keys: PooledPriorKey[]) => Promise<Map<string, PooledPrior>>;
 }
 
-const defaultDeps: TieredUniverseDeps = {
+export const defaultDeps: TieredUniverseDeps = {
   loadScoresWithShows: getConvictionScoresWithShowsForPattern,
   loadConfirmedRings: getConfirmedRings,
   loadCampaignCtx: getCampaignContextForPattern,
   loadPostAirByShow: loadPostAirConversionsByShow,
   loadBrandUserId: loadCampaignBrandUserId,
+  loadImportSignalsByShow: loadImportSignalsByShow,
+  loadPooledPriors: loadPooledPriors,
 };
 
 function emptyUniverse(): TieredUniverse {
@@ -222,31 +259,55 @@ export async function getTieredUniverse(
     }
   }
 
-  // Post-air lift is a sort guide for this brand only. Another brand's
-  // report is not loaded. A missing brand id or a loader failure leaves
-  // every score as it was scored. Shows are not filtered on the result.
+  // Post-air lift and the brand's own import signal are sort guides for
+  // this brand only. Another brand's rows are not loaded. A missing brand
+  // id or a loader failure leaves every score as it was scored. Shows are
+  // not filtered on the result. The pooled prior is separate: it has no
+  // brand id, and an empty pool adds nothing.
   let reportedByShow = new Map<string, number>();
-  if (deps.loadPostAirByShow && ctx?.campaignId && deps.loadBrandUserId) {
-    let brandUserId: string | null = null;
+  let importByShow = new Map<string, ImportBrandSignal>();
+  const showIds = [...showById.keys()];
+  const wantsBrand =
+    !!ctx?.campaignId &&
+    !!deps.loadBrandUserId &&
+    (!!deps.loadPostAirByShow || !!deps.loadImportSignalsByShow);
+  let brandUserId: string | null = null;
+  if (wantsBrand && deps.loadBrandUserId && ctx?.campaignId) {
     try {
       brandUserId = (await deps.loadBrandUserId(ctx.campaignId))?.trim() || null;
     } catch {
       brandUserId = null;
     }
-    if (brandUserId) {
-      try {
-        reportedByShow = await deps.loadPostAirByShow(
-          [...showById.keys()],
-          brandUserId
-        );
-      } catch {
-        reportedByShow = new Map();
-      }
+  }
+  if (brandUserId && deps.loadPostAirByShow) {
+    try {
+      reportedByShow = await deps.loadPostAirByShow(showIds, brandUserId);
+    } catch {
+      reportedByShow = new Map();
+    }
+  }
+  if (brandUserId && deps.loadImportSignalsByShow) {
+    try {
+      importByShow = await deps.loadImportSignalsByShow(showIds, brandUserId);
+    } catch {
+      importByShow = new Map();
     }
   }
 
   // Collapse per-(show, ring) → one entry per show at its highest composite.
   const rollup = rollupShowComposite(confirmedRows);
+
+  let pooledByKey = new Map<string, PooledPrior>();
+  if (deps.loadPooledPriors) {
+    const keys = pooledKeysFor(rollup, showById, campaignPlacement);
+    if (keys.length > 0) {
+      try {
+        pooledByKey = await deps.loadPooledPriors(keys);
+      } catch {
+        pooledByKey = new Map();
+      }
+    }
+  }
 
   const test: TieredShow[] = [];
   const scale: TieredShow[] = [];
@@ -322,6 +383,11 @@ export async function getTieredUniverse(
 
     const reported = reportedByShow.get(showId) ?? null;
     const lift = applyPostAirLift(roll.composite, reported);
+    const imported = applyImportLift(
+      lift.adjusted,
+      importByShow.get(showId) ?? null,
+      matchPooledPrior(show, effPlacement, pooledByKey)
+    );
 
     const entry: TieredShow = {
       showId,
@@ -349,6 +415,11 @@ export async function getTieredUniverse(
       postAirAdjusted: lift.adjusted,
       postAirReasoning: lift.reasoningLine,
     };
+    if (imported.delta > 0 || imported.reasoningLine) {
+      entry.importDelta = imported.delta;
+      entry.importAdjusted = imported.adjusted;
+      entry.importReasoning = imported.reasoningLine;
+    }
 
     if (tier === "test") test.push(entry);
     else if (tier === "scale") scale.push(entry);
@@ -358,7 +429,8 @@ export async function getTieredUniverse(
   // Lifted score guides the order. A show with no report keeps its
   // composite and stays in the list.
   const byCompositeDesc = (a: TieredShow, b: TieredShow) =>
-    (b.postAirAdjusted ?? b.composite ?? -1) - (a.postAirAdjusted ?? a.composite ?? -1);
+    (b.importAdjusted ?? b.postAirAdjusted ?? b.composite ?? -1) -
+    (a.importAdjusted ?? a.postAirAdjusted ?? a.composite ?? -1);
   test.sort(byCompositeDesc);
   scale.sort(byCompositeDesc);
   bench.sort(byCompositeDesc);
@@ -371,4 +443,48 @@ export async function getTieredUniverse(
     testUnderfilled: test.length < MIN_TEST_SHOWS,
     hasScores: true,
   };
+}
+
+function pooledKeysFor(
+  rollup: Map<string, ShowRollup>,
+  showById: Map<string, Show | null>,
+  campaignPlacement: Placement
+): PooledPriorKey[] {
+  const keys: PooledPriorKey[] = [];
+  const seen = new Set<string>();
+  for (const [showId, roll] of rollup) {
+    const show = showById.get(showId) ?? null;
+    const placement = toPoolPlacement(roll.topRow.placement_override ?? campaignPlacement);
+    const priceType = toPoolPriceType(show?.price_type);
+    for (const category of show?.categories ?? []) {
+      const trimmed = category.trim();
+      if (!trimmed) continue;
+      const mapKey = priorMapKey(trimmed, placement, priceType);
+      if (seen.has(mapKey)) continue;
+      seen.add(mapKey);
+      keys.push({ category: trimmed, placement, priceType });
+    }
+  }
+  return keys;
+}
+
+function matchPooledPrior(
+  show: Show | null,
+  placement: Placement,
+  priors: Map<string, PooledPrior>
+): PooledPrior | null {
+  if (!show || priors.size === 0) return null;
+  const poolPlacement = toPoolPlacement(placement);
+  const priceType = toPoolPriceType(show.price_type);
+  let best: PooledPrior | null = null;
+  for (const category of show.categories ?? []) {
+    const trimmed = category.trim();
+    if (!trimmed) continue;
+    const prior = priors.get(priorMapKey(trimmed, poolPlacement, priceType));
+    if (!prior) continue;
+    const median = prior.medianConversionsPer1kDownloads ?? Number.NEGATIVE_INFINITY;
+    const bestMedian = best?.medianConversionsPer1kDownloads ?? Number.NEGATIVE_INFINITY;
+    if (!best || median > bestMedian) best = prior;
+  }
+  return best;
 }
