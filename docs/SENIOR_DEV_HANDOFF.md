@@ -161,7 +161,7 @@ Covers session binding, 403 for non-agents, exclusive default and an explicit fa
 ### Known gaps
 
 - No page was added or changed. The admin mockups are still fixtures.
-- Migrations 055 and 056 are in the repo and are not applied. These reads select `status` and `source`. They fail until Chris applies 055 after merge.
+- 055 and 056 are applied. These reads select `status` and `source`.
 - There is no single route that lists limited deals for every approved show. The show route is one show at a time.
 - The per-show payload is name, platform, description, audience size, categories, and the approved link. Rate card and contact stay off this response.
 - Approval of a pending import is still a later job. This PR does not add a roster write other than the import fix.
