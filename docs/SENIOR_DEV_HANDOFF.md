@@ -165,3 +165,41 @@ Covers session binding, 403 for non-agents, exclusive default and an explicit fa
 - There is no single route that lists limited deals for every approved show. The show route is one show at a time.
 - The per-show payload is name, platform, description, audience size, categories, and the approved link. Rate card and contact stay off this response.
 - Approval of a pending import is still a later job. This PR does not add a roster write other than the import fix.
+
+## I4: Learning feed from past-campaign imports
+
+### What was built
+
+Confirmed past-campaign imports are now a private signal in that brand's discovery sort and learning review. A second, anonymized table, `pooled_import_priors`, can be rebuilt from rows whose import is `confirmed` and `pooling_consent` is true. A group is kept only when at least 5 distinct brands share a category, placement, and price type. The table stores no brand, import, record, or show id. Category comes from `shows.categories` through `matched_show_id`. Unmatched rows are skipped. The refresh does not write `shows`, `show_profiles`, `show_surfaces`, or `benchmarks`.
+
+Discovery applies `applyImportLift` after the existing post-air lift, for the same brand user. The brand's own imports add 6 points only when that show has conversions above zero in this brand's confirmed imports. A pooled group adds 2 points only when its median conversions per 1,000 downloads is above zero. The two lifts share the post-air cap of 100. Neither lowers a score, invents one from a missing composite, or removes a show. With no imports and an empty pool, `getTieredUniverse` matches the golden snapshot taken on main `1f06f63` before this change.
+
+The learning review gets a separate `importedHistory` list, source `imported`, label "From your past campaigns". Those rows are not copied into `deal_conversion_reports` and do not change the measured sections.
+
+`refresh_pooled_import_priors` is not called from the app, a cron, or a deploy hook.
+
+### Where
+
+- `supabase/migrations/058_pooled_import_priors.sql` (not applied)
+- `supabase/migrations/058_pooled_import_priors.test.ts`
+- `lib/learning/past-imports.ts`
+- `lib/learning/pooled-priors.ts`
+- `lib/scoring/import-lift.ts`
+- `lib/discovery/tiered-universe.ts` (two optional deps, lift applied after post-air)
+- `lib/learning/load.ts`, `lib/learning/assemble.ts`, `lib/learning/review.ts`
+
+### Tests
+
+`npx vitest run supabase/migrations/058_pooled_import_priors.test.ts lib/learning lib/scoring/import-lift.test.ts lib/discovery/tiered-universe.test.ts`
+
+Covers grants, revokes, RLS, the `brand_count >= 5` check, the consent and confirmed filters, and the absence of a brand identifier on the pool. Brand A's imports do not move brand B's composite or tier unless a consented group of 5 brands exists, and then only by the 2 point nudge. Four consented brands produce no prior. A fixed fixture with no import deps, with empty deps, and with the default loaders stubbed empty matches the golden snapshot. Lift is never negative, the cap holds, and a null composite stays null. Supabase is mocked. No live writes. The refresh was not run.
+
+No screenshots. This job has no UI.
+
+### Known gaps
+
+- Refresh scheduling. `refresh_pooled_import_priors` is in the migration and `refreshPooledImportPriors` can call it. Nothing schedules it. Do not add a cron or a deploy hook until Chris asks. Run it by hand after 058 is applied and there is consented data.
+- Pool display. No UI. `importedHistory` is on the learning review object and the learning page does not render it. The pooled prior is not shown anywhere.
+- Category coverage for unmatched rows. A record with no `matched_show_id`, or a matched show with no category, never enters the pool. It can still show in that brand's private history. It does not score a catalog show unless `matched_show_id` is set, and that id is only a hint for this brand plus the category lookup.
+- Migration 058 is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, then run the introspection query in the file header. Do not run the refresh from that apply unless Chris asks.
+- A pooled group with no positive median conversions per 1,000 downloads does not nudge. The group has to exist and the median has to be above zero.

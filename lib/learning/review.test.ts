@@ -289,4 +289,80 @@ describe("buildLearningReview", () => {
     expect(review.renew.items[0].reasoningLine).toBeNull();
     expect(review.renew.items[0].reportedConversions).toBe(3);
   });
+
+  it("leaves measured sections unchanged when there are no imports", () => {
+    const base = input({ deals: [deal({ reportedConversions: 2 })] });
+    const review = buildLearningReview(base);
+    expect(review.importedHistory).toEqual([]);
+    expect(review.renew.items[0].reportedConversions).toBe(2);
+    expect(review.bestRing.items[0].reportedConversions).toBe(2);
+  });
+
+  it("labels imported rows as prior history and does not treat them as verified", () => {
+    const base = input({ deals: [deal({ reportedConversions: 2 })] });
+    const plain = buildLearningReview(base);
+    const review = buildLearningReview({
+      ...base,
+      imported: [
+        {
+          showId: "show-1",
+          showName: "Recovery Lab",
+          records: 2,
+          conversions: 40,
+          spend: 500,
+          downloads: 10000,
+          source: "imported",
+        },
+      ],
+    });
+    expect(review.ready).toBe(plain.ready);
+    expect(review.bestRing).toEqual(plain.bestRing);
+    expect(review.renew).toEqual(plain.renew);
+    expect(review.styles).toEqual(plain.styles);
+    expect(review.scaleNext).toEqual(plain.scaleNext);
+    expect(review.wrongAssumptions).toEqual(plain.wrongAssumptions);
+    expect(review.weight).toEqual(plain.weight);
+    expect(review.deals).toEqual(plain.deals);
+    expect(review.renew.items[0].reportedConversions).toBe(2);
+    expect(review.importedHistory).toEqual([
+      {
+        showId: "show-1",
+        showName: "Recovery Lab",
+        records: 2,
+        conversions: 40,
+        spend: 500,
+        downloads: 10000,
+        source: "imported",
+        label: "From your past campaigns",
+      },
+    ]);
+    expect(JSON.stringify(review.deals)).not.toContain("40");
+    expect(review.weight.items.every((item) => item.source === "measured" || item.source === "override")).toBe(
+      true
+    );
+  });
+
+  it("does not open the review just because an import has conversions", () => {
+    const review = buildLearningReview(
+      input({
+        deals: [deal({ status: "planning", aired: false, reportedConversions: null })],
+        imported: [
+          {
+            showId: "show-9",
+            showName: "Old Flight",
+            records: 1,
+            conversions: 9,
+            spend: 100,
+            downloads: 1000,
+            source: "imported",
+          },
+        ],
+      })
+    );
+    expect(review.ready).toBe(false);
+    expect(review.deals).toEqual([]);
+    expect(review.bestRing.missing).toBe(NOT_ENOUGH_DATA);
+    expect(review.importedHistory[0].source).toBe("imported");
+    expect(review.importedHistory[0].label).toBe("From your past campaigns");
+  });
 });

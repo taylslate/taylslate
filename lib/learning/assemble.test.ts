@@ -88,6 +88,71 @@ describe("assembleLearningInput", () => {
     );
     expect(input.deals[0].reportedConversions).toBeNull();
   });
+
+  it("keeps confirmed imports out of conversion reports", () => {
+    const input = assembleLearningInput(
+      raw({
+        imported: [
+          {
+            id: "rec-1",
+            show_name: "Old name",
+            matched_show_id: "catalog-show",
+            placement: "mid-roll",
+            price_type: "cpm",
+            spend: 400,
+            conversions: 11,
+            downloads: 2000,
+          },
+          {
+            id: "rec-2",
+            show_name: "Catalog Show",
+            matched_show_id: "catalog-show",
+            placement: "pre-roll",
+            price_type: "cpm",
+            spend: 100,
+            conversions: null,
+            downloads: 500,
+          },
+          {
+            id: "rec-3",
+            show_name: "Unmatched Hour",
+            matched_show_id: null,
+            placement: null,
+            price_type: null,
+            spend: 50,
+            conversions: 2,
+            downloads: null,
+          },
+        ],
+      })
+    );
+    expect(input.deals[0].reportedConversions).toBe(3);
+    expect(input.imported).toEqual([
+      {
+        showId: "catalog-show",
+        showName: "Catalog Show",
+        records: 2,
+        conversions: 11,
+        spend: 500,
+        downloads: 2500,
+        source: "imported",
+      },
+      {
+        showId: "name:unmatched hour",
+        showName: "Unmatched Hour",
+        records: 1,
+        conversions: 2,
+        spend: 50,
+        downloads: null,
+        source: "imported",
+      },
+    ]);
+    expect(JSON.stringify(input.deals)).not.toContain("11");
+  });
+
+  it("returns an empty import list when none were loaded", () => {
+    expect(assembleLearningInput(raw()).imported).toEqual([]);
+  });
 });
 
 describe("learning modules stay off podscan and the closed money paths", () => {
