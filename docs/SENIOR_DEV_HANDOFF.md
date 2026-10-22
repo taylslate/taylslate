@@ -166,6 +166,52 @@ Covers session binding, 403 for non-agents, exclusive default and an explicit fa
 - The per-show payload is name, platform, description, audience size, categories, and the approved link. Rate card and contact stay off this response.
 - Approval of a pending import is still a later job. This PR does not add a roster write other than the import fix.
 
+## A2: Public API v1 read endpoints
+
+### What was built
+
+Brand-scoped read endpoints on the A1 key plumbing. `withApiRead` resolves the bearer key, enforces the per-key rate limit, then requires the `read` scope. A missing row and a row owned by another brand both return 404. Responses send `Cache-Control: no-store`.
+
+Lists return `{ data, next_cursor }`. The cursor is an opaque base64url token over `(created_at, id)`, newest first. `limit` defaults to 25 and clamps at 100.
+
+Shows are the discoverable catalog, plus shows linked from this brand's deals. `verified` is true only when `getVerifiedProfileTies` reports a tie. `shows.is_verified` is not copied. Campaigns match `campaigns.user_id`. Deals match `deals.brand_id`, or a `brand_profiles` row whose `user_id` is the key's brand (the Wave 12 path `getWave12DealsForBrand` filters, without selecting every column). Scores and the media plan load only after that campaign ownership check. Scores come from the latest `campaign_patterns` row.
+
+Serializers build a new object field by field. Show responses use public catalog fields and rename the rate card to `rates`. Deal responses keep the rate the brand agreed to (`cpm_rate`, gross amounts, `agreed_cpm`) and leave out net amounts, notes, payment, payout, fee, envelope, and other party ids. `GET /api/v1/openapi.json` is an OpenAPI 3.1 document generated from those allowlists. It does not require a key.
+
+### Where
+
+- `lib/api/v1/handler.ts`
+- `lib/api/v1/pagination.ts`
+- `lib/api/v1/reads.ts`
+- `lib/api/v1/serializers.ts`
+- `lib/api/v1/openapi.ts`
+- `app/api/v1/test-admin.ts` (unit-test double only)
+- `app/api/v1/shows/route.ts`
+- `app/api/v1/shows/[id]/route.ts`
+- `app/api/v1/campaigns/route.ts`
+- `app/api/v1/campaigns/[id]/route.ts`
+- `app/api/v1/campaigns/[id]/scores/route.ts`
+- `app/api/v1/campaigns/[id]/plan/route.ts`
+- `app/api/v1/deals/route.ts`
+- `app/api/v1/deals/[id]/route.ts`
+- `app/api/v1/openapi.json/route.ts`
+
+### Tests
+
+`npx vitest run app/api/v1 lib/api`
+
+Covers 401, 403, 429, and a generic 500; campaign and deal isolation (foreign rows are 404 and absent from lists); a non-discoverable show with no deal for this brand is 404; cursor round trip and the limit clamp; serializer keys equal the allowlists and none match `stripe|payment|payout|fee|card|setup_intent|envelope`; OpenAPI field lists match the serializers. Existing health and public-api tests still pass. No UI, so no screenshots.
+
+### Known gaps
+
+- No write endpoints, no MCP server, no settings UI, and no plan gating. Operator `apiAccess` stays A7. `lib/billing/plans.ts` is unchanged.
+- No migration. Reads use the service role on tables that already exist.
+- `lib/data` query helpers are not used. Session-scoped lists cannot run on an API key, and `getDealById` / `getWave12DealsForBrand` do not apply this owner filter with a column allowlist.
+- Score lists follow the same `(created_at, id)` cursor as the other lists, not composite score order. They read the newest pattern only.
+- A campaign with no saved plan returns `{ data: null }`. A campaign with no pattern returns an empty score page.
+- The cursor keeps the stored timestamp string. A value that is not already a safe ISO timestamp is normalized with `toISOString`, which drops microseconds.
+- Contact email is read only to pass into `getVerifiedProfileTies` and is not returned. `show_profiles.podscan_id` is not read.
+
 ## I4: Learning feed from past-campaign imports
 
 ### What was built
