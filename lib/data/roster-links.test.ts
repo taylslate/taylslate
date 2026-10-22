@@ -107,11 +107,14 @@ describe("importShows", () => {
     adminFrom.mockReset();
     userFrom.mockReset();
     getUser.mockReset();
+    getUser.mockResolvedValue({ data: { user: { id: "agent-1" } } });
   });
 
-  it("inserts a pending import link via the admin client", async () => {
-    let inserted: Record<string, unknown> | null = null;
+  function asAgent(role = "agent") {
     userFrom.mockImplementation((table: string) => {
+      if (table === "profiles") {
+        return chain({ data: { id: "agent-1", role }, error: null });
+      }
       if (table === "agent_show_relationships") {
         return chain({ data: [], error: null });
       }
@@ -119,6 +122,28 @@ describe("importShows", () => {
         data: { id: "show-new", name: "Night Desk", platform: "podcast" },
         error: null,
       });
+    });
+  }
+
+  it("inserts a pending exclusive import link for the signed-in agent", async () => {
+    let inserted: Record<string, unknown> | null = null;
+    let showRow: Record<string, unknown> | null = null;
+    userFrom.mockImplementation((table: string) => {
+      if (table === "profiles") {
+        return chain({ data: { id: "agent-1", role: "agent" }, error: null });
+      }
+      if (table === "agent_show_relationships") {
+        return chain({ data: [], error: null });
+      }
+      return chain(
+        {
+          data: { id: "show-new", name: "Night Desk", platform: "podcast" },
+          error: null,
+        },
+        (row) => {
+          showRow = row as Record<string, unknown>;
+        }
+      );
     });
     adminFrom.mockImplementation((table: string) => {
       expect(table).toBe("agent_show_relationships");
@@ -127,31 +152,64 @@ describe("importShows", () => {
       });
     });
 
-    const result = await importShows(
-      [{ name: "Night Desk", platform: "podcast" }],
-      "agent-1"
-    );
+    const result = await importShows([
+      {
+        name: "Night Desk",
+        platform: "podcast",
+        agent_id: "someone-else",
+      },
+    ]);
     expect(inserted).toMatchObject({
       agent_id: "agent-1",
       show_id: "show-new",
       status: "pending",
       source: "import",
+      is_exclusive: true,
     });
+    expect(showRow).not.toHaveProperty("agent_id");
+    expect(showRow).not.toHaveProperty("is_exclusive");
     expect(result.imported).toHaveLength(1);
     expect(result.errors).toEqual([]);
   });
 
+  it("stores is_exclusive false when the row says so", async () => {
+    const inserted: Record<string, unknown>[] = [];
+    asAgent();
+    adminFrom.mockImplementation(() =>
+      chain({ data: null, error: null }, (row) => {
+        inserted.push(row as Record<string, unknown>);
+      })
+    );
+
+    await importShows([
+      { name: "Night Desk", platform: "podcast", is_exclusive: false },
+      { name: "Day Desk", platform: "podcast", is_exclusive: true },
+    ]);
+    expect(inserted.map((row) => row.is_exclusive)).toEqual([false, true]);
+    expect(inserted.every((row) => row.agent_id === "agent-1")).toBe(true);
+  });
+
+  it("throws when nobody is signed in and does not write", async () => {
+    getUser.mockResolvedValue({ data: { user: null } });
+    await expect(
+      importShows([{ name: "Night Desk", platform: "podcast" }])
+    ).rejects.toThrow(/Sign in/);
+    expect(userFrom).not.toHaveBeenCalled();
+    expect(adminFrom).not.toHaveBeenCalled();
+  });
+
+  it("throws when the signed-in user is not an agent and does not write", async () => {
+    asAgent("brand");
+    await expect(
+      importShows([{ name: "Night Desk", platform: "podcast" }])
+    ).rejects.toThrow(/Only agents/);
+    expect(adminFrom).not.toHaveBeenCalled();
+    expect(userFrom.mock.calls.map((call) => call[0])).toEqual(["profiles"]);
+  });
+
   it("removes the new show when the roster link fails", async () => {
     const deleted: string[] = [];
-    userFrom.mockImplementation((table: string) => {
-      if (table === "agent_show_relationships") {
-        return chain({ data: [], error: null });
-      }
-      return chain({
-        data: { id: "show-new", name: "Night Desk", platform: "podcast" },
-        error: null,
-      });
-    });
+    asAgent();
     adminFrom.mockImplementation((table: string) => {
       if (table === "shows") {
         const builder = chain({ data: null, error: null });
@@ -164,10 +222,7 @@ describe("importShows", () => {
       return chain({ data: null, error: { message: "roster write refused" } });
     });
 
-    const result = await importShows(
-      [{ name: "Night Desk", platform: "podcast" }],
-      "agent-1"
-    );
+    const result = await importShows([{ name: "Night Desk", platform: "podcast" }]);
     expect(result.imported).toEqual([]);
     expect(result.errors[0]).toMatch(/roster link failed/);
     expect(result.errors[0]).toMatch(/removed/);
