@@ -147,7 +147,7 @@ Serializers build a new object field by field. Show responses use public catalog
 - `lib/api/v1/reads.ts`
 - `lib/api/v1/serializers.ts`
 - `lib/api/v1/openapi.ts`
-- `lib/api/v1/test-admin.ts` (unit-test double only)
+- `app/api/v1/test-admin.ts` (unit-test double only)
 - `app/api/v1/shows/route.ts`
 - `app/api/v1/shows/[id]/route.ts`
 - `app/api/v1/campaigns/route.ts`

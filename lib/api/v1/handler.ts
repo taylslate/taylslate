@@ -35,7 +35,9 @@ export function apiJson(
   return NextResponse.json(body, { status, headers });
 }
 
-export function withApiRead<Route = undefined>(
+type EmptyRoute = { params: Promise<Record<string, never>> };
+
+export function withApiRead<Route = EmptyRoute>(
   handler: (ctx: ApiReadContext, req: Request, route: Route) => Promise<Response>
 ): (req: Request, route: Route) => Promise<Response> {
   return async (req: Request, route: Route): Promise<Response> => {

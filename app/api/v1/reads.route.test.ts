@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import type { MemoryAdmin } from "@/lib/api/memory-admin";
-import type { DomainAdmin } from "@/lib/api/v1/test-admin";
+import type { DomainAdmin } from "./test-admin";
 
 const bridge = vi.hoisted(() => ({
   keys: null as MemoryAdmin | null,
@@ -31,7 +31,7 @@ vi.mock("@/lib/data/event-log", () => ({
 }));
 
 import { createMemoryAdmin } from "@/lib/api/memory-admin";
-import { createDomainAdmin } from "@/lib/api/v1/test-admin";
+import { createDomainAdmin } from "./test-admin";
 import { createKey } from "@/lib/api/keys";
 import {
   API_RATE_LIMIT_PER_MINUTE,
