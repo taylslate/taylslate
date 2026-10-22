@@ -143,7 +143,7 @@ declare
 begin
   -- This delete and the insert below are the only writes.
   -- shows is read for categories. It is not updated.
-  delete from public.pooled_import_priors;
+  delete from public.pooled_import_priors where true;
 
   insert into public.pooled_import_priors (
     category,
