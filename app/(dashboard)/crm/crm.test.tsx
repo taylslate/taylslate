@@ -213,6 +213,7 @@ describe("CRM pages", () => {
 
     await user.click(screen.getByRole("tab", { name: "Deal history" }));
     expect(screen.getByRole("columnheader", { name: "Total" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Delivering" })).toHaveAttribute("href", `/deals/${deal.id}`);
     expect(screen.getByText("Delivering")).toBeInTheDocument();
     expect(screen.getByText("Mid-roll")).toBeInTheDocument();
     expect(screen.getByText("$4,500")).toBeInTheDocument();

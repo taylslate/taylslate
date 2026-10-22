@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { Deal, DealStatus, Placement, PriceType } from "@/lib/data/types";
+import type { Deal, DealStatus, Placement, PriceType, UserRole } from "@/lib/data/types";
+import { isBrandSide } from "@/lib/nav/items";
 import MakeGoodPanel from "@/components/deals/MakeGoodPanel";
 import { formatDateOnly } from "@/lib/format/date-only";
 import { tokens } from "@/lib/brand/tokens";
@@ -41,12 +42,52 @@ const readOnlyClass =
 
 type DealWithRelations = Deal & { show_name?: string; brand_name?: string; insertion_order?: unknown };
 
-export default function LegacyDealClient({ dealId }: { dealId: string }) {
+function catalogShowId(showId: string | null | undefined): string | null {
+  return typeof showId === "string" && showId.length > 0 ? showId : null;
+}
+
+function useBrandSide(viewerRole?: UserRole | null): boolean {
+  const [fromChrome, setFromChrome] = useState(false);
+  useEffect(() => {
+    if (viewerRole !== undefined) return;
+    setFromChrome(document.querySelector('nav a[href="/crm"]') !== null);
+  }, [viewerRole]);
+  if (viewerRole !== undefined) return Boolean(viewerRole && isBrandSide(viewerRole));
+  return fromChrome;
+}
+
+function ShowName({
+  name,
+  showId,
+  brandSide,
+}: {
+  name: string;
+  showId: string | null;
+  brandSide: boolean;
+}) {
+  if (!brandSide || !showId) return name;
+  return (
+    <Link href={`/crm/${showId}`} className="text-inherit hover:underline">
+      {name}
+    </Link>
+  );
+}
+
+export default function LegacyDealClient({
+  dealId,
+  viewerRole,
+  initialDeal,
+}: {
+  dealId: string;
+  viewerRole?: UserRole | null;
+  initialDeal?: DealWithRelations;
+}) {
   const id = dealId;
   const router = useRouter();
+  const brandSide = useBrandSide(viewerRole);
 
-  const [deal, setDeal] = useState<DealWithRelations | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState(true);
+  const [deal, setDeal] = useState<DealWithRelations | undefined>(initialDeal);
+  const [isLoading, setIsLoading] = useState(initialDeal === undefined);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -98,9 +139,10 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
   }, [id]);
 
   useEffect(() => {
+    if (initialDeal) return;
     fetchDeal();
     checkIO();
-  }, [fetchDeal, checkIO]);
+  }, [fetchDeal, checkIO, initialDeal]);
 
   if (isLoading) {
     return (
@@ -125,6 +167,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
   }
 
   const showName = deal.show_name ?? "Unknown Show";
+  const showId = catalogShowId(deal.show_id);
   const brandName = deal.brand_name ?? "Unknown Brand";
 
   const startEdit = () => {
@@ -246,7 +289,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className={`text-xl font-semibold tracking-tight ${inkText}`}>
-              {showName}
+              <ShowName name={showName} showId={showId} brandSide={brandSide} />
             </h1>
             <p className={`mt-1 text-sm ${mutedText}`}>
               {brandName} &middot; {deal.num_episodes} episode{deal.num_episodes !== 1 ? "s" : ""} &middot; {deal.placement}
@@ -292,7 +335,9 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
           {/* Show (read-only in edit mode) */}
           <div>
             <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Show</label>
-            <div className={readOnlyClass}>{showName}</div>
+            <div className={readOnlyClass}>
+              <ShowName name={showName} showId={showId} brandSide={brandSide} />
+            </div>
           </div>
 
           {/* Brand (read-only in edit mode) */}
@@ -485,7 +530,9 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Show</label>
-                <div className={readOnlyClass}>{showName}</div>
+                <div className={readOnlyClass}>
+                  <ShowName name={showName} showId={showId} brandSide={brandSide} />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Brand</label>
@@ -497,7 +544,7 @@ export default function LegacyDealClient({ dealId }: { dealId: string }) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Price Type</label>
-                <div className={readOnlyClass}>{deal.price_type === "cpm" ? `CPM — $${deal.cpm_rate}` : `Flat Rate — $${deal.net_per_episode.toLocaleString()}`}</div>
+                <div className={readOnlyClass}>{deal.price_type === "cpm" ? `CPM - $${deal.cpm_rate}` : `Flat Rate - $${deal.net_per_episode.toLocaleString()}`}</div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[var(--ts-ink-on-paper)] mb-1.5">Guaranteed Downloads</label>
