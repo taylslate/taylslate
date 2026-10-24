@@ -327,3 +327,40 @@ Covers the CRM show-name link for brand and agency, the existing deal link for s
 - `lib/crm/store.ts` still uses `.single()` and still drops `error.code`. The 404 uses the code when it is still on the error, and the single-row message when the store has wrapped it.
 - Legacy price type copy used an em dash. This file now uses a hyphen so the changed file has none.
 - Correction: the Deals list show name always links to `/deals/[id]`, for every status. A brand-side card with a show id adds a separate CRM link in the card footer, before View IO. That footer link is the only Deals-list path to `/crm/[showId]`. Show users, agent users, and deals with no show id do not get it.
+
+## I3: Past-campaign import review and confirm
+
+### What was built
+
+A brand can upload a past campaign file, fix the parsed rows, choose pooling consent, and confirm. The screen posts the file to the existing parse API (`POST /api/deals/import?mode=past_campaign`) and the edited rows to the existing save API (`POST /api/imports/past-campaigns`). Discard resets local state before that save. There is no discard endpoint, and a confirmed import is not discarded here. A saved import does not need a discard in this job: I4 learns from confirmed rows, and adding a discard would be a new write this screen does not own.
+
+Catalog text uses the same one-exact-name rule as `lookupShowHints`. The label is advisory. The save body always sends `matched_show_id: null`. The save route still computes its own hint. This screen never writes `shows`.
+
+The only change to an existing screen is an "Import past campaigns" link in the CRM index header.
+
+Import is not plan gated. Brand and agency accounts on any plan can open it, including Free. Show and agent accounts redirect to `/dashboard`, same as `/crm`. I do not think import should be plan gated. Free is the entry plan, and the learning feed stays empty without confirmed imports. The CRM link itself only renders on the unlocked CRM page, so a Free brand does not see the link and opens `/imports/past-campaigns` directly.
+
+### Where
+
+- `app/(dashboard)/imports/past-campaigns/page.tsx` at `/imports/past-campaigns`
+- `app/(dashboard)/imports/past-campaigns/import-review-client.tsx`
+- `app/(dashboard)/imports/past-campaigns/import-review.test.tsx`
+- `lib/imports/review.ts`
+- `lib/imports/review.test.ts`
+- `app/(dashboard)/crm/crm-client.tsx` (one header link)
+- `docs/jobs/I3.md`
+
+### Tests
+
+`npx vitest run` (2059 passed). `npx tsc --noEmit` is clean.
+
+Covers draft-to-body mapping, an invalid price blocked, consent defaulting to false, a removed row left out, step transitions, the advisory label, confirm calling the save API once, and that call carrying only the session brand id. Show and agent sessions redirect to `/dashboard`. A Free brand still sees the screen. Supabase is mocked. No live writes.
+
+### Known gaps
+
+- No migration. Migration 054 is already applied on `ldtmhafewfifdizgfrnn` (the two tables are present). This job did not apply or edit it.
+- No sidebar item. `lib/nav/items.ts` was left alone.
+- The catalog lookup reads `shows` and can fail soft to "No catalog suggestion." It does not block confirm.
+- Parse errors are shown as returned. The screen does not rewrite MIME or extension failures.
+- A confirmed import cannot be undone from this screen.
+- The CRM link is not on the Free upgrade card.

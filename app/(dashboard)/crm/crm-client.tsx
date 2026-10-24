@@ -14,6 +14,14 @@ export function CrmClient({
 }) {
   return (
     <CrmShell kicker="CRM" title="Brand CRM" lede={crmIndexLede(brandName)}>
+      <p className="-mt-4 mb-6 text-right">
+        <Link
+          href="/imports/past-campaigns"
+          className="text-sm font-medium text-[var(--ts-accent-text)] hover:underline"
+        >
+          Import past campaigns
+        </Link>
+      </p>
       {shows.length === 0 ? (
         <p className={crmMuted}>No shows yet.</p>
       ) : (
