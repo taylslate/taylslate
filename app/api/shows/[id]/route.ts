@@ -19,12 +19,18 @@ export async function GET(
 
     const { id } = await params;
     const show = await getShowById(id);
-    // Non-discoverable shows (accept-materialized non-catalog rows, seeds) are
-    // transaction artifacts, not catalog entries — never expose them on this
-    // brand-facing detail read, even by direct UUID (migration 031). Deal/IO
-    // surfaces resolve the show through show_profiles, not this route.
-    if (!show || show.is_discoverable === false) {
+    // A missing show is 404. A hidden show (is_discoverable false) is also
+    // 404, except for the creating agent (shows.agent_id) and an admin.
+    // Other signed-in callers still do not see it. The catalog list stays
+    // filtered to discoverable rows.
+    if (!show) {
       return NextResponse.json({ error: "Show not found" }, { status: 404 });
+    }
+    if (show.is_discoverable === false) {
+      const creator = Boolean(show.agent_id) && show.agent_id === user.id;
+      if (!creator && !(await isShowsAdmin(user.id))) {
+        return NextResponse.json({ error: "Show not found" }, { status: 404 });
+      }
     }
     return NextResponse.json({ show });
   } catch (error) {

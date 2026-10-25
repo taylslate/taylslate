@@ -426,7 +426,7 @@ Route tests for the two GETs, `lib/api/public-api.test.ts` (key not tied to a us
 
 ### What was built
 
-Only an owner or an admin can write a show through the edit, enrich, import, and create routes. `canEditShow` allows an internal admin (`INTERNAL_ADMIN_EMAILS` or profile role `admin`), an agent with an approved `agent_show_relationships` row, or a show user tied by `getVerifiedProfileTies`. `shows.agent_id` alone is not a grant. A pending or rejected roster link is not. `show_profiles.podscan_id` is not a tie. `updateShow`, `importShows`, and `updateShowEnrichment` write through `supabaseAdmin`. Import sets `agent_id` from the session and ignores a body value. The PATCH denylist adds `agent_id`, `is_verified`, `is_claimed`, `podscan_id`, and `is_discoverable` unless the caller is an admin. `POST /api/shows` allows an agent or an admin. Everyone else gets 403. A non-admin create forces `is_discoverable` false and `agent_id` to the caller, and ignores `is_verified`, `is_claimed`, and `podscan_id`. `POST /api/shows/enrich-batch` skips a show that fails `canEditShow`, reports it as `not_permitted`, and keeps going.
+Only an owner or an admin can write a show through the edit, enrich, import, and create routes. `canEditShow` allows an internal admin (`INTERNAL_ADMIN_EMAILS` or profile role `admin`), an agent with an approved `agent_show_relationships` row, or a show user tied by `getVerifiedProfileTies`. `shows.agent_id` alone is not a grant. A pending or rejected roster link is not. `show_profiles.podscan_id` is not a tie. `updateShow`, `importShows`, and `updateShowEnrichment` write through `supabaseAdmin`. Import sets `agent_id` from the session and ignores a body value. A non-admin import inserts `is_discoverable` false. An admin import is discoverable unless the row sets it false. `approveRosterLink` sets an approved roster link's show to `is_discoverable` true. `GET /api/shows/[id]` returns a hidden show to the creating agent or an admin, and 404s it for everyone else. The PATCH denylist adds `agent_id`, `is_verified`, `is_claimed`, `podscan_id`, and `is_discoverable` unless the caller is an admin. `POST /api/shows` allows an agent or an admin. Everyone else gets 403. A non-admin create forces `is_discoverable` false and `agent_id` to the caller, and ignores `is_verified`, `is_claimed`, and `podscan_id`. `POST /api/shows/enrich-batch` skips a show that fails `canEditShow`, reports it as `not_permitted`, and keeps going.
 
 Migration 066 drops "Shows insert by authenticated" and "Shows update by authenticated" and revokes insert, update, and delete on `public.shows` from authenticated. Authenticated keeps SELECT. "Shows are publicly readable" stays. 066 is not applied.
 
@@ -436,7 +436,8 @@ A search for cookie-client `insert`, `update`, `upsert`, or `delete` on `shows` 
 
 - `lib/shows/can-edit-show.ts`
 - `lib/data/queries.ts` (`updateShow`, `importShows`, `updateShowEnrichment`)
-- `app/api/shows/[id]/route.ts` (`PATCH`)
+- `lib/reps/store.ts` (`approveRosterLink`)
+- `app/api/shows/[id]/route.ts` (`GET`, `PATCH`)
 - `app/api/shows/[id]/enrich/route.ts`
 - `app/api/shows/enrich-batch/route.ts`
 - `app/api/shows/import/route.ts`

@@ -1042,9 +1042,12 @@ export async function createShow(
   // a discoverable catalog show. Everyone else derives the slug from the name.
   //
   // When actor is set, this is a session create (POST /api/shows). The request
-  // cannot set is_verified, is_claimed, or podscan_id. A non-admin row stays
-  // not discoverable and agent_id is the caller, until an admin approves it.
-  // Callers that omit actor keep their own flags. Those paths are unchanged.
+  // cannot set is_verified, is_claimed, or podscan_id. A non-admin row is
+  // inserted with is_discoverable false and agent_id set to the caller.
+  // An admin row keeps the is_discoverable and agent_id the route passed in,
+  // so an admin create can be discoverable on insert. A non-admin row stays
+  // false until approveRosterLink sets is_discoverable true. Callers that
+  // omit actor keep their own flags. Those paths are unchanged.
   const requested: Partial<Show> & { name: string; platform: Platform; slug?: string } = {
     ...showData,
   };
@@ -1309,6 +1312,8 @@ type ImportShowRow = Partial<Show> & {
  * Each link is pending, source import, and exclusive unless the row sets
  * is_exclusive to false. The show insert is service_role and sets
  * agent_id to the session user. A body agent id is not written.
+ * A non-admin row is inserted with is_discoverable false. An admin row
+ * is discoverable unless the row sets is_discoverable to false.
  * The roster link is service_role, which would otherwise accept any agent id.
  */
 export async function importShows(
@@ -1369,6 +1374,10 @@ export async function importShows(
     delete dbRow.is_exclusive;
     delete dbRow.agent_id;
     dbRow.agent_id = agentId;
+    // The column default is true. A non-admin import must stay hidden.
+    // An admin import stays discoverable unless the row says false.
+    const isAdmin = admin;
+    dbRow.is_discoverable = isAdmin ? dbRow.is_discoverable !== false : false;
 
     const isExclusive = showData.is_exclusive !== false;
 

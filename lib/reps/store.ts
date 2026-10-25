@@ -1,7 +1,8 @@
-// Rep roster reads.
+// Rep roster reads, plus the admin approval that publishes a linked show.
 //
 // agentId is the signed-in user, passed in by the route. This module does
-// not read a request.
+// not read a request. approveRosterLink is the write: an admin sets the
+// link to approved and shows.is_discoverable to true.
 //
 // Deals RLS admits participants only (deals.agent_id, brand_id, agency_id,
 // or a brand/show profile). A roster link is not a participant, so a rep
@@ -15,6 +16,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getAgentShowRelationship } from "@/lib/data/queries";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 
 export interface RosterEntry {
   id: string;
@@ -171,6 +173,50 @@ export async function listRosterShowDeals(
   return rows
     .map((row) => toRosterShowDeal(row))
     .filter((row): row is RosterShowDeal => row !== null);
+}
+
+/**
+ * An admin approves one roster link and publishes that show.
+ * status becomes approved. shows.is_discoverable becomes true.
+ * A caller who is not an admin writes nothing.
+ */
+export async function approveRosterLink(
+  adminUserId: string,
+  relationshipId: string
+): Promise<{ id: string; show_id: string; status: "approved" }> {
+  if (!(await isShowsAdmin(adminUserId))) {
+    throw new Error("Only an admin can approve a roster link.");
+  }
+
+  const approvedAt = new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("agent_show_relationships")
+    .update({
+      status: "approved",
+      approved_by: adminUserId,
+      approved_at: approvedAt,
+    })
+    .eq("id", relationshipId)
+    .select("id, show_id, status")
+    .single();
+  if (error || !data) {
+    throw new Error(error?.message ?? "Roster link not found.");
+  }
+
+  const showId = (data as { show_id?: unknown }).show_id;
+  if (typeof showId !== "string" || !showId) {
+    throw new Error("Roster link has no show.");
+  }
+
+  const { error: showError } = await supabaseAdmin
+    .from("shows")
+    .update({ is_discoverable: true, updated_at: approvedAt })
+    .eq("id", showId);
+  if (showError) {
+    throw new Error(showError.message);
+  }
+
+  return { id: String((data as { id: unknown }).id), show_id: showId, status: "approved" };
 }
 
 export async function getRepShow(

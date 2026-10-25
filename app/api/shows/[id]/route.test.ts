@@ -100,6 +100,53 @@ describe("GET /api/shows/[id]", () => {
         available_slots: 3,
       },
     });
+    expect(isShowsAdmin).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for a hidden show when the caller is not the creator or an admin", async () => {
+    getShowById.mockResolvedValueOnce({
+      id: "show-1",
+      name: "Night Desk",
+      is_discoverable: false,
+      agent_id: "agent-9",
+    });
+    const res = await GET(new NextRequest("http://x/api/shows/show-1"), {
+      params: Promise.resolve({ id: "show-1" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns a hidden show to the creating agent", async () => {
+    const hidden = {
+      id: "show-1",
+      name: "Night Desk",
+      is_discoverable: false,
+      agent_id: "agent-1",
+    };
+    getShowById.mockResolvedValueOnce(hidden);
+    const res = await GET(new NextRequest("http://x/api/shows/show-1"), {
+      params: Promise.resolve({ id: "show-1" }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ show: hidden });
+    expect(isShowsAdmin).not.toHaveBeenCalled();
+  });
+
+  it("returns a hidden show to an admin who did not create it", async () => {
+    const hidden = {
+      id: "show-1",
+      name: "Night Desk",
+      is_discoverable: false,
+      agent_id: "agent-9",
+    };
+    getShowById.mockResolvedValueOnce(hidden);
+    isShowsAdmin.mockResolvedValueOnce(true);
+    const res = await GET(new NextRequest("http://x/api/shows/show-1"), {
+      params: Promise.resolve({ id: "show-1" }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ show: hidden });
+    expect(isShowsAdmin).toHaveBeenCalledWith("agent-1");
   });
 });
 
