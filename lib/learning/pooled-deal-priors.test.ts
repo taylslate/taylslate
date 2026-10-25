@@ -54,7 +54,7 @@ function brands(
 }
 
 const sql = readFileSync(
-  join(process.cwd(), "supabase/migrations/067_pooled_deal_priors.sql"),
+  join(process.cwd(), "supabase/migrations/069_pooled_deal_priors.sql"),
   "utf8"
 );
 
@@ -149,7 +149,11 @@ describe("buildPooledDealPriors", () => {
     expect(sql).toContain("nullif(btrim(d.agreed_placement), '')");
     expect(sql).toContain("delete from public.pooled_deal_priors where true");
     expect(sql).toContain("column_name = 'matched_show_id'");
+    expect(sql).toContain("column_name = 'show_match_status'");
     expect(sql).toContain("and rec.matched_show_id is not null");
+    expect(sql).toContain(
+      "and (rec.show_match_status is null or rec.show_match_status = ''matched'')"
+    );
     expect(sql).toContain("imp.pooling_consent = true");
     expect(sql).toContain("o.booking_id = d.id");
     expect(sql).not.toContain("o.show_id = d.show_id and");

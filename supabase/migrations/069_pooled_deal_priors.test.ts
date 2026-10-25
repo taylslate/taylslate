@@ -1,5 +1,5 @@
-// Migration 067. Static SQL checks always run. The throwaway Postgres
-// suite applies 001 through 067 and is skipped when Postgres binaries
+// Migration 069. Static SQL checks always run. The throwaway Postgres
+// suite applies 001 through 069 and is skipped when Postgres binaries
 // are absent. Never uses a hosted database.
 
 import { spawnSync } from "node:child_process";
@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-const sqlPath = join(__dirname, "067_pooled_deal_priors.sql");
+const sqlPath = join(__dirname, "069_pooled_deal_priors.sql");
 const sql = readFileSync(sqlPath, "utf8");
 const statements = sql
   .split("\n")
@@ -23,7 +23,7 @@ function tableBody(): string {
   return statements.slice(start, end);
 }
 
-describe("migration 067 sql", () => {
+describe("migration 069 sql", () => {
   it("is not applied and documents the grant introspection", () => {
     expect(sql).toContain(
       "NOT applied. Apply on ldtmhafewfifdizgfrnn only after merge and Chris's OK."
@@ -99,11 +99,11 @@ function pgBin(): string | null {
   return null;
 }
 
-function migrationsThrough067(): string[] {
+function migrationsThrough069(): string[] {
   return readdirSync(__dirname)
     .filter((name) => /^\d{3}_.+\.sql$/.test(name))
     .map((name) => ({ name, n: Number(name.slice(0, 3)) }))
-    .filter((row) => row.n >= 1 && row.n <= 67)
+    .filter((row) => row.n >= 1 && row.n <= 69)
     .sort((a, b) => a.n - b.n || a.name.localeCompare(b.name))
     .map((row) => join(__dirname, row.name));
 }
@@ -122,7 +122,7 @@ function freePort(): Promise<number> {
   });
 }
 
-describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
+describe.skipIf(!bin)("migration 069 on throwaway postgres", () => {
   const pgRoot = bin ?? "";
   let dataDir = "";
   let port = 0;
@@ -216,7 +216,7 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
     ]);
     if (stub.status !== 0) throw new Error(stub.stderr || stub.stdout || "stub failed");
 
-    for (const path of migrationsThrough067()) file(path);
+    for (const path of migrationsThrough069()) file(path);
     file(sqlPath);
     seed();
   }, 180_000);
@@ -393,6 +393,33 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
          where category = 'Imports';
       `)
     ).toBe("5|23");
+
+    query(`
+      alter table public.past_campaign_records
+        add column show_match_status text;
+    `);
+    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
+    query(`
+      update public.past_campaign_records
+         set show_match_status = 'ambiguous'
+       where brand_id = '${uid(1)}';
+    `);
+    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("0");
+    query(`
+      update public.past_campaign_records
+         set show_match_status = 'matched'
+       where brand_id = '${uid(1)}';
+    `);
+    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
+    query(`
+      update public.past_campaign_records
+         set show_match_status = null
+       where brand_id = '${uid(1)}';
+    `);
+    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
+    query(`alter table public.past_campaign_records drop column show_match_status;`);
+    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
+
     query(`update public.past_campaign_records set matched_show_id = null;`);
     expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("0");
     query(`alter table public.past_campaign_records drop column matched_show_id;`);

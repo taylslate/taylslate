@@ -1,5 +1,5 @@
 -- ============================================================
--- 067: anonymized priors from booked on-platform deals
+-- 069: anonymized priors from booked on-platform deals
 --
 -- NOT applied. Apply on ldtmhafewfifdizgfrnn only after merge and Chris's OK.
 -- Paste into the Supabase SQL Editor, then introspect.
@@ -8,7 +8,8 @@
 -- with the service role.
 --
 -- 061 is reserved. 062, 063, and 064 are not in the repo.
--- 065 and 066 are the previous migrations. This is 067.
+-- 067 on main is the roster-link review note. 068 is I2b (PR 42).
+-- This file is 069. Apply it after 068.
 --
 -- public.pooled_deal_priors is rebuilt by
 -- public.refresh_pooled_deal_priors(). The source is deals whose
@@ -34,11 +35,16 @@
 -- deal_conversion_reports.reported_conversions and
 -- guaranteed_downloads times the coalesced episode count.
 --
--- This file also replaces refresh_pooled_import_priors(). Uploaded
--- rows enter only when the import is confirmed, pooling_consent is
--- true, and past_campaign_records.matched_show_id is set. If that
--- column does not exist yet, the refresh deletes the import pool
--- and inserts nothing. It does not reference the missing column.
+-- This file also replaces refresh_pooled_import_priors(). An
+-- uploaded row enters only when the import is confirmed,
+-- pooling_consent is true, matched_show_id is set, and
+-- show_match_status is null or 'matched'. Ambiguous rows stay out.
+-- A null status is a row from before 068. If matched_show_id does
+-- not exist, the refresh empties the import pool and inserts
+-- nothing. If show_match_status does not exist yet, that predicate
+-- is left out of the executed statement so the missing column is
+-- not referenced. On-platform deals are pooled by
+-- refresh_pooled_deal_priors(), which does not read imports.
 --
 -- The functions delete with WHERE true because of safeupdate.
 -- They write only pooled_deal_priors and pooled_import_priors.
@@ -368,10 +374,13 @@ comment on function public.refresh_pooled_deal_priors() is
   'Rebuilds pooled_deal_priors from booked, uncancelled deals. service_role only. Does not write shows or public show stats.';
 
 -- -------------------- import refresh guard --------------------
--- I2b sets matched_show_id on a confident auto-match. The column
--- already exists from 054. This guard keeps a database where the
--- column is not there yet from failing, and it keeps unmatched
--- uploads out of the pool.
+-- 068 sets matched_show_id and show_match_status on a confident
+-- auto-match. matched_show_id already exists from 054.
+-- show_match_status does not, until 068. The status predicate is
+-- appended only when that column exists, so a database that has
+-- not applied 068 does not error. Ambiguous rows never enter.
+-- A null show_match_status is a pre-068 row and still enters when
+-- matched_show_id is set.
 
 create or replace function public.refresh_pooled_import_priors()
 returns integer
@@ -382,6 +391,8 @@ as $fn$
 declare
   inserted_count integer;
   has_match boolean;
+  has_status boolean;
+  status_sql text := '';
 begin
   select exists (
     select 1
@@ -391,13 +402,25 @@ begin
        and column_name = 'matched_show_id'
   ) into has_match;
 
+  select exists (
+    select 1
+      from information_schema.columns
+     where table_schema = 'public'
+       and table_name = 'past_campaign_records'
+       and column_name = 'show_match_status'
+  ) into has_status;
+
   delete from public.pooled_import_priors where true;
 
   if not has_match then
     return 0;
   end if;
 
-  execute $refresh$
+  if has_status then
+    status_sql := 'and (rec.show_match_status is null or rec.show_match_status = ''matched'')';
+  end if;
+
+  execute format($refresh$
     insert into public.pooled_import_priors (
       category,
       placement,
@@ -451,10 +474,11 @@ begin
       where imp.status = 'confirmed'
         and imp.pooling_consent = true
         and rec.matched_show_id is not null
+        %s
       group by cats.category, rec.placement, rec.price_type
       having count(distinct rec.brand_id) >= 5
     ) grouped
-  $refresh$;
+  $refresh$, status_sql);
 
   get diagnostics inserted_count = row_count;
   return inserted_count;
@@ -467,4 +491,4 @@ revoke all on function public.refresh_pooled_import_priors() from authenticated;
 grant execute on function public.refresh_pooled_import_priors() to service_role;
 
 comment on function public.refresh_pooled_import_priors() is
-  'Rebuilds pooled_import_priors from confirmed imports with pooling_consent and matched_show_id set. If matched_show_id does not exist, the pool is left empty. service_role only.';
+  'Rebuilds pooled_import_priors from confirmed imports with pooling_consent, matched_show_id set, and show_match_status null or matched. Ambiguous rows stay out. If matched_show_id does not exist, the pool is left empty. If show_match_status does not exist yet, that predicate is omitted. service_role only.';
