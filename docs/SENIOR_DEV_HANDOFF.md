@@ -452,3 +452,49 @@ A search for cookie-client `insert`, `update`, `upsert`, or `delete` on `shows` 
 
 - `createShow` without an `actor` option, the backfill helpers, `lib/shows/apply-geography.ts`, and `app/api/admin/seed-deal` still write `shows` as service_role. Those callers were left as they were.
 
+## A3: public API v1 writes recorded as pending actions (migration 070)
+
+### What was built
+
+The first public API v1 writes. `POST /api/v1/campaigns` (`write:campaigns`) and `POST /api/v1/outreach` (`write:outreach`) validate a JSON body and insert one `api_write_actions` row. The response is `202` with `{ action_id, status: "pending" }`. The same `Idempotency-Key` and the same payload hash returns that row with `200`. The same key with a different payload returns `409`. A unique-violation race re-reads and settles the same way.
+
+Nothing is executed. These routes do not insert or update campaigns, deals, outreach, shows, or `agent_show_relationships`. They do not send email and they do not charge.
+
+`withApiWrite` sits next to `withApiRead`. It resolves the bearer key, applies the same per-key rate limit, then requires the named scope. `Idempotency-Key` must be 1 to 128 printable ASCII characters after trim. A body over 64 KB is `413`. A body that is not `application/json`, or that fails `JSON.parse`, is `415`. Scope is checked before the body, so a read-only key is `403` without a body. A key whose `brand_id` is not a `profiles` row is `401` through the existing `keyTiedToUser` check.
+
+`GET /api/v1/actions` and `GET /api/v1/actions/{id}` use `withApiRead` and the `read` scope. They return only the calling brand's rows, newest first, with the same cursor as the other lists. Another brand's id is `404`.
+
+An outreach draft's show must be discoverable, or owned by the brand through a deal (`deals.brand_id` or a `brand_profiles` row for that user). Otherwise the response is `404` and no row is inserted. A replay of an already stored action skips that check.
+
+The campaign body matches the manual brief submit checks: product, customer text or a reused pattern uuid, one to three goals, budget at least $5,000, and a flight preset or dates. Unknown keys are `422`. The outreach body requires a show id, a subject of 1 to 200 printable characters, and a body of 30 to 5000 characters.
+
+Migration 070 creates `api_write_actions` with RLS on and zero policies. `service_role` is granted all privileges. `anon`, `public`, and `authenticated` are revoked, including `truncate`, `references`, and `trigger` on `authenticated`. The job placeholder was 069. That file was not created. 070 is not applied.
+
+### Where
+
+- `supabase/migrations/070_api_write_actions.sql`
+- `supabase/migrations/070_api_write_actions.test.ts`
+- `lib/api/v1/writes.ts`
+- `lib/api/v1/writes.test.ts`
+- `lib/api/v1/handler.ts` (`withApiWrite` added; `withApiRead` unchanged)
+- `lib/api/v1/openapi.ts`
+- `lib/api/v1/openapi.test.ts`
+- `app/api/v1/campaigns/route.ts` (`POST` added; `GET` unchanged)
+- `app/api/v1/outreach/route.ts`
+- `app/api/v1/actions/route.ts`
+- `app/api/v1/actions/[id]/route.ts`
+- `app/api/v1/writes.route.test.ts`
+- `docs/jobs/A3.md`
+
+### Tests
+
+`lib/api/v1/writes.test.ts`, `app/api/v1/writes.route.test.ts`, `supabase/migrations/070_api_write_actions.test.ts`, and `lib/api/v1/openapi.test.ts`. The route test asserts the only mutation is an insert into `api_write_actions`. The throwaway Postgres suite applies migrations 001 through 070, then applies 070 again, and checks RLS, constraints, and grants. No UI change, so no screenshots.
+
+### Known gaps
+
+- No approve or reject path. Status stays `pending` until a later job.
+- A reused campaign pattern id is checked as a uuid. It is not loaded, so ownership of that pattern is not checked until something executes the action.
+- `api_key_id` does not cascade when a key row is deleted. Deleting the profile still cascades the action through `brand_id`.
+- The campaign payload has no derived name. The manual brief route builds that name when it creates the row. This route only records the brief fields.
+
+
