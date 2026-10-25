@@ -10,9 +10,12 @@
 // The median is percentile_cont(0.5): position 1 + 0.5 * (n - 1),
 // interpolated. medianCpm is set only for price type cpm.
 //
-// loadPooledPriors reads public.pooled_import_priors as service_role.
-// refreshPooledImportPriors calls the SQL function. Nothing in this
-// module schedules that call.
+// loadPooledPriors reads public.pooled_deal_priors and
+// public.pooled_import_priors as service_role. A deal prior wins
+// when both tables have the same key. Import priors fill the rest.
+// A missing table is fail-soft and does not drop the other table.
+// refreshPooledImportPriors calls the SQL function. The cron in
+// app/api/cron/pooled-priors schedules that call.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { IMPORT_POOL_MIN_BRANDS } from "@/lib/scoring/import-lift";
@@ -63,7 +66,8 @@ interface RawPriorRow {
   placement: string | null;
   price_type: string | null;
   brand_count: number | string | null;
-  record_count: number | string | null;
+  record_count?: number | string | null;
+  deal_count?: number | string | null;
   median_cpm: number | string | null;
   median_conversions_per_1k_downloads: number | string | null;
 }
@@ -146,8 +150,10 @@ export function buildPooledPriors(rows: PooledPriorSourceRow[]): PooledPrior[] {
 }
 
 /**
- * Read pooled priors for these keys. Fail-soft: a missing table or a
- * query error returns an empty map. An empty key list does not query.
+ * Read pooled priors for these keys. Deal priors win on a shared key.
+ * Import priors fill keys the deal pool does not have. Fail-soft: a
+ * missing table or a query error leaves that source empty. An empty
+ * key list does not query.
  */
 export async function loadPooledPriors(
   keys: PooledPriorKey[]
@@ -160,31 +166,51 @@ export async function loadPooledPriors(
   }
   if (wanted.size === 0) return new Map();
 
+  const [dealPriors, importPriors] = await Promise.all([
+    readPoolTable("pooled_deal_priors", "deal_count"),
+    readPoolTable("pooled_import_priors", "record_count"),
+  ]);
+
+  const out = new Map<string, PooledPrior>();
+  for (const prior of importPriors) {
+    const mapKey = priorMapKey(prior.category, prior.placement, prior.priceType);
+    if (!wanted.has(mapKey)) continue;
+    out.set(mapKey, prior);
+  }
+  for (const prior of dealPriors) {
+    const mapKey = priorMapKey(prior.category, prior.placement, prior.priceType);
+    if (!wanted.has(mapKey)) continue;
+    out.set(mapKey, prior);
+  }
+  return out;
+}
+
+async function readPoolTable(
+  table: "pooled_deal_priors" | "pooled_import_priors",
+  countColumn: "deal_count" | "record_count"
+): Promise<PooledPrior[]> {
   try {
     const { data, error } = await supabaseAdmin
-      .from("pooled_import_priors")
+      .from(table)
       .select(
-        "category, placement, price_type, brand_count, record_count, median_cpm, median_conversions_per_1k_downloads"
+        `category, placement, price_type, brand_count, ${countColumn}, median_cpm, median_conversions_per_1k_downloads`
       );
     if (error) {
-      console.warn("[learning] pooled priors unavailable:", error.message);
-      return new Map();
+      console.warn(`[learning] ${table} unavailable:`, error.message);
+      return [];
     }
-    const out = new Map<string, PooledPrior>();
+    const priors: PooledPrior[] = [];
     for (const row of (data ?? []) as RawPriorRow[]) {
-      const prior = presentPrior(row);
-      if (!prior) continue;
-      const mapKey = priorMapKey(prior.category, prior.placement, prior.priceType);
-      if (!wanted.has(mapKey)) continue;
-      out.set(mapKey, prior);
+      const prior = presentPrior(row, countColumn);
+      if (prior) priors.push(prior);
     }
-    return out;
+    return priors;
   } catch (err) {
     console.warn(
-      "[learning] pooled priors unavailable:",
+      `[learning] ${table} unavailable:`,
       err instanceof Error ? err.message : err
     );
-    return new Map();
+    return [];
   }
 }
 
@@ -268,11 +294,14 @@ function uniqueCategories(categories: string[] | null | undefined): string[] {
   return [...seen];
 }
 
-function presentPrior(row: RawPriorRow): PooledPrior | null {
+function presentPrior(
+  row: RawPriorRow,
+  countColumn: "deal_count" | "record_count"
+): PooledPrior | null {
   const category = row.category?.trim();
   if (!category) return null;
   const brandCount = asNumber(row.brand_count);
-  const recordCount = asNumber(row.record_count);
+  const recordCount = asNumber(row[countColumn]);
   if (brandCount == null || brandCount < POOL_MIN_BRANDS) return null;
   if (recordCount == null) return null;
   return {

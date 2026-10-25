@@ -195,6 +195,7 @@ describe("loadPooledPriors and refreshPooledImportPriors", () => {
       { category: "True Crime", placement: "mid-roll", priceType: "cpm" },
       { category: "News", placement: "mid-roll", priceType: "cpm" },
     ]);
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("pooled_deal_priors");
     expect(supabaseAdmin.from).toHaveBeenCalledWith("pooled_import_priors");
     expect([...loaded.keys()]).toEqual([priorMapKey("True Crime", "mid-roll", "cpm")]);
     expect(loaded.get(priorMapKey("True Crime", "mid-roll", "cpm"))).toEqual({
@@ -205,6 +206,105 @@ describe("loadPooledPriors and refreshPooledImportPriors", () => {
       recordCount: 6,
       medianCpm: 30,
       medianConversionsPer1kDownloads: 10,
+    });
+  });
+
+  it("lets a deal prior win and keeps an import prior the deal pool lacks", async () => {
+    vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+      const builder = {
+        select: () => builder,
+        then: (
+          resolve: (value: { data: unknown; error: null }) => unknown,
+          reject?: (reason: unknown) => unknown
+        ) =>
+          Promise.resolve({
+            data:
+              table === "pooled_deal_priors"
+                ? [
+                    {
+                      category: "True Crime",
+                      placement: "mid-roll",
+                      price_type: "cpm",
+                      brand_count: 6,
+                      deal_count: 8,
+                      median_cpm: 42,
+                      median_conversions_per_1k_downloads: 4,
+                    },
+                  ]
+                : [
+                    {
+                      category: "True Crime",
+                      placement: "mid-roll",
+                      price_type: "cpm",
+                      brand_count: 5,
+                      record_count: 5,
+                      median_cpm: 10,
+                      median_conversions_per_1k_downloads: 1,
+                    },
+                    {
+                      category: "News",
+                      placement: "mid-roll",
+                      price_type: "flat",
+                      brand_count: 5,
+                      record_count: 5,
+                      median_cpm: null,
+                      median_conversions_per_1k_downloads: 2,
+                    },
+                  ],
+            error: null,
+          }).then(resolve, reject),
+      };
+      return builder;
+    }) as never);
+
+    const loaded = await loadPooledPriors([
+      { category: "True Crime", placement: "mid-roll", priceType: "cpm" },
+      { category: "News", placement: "mid-roll", priceType: "flat" },
+    ]);
+    expect(loaded.get(priorMapKey("True Crime", "mid-roll", "cpm"))).toMatchObject({
+      brandCount: 6,
+      recordCount: 8,
+      medianCpm: 42,
+    });
+    expect(loaded.get(priorMapKey("News", "mid-roll", "flat"))).toMatchObject({
+      brandCount: 5,
+      recordCount: 5,
+      medianCpm: null,
+    });
+  });
+
+  it("keeps import priors when the deal table is missing", async () => {
+    vi.mocked(supabaseAdmin.from).mockImplementation(((table: string) => {
+      const builder = {
+        select: () => builder,
+        then: (resolve: (value: unknown) => unknown) =>
+          Promise.resolve(
+            table === "pooled_deal_priors"
+              ? { data: null, error: { message: "missing" } }
+              : {
+                  data: [
+                    {
+                      category: "News",
+                      placement: null,
+                      price_type: null,
+                      brand_count: 5,
+                      record_count: 5,
+                      median_cpm: null,
+                      median_conversions_per_1k_downloads: null,
+                    },
+                  ],
+                  error: null,
+                }
+          ).then(resolve),
+      };
+      return builder as never;
+    }) as never);
+    const loaded = await loadPooledPriors([
+      { category: "News", placement: null, priceType: null },
+    ]);
+    expect(loaded.get(priorMapKey("News", null, null))).toMatchObject({
+      brandCount: 5,
+      recordCount: 5,
     });
   });
 
@@ -233,5 +333,12 @@ describe("loadPooledPriors and refreshPooledImportPriors", () => {
     expect(src).not.toContain("\u2014");
     expect(src).not.toMatch(/cron\.schedule/);
     expect(src.match(/refreshPooledImportPriors\(/g)).toEqual(["refreshPooledImportPriors("]);
+    expect(src).toContain("pooled_deal_priors");
+    const discovery = readFileSync(
+      join(process.cwd(), "lib/discovery/tiered-universe.ts"),
+      "utf8"
+    );
+    expect(discovery).toContain("loadPooledPriors");
+    expect(discovery).not.toContain("pooled_deal_priors");
   });
 });
