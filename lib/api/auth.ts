@@ -57,6 +57,27 @@ function hashesMatch(presented: string, stored: string): boolean {
   return timingSafeEqual(left, right);
 }
 
+const USER_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// The only programmatic credential is a v1 key whose brand_id is a
+// profiles row (the user account). There is no separate MCP secret.
+// A key with no matching profile is rejected before last_used_at.
+async function keyTiedToUser(brandId: string): Promise<boolean> {
+  if (!USER_ID.test(brandId)) return false;
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("id", brandId)
+    .maybeSingle();
+  if (error) {
+    console.warn("[api.auth] profile lookup failed:", (error as DbError).code ?? "unknown");
+    throw new Error("API key lookup failed.");
+  }
+  const id = (data as { id?: unknown } | null)?.id;
+  return id === brandId;
+}
+
 function requestPath(req: Request): string {
   try {
     return new URL(req.url).pathname;
@@ -100,6 +121,9 @@ export async function resolveApiRequest(req: Request): Promise<ResolvedApiReques
   }
   if (row.revoked_at) {
     throw new ApiAuthError(401, "API key is revoked.");
+  }
+  if (!(await keyTiedToUser(row.brand_id))) {
+    throw new ApiAuthError(401, "API key is not tied to a user.");
   }
 
   const { error: touchError } = await supabaseAdmin

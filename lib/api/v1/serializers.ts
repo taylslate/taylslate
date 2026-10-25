@@ -53,8 +53,11 @@ export const SHOW_FIELDS = [
   "rss_url",
   "available_slots",
   "next_available_date",
+  "contact",
   "verified",
 ] as const;
+
+export const CONTACT_FIELDS = ["name", "email", "method"] as const;
 
 export const PRODUCT_FIELDS = [
   "brand_name",
@@ -173,6 +176,12 @@ export interface SerializedRates {
   flat_rate: number | null;
 }
 
+export interface SerializedContact {
+  name: string | null;
+  email: string | null;
+  method: string | null;
+}
+
 export interface SerializedShow {
   id: string;
   name: string;
@@ -201,6 +210,7 @@ export interface SerializedShow {
   rss_url: string | null;
   available_slots: number | null;
   next_available_date: string | null;
+  contact: SerializedContact;
   verified: boolean;
 }
 
@@ -335,6 +345,11 @@ export function serializeShow(
     rss_url: textOrNull(row.rss_url),
     available_slots: numberOrNull(row.available_slots),
     next_available_date: textOrNull(row.next_available_date),
+    contact: {
+      name: textOrNull(row.contact_name),
+      email: textOrNull(row.contact_email),
+      method: textOrNull(row.contact_method),
+    },
     verified,
   };
   return body;

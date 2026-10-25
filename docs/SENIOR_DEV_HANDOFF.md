@@ -390,3 +390,65 @@ The SQL checks always run. The throwaway database checks apply migrations 001 th
 - The anon read of `shows` returns every column. `GET /api/shows` and `GET /api/shows/[id]` select `*` through the signed-in server client, which is the anon role when signed out. Table-level `SELECT` cannot hide a column. Sensitive columns on `public.shows`: `contact_email`, `contact_name`, and `contact_method`; `rate_card`, `price_type`, and `min_buy`; `surfaces` and `medium_priors`, which can carry a rate card or a CPM range; `agent_id`, `data_sources`, and `last_api_refresh`. `demographics` includes household-income shares. There is no notes column on `shows`. `transformShow` nests the contact fields and passes `rate_card` through. It leaves `slug`, `data_sources`, and `last_api_refresh` off the JSON after the row is fetched. A direct anon read can still see those columns. The follow-up is to give those two routes an explicit column list through `supabaseAdmin`, or to add a column-level anon grant.
 - The shows-update policy. "Shows insert by authenticated" and "Shows update by authenticated" only check `auth.uid() IS NOT NULL`, so any signed-in user can insert or update any show through PostgREST. Authenticated still has insert and update on `shows`. The fix needs `updateShow`, `importShows`, and `updateShowEnrichment` moved to `supabaseAdmin` first. This migration does not change policies.
 - `show_claims` is locked here and dropped in O1 (061).
+
+## S2: show data is login-only
+
+### What was built
+
+Signed-out callers no longer receive show rows. `GET /api/shows` and `GET /api/shows/[id]` return 401 without a session. Dashboard pages, including `/shows`, already redirect to `/login` through `proxy.ts`. There is no MCP server. v1 bearer keys are the agent path, and a key is rejected unless `api_keys.brand_id` is a `profiles.id`. Signed-in brands still get the full show, including contact and rate card, on the session routes and on v1. v1 `contact` is `name`, `email`, and `method`. Rates, sponsors, slots, and income demographics stay on that payload. They are not available signed out, because the routes and the anon grant are both closed.
+
+Migration 065 revokes every anon and public table privilege in `public`, including the `SELECT` on `shows` that 060 left. Default privileges for the pasting role, `postgres`, and `supabase_admin` no longer grant anon or public on new tables, sequences, or functions. Authenticated DML on tables outside 060's 26 is unchanged. 065 revokes `TRUNCATE`, `REFERENCES`, and `TRIGGER` on those tables when they exist. The list and the reasons are in `docs/jobs/S2.md`. 065 and 066 are not applied. 060 is applied. Do not re-run 060 after 065.
+
+### Where
+
+- `app/api/shows/route.ts` (`GET`)
+- `app/api/shows/[id]/route.ts` (`GET`)
+- `lib/api/auth.ts`
+- `lib/api/memory-admin.ts`
+- `lib/api/v1/reads.ts`
+- `lib/api/v1/serializers.ts`
+- `lib/api/v1/openapi.ts`
+- `proxy.test.ts`
+- `supabase/migrations/065_shows_login_only.sql`
+- `docs/jobs/S2.md`
+
+### Tests
+
+Route tests for the two GETs, `lib/api/public-api.test.ts` (key not tied to a user), serializer and OpenAPI contact coverage, and `065_shows_login_only.test.ts`. The throwaway Postgres checks skip when binaries are absent. No UI change.
+
+### Known gaps
+
+- `/outreach/[token]` stays public. The token is the credential. It is not a catalog read.
+- Other show-returning routes already required a session. They are listed in `docs/jobs/S2.md`.
+- `POST /api/shows` can still create a show for any signed-in user through `createShow`. See S3.
+
+## S3: shows writes are owner or admin
+
+### What was built
+
+Only an owner or an admin can write a show through the edit, enrich, and import routes. `canEditShow` allows an internal admin (`INTERNAL_ADMIN_EMAILS` or profile role `admin`), an approved rep (`agent_show_relationships` approved, or `shows.agent_id`), or a show user tied by `getVerifiedProfileTies`. `show_profiles.podscan_id` is not a tie. `updateShow`, `importShows`, and `updateShowEnrichment` write through `supabaseAdmin`. Import sets `agent_id` from the session and ignores a body value. The PATCH denylist adds `agent_id`, `is_verified`, `is_claimed`, `podscan_id`, and `is_discoverable` unless the caller is an admin.
+
+Migration 066 drops "Shows insert by authenticated" and "Shows update by authenticated" and revokes insert, update, and delete on `public.shows` from authenticated. Authenticated keeps SELECT. "Shows are publicly readable" stays. 066 is not applied.
+
+A search for cookie-client `insert`, `update`, `upsert`, or `delete` on `shows` found none after this change. The remaining writers are already on `supabaseAdmin`, or are scripts that use the service role key. The list is in `docs/jobs/S3.md`.
+
+### Where
+
+- `lib/shows/can-edit-show.ts`
+- `lib/data/queries.ts` (`updateShow`, `importShows`, `updateShowEnrichment`)
+- `app/api/shows/[id]/route.ts` (`PATCH`)
+- `app/api/shows/[id]/enrich/route.ts`
+- `app/api/shows/enrich-batch/route.ts`
+- `app/api/shows/import/route.ts`
+- `supabase/migrations/066_shows_write_policy.sql`
+- `docs/jobs/S3.md`
+
+### Tests
+
+`lib/shows/can-edit-show.test.ts`, the four route test files, `lib/data/roster-links.test.ts`, and `066_shows_write_policy.test.ts`. The throwaway Postgres checks skip when binaries are absent. No UI change.
+
+### Known gaps
+
+- `POST /api/shows` still calls `createShow` for any signed-in user. That helper was already on `supabaseAdmin` and was left as-is. After 066, PostgREST cannot insert into `shows` as authenticated. This one route still can.
+- `createShow`, the backfill helpers, `lib/shows/apply-geography.ts`, and `app/api/admin/seed-deal` still write `shows` as service_role. They were out of scope.
+

@@ -8,6 +8,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isBrandSide } from "@/lib/nav/items";
+import { isInternalAdmin } from "@/lib/auth/admin";
 import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
 import { logEvent } from "./events";
 import { transformShow } from "./show-transform";
@@ -1124,8 +1125,7 @@ export async function updateShow(
   id: string,
   updates: Partial<Show>
 ): Promise<Show | null> {
-  const supabase = await createClient();
-
+  // Authenticated has no update grant. The route checks canEditShow first.
   const dbUpdates = flattenShowForDB({
     ...updates,
     updated_at: new Date().toISOString(),
@@ -1134,7 +1134,7 @@ export async function updateShow(
   // Don't allow updating id
   delete dbUpdates.id;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("shows")
     .update(dbUpdates)
     .eq("id", id)
@@ -1287,8 +1287,9 @@ type ImportShowRow = Partial<Show> & {
 /**
  * Import a roster for the signed-in agent. The agent id is the session user.
  * Each link is pending, source import, and exclusive unless the row sets
- * is_exclusive to false. The show insert stays on the user client. The
- * roster link is service_role, which would otherwise accept any agent id.
+ * is_exclusive to false. The show insert is service_role and sets
+ * agent_id to the session user. A body agent id is not written.
+ * The roster link is service_role, which would otherwise accept any agent id.
  */
 export async function importShows(
   shows: ImportShowRow[]
@@ -1303,10 +1304,12 @@ export async function importShows(
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, email")
     .eq("id", user.id)
     .maybeSingle();
-  if (profileError || !profile || profile.role !== "agent") {
+  const role = profile?.role as string | undefined;
+  const admin = role === "admin" || isInternalAdmin(profile?.email);
+  if (profileError || !profile || (!admin && role !== "agent")) {
     throw new Error("Only agents can import shows.");
   }
 
@@ -1341,14 +1344,15 @@ export async function importShows(
       is_claimed: true,
       is_verified: false,
     });
-    // Relationship fields are not show columns. agent_id on the show row
-    // is not the roster link, and a body value is not the session user.
+    // is_exclusive is a roster-link field, not a shows column.
+    // agent_id is the session user. A body value is ignored.
     delete dbRow.is_exclusive;
     delete dbRow.agent_id;
+    dbRow.agent_id = agentId;
 
     const isExclusive = showData.is_exclusive !== false;
 
-    const { data: newShow, error: showError } = await supabase
+    const { data: newShow, error: showError } = await supabaseAdmin
       .from("shows")
       .insert(dbRow)
       .select()
@@ -1406,10 +1410,8 @@ export async function updateShowEnrichment(
   id: string,
   enrichmentData: Record<string, unknown>
 ): Promise<Show | null> {
-  const supabase = await createClient();
-
-  // Load current show to check which fields already have data
-  const { data: current, error: fetchError } = await supabase
+  // Authenticated has no update grant. Callers check canEditShow first.
+  const { data: current, error: fetchError } = await supabaseAdmin
     .from("shows")
     .select("*")
     .eq("id", id)
@@ -1479,7 +1481,7 @@ export async function updateShowEnrichment(
     return transformShow(current);
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("shows")
     .update(updates)
     .eq("id", id)
@@ -1499,8 +1501,7 @@ export async function updateShowEnrichment(
  *
  * NOT updateShowEnrichment: that helper's empty-check doesn't treat the
  * jsonb `{}` default as empty (so demographics would never write through
- * it), and it uses the cookie client — shows writes need supabaseAdmin
- * (same RLS posture as createShow).
+ * it). Writes go through supabaseAdmin, same as createShow.
  *
  * Returns true on success or no-op; false only on a write error.
  */

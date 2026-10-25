@@ -10,6 +10,7 @@ import {
   PLAN_FIELDS,
   PLAN_LINE_FIELDS,
   PRODUCT_FIELDS,
+  CONTACT_FIELDS,
   RATE_FIELDS,
   SCORE_FIELDS,
   SHOW_FIELDS,
@@ -49,6 +50,7 @@ describe("api v1 openapi", () => {
     expect(names("Deal")).toEqual([...DEAL_FIELDS]);
     expect(names("Demographics")).toEqual([...DEMOGRAPHIC_FIELDS]);
     expect(names("Rates")).toEqual([...RATE_FIELDS]);
+    expect(names("Contact")).toEqual([...CONTACT_FIELDS]);
     expect(names("BriefV1")).toEqual([...BRIEF_V1_FIELDS]);
     expect(names("BriefV2")).toEqual([...BRIEF_V2_FIELDS]);
     expect(names("Product")).toEqual([...PRODUCT_FIELDS]);

@@ -7,7 +7,9 @@
 // Campaigns match campaigns.user_id. A show is visible when is_discoverable
 // is true, or when one of this brand's deals points at it.
 // `verified` is true only when getVerifiedProfileTies reports a tie.
-// The shows.is_verified column is not copied.
+// The shows.is_verified column is not copied. Contact, the rate card,
+// sponsors, slots, and income demographics stay on this response.
+// Callers reach it only with a key tied to a profiles row.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getVerifiedProfileTies } from "@/lib/shows/apply-geography";
@@ -62,7 +64,9 @@ const SHOW_COLUMNS = [
   "available_slots",
   "next_available_date",
   "is_discoverable",
+  "contact_name",
   "contact_email",
+  "contact_method",
   "data_sources",
   "created_at",
 ].join(", ");

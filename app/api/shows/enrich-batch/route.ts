@@ -19,6 +19,7 @@ import {
   getPodcastDetails,
 } from "@/lib/enrichment/podscan";
 import { getYouTubeClientSafe } from "@/lib/enrichment/youtube";
+import { canEditShow } from "@/lib/shows/can-edit-show";
 
 const PODSCAN_DELAY_MS = 6000;
 const YOUTUBE_DELAY_MS = 1000;
@@ -48,6 +49,15 @@ export async function POST() {
         skipped: 0,
         errors: 0,
       });
+    }
+
+    for (const show of shows) {
+      if (!(await canEditShow(user.id, show.id))) {
+        return NextResponse.json(
+          { error: "You don't have permission to edit this show" },
+          { status: 403 }
+        );
+      }
     }
 
     const podscan = getPodscanClientSafe();

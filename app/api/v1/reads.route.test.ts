@@ -108,6 +108,7 @@ function seqId(prefix: string, n: number): string {
 beforeEach(() => {
   bridge.keys = createMemoryAdmin();
   bridge.data = createDomainAdmin();
+  bridge.data.tables.profiles.push({ id: BRAND });
   bridge.recordEvent.mockClear();
   _setApiRateClockForTests(() => FIXED_NOW);
 });
@@ -407,7 +408,9 @@ describe("brand isolation", () => {
     expect(ownedShow.verified).toBe(true);
     expect(Object.keys(publicShow).sort()).toEqual([...SHOW_FIELDS].sort());
     const body = JSON.stringify(rows);
-    expect(body).not.toContain("secret@example.com");
+    expect(body).toContain("secret@example.com");
+    expect(body).toContain("owned@example.com");
+    expect(body).toContain("host@example.com");
     expect(body).not.toContain("hidden@example.com");
     expect(body).not.toContain("rate@example.com");
     expect(body).not.toContain(OTHER);

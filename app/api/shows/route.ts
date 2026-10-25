@@ -15,6 +15,10 @@ export async function GET(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const params = request.nextUrl.searchParams;
     const search = params.get("search") ?? undefined;
     const platform = params.get("platform") ?? undefined;
@@ -35,26 +39,23 @@ export async function GET(request: NextRequest) {
 
     const hasFilters = search || platform || category || minAudience || maxAudience || limit;
 
-    // If authenticated, check role to scope results
-    if (user) {
-      const profile = await getUserProfile(user.id);
+    const profile = await getUserProfile(user.id);
 
-      if (profile?.role === "agent") {
-        // Agents see their own shows by default
-        const shows = await getShowsFiltered({
-          search,
-          platform,
-          category,
-          min_audience: minAudience,
-          max_audience: maxAudience,
-          agent_id: user.id,
-          limit,
-        });
-        return NextResponse.json(shows);
-      }
+    if (profile?.role === "agent") {
+      const shows = await getShowsFiltered({
+        search,
+        platform,
+        category,
+        min_audience: minAudience,
+        max_audience: maxAudience,
+        agent_id: user.id,
+        limit,
+      });
+      return NextResponse.json(shows);
     }
 
-    // Brands, unauthenticated, or non-agent users see all shows
+    // Brands and other signed-in roles see the full catalog, including
+    // contact and rate card. Signed-out callers are rejected above.
     if (hasFilters) {
       const shows = await getShowsFiltered({
         search,

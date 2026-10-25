@@ -1,26 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { createShow, claimShow, getUserProfile, getUser } = vi.hoisted(() => ({
-  createShow: vi.fn(),
-  claimShow: vi.fn(),
-  getUserProfile: vi.fn(),
-  getUser: vi.fn(),
-}));
+const { createShow, claimShow, getUserProfile, getUser, getAllShows, getShowsFiltered } =
+  vi.hoisted(() => ({
+    createShow: vi.fn(),
+    claimShow: vi.fn(),
+    getUserProfile: vi.fn(),
+    getUser: vi.fn(),
+    getAllShows: vi.fn(),
+    getShowsFiltered: vi.fn(),
+  }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({ auth: { getUser } }),
 }));
 
 vi.mock("@/lib/data/queries", () => ({
-  getShowsFiltered: vi.fn(),
-  getAllShows: vi.fn(),
+  getShowsFiltered,
+  getAllShows,
   createShow,
   claimShow,
   getUserProfile,
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 function call() {
   return POST(
@@ -36,6 +39,35 @@ beforeEach(() => {
   getUser.mockResolvedValue({ data: { user: { id: "agent-1" } } });
   getUserProfile.mockResolvedValue({ role: "agent" });
   createShow.mockResolvedValue({ id: "show-1", name: "Night Desk" });
+});
+
+describe("GET /api/shows", () => {
+  it("returns 401 when signed out", async () => {
+    getUser.mockResolvedValueOnce({ data: { user: null } });
+    const res = await GET(new NextRequest("http://x/api/shows"));
+    expect(res.status).toBe(401);
+    expect(getAllShows).not.toHaveBeenCalled();
+  });
+
+  it("returns the full catalog, including contact and rate card, for a brand", async () => {
+    getUser.mockResolvedValueOnce({ data: { user: { id: "brand-1" } } });
+    getUserProfile.mockResolvedValueOnce({ role: "brand" });
+    const catalog = [
+      {
+        id: "show-1",
+        name: "Night Desk",
+        contact: { name: "Host", email: "host@show.test", method: "email" },
+        rate_card: { midroll_cpm: 25 },
+        demographics: { hhi_50k_plus: 40 },
+        current_sponsors: ["Acme"],
+        available_slots: 2,
+      },
+    ];
+    getAllShows.mockResolvedValueOnce(catalog);
+    const res = await GET(new NextRequest("http://x/api/shows"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(catalog);
+  });
 });
 
 describe("POST /api/shows", () => {
