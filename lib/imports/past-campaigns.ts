@@ -284,8 +284,10 @@ export function parseSaveBody(body: unknown): PastCampaignSaveInput {
 }
 
 // Same rules as normalize_show_match_key in migration 068. U+2019 folds
-// to an apostrophe, U+00A0 folds to a space, then case follows
-// toLowerCase. A change here has to change that SQL function too.
+// to an apostrophe, U+00A0 folds to a space, U+0130 expands to i plus a
+// combining dot, then each code point is lowercased on its own. A
+// whole-string toLowerCase would turn a final capital sigma into ς.
+// A change here has to change that SQL function too.
 export const SHOW_MATCH_PUNCTUATION = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
 
 const SHOW_MATCH_WHITESPACE = new Set([9, 10, 11, 12, 13, 32]);
@@ -312,7 +314,11 @@ export interface ShowMatchDecision {
 }
 
 export function normalizeShowMatchKey(name: string): string {
-  const folded = name.replaceAll("\u2019", "'").replaceAll("\u00A0", " ").toLowerCase();
+  const prepared = name
+    .replaceAll("\u2019", "'")
+    .replaceAll("\u00A0", " ")
+    .replaceAll("\u0130", "i\u0307");
+  const folded = [...prepared].map((char) => char.toLowerCase()).join("");
   let spaced = "";
   for (const char of folded) {
     const code = char.charCodeAt(0);

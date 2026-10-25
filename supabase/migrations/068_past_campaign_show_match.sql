@@ -26,9 +26,11 @@
 --
 -- Normalization, kept in lockstep with normalizeShowMatchKey in
 -- lib/imports/past-campaigns.ts:
---   U+2019 becomes an apostrophe. U+00A0 becomes a space. Case follows
---   JavaScript toLowerCase, including the single expansion U+0130 to
---   i plus a combining dot. Then the 32 ASCII punctuation characters
+--   U+2019 becomes an apostrophe. U+00A0 becomes a space. U+0130
+--   becomes i plus a combining dot. Then each code point is lowercased
+--   on its own, the same way as [...s].map(c => c.toLowerCase()). A
+--   whole-string toLowerCase would turn a final capital sigma into ς.
+--   Then the 32 ASCII punctuation characters
 --   and tab, newline, vertical tab, form feed, and carriage return
 --   become spaces. Spaces collapse. A leading "the " is removed,
 --   repeating. A trailing " podcast" or " show" is removed, repeating.

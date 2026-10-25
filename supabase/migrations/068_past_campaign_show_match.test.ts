@@ -84,19 +84,34 @@ describe("migration 068 sql", () => {
   it("uses the same single-character case map as JavaScript toLowerCase", () => {
     const from = sql.match(/\$casefrom\$(.*)\$casefrom\$/);
     const to = sql.match(/\$caseto\$(.*)\$caseto\$/);
-    const expectedFrom: string[] = [];
-    const expectedTo: string[] = [];
+    const fromChars = [...(from?.[1] ?? "")];
+    const toChars = [...(to?.[1] ?? "")];
+    expect(fromChars.length).toBeGreaterThan(0);
+    expect(fromChars).toHaveLength(toChars.length);
+
+    const sqlMap = new Map<string, string>();
+    for (let i = 0; i < fromChars.length; i++) {
+      sqlMap.set(fromChars[i], toChars[i]);
+    }
+
+    // Only characters this Node lowercases. A newer Unicode table in the
+    // SQL map (U+A7CE, U+A7D2, and the rest of Unicode 16) stays there
+    // when this runtime still treats those characters as unchanged.
+    const mismatches: string[] = [];
+    let known = 0;
     for (let cp = 0; cp <= 0x10ffff; cp++) {
       if (cp >= 0xd800 && cp <= 0xdfff) continue;
       const ch = String.fromCodePoint(cp);
       const lower = ch.toLowerCase();
       if (lower === ch || [...lower].length !== 1) continue;
-      expectedFrom.push(ch);
-      expectedTo.push(lower);
+      known += 1;
+      if (sqlMap.get(ch) !== lower) {
+        mismatches.push(`U+${cp.toString(16).toUpperCase()}`);
+        if (mismatches.length >= 8) break;
+      }
     }
-    expect(from?.[1]).toBe(expectedFrom.join(""));
-    expect(to?.[1]).toBe(expectedTo.join(""));
-    expect([...from?.[1] ?? ""]).toHaveLength(expectedFrom.length);
+    expect(known).toBeGreaterThan(0);
+    expect(mismatches).toEqual([]);
     expect(sql).toContain("U&'\\0130'");
     expect(sql).toContain("U&'\\2019'");
     expect(sql).toContain("U&'\\00A0'");
@@ -317,7 +332,8 @@ describe.skipIf(!bin)("migration 068 on throwaway postgres", () => {
             (25, 'CAFÉ Podcast'),
             (26, 'ÉCOLE'),
             (27, chr(304) || ' Podcast'),
-            (28, chr(1040) || chr(1050) || chr(1040))
+            (28, chr(1040) || chr(1050) || chr(1040)),
+            (29, 'ΣΊΣΥΦΟΣ')
           ) as samples(ord, input)
          order by ord;
       `)
@@ -351,6 +367,7 @@ describe.skipIf(!bin)("migration 068 on throwaway postgres", () => {
         "école",
         "i\u0307",
         "\u0430\u043A\u0430",
+        "σίσυφοσ",
       ].join("\n")
     );
   });

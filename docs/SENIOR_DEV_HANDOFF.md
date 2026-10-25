@@ -492,9 +492,11 @@ The throwaway Postgres applied 001 through 067 and then 067 again. anon and PUBL
 
 The past-campaign save stores `matched_show_id` only when the normalized show name matches exactly one eligible show. Eligible means `shows.is_discoverable` is true, or the show is hidden and `shows.agent_id` is the signed-in caller. That is the creator stored on a non-admin show create. Zero matches and two or more matches leave `matched_show_id` null and mark the row `ambiguous` with confidence `0`. A unique match stores confidence `1` and reason `unique_normalized_name`.
 
-The key folds U+2019 to an apostrophe and U+00A0 to a space, then follows JavaScript `toLowerCase`. ASCII punctuation is removed, a leading `the` is removed, and a trailing `podcast` or `show` is removed. The same rules are in `normalizeShowMatchKey` and in `normalize_show_match_key`. That SQL function sets `search_path` to empty. A body `matched_show_id` is ignored. A before-write trigger overwrites a brand insert or update. It leaves the row unchanged when `auth.role()` is `service_role`, or when `current_user` is `service_role` or `postgres`. The status check still applies. The trigger and the route do not write `shows`.
+The key folds U+2019 to an apostrophe and U+00A0 to a space, replaces U+0130 with i plus a combining dot, then lowercases one code point at a time. A final capital sigma stays σ. `ΣΊΣΥΦΟΣ` becomes `σίσυφοσ`. ASCII punctuation is removed, a leading `the` is removed, and a trailing `podcast` or `show` is removed. The same rules are in `normalizeShowMatchKey` and in `normalize_show_match_key`. That SQL function sets `search_path` to empty. A body `matched_show_id` is ignored. A before-write trigger overwrites a brand insert or update. It leaves the row unchanged when `auth.role()` is `service_role`, or when `current_user` is `service_role` or `postgres`. The status check still applies. The trigger and the route do not write `shows`.
 
-Ambiguous rows stay on the brand's private records. `refresh_pooled_import_priors` skips status `ambiguous` and skips a show that is not discoverable. A pre-068 row has a null status and still enters the pool when `matched_show_id` is already set and the show is discoverable. There is no brand matching screen.
+A `service_role` or `postgres` write skips matching. A row that write leaves with a null status and a set show id enters the pool when the show is discoverable. The user-session save route is the only writer today. A `service_role` or `postgres` insert is a trust boundary.
+
+Ambiguous rows stay on the brand's private records. `refresh_pooled_import_priors` skips status `ambiguous` and skips a show that is not discoverable. A pre-068 row has a null status and still enters the pool when `matched_show_id` is already set and the show is discoverable. If a show is hidden later, its rows leave the pool on the next refresh. That is intended. There is no brand matching screen.
 
 Migration 068 is not applied. A read-only count on `ldtmhafewfifdizgfrnn`, taken before this renumber, found 0 `past_campaign_records` rows and 0 with `matched_show_id` set. Nothing was rewritten. 067 on main is the roster-link review note.
 
@@ -507,7 +509,7 @@ Migration 068 is not applied. A read-only count on `ldtmhafewfifdizgfrnn`, taken
 
 ### Tests
 
-`lib/imports/past-campaigns.test.ts`, `app/api/imports/past-campaigns/route.test.ts`, and `068_past_campaign_show_match.test.ts`. The throwaway Postgres checks ran here. `npx vitest run` passed 2197 tests. `npx tsc --noEmit` was clean. `npx next build` succeeded. No UI change.
+`lib/imports/past-campaigns.test.ts`, `app/api/imports/past-campaigns/route.test.ts`, and `068_past_campaign_show_match.test.ts`. The throwaway Postgres checks ran here. `npx vitest run` passed 2198 tests. `npx tsc --noEmit` was clean. `npx next build` succeeded. No UI change.
 
 ### Known gaps
 

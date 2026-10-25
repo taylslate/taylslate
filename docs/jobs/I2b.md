@@ -6,7 +6,7 @@ Migration 068 is written and not applied. Nothing here was run against `ldtmhafe
 
 `POST /api/imports/past-campaigns` sets `matched_show_id` only when the row's show name normalizes to exactly one eligible show. Zero matches and two or more matches store `matched_show_id` null, `show_match_status` `ambiguous`, and confidence `0`. A unique match stores the show id, status `matched`, reason `unique_normalized_name`, and confidence `1`.
 
-Normalization, shared by `normalizeShowMatchKey` and `normalize_show_match_key`: U+2019 becomes an apostrophe, U+00A0 becomes a space, then case follows JavaScript `toLowerCase` (U+0130 expands to i plus a combining dot). The 32 ASCII punctuation characters become spaces, whitespace collapses, a leading `the` is removed, and a trailing `podcast` or `show` is removed. `The Acquired Podcast!` and `Acquired` are the same key. An empty key matches nothing. The SQL function sets `search_path` to empty and qualifies `pg_catalog`.
+Normalization, shared by `normalizeShowMatchKey` and `normalize_show_match_key`: U+2019 becomes an apostrophe, U+00A0 becomes a space, U+0130 expands to i plus a combining dot, then each code point is lowercased on its own. A final capital sigma stays σ. The 32 ASCII punctuation characters become spaces, whitespace collapses, a leading `the` is removed, and a trailing `podcast` or `show` is removed. `The Acquired Podcast!` and `Acquired` are the same key. An empty key matches nothing. The SQL function sets `search_path` to empty and qualifies `pg_catalog`.
 
 A show is eligible when `is_discoverable` is true, or when `is_discoverable` is false and `shows.agent_id` equals the signed-in caller. That `agent_id` is the creator stored by a non-admin show create. A hidden show someone else created is not a candidate, and it does not make a catalog name ambiguous. A missing `is_discoverable` flag is not treated as catalog. The save route passes the session user id. A `brand_id` or `matched_show_id` in the body is ignored.
 
@@ -45,7 +45,7 @@ Covers a unique normalized match, no match, two candidates, punctuation and suff
 
 No UI change. Screenshots are not applicable.
 
-`npx vitest run` passed 2197 tests. `npx tsc --noEmit` was clean. `npx next build` succeeded.
+`npx vitest run` passed 2198 tests. `npx tsc --noEmit` was clean. `npx next build` succeeded.
 
 ## Known gaps
 

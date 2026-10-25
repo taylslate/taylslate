@@ -417,6 +417,7 @@ describe("normalizeShowMatchKey", () => {
     ["ÉCOLE", "école"],
     ["\u0130 Podcast", "i\u0307"],
     ["\u0410\u041A\u0410", "\u0430\u043A\u0430"],
+    ["ΣΊΣΥΦΟΣ", "σίσυφοσ"],
   ])("normalizes %j to %j", (input, expected) => {
     expect(normalizeShowMatchKey(input)).toBe(expected);
     expect(normalizeShowMatchKey(normalizeShowMatchKey(input))).toBe(expected);
