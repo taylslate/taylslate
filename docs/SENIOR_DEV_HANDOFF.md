@@ -452,3 +452,44 @@ A search for cookie-client `insert`, `update`, `upsert`, or `delete` on `shows` 
 
 - `createShow` without an `actor` option, the backfill helpers, `lib/shows/apply-geography.ts`, and `app/api/admin/seed-deal` still write `shows` as service_role. Those callers were left as they were.
 
+## O1: show ownership status, proofs, and the verified tie
+
+### What was built
+
+Two states, unclaimed and verified, plus a Pending tag. `shows.ownership_status` defaults to `unclaimed` and only allows those two values. Pending is not stored as a state. `getOwnershipState` sets `pending` when a `show_ownership_proofs` row is pending or an `agent_show_relationships` row is pending. The labels Verified, Unclaimed, and Pending are exported for owner and admin views. No screen renders them. There is no public badge. Discovery, scoring, booking, and visibility do not read the state.
+
+`public.show_ownership_proofs` is the table O2 and O4 will write. This job does not write rows. Columns cover the code check (`code_hash` is sha256, never the plaintext), the target feed or channel, check and miss counts, and the decision fields. One verified proof per show. `getVerifiedProfileTies` treats a verified row as a tie on `(show_id, show_profile_id)`. Pending, rejected, contested, and expired rows are not ties. A null `show_profile_id` is not a tie. `podscan_id` is not read.
+
+`isPayoutOwnerVerified(showId, showProfileId)` is true only when a verified proof ties that pair. It is not imported by `lib/payouts`, and it does not import payout, Stripe, billing, or aircheck code. Wiring it before the first payout is a separate job.
+
+The three production writers that set `is_claimed: true` now pass false, matching `createShow`'s default. Search, not the stale line numbers in the job note: `importShows` in `lib/data/queries.ts`, `buildShowFromForm` in `app/(dashboard)/shows/shows-client.tsx` (add and edit), and `resolveOwnerShowId` in `lib/data/show-surfaces.ts`. The Shows form does not render the flag. `shows.is_claimed` is not dropped. The column comment marks it deprecated. `show_claims` is dropped. It had 0 rows on Oct 24, 2026. Re-confirm that count read-only before applying.
+
+Migration 061 is not applied. 065 and 066 are already on main. 061 does not grant or revoke on `shows`, so authenticated keeps SELECT only from 066.
+
+### Where
+
+- `supabase/migrations/061_show_ownership.sql`
+- `supabase/migrations/061_show_ownership.test.ts`
+- `lib/ownership/status.ts`
+- `lib/ownership/status.test.ts`
+- `lib/ownership/payout-gate.ts`
+- `lib/ownership/payout-gate.test.ts`
+- `lib/shows/apply-geography.ts` (third tie branch only)
+- `lib/shows/apply-geography.test.ts`
+- `lib/data/queries.ts` (`importShows` `is_claimed`)
+- `app/(dashboard)/shows/shows-client.tsx` (`buildShowFromForm` `is_claimed`)
+- `lib/data/show-surfaces.ts` (`resolveOwnerShowId` `is_claimed`)
+- `docs/jobs/O1.md`
+
+### Tests
+
+`npx vitest run`: 2134 passed. The throwaway Postgres suite applies 001 through 060, then 065, then 066, then 061 twice. Anon cannot read proofs. Authenticated can read only its own proofs and cannot write. The policy `Owners read own ownership proofs` exists. Grant rows are in `docs/jobs/O1.md`. `npx tsc --noEmit` is clean and `npx next build` is green. No live writes.
+
+### Known gaps
+
+- `isPayoutOwnerVerified` is not called from `lib/payouts`. A payout can still run for an unverified owner until a separate job wires the helper. Do not wire it without Chris's OK.
+- `lib/data/seed.ts` still sets `is_claimed: true` on demo rows. `scripts/seed-from-podscan.ts` and `scripts/seed-shows-only.ts` copy the field through. Those files are outside this job.
+- No `updated_at` trigger on `show_ownership_proofs`. O2 sets `updated_at` when it writes.
+- Ownership labels are not on any screen. Brand-facing UI must not grow a badge from this export.
+- 061 is not applied on `ldtmhafewfifdizgfrnn`.
+

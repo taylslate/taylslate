@@ -8,6 +8,8 @@
 //      is the catalog row
 //   2. the private show_owner row (data_sources contains show_owner)
 //      whose contact_email matches the profile owner's login
+//   3. a verified show_ownership_proofs row for that show_id and
+//      show_profile_id
 //
 // show_profiles.podscan_id is self-reported. It is not a tie. A profile
 // that stores another show's Podscan id does not read or write that show.
@@ -141,9 +143,10 @@ export async function getVerifiedAudienceGeography(
 }
 
 /**
- * Profile ids tied to these catalog shows. A deal link or a show_owner
- * contact email counts. A podscan id on the profile does not.
- * Fail-soft: a read error yields whatever ties were found, or none.
+ * Profile ids tied to these catalog shows. A deal link, a show_owner
+ * contact email, or a verified ownership proof counts. A podscan id
+ * on the profile does not. Fail-soft: a read error yields whatever
+ * ties were found, or none.
  */
 export async function getVerifiedProfileTies(
   identities: ShowGeoIdentity[]
@@ -188,6 +191,24 @@ export async function getVerifiedProfileTies(
         continue;
       }
       add(identity.showId, text(data?.id));
+    }
+
+    if (showIds.length > 0) {
+      const { data: proofs, error: proofError } = await supabaseAdmin
+        .from("show_ownership_proofs")
+        .select("show_id, show_profile_id")
+        .in("show_id", showIds)
+        .eq("status", "verified");
+      if (proofError) {
+        console.warn(
+          "[getVerifiedProfileTies] ownership proof read failed:",
+          proofError.message
+        );
+      } else {
+        for (const proof of proofs ?? []) {
+          add(text(proof.show_id), text(proof.show_profile_id));
+        }
+      }
     }
   } catch (err) {
     console.warn(
