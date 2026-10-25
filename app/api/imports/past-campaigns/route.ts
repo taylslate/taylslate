@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const parsed = parseSaveBody(body);
     const supabase = await createClient();
     // The session user is the only caller. A brand_id in the body is ignored.
-    // past_campaign_show_candidates is login-only (migration 067) and already
+    // past_campaign_show_candidates is login-only (migration 068) and already
     // drops hidden shows this caller did not create. The decision below
     // applies that rule again. A failed lookup saves the row unmatched.
     const matches = await matchPastCampaignShows(

@@ -1,4 +1,4 @@
-// Migration 067. The SQL checks always run. The throwaway Postgres
+// Migration 068. The SQL checks always run. The throwaway Postgres
 // suite is skipped when Postgres binaries are absent. Never uses a
 // hosted database.
 
@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-const sqlPath = join(__dirname, "067_past_campaign_show_match.sql");
+const sqlPath = join(__dirname, "068_past_campaign_show_match.sql");
 const sql = readFileSync(sqlPath, "utf8");
 const statements = sql
   .split("\n")
@@ -39,12 +39,12 @@ function pgBin(): string | null {
   return null;
 }
 
-describe("migration 067 sql", () => {
-  it("documents that it is not applied and follows 066", () => {
+describe("migration 068 sql", () => {
+  it("documents that it is not applied and follows 067", () => {
     expect(sql).toContain(
       "NOT applied. Apply on ldtmhafewfifdizgfrnn only after merge and Chris's OK."
     );
-    expect(sql).toContain("Apply only after 066.");
+    expect(sql).toContain("Apply only after 067.");
     expect(sql).toContain("061 is reserved.");
     expect(sql).not.toMatch(/migrations\/061/);
   });
@@ -69,6 +69,39 @@ describe("migration 067 sql", () => {
     expect(statements).not.toMatch(/\bgrant\b[^;]*\bto\s+anon\b/i);
     expect(statements).not.toMatch(/\bgrant\b[^;]*\bto\s+public\b/i);
   });
+
+  it("keeps service_role writes, an empty search path, and discoverable pool rows", () => {
+    expect(statements).toMatch(
+      /if current_user in \('service_role', 'postgres'\) then/
+    );
+    expect(statements).toMatch(/if auth\.role\(\) = 'service_role' then/);
+    expect(statements).toMatch(/set search_path = ''/);
+    expect(statements).toMatch(
+      /on sh\.id = rec\.matched_show_id\s+and sh\.is_discoverable/
+    );
+  });
+
+  it("uses the same single-character case map as JavaScript toLowerCase", () => {
+    const from = sql.match(/\$casefrom\$(.*)\$casefrom\$/);
+    const to = sql.match(/\$caseto\$(.*)\$caseto\$/);
+    const expectedFrom: string[] = [];
+    const expectedTo: string[] = [];
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const ch = String.fromCodePoint(cp);
+      const lower = ch.toLowerCase();
+      if (lower === ch || [...lower].length !== 1) continue;
+      expectedFrom.push(ch);
+      expectedTo.push(lower);
+    }
+    expect(from?.[1]).toBe(expectedFrom.join(""));
+    expect(to?.[1]).toBe(expectedTo.join(""));
+    expect([...from?.[1] ?? ""]).toHaveLength(expectedFrom.length);
+    expect(sql).toContain("U&'\\0130'");
+    expect(sql).toContain("U&'\\2019'");
+    expect(sql).toContain("U&'\\00A0'");
+    expect(sql).toContain("U&'\\0069\\0307'");
+  });
 });
 
 const bin = pgBin();
@@ -85,7 +118,7 @@ function freePort(): Promise<number> {
   });
 }
 
-describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
+describe.skipIf(!bin)("migration 068 on throwaway postgres", () => {
   const pgRoot = bin ?? "";
   let dataDir = "";
   let port = 0;
@@ -157,7 +190,15 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
       language sql stable security definer set search_path = public
       as $fn$ select id from public.test_auth_uid limit 1; $fn$;
       grant usage on schema auth to authenticated;
+      grant usage on schema auth to service_role;
       grant execute on function auth.uid() to authenticated;
+
+      create table public.test_auth_role (role text);
+      insert into public.test_auth_role (role) values (null);
+      create or replace function auth.role() returns text
+      language sql stable security definer set search_path = public
+      as $fn$ select role from public.test_auth_role limit 1; $fn$;
+      grant execute on function auth.role() to authenticated, service_role;
 
       create table public.shows (
         id uuid primary key,
@@ -216,14 +257,14 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
       "-v", "ON_ERROR_STOP=1", "-X", "-q", "-f", sqlPath,
     ]);
     if (applied.status !== 0) {
-      throw new Error(applied.stderr || applied.stdout || "067 failed");
+      throw new Error(applied.stderr || applied.stdout || "068 failed");
     }
     const again = psql([
       "-h", dataDir, "-p", String(port), "-U", "postgres", "-d", "i2b",
       "-v", "ON_ERROR_STOP=1", "-X", "-q", "-f", sqlPath,
     ]);
     if (again.status !== 0) {
-      throw new Error(again.stderr || again.stdout || "067 re-run failed");
+      throw new Error(again.stderr || again.stdout || "068 re-run failed");
     }
   });
 
@@ -239,6 +280,7 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
     query(`
       truncate public.past_campaign_records, public.past_campaign_imports,
         public.pooled_import_priors, public.shows, public.test_auth_uid;
+      update public.test_auth_role set role = null;
       insert into public.test_auth_uid (id) values ('${BRAND}');
     `);
   }
@@ -269,7 +311,13 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
             (19, 'showing'),
             (20, 'the'),
             (21, '!!!'),
-            (22, 'Café Podcast')
+            (22, 'Café Podcast'),
+            (23, 'Joe' || chr(8217) || 's Podcast'),
+            (24, 'The' || chr(160) || 'Acquired' || chr(160) || 'Podcast'),
+            (25, 'CAFÉ Podcast'),
+            (26, 'ÉCOLE'),
+            (27, chr(304) || ' Podcast'),
+            (28, chr(1040) || chr(1050) || chr(1040))
           ) as samples(ord, input)
          order by ord;
       `)
@@ -297,6 +345,12 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
         "the",
         "",
         "café",
+        "joe s",
+        "acquired",
+        "café",
+        "école",
+        "i\u0307",
+        "\u0430\u043A\u0430",
       ].join("\n")
     );
   });
@@ -313,6 +367,7 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
 
     expect(
       query(`
+        set role authenticated;
         insert into public.past_campaign_records
           (import_id, brand_id, show_name, matched_show_id)
         values
@@ -324,6 +379,7 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
 
     expect(
       query(`
+        set role authenticated;
         insert into public.past_campaign_records (import_id, brand_id, show_name)
         values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2', '${BRAND}', 'Mystery Hour')
         returning coalesce(matched_show_id::text, '') || '|' || show_match_status || '|' ||
@@ -338,6 +394,7 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
     `);
     expect(
       query(`
+        set role authenticated;
         insert into public.past_campaign_records (import_id, brand_id, show_name, matched_show_id)
         values (
           'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3',
@@ -351,6 +408,7 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
 
     expect(
       query(`
+        set role authenticated;
         insert into public.past_campaign_records (import_id, brand_id, show_name, matched_show_id)
         values (
           'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4',
@@ -364,6 +422,7 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
 
     expect(
       query(`
+        set role authenticated;
         insert into public.past_campaign_records (import_id, brand_id, show_name)
         values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5', '${BRAND}', 'The Mine Show')
         returning matched_show_id::text || '|' || show_match_reason;
@@ -372,12 +431,78 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
 
     expect(
       query(`
+        set role authenticated;
         update public.past_campaign_records
            set show_name = 'Nope', matched_show_id = '${ACQUIRED}'
          where import_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
         returning coalesce(matched_show_id::text, '') || '|' || show_match_reason;
       `)
     ).toBe("|no_normalized_match");
+  });
+
+  it("keeps a service_role show id and still rejects a matched row with no id", () => {
+    resetRows();
+    query(`
+      insert into public.shows (id, name, is_discoverable, agent_id) values
+        ('${ACQUIRED}', 'Acquired', true, null),
+        ('${SECOND}', 'Other Show', true, null);
+    `);
+
+    expect(
+      query(`
+        update public.test_auth_role set role = 'service_role';
+        set role authenticated;
+        insert into public.past_campaign_records
+          (import_id, brand_id, show_name, matched_show_id)
+        values (
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa10',
+          '${BRAND}',
+          'The Acquired Podcast',
+          '${SECOND}'
+        )
+        returning matched_show_id::text || '|' || coalesce(show_match_status, '');
+      `)
+    ).toBe(`${SECOND}|`);
+
+    expect(
+      query(`
+        update public.test_auth_role set role = null;
+        set role service_role;
+        insert into public.past_campaign_records
+          (import_id, brand_id, show_name, matched_show_id)
+        values (
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa11',
+          '${BRAND}',
+          'The Acquired Podcast',
+          '${SECOND}'
+        )
+        returning matched_show_id::text || '|' || coalesce(show_match_status, '');
+      `)
+    ).toBe(`${SECOND}|`);
+
+    const rejected = loose(`
+      set role service_role;
+      insert into public.past_campaign_records (
+        import_id, brand_id, show_name, matched_show_id,
+        show_match_status, show_match_reason, show_match_confidence
+      ) values (
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa12',
+        '${BRAND}',
+        'The Acquired Podcast',
+        null,
+        'matched',
+        'unique_normalized_name',
+        1
+      );
+    `);
+    expect(rejected.toLowerCase()).toContain("past_campaign_records_show_match_check");
+    expect(
+      query(`
+        select count(*)::text
+          from public.past_campaign_records
+         where import_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa12';
+      `)
+    ).toBe("0");
   });
 
   it("rejects a matched status without a show id when the trigger is off", () => {
@@ -492,8 +617,9 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
         )::uuid,
         'confirmed',
         true
-      from generate_series(1, 7) as n;
+      from generate_series(1, 12) as n;
 
+      set role authenticated;
       insert into public.past_campaign_records
         (import_id, brand_id, show_name, placement, price_type, rate)
       select (
@@ -526,6 +652,7 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
     `);
 
     query(`
+      set role authenticated;
       insert into public.past_campaign_records
         (import_id, brand_id, show_name, matched_show_id, placement, price_type, rate)
       values (
@@ -538,6 +665,33 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
         99
       );
     `);
+
+    query(`
+      insert into public.shows (id, name, is_discoverable, agent_id, categories)
+      values ('${HIDDEN_OTHER}', 'Private Show', false, '${OTHER}', array['Private']);
+      insert into public.past_campaign_records
+        (import_id, brand_id, show_name, matched_show_id, placement, price_type, rate)
+      select (
+          '20000000-0000-4000-8000-' || lpad(n::text, 12, '0')
+        )::uuid,
+        (
+          '10000000-0000-4000-8000-' || lpad(n::text, 12, '0')
+        )::uuid,
+        'Private Show',
+        '${HIDDEN_OTHER}',
+        'mid-roll',
+        'cpm',
+        40
+      from generate_series(8, 12) as n;
+    `);
+    expect(
+      query(`
+        select count(*)::text
+          from public.past_campaign_records
+         where matched_show_id = '${HIDDEN_OTHER}'
+           and show_match_status is null;
+      `)
+    ).toBe("5");
 
     expect(
       query(`
@@ -557,7 +711,8 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
     expect(
       query(`
         select brand_count::text || '|' || record_count::text || '|' || category
-          from public.pooled_import_priors;
+          from public.pooled_import_priors
+         order by category;
       `)
     ).toBe("6|6|Business");
 
@@ -612,5 +767,14 @@ describe.skipIf(!bin)("migration 067 on throwaway postgres", () => {
            and not tgisinternal;
       `)
     ).toBe("1");
+
+    expect(
+      query(`
+        select coalesce(array_to_string(proconfig, ','), '')
+          from pg_proc
+         where proname = 'normalize_show_match_key'
+           and pronamespace = 'public'::regnamespace;
+      `)
+    ).toBe('search_path=""');
   });
 });

@@ -383,7 +383,7 @@ const CATALOG: ShowMatchCandidate = {
 };
 
 describe("normalizeShowMatchKey", () => {
-  it("uses the same 32 ASCII punctuation characters as migration 067", () => {
+  it("uses the same 32 ASCII punctuation characters as migration 068", () => {
     expect(SHOW_MATCH_PUNCTUATION).toHaveLength(32);
     expect(new Set(SHOW_MATCH_PUNCTUATION).size).toBe(32);
   });
@@ -411,6 +411,12 @@ describe("normalizeShowMatchKey", () => {
     ["the", "the"],
     ["!!!", ""],
     ["Café Podcast", "café"],
+    ["Joe\u2019s Podcast", "joe s"],
+    ["The\u00A0Acquired\u00A0Podcast", "acquired"],
+    ["CAFÉ Podcast", "café"],
+    ["ÉCOLE", "école"],
+    ["\u0130 Podcast", "i\u0307"],
+    ["\u0410\u041A\u0410", "\u0430\u043A\u0430"],
   ])("normalizes %j to %j", (input, expected) => {
     expect(normalizeShowMatchKey(input)).toBe(expected);
     expect(normalizeShowMatchKey(normalizeShowMatchKey(input))).toBe(expected);

@@ -1,7 +1,7 @@
 // Parse a brand's past campaign file into drafts shaped like migration 054.
 // Parsing does not write. The save route stamps brand_id from the session
 // and sets matched_show_id only for one normalized catalog name
-// (migration 067). A draft never carries a caller-chosen show id.
+// (migration 068). A draft never carries a caller-chosen show id.
 
 import ExcelJS from "exceljs";
 import { callLLMWithFallback, loadPrompt } from "@/lib/llm/client";
@@ -283,8 +283,9 @@ export function parseSaveBody(body: unknown): PastCampaignSaveInput {
   };
 }
 
-// ASCII punctuation, same 32 characters as normalize_show_match_key in
-// migration 067. A change here has to change that SQL function too.
+// Same rules as normalize_show_match_key in migration 068. U+2019 folds
+// to an apostrophe, U+00A0 folds to a space, then case follows
+// toLowerCase. A change here has to change that SQL function too.
 export const SHOW_MATCH_PUNCTUATION = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
 
 const SHOW_MATCH_WHITESPACE = new Set([9, 10, 11, 12, 13, 32]);
@@ -311,13 +312,10 @@ export interface ShowMatchDecision {
 }
 
 export function normalizeShowMatchKey(name: string): string {
+  const folded = name.replaceAll("\u2019", "'").replaceAll("\u00A0", " ").toLowerCase();
   let spaced = "";
-  for (const char of name) {
+  for (const char of folded) {
     const code = char.charCodeAt(0);
-    if (code >= 65 && code <= 90) {
-      spaced += String.fromCharCode(code + 32);
-      continue;
-    }
     if (SHOW_MATCH_PUNCTUATION.includes(char) || SHOW_MATCH_WHITESPACE.has(code)) {
       spaced += " ";
       continue;
