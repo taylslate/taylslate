@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { importShows, getUserProfile } from "@/lib/data/queries";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 import type { AudienceGeography, ShowDemographics } from "@/lib/data/types";
 import {
   GEO_KEYS,
@@ -17,7 +18,8 @@ export async function POST(request: NextRequest) {
     }
 
     const profile = await getUserProfile(user.id);
-    if (!profile || profile.role !== "agent") {
+    const role = profile?.role as string | undefined;
+    if (!(await isShowsAdmin(user.id)) && role !== "agent") {
       return NextResponse.json({ error: "Only agents can import shows" }, { status: 403 });
     }
 

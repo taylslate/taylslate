@@ -39,7 +39,7 @@ function expectAllowlist(value: unknown, fields: readonly string[]): void {
 }
 
 describe("api v1 serializers", () => {
-  it("returns exactly the show allowlist and ignores contact and verification columns", () => {
+  it("returns exactly the show allowlist, including contact and rates", () => {
     const show = serializeShow(
       {
         id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -71,6 +71,7 @@ describe("api v1 serializers", () => {
         next_available_date: "2026-04-01",
         contact_email: "host@example.com",
         contact_name: "Host",
+        contact_method: "email",
         agent_id: "22222222-2222-4222-8222-222222222222",
         is_verified: true,
         is_discoverable: false,
@@ -91,10 +92,15 @@ describe("api v1 serializers", () => {
       flat_rate: null,
     });
     expect(show.demographics.us).toBe(80);
+    expect(show.contact).toEqual({
+      name: "Host",
+      email: "host@example.com",
+      method: "email",
+    });
+    expect(show.demographics.hhi_50k_plus).toBeNull();
     expect(show).not.toHaveProperty("contact_email");
     expect(show).not.toHaveProperty("agent_id");
     expect(show).not.toHaveProperty("is_verified");
-    expect(JSON.stringify(show)).not.toContain("host@example.com");
     expect(JSON.stringify(show)).not.toContain("acct_secret");
 
     expect(serializeShow({ id: "s", name: "S" }, true).verified).toBe(true);

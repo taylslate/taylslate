@@ -23,6 +23,7 @@ import {
 import { isVerifiedPodcastMatch } from "@/lib/enrichment/podscan-match";
 import { getYouTubeClientSafe } from "@/lib/enrichment/youtube";
 import { getRephonicClientSafe } from "@/lib/enrichment/rephonic";
+import { canEditShow } from "@/lib/shows/can-edit-show";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -50,6 +51,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (showError || !show) {
       return NextResponse.json({ error: "Show not found" }, { status: 404 });
+    }
+
+    if (!(await canEditShow(user.id, id))) {
+      return NextResponse.json(
+        { error: "You don't have permission to edit this show" },
+        { status: 403 }
+      );
     }
 
     // ---- Route by platform ----

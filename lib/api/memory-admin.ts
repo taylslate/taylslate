@@ -45,6 +45,7 @@ interface QueryState {
 export interface MemoryAdmin {
   keys: MemoryKeyRow[];
   windows: MemoryWindowRow[];
+  profiles: Array<{ id: string }>;
   selects: string[];
   from: (table: string) => MemoryBuilder;
   rpc: (
@@ -99,6 +100,7 @@ function matches(row: MemoryKeyRow, filters: Filter[]): boolean {
 export function createMemoryAdmin(): MemoryAdmin {
   const keys: MemoryKeyRow[] = [];
   const windows: MemoryWindowRow[] = [];
+  const profiles: Array<{ id: string }> = [];
   const selects: string[] = [];
   let tick = Date.parse("2026-01-01T00:00:00.000Z");
 
@@ -113,6 +115,21 @@ export function createMemoryAdmin(): MemoryAdmin {
     };
 
     function execute(): QueryResult {
+      if (table === "profiles") {
+        if (state.action !== "select") {
+          return {
+            data: null,
+            error: { message: "profiles are read-only here", code: "42501" },
+          };
+        }
+        const rows = profiles.filter((row) =>
+          state.filters.every((filter) => {
+            if (filter.op !== "eq") return false;
+            return row[filter.column as "id"] === filter.value;
+          })
+        );
+        return { data: rows.map((row) => ({ id: row.id })), error: null };
+      }
       if (table !== "api_keys") {
         return {
           data: null,
@@ -225,6 +242,7 @@ export function createMemoryAdmin(): MemoryAdmin {
   return {
     keys,
     windows,
+    profiles,
     selects,
     from,
     rpc(name, args) {

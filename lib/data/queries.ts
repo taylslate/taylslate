@@ -8,6 +8,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isBrandSide } from "@/lib/nav/items";
+import { isInternalAdmin } from "@/lib/auth/admin";
 import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
 import { logEvent } from "./events";
 import { transformShow } from "./show-transform";
@@ -1032,35 +1033,59 @@ function flattenShowForDB(show: Record<string, unknown>): Record<string, unknown
 }
 
 export async function createShow(
-  showData: Partial<Show> & { name: string; platform: Platform; slug?: string }
+  showData: Partial<Show> & { name: string; platform: Platform; slug?: string },
+  options?: { actor?: { userId: string; admin: boolean } }
 ): Promise<Show | null> {
   // Use admin client to bypass RLS — shows table lacks INSERT policy for anon users.
   // An explicit slug lets internal materializers (accept-path non-catalog shows)
   // claim a private slug namespace so they never dedup into — or get reused by —
   // a discoverable catalog show. Everyone else derives the slug from the name.
-  const slug = showData.slug ?? generateSlug(showData.name);
+  //
+  // When actor is set, this is a session create (POST /api/shows). The request
+  // cannot set is_verified, is_claimed, or podscan_id. A non-admin row is
+  // inserted with is_discoverable false and agent_id set to the caller.
+  // An admin row keeps the is_discoverable and agent_id the route passed in,
+  // so an admin create can be discoverable on insert. A non-admin row stays
+  // false until approveRosterLink publishes it, and only when that link's
+  // agent_id is the show's agent_id. Callers that
+  // omit actor keep their own flags. Those paths are unchanged.
+  const requested: Partial<Show> & { name: string; platform: Platform; slug?: string } = {
+    ...showData,
+  };
+  const actor = options?.actor;
+  if (actor) {
+    delete requested.is_verified;
+    delete requested.is_claimed;
+    delete requested.podscan_id;
+    if (!actor.admin) {
+      requested.is_discoverable = false;
+      requested.agent_id = actor.userId;
+    }
+  }
+
+  const slug = requested.slug ?? generateSlug(requested.name);
 
   // New-show ingest applies the purchase-power proxy (Wave 14 Phase 2B
   // Layer 1) so every persisted show carries audience_purchase_power going
   // forward. Respect an explicitly-provided value (non-clobber); only derive
   // from categories when the caller didn't set it.
   const audience_purchase_power =
-    showData.audience_purchase_power ??
-    categoriesToPurchasePowerScore(showData.categories ?? []);
+    requested.audience_purchase_power ??
+    categoriesToPurchasePowerScore(requested.categories ?? []);
 
   const dbRow = flattenShowForDB({
-    ...showData,
+    ...requested,
     audience_purchase_power,
     slug,
-    is_claimed: showData.is_claimed ?? false,
-    is_verified: showData.is_verified ?? false,
-    is_discoverable: showData.is_discoverable ?? true,
+    is_claimed: requested.is_claimed ?? false,
+    is_verified: requested.is_verified ?? false,
+    is_discoverable: requested.is_discoverable ?? true,
   });
 
   // Remove id field if present — let Supabase generate UUID
   delete dbRow.id;
 
-  console.log(`[createShow] Inserting show "${showData.name}" (platform: ${showData.platform}, slug: ${slug})`);
+  console.log(`[createShow] Inserting show "${requested.name}" (platform: ${requested.platform}, slug: ${slug})`);
 
   const { data, error } = await supabaseAdmin
     .from("shows")
@@ -1124,8 +1149,7 @@ export async function updateShow(
   id: string,
   updates: Partial<Show>
 ): Promise<Show | null> {
-  const supabase = await createClient();
-
+  // Authenticated has no update grant. The route checks canEditShow first.
   const dbUpdates = flattenShowForDB({
     ...updates,
     updated_at: new Date().toISOString(),
@@ -1134,7 +1158,7 @@ export async function updateShow(
   // Don't allow updating id
   delete dbUpdates.id;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("shows")
     .update(dbUpdates)
     .eq("id", id)
@@ -1287,8 +1311,11 @@ type ImportShowRow = Partial<Show> & {
 /**
  * Import a roster for the signed-in agent. The agent id is the session user.
  * Each link is pending, source import, and exclusive unless the row sets
- * is_exclusive to false. The show insert stays on the user client. The
- * roster link is service_role, which would otherwise accept any agent id.
+ * is_exclusive to false. The show insert is service_role and sets
+ * agent_id to the session user. A body agent id is not written.
+ * A non-admin row is inserted with is_discoverable false. An admin row
+ * is discoverable unless the row sets is_discoverable to false.
+ * The roster link is service_role, which would otherwise accept any agent id.
  */
 export async function importShows(
   shows: ImportShowRow[]
@@ -1303,10 +1330,12 @@ export async function importShows(
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, email")
     .eq("id", user.id)
     .maybeSingle();
-  if (profileError || !profile || profile.role !== "agent") {
+  const role = profile?.role as string | undefined;
+  const admin = role === "admin" || isInternalAdmin(profile?.email);
+  if (profileError || !profile || (!admin && role !== "agent")) {
     throw new Error("Only agents can import shows.");
   }
 
@@ -1341,14 +1370,19 @@ export async function importShows(
       is_claimed: true,
       is_verified: false,
     });
-    // Relationship fields are not show columns. agent_id on the show row
-    // is not the roster link, and a body value is not the session user.
+    // is_exclusive is a roster-link field, not a shows column.
+    // agent_id is the session user. A body value is ignored.
     delete dbRow.is_exclusive;
     delete dbRow.agent_id;
+    dbRow.agent_id = agentId;
+    // The column default is true. A non-admin import must stay hidden.
+    // An admin import stays discoverable unless the row says false.
+    const isAdmin = admin;
+    dbRow.is_discoverable = isAdmin ? dbRow.is_discoverable !== false : false;
 
     const isExclusive = showData.is_exclusive !== false;
 
-    const { data: newShow, error: showError } = await supabase
+    const { data: newShow, error: showError } = await supabaseAdmin
       .from("shows")
       .insert(dbRow)
       .select()
@@ -1406,10 +1440,8 @@ export async function updateShowEnrichment(
   id: string,
   enrichmentData: Record<string, unknown>
 ): Promise<Show | null> {
-  const supabase = await createClient();
-
-  // Load current show to check which fields already have data
-  const { data: current, error: fetchError } = await supabase
+  // Authenticated has no update grant. Callers check canEditShow first.
+  const { data: current, error: fetchError } = await supabaseAdmin
     .from("shows")
     .select("*")
     .eq("id", id)
@@ -1479,7 +1511,7 @@ export async function updateShowEnrichment(
     return transformShow(current);
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("shows")
     .update(updates)
     .eq("id", id)
@@ -1499,8 +1531,7 @@ export async function updateShowEnrichment(
  *
  * NOT updateShowEnrichment: that helper's empty-check doesn't treat the
  * jsonb `{}` default as empty (so demographics would never write through
- * it), and it uses the cookie client — shows writes need supabaseAdmin
- * (same RLS posture as createShow).
+ * it). Writes go through supabaseAdmin, same as createShow.
  *
  * Returns true on success or no-op; false only on a write error.
  */

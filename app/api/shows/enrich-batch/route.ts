@@ -19,6 +19,7 @@ import {
   getPodcastDetails,
 } from "@/lib/enrichment/podscan";
 import { getYouTubeClientSafe } from "@/lib/enrichment/youtube";
+import { canEditShow } from "@/lib/shows/can-edit-show";
 
 const PODSCAN_DELAY_MS = 6000;
 const YOUTUBE_DELAY_MS = 1000;
@@ -59,6 +60,16 @@ export async function POST() {
     const details: { show_id: string; name: string; status: string; source?: string }[] = [];
 
     for (const show of shows) {
+      if (!(await canEditShow(user.id, show.id))) {
+        skipped++;
+        details.push({
+          show_id: show.id,
+          name: show.name,
+          status: "skipped",
+          source: "not_permitted",
+        });
+        continue;
+      }
       try {
         if (show.platform === "podcast") {
           if (!podscan) {

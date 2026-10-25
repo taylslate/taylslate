@@ -130,22 +130,28 @@ describe("importShows", () => {
     let showRow: Record<string, unknown> | null = null;
     userFrom.mockImplementation((table: string) => {
       if (table === "profiles") {
-        return chain({ data: { id: "agent-1", role: "agent" }, error: null });
+        return chain({
+          data: { id: "agent-1", role: "agent", email: "agent@example.com" },
+          error: null,
+        });
       }
       if (table === "agent_show_relationships") {
         return chain({ data: [], error: null });
       }
-      return chain(
-        {
-          data: { id: "show-new", name: "Night Desk", platform: "podcast" },
-          error: null,
-        },
-        (row) => {
-          showRow = row as Record<string, unknown>;
-        }
-      );
+      return chain({ data: null, error: null });
     });
     adminFrom.mockImplementation((table: string) => {
+      if (table === "shows") {
+        return chain(
+          {
+            data: { id: "show-new", name: "Night Desk", platform: "podcast" },
+            error: null,
+          },
+          (row) => {
+            showRow = row as Record<string, unknown>;
+          }
+        );
+      }
       expect(table).toBe("agent_show_relationships");
       return chain({ data: null, error: null }, (row) => {
         inserted = row as Record<string, unknown>;
@@ -157,6 +163,7 @@ describe("importShows", () => {
         name: "Night Desk",
         platform: "podcast",
         agent_id: "someone-else",
+        is_discoverable: true,
       },
     ]);
     expect(inserted).toMatchObject({
@@ -166,7 +173,7 @@ describe("importShows", () => {
       source: "import",
       is_exclusive: true,
     });
-    expect(showRow).not.toHaveProperty("agent_id");
+    expect(showRow).toMatchObject({ agent_id: "agent-1", is_discoverable: false });
     expect(showRow).not.toHaveProperty("is_exclusive");
     expect(result.imported).toHaveLength(1);
     expect(result.errors).toEqual([]);
@@ -175,11 +182,17 @@ describe("importShows", () => {
   it("stores is_exclusive false when the row says so", async () => {
     const inserted: Record<string, unknown>[] = [];
     asAgent();
-    adminFrom.mockImplementation(() =>
-      chain({ data: null, error: null }, (row) => {
+    adminFrom.mockImplementation((table: string) => {
+      if (table !== "agent_show_relationships") {
+        return chain({
+          data: { id: "show-new", name: "Night Desk", platform: "podcast" },
+          error: null,
+        });
+      }
+      return chain({ data: null, error: null }, (row) => {
         inserted.push(row as Record<string, unknown>);
-      })
-    );
+      });
+    });
 
     await importShows([
       { name: "Night Desk", platform: "podcast", is_exclusive: false },
@@ -212,7 +225,10 @@ describe("importShows", () => {
     asAgent();
     adminFrom.mockImplementation((table: string) => {
       if (table === "shows") {
-        const builder = chain({ data: null, error: null });
+        const builder = chain({
+          data: { id: "show-new", name: "Night Desk", platform: "podcast" },
+          error: null,
+        });
         builder.eq = vi.fn((column: string, value: string) => {
           if (column === "id") deleted.push(value);
           return builder;

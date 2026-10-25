@@ -73,6 +73,7 @@ function request(token?: string, path = "/api/v1/health"): Request {
 
 beforeEach(() => {
   admin = createMemoryAdmin();
+  admin.profiles.push({ id: BRAND });
   bridge.current = admin;
   bridge.recordEvent.mockClear();
   _setApiRateClockForTests(() => FIXED_NOW);
@@ -209,6 +210,26 @@ describe("api request resolver", () => {
       message: "API key is revoked.",
     });
     expect(bridge.recordEvent).not.toHaveBeenCalled();
+  });
+
+  it("rejects a key that is not tied to a user account", async () => {
+    const created = await createKey({ brandId: BRAND, scopes: ["read"] });
+    admin.profiles.length = 0;
+    bridge.recordEvent.mockClear();
+
+    await expect(resolveApiRequest(request(created.secret))).rejects.toMatchObject({
+      status: 401,
+      message: "API key is not tied to a user.",
+    });
+    expect(admin.keys[0].last_used_at).toBeNull();
+    expect(bridge.recordEvent).not.toHaveBeenCalled();
+
+    admin.keys[0].brand_id = "not-a-user";
+    admin.profiles.push({ id: BRAND });
+    await expect(resolveApiRequest(request(created.secret))).rejects.toMatchObject({
+      status: 401,
+      message: "API key is not tied to a user.",
+    });
   });
 
   it("requires the named scope", async () => {

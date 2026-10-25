@@ -47,6 +47,12 @@ describe("proxy public-route allowlist (signed out)", () => {
     expect(redirectedToLogin(res)).toBe(true);
     expect(res.headers.get("location")).toContain("next=%2Fdashboard");
   });
+
+  it("bounces the shows catalog to /login when signed out", async () => {
+    const res = await run("/shows");
+    expect(redirectedToLogin(res)).toBe(true);
+    expect(res.headers.get("location")).toContain("next=%2Fshows");
+  });
 });
 
 describe("proxy passes authenticated users through to protected routes", () => {

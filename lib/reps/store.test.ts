@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { adminFrom, userFrom } = vi.hoisted(() => ({
+const { adminFrom, userFrom, isShowsAdmin } = vi.hoisted(() => ({
   adminFrom: vi.fn(),
   userFrom: vi.fn(),
+  isShowsAdmin: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -15,7 +16,17 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-import { getRepShow, listRepDeals, listRoster, listRosterShowDeals } from "./store";
+vi.mock("@/lib/shows/can-edit-show", () => ({
+  isShowsAdmin,
+}));
+
+import {
+  approveRosterLink,
+  getRepShow,
+  listRepDeals,
+  listRoster,
+  listRosterShowDeals,
+} from "./store";
 
 const AMOUNT_KEYS = [
   "cpm_rate",
@@ -173,6 +184,7 @@ describe("rep store", () => {
     queries.length = 0;
     adminFrom.mockReset();
     userFrom.mockReset();
+    isShowsAdmin.mockReset();
   });
 
   it("lists every roster link for the agent, including pending", async () => {
@@ -355,5 +367,105 @@ describe("rep store", () => {
   it("returns null when the approved link has no show row", async () => {
     install(approvedLink("approved"), () => ({ data: null, error: null }));
     expect(await getRepShow("agent-1", "show-1")).toBeNull();
+  });
+
+  function approveMock(showAgentId: string | null) {
+    const writes: {
+      table: string;
+      row: Record<string, unknown>;
+      filters: { column: string; value: unknown }[];
+    }[] = [];
+    adminFrom.mockImplementation((table: string) => {
+      const builder: Record<string, unknown> = {};
+      const self = () => builder;
+      const filters: { column: string; value: unknown }[] = [];
+      let row: Record<string, unknown> | null = null;
+      builder.select = vi.fn(self);
+      builder.eq = vi.fn((column: string, value: unknown) => {
+        filters.push({ column, value });
+        return builder;
+      });
+      builder.update = vi.fn((next: Record<string, unknown>) => {
+        row = next;
+        return builder;
+      });
+      builder.maybeSingle = vi.fn(async () => ({
+        data: table === "shows" ? { id: "show-1", agent_id: showAgentId } : null,
+        error: null,
+      }));
+      builder.single = vi.fn(async () => {
+        writes.push({ table, row: row ?? {}, filters: [...filters] });
+        return {
+          data: {
+            id: "rel-1",
+            show_id: "show-1",
+            agent_id: "agent-1",
+            status: "approved",
+          },
+          error: null,
+        };
+      });
+      builder.then = (
+        resolve: (value: { data: null; error: null }) => unknown,
+        reject?: (reason: unknown) => unknown
+      ) => {
+        if (row) writes.push({ table, row, filters: [...filters] });
+        return Promise.resolve({ data: null, error: null }).then(resolve, reject);
+      };
+      return builder;
+    });
+    return writes;
+  }
+
+  it("sets the show discoverable when an admin approves a pending link the agent created", async () => {
+    isShowsAdmin.mockResolvedValue(true);
+    const writes = approveMock("agent-1");
+
+    const approved = await approveRosterLink("admin-1", "rel-1");
+    expect(approved).toEqual({ id: "rel-1", show_id: "show-1", status: "approved" });
+    expect(isShowsAdmin).toHaveBeenCalledWith("admin-1");
+    expect(writes).toEqual([
+      {
+        table: "agent_show_relationships",
+        filters: [
+          { column: "id", value: "rel-1" },
+          { column: "status", value: "pending" },
+        ],
+        row: expect.objectContaining({
+          status: "approved",
+          approved_by: "admin-1",
+        }),
+      },
+      {
+        table: "shows",
+        filters: [{ column: "id", value: "show-1" }],
+        row: expect.objectContaining({ is_discoverable: true }),
+      },
+    ]);
+  });
+
+  it("approves a link and leaves the show hidden when that agent did not create it", async () => {
+    isShowsAdmin.mockResolvedValue(true);
+    const writes = approveMock("agent-9");
+
+    const approved = await approveRosterLink("admin-1", "rel-1");
+    expect(approved).toEqual({ id: "rel-1", show_id: "show-1", status: "approved" });
+    expect(writes).toEqual([
+      {
+        table: "agent_show_relationships",
+        filters: [
+          { column: "id", value: "rel-1" },
+          { column: "status", value: "pending" },
+        ],
+        row: expect.objectContaining({ status: "approved" }),
+      },
+    ]);
+    expect(writes.some((write) => write.row.is_discoverable === true)).toBe(false);
+  });
+
+  it("does not write when a non-admin tries to approve a roster link", async () => {
+    isShowsAdmin.mockResolvedValue(false);
+    await expect(approveRosterLink("brand-1", "rel-1")).rejects.toThrow(/admin/i);
+    expect(adminFrom).not.toHaveBeenCalled();
   });
 });

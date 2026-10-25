@@ -1,7 +1,9 @@
-// Rep roster reads.
+// Rep roster reads, plus the admin approval that publishes a linked show.
 //
 // agentId is the signed-in user, passed in by the route. This module does
-// not read a request.
+// not read a request. approveRosterLink is the write: an admin approves a
+// pending link. The show becomes discoverable only when shows.agent_id
+// is that link's agent.
 //
 // Deals RLS admits participants only (deals.agent_id, brand_id, agency_id,
 // or a brand/show profile). A roster link is not a participant, so a rep
@@ -15,6 +17,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getAgentShowRelationship } from "@/lib/data/queries";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 
 export interface RosterEntry {
   id: string;
@@ -171,6 +174,70 @@ export async function listRosterShowDeals(
   return rows
     .map((row) => toRosterShowDeal(row))
     .filter((row): row is RosterShowDeal => row !== null);
+}
+
+/**
+ * An admin approves one pending roster link.
+ * shows.is_discoverable becomes true only when shows.agent_id equals the
+ * link's agent_id. Any other show stays hidden. The link is still approved.
+ * A caller who is not an admin writes nothing. A link that is not pending
+ * is not updated.
+ */
+export async function approveRosterLink(
+  adminUserId: string,
+  relationshipId: string
+): Promise<{ id: string; show_id: string; status: "approved" }> {
+  if (!(await isShowsAdmin(adminUserId))) {
+    throw new Error("Only an admin can approve a roster link.");
+  }
+
+  const approvedAt = new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("agent_show_relationships")
+    .update({
+      status: "approved",
+      approved_by: adminUserId,
+      approved_at: approvedAt,
+    })
+    .eq("id", relationshipId)
+    .eq("status", "pending")
+    .select("id, show_id, agent_id, status")
+    .single();
+  if (error || !data) {
+    throw new Error(error?.message ?? "Roster link is not pending.");
+  }
+
+  const row = data as { id?: unknown; show_id?: unknown; agent_id?: unknown };
+  const showId = row.show_id;
+  if (typeof showId !== "string" || !showId) {
+    throw new Error("Roster link has no show.");
+  }
+  const linkAgentId = typeof row.agent_id === "string" ? row.agent_id : null;
+
+  const { data: show, error: showReadError } = await supabaseAdmin
+    .from("shows")
+    .select("id, agent_id")
+    .eq("id", showId)
+    .maybeSingle();
+  if (showReadError) {
+    throw new Error(showReadError.message);
+  }
+  const showAgentId =
+    show && typeof (show as { agent_id?: unknown }).agent_id === "string"
+      ? (show as { agent_id: string }).agent_id
+      : null;
+
+  if (linkAgentId !== null && linkAgentId === showAgentId) {
+    const { error: showError } = await supabaseAdmin
+      .from("shows")
+      .update({ is_discoverable: true, updated_at: approvedAt })
+      .eq("id", showId);
+    if (showError) {
+      throw new Error(showError.message);
+    }
+  }
+
+  return { id: String(row.id), show_id: showId, status: "approved" };
 }
 
 export async function getRepShow(
