@@ -364,3 +364,29 @@ Covers draft-to-body mapping, an invalid price blocked, consent defaulting to fa
 - Parse errors are shown as returned. The screen does not rewrite MIME or extension failures.
 - A confirmed import cannot be undone from this screen.
 - The CRM link is not on the Free upgrade card.
+
+## S1: public table grant hardening
+
+### What was built
+
+Migration 060 revokes excess privileges on the 26 public tables from the 2026-10-25 grant audit. Anon keeps a single privilege, `SELECT` on `public.shows`, because `GET /api/shows` and `GET /api/shows/[id]` read the catalog with the anon key when no session is present. Anon and public lose every other privilege on those tables. Authenticated loses `TRUNCATE`, `REFERENCES`, and `TRIGGER` on all 26 and keeps `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the 22 tables the signed-in app uses.
+
+`api_cache_log`, `domain_events`, `event_log`, and `show_claims` are service_role only. No policies were added. `service_role` grants are unchanged. RLS is enabled on every table the migration touches. The "Shows are publicly readable" policy is unchanged. The migration is not applied on `ldtmhafewfifdizgfrnn`.
+
+### Where
+
+- `supabase/migrations/060_public_grant_hardening.sql`
+- `supabase/migrations/060_public_grant_hardening.test.ts`
+- `docs/jobs/S1.md`
+
+### Tests
+
+`npx vitest run` (2067 passed). `npx tsc --noEmit` is clean. `npx next build` is green. No live writes.
+
+The test applies migrations 001 through 058, grants the live excess privileges, applies 060 twice, and checks anon has only `SELECT` on `shows`, anon and authenticated cannot truncate `shows`, `payments`, or `payouts`, anon insert on `shows` is denied, both roles can select `shows`, and authenticated has no privileges on the four service_role tables.
+
+### Known gaps
+
+- The anon read of `shows` returns every column. `GET /api/shows` and `GET /api/shows/[id]` select `*` through the signed-in server client, which is the anon role when signed out. Table-level `SELECT` cannot hide a column. Sensitive columns on `public.shows`: `contact_email`, `contact_name`, and `contact_method`; `rate_card`, `price_type`, and `min_buy`; `surfaces` and `medium_priors`, which can carry a rate card or a CPM range; `agent_id`, `data_sources`, and `last_api_refresh`. `demographics` includes household-income shares. There is no notes column on `shows`. `transformShow` nests the contact fields and passes `rate_card` through. It leaves `slug`, `data_sources`, and `last_api_refresh` off the JSON after the row is fetched. A direct anon read can still see those columns. The follow-up is to give those two routes an explicit column list through `supabaseAdmin`, or to add a column-level anon grant.
+- The shows-update policy. "Shows insert by authenticated" and "Shows update by authenticated" only check `auth.uid() IS NOT NULL`, so any signed-in user can insert or update any show through PostgREST. Authenticated still has insert and update on `shows`. The fix needs `updateShow`, `importShows`, and `updateShowEnrichment` moved to `supabaseAdmin` first. This migration does not change policies.
+- `show_claims` is locked here and dropped in O1 (061).
