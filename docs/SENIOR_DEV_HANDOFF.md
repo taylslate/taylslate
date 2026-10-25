@@ -462,7 +462,7 @@ Two states, unclaimed and verified, plus a Pending tag. `shows.ownership_status`
 
 `isPayoutOwnerVerified(showId, showProfileId)` is true only when a verified proof ties that pair. It is not imported by `lib/payouts`, and it does not import payout, Stripe, billing, or aircheck code. Wiring it before the first payout is a separate job.
 
-The three production writers that set `is_claimed: true` now pass false, matching `createShow`'s default. Search, not the stale line numbers in the job note: `importShows` in `lib/data/queries.ts`, `buildShowFromForm` in `app/(dashboard)/shows/shows-client.tsx` (add and edit), and `resolveOwnerShowId` in `lib/data/show-surfaces.ts`. The Shows form does not render the flag. `shows.is_claimed` is not dropped. The column comment marks it deprecated. `show_claims` is dropped. It had 0 rows on Oct 24, 2026. Re-confirm that count read-only before applying.
+The three production writers that set `is_claimed: true` now pass false, matching `createShow`'s default. Search, not the stale line numbers in the job note: `importShows` in `lib/data/queries.ts`, `buildShowFromForm` in `app/(dashboard)/shows/shows-client.tsx` (add and edit), and `resolveOwnerShowId` in `lib/data/show-surfaces.ts`. The Shows form does not render the flag. `shows.is_claimed` is not dropped. The column comment marks it deprecated. `show_claims` is dropped at the end of 061. A DO block raises and stops the paste if the table has any rows. The check uses `to_regclass('public.show_claims')`, so a rerun after the drop still succeeds. It had 0 rows on Oct 24, 2026. Re-confirm that count read-only before applying.
 
 Migration 061 is not applied. 065 and 066 are already on main. 061 does not grant or revoke on `shows`, so authenticated keeps SELECT only from 066.
 
@@ -483,7 +483,7 @@ Migration 061 is not applied. 065 and 066 are already on main. 061 does not gran
 
 ### Tests
 
-`npx vitest run`: 2134 passed. The throwaway Postgres suite applies 001 through 060, then 065, then 066, then 061 twice. Anon cannot read proofs. Authenticated can read only its own proofs and cannot write. The policy `Owners read own ownership proofs` exists. Grant rows are in `docs/jobs/O1.md`. `npx tsc --noEmit` is clean and `npx next build` is green. No live writes.
+`npx vitest run`: 2135 passed. The throwaway Postgres suite applies 001 through 060, then 065, then 066, then 061 twice. Anon cannot read proofs. Authenticated can read only its own proofs and cannot write. The policy `Owners read own ownership proofs` exists. Seeding one `show_claims` row makes 061 fail and leaves that row in place. Grant rows are in `docs/jobs/O1.md`. `npx tsc --noEmit` is clean and `npx next build` is green. No live writes.
 
 ### Known gaps
 

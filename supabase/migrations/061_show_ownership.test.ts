@@ -128,11 +128,19 @@ describe("migration 061 sql", () => {
     );
   });
 
-  it("drops only show_claims", () => {
+  it("drops only show_claims, and only after the row guard", () => {
     const dropped = [
       ...statements.matchAll(/drop table if exists public\.([a-z_]+)/gi),
     ].map((match) => match[1]);
     expect(dropped).toEqual(["show_claims"]);
+    const guard = statements.search(/to_regclass\('public\.show_claims'\)/i);
+    const drop = statements.search(/drop table if exists public\.show_claims/i);
+    expect(guard).toBeGreaterThan(-1);
+    expect(drop).toBeGreaterThan(guard);
+    expect(statements.slice(guard, drop)).toMatch(/raise exception/i);
+    expect(statements.slice(guard, drop)).toMatch(
+      /execute 'select count\(\*\) from public\.show_claims'/i
+    );
   });
 
   it("stops the three production writers from setting is_claimed true", () => {
@@ -220,8 +228,8 @@ describe.skipIf(!bin)("migration 061 on throwaway postgres", () => {
     return `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
   }
 
-  function file(path: string): void {
-    const result = psql([
+  function applyFile(path: string) {
+    return psql([
       "-h",
       dataDir,
       "-p",
@@ -237,6 +245,10 @@ describe.skipIf(!bin)("migration 061 on throwaway postgres", () => {
       "-f",
       path,
     ]);
+  }
+
+  function file(path: string): void {
+    const result = applyFile(path);
     if (result.status !== 0) {
       throw new Error(`${path}\n${result.stderr || result.stdout || "psql failed"}`);
     }
@@ -464,5 +476,22 @@ describe.skipIf(!bin)("migration 061 on throwaway postgres", () => {
     expect(grants("show_ownership_proofs")).toBe(
       "authenticated SELECT,service_role DELETE,service_role INSERT,service_role SELECT,service_role UPDATE"
     );
+  });
+
+  it("aborts and keeps show_claims when the table has a row", () => {
+    query(`
+      create table public.show_claims (
+        id uuid primary key default gen_random_uuid()
+      );
+      insert into public.show_claims default values;
+    `);
+    expect(query("select count(*)::text from public.show_claims")).toBe("1");
+
+    const result = applyFile(sqlPath);
+    const output = `${result.stderr ?? ""}\n${result.stdout ?? ""}`;
+    expect(result.status).not.toBe(0);
+    expect(output).toMatch(/refused to drop public\.show_claims/i);
+    expect(query("select count(*)::text from public.show_claims")).toBe("1");
+    expect(query("select to_regclass('public.show_claims') is not null")).toBe("t");
   });
 });

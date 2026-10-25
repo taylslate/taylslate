@@ -16,7 +16,9 @@
 -- show_claims had 0 rows on Oct 24, 2026. Before Chris applies
 -- this file, re-confirm that count read-only:
 --   select count(*) from public.show_claims;
--- Expected: 0. Do not apply if the count is not 0.
+-- Expected: 0. The paste raises and stops if any row exists.
+-- A second paste after a successful drop still succeeds, because
+-- the check uses to_regclass and skips a missing table.
 --
 -- Two ownership states on shows.ownership_status: unclaimed
 -- (the default) and verified. Pending is not a state. It is a
@@ -204,7 +206,19 @@ create policy "Owners read own ownership proofs"
   to authenticated
   using (user_id = auth.uid());
 
--- show_claims was confirmed empty on Oct 24, 2026. Re-confirm
--- the count read-only before applying. Dropped last so a failure
--- above leaves the old table in place.
+-- Abort when show_claims still has rows. to_regclass skips the
+-- check after the table is gone, so a second paste succeeds.
+-- Dropped last so a failure above leaves the old table in place.
+do $$
+declare
+  row_count bigint;
+begin
+  if to_regclass('public.show_claims') is not null then
+    execute 'select count(*) from public.show_claims' into row_count;
+    if row_count > 0 then
+      raise exception '061 refused to drop public.show_claims because it has rows. Confirm the count is 0, then paste again.';
+    end if;
+  end if;
+end $$;
+
 drop table if exists public.show_claims;
