@@ -1046,7 +1046,8 @@ export async function createShow(
   // inserted with is_discoverable false and agent_id set to the caller.
   // An admin row keeps the is_discoverable and agent_id the route passed in,
   // so an admin create can be discoverable on insert. A non-admin row stays
-  // false until approveRosterLink sets is_discoverable true. Callers that
+  // false until approveRosterLink publishes it, and only when that link's
+  // agent_id is the show's agent_id. Callers that
   // omit actor keep their own flags. Those paths are unchanged.
   const requested: Partial<Show> & { name: string; platform: Platform; slug?: string } = {
     ...showData,

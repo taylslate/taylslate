@@ -6,6 +6,7 @@ import {
   claimShow,
   getAgentShowRelationshipAnyStatus,
 } from "@/lib/data/queries";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 
 export async function POST(
   request: NextRequest,
@@ -25,10 +26,20 @@ export async function POST(
 
     const { id: showId } = await params;
 
-    // Verify show exists
     const show = await getShowById(showId);
     if (!show) {
       return NextResponse.json({ error: "Show not found" }, { status: 404 });
+    }
+
+    // A hidden show is 404 unless the caller created it or is an admin.
+    // The success body below still omits the row, so a hidden show is
+    // never returned in full.
+    const hidden = show.is_discoverable === false;
+    if (hidden) {
+      const creator = Boolean(show.agent_id) && show.agent_id === user.id;
+      if (!creator && !(await isShowsAdmin(user.id))) {
+        return NextResponse.json({ error: "Show not found" }, { status: 404 });
+      }
     }
 
     // Any existing row blocks a second claim, including pending and rejected.
@@ -52,7 +63,9 @@ export async function POST(
     const relationship = await claimShow(showId, commissionRate);
 
     return NextResponse.json(
-      { relationship, show, status: "pending" },
+      hidden
+        ? { relationship, status: "pending" }
+        : { relationship, show, status: "pending" },
       { status: 201 }
     );
   } catch (error) {

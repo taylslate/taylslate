@@ -369,40 +369,68 @@ describe("rep store", () => {
     expect(await getRepShow("agent-1", "show-1")).toBeNull();
   });
 
-  it("sets the show discoverable when an admin approves the roster link", async () => {
-    isShowsAdmin.mockResolvedValue(true);
-    const updates: { table: string; row: Record<string, unknown>; id: unknown }[] = [];
+  function approveMock(showAgentId: string | null) {
+    const writes: {
+      table: string;
+      row: Record<string, unknown>;
+      filters: { column: string; value: unknown }[];
+    }[] = [];
     adminFrom.mockImplementation((table: string) => {
       const builder: Record<string, unknown> = {};
       const self = () => builder;
-      let row: Record<string, unknown> = {};
+      const filters: { column: string; value: unknown }[] = [];
+      let row: Record<string, unknown> | null = null;
       builder.select = vi.fn(self);
       builder.eq = vi.fn((column: string, value: unknown) => {
-        if (column === "id") updates.push({ table, row, id: value });
+        filters.push({ column, value });
         return builder;
       });
       builder.update = vi.fn((next: Record<string, unknown>) => {
         row = next;
         return builder;
       });
-      builder.single = vi.fn(async () => ({
-        data: { id: "rel-1", show_id: "show-1", status: "approved" },
+      builder.maybeSingle = vi.fn(async () => ({
+        data: table === "shows" ? { id: "show-1", agent_id: showAgentId } : null,
         error: null,
       }));
+      builder.single = vi.fn(async () => {
+        writes.push({ table, row: row ?? {}, filters: [...filters] });
+        return {
+          data: {
+            id: "rel-1",
+            show_id: "show-1",
+            agent_id: "agent-1",
+            status: "approved",
+          },
+          error: null,
+        };
+      });
       builder.then = (
         resolve: (value: { data: null; error: null }) => unknown,
         reject?: (reason: unknown) => unknown
-      ) => Promise.resolve({ data: null, error: null }).then(resolve, reject);
+      ) => {
+        if (row) writes.push({ table, row, filters: [...filters] });
+        return Promise.resolve({ data: null, error: null }).then(resolve, reject);
+      };
       return builder;
     });
+    return writes;
+  }
+
+  it("sets the show discoverable when an admin approves a pending link the agent created", async () => {
+    isShowsAdmin.mockResolvedValue(true);
+    const writes = approveMock("agent-1");
 
     const approved = await approveRosterLink("admin-1", "rel-1");
     expect(approved).toEqual({ id: "rel-1", show_id: "show-1", status: "approved" });
     expect(isShowsAdmin).toHaveBeenCalledWith("admin-1");
-    expect(updates).toEqual([
+    expect(writes).toEqual([
       {
         table: "agent_show_relationships",
-        id: "rel-1",
+        filters: [
+          { column: "id", value: "rel-1" },
+          { column: "status", value: "pending" },
+        ],
         row: expect.objectContaining({
           status: "approved",
           approved_by: "admin-1",
@@ -410,10 +438,29 @@ describe("rep store", () => {
       },
       {
         table: "shows",
-        id: "show-1",
+        filters: [{ column: "id", value: "show-1" }],
         row: expect.objectContaining({ is_discoverable: true }),
       },
     ]);
+  });
+
+  it("approves a link and leaves the show hidden when that agent did not create it", async () => {
+    isShowsAdmin.mockResolvedValue(true);
+    const writes = approveMock("agent-9");
+
+    const approved = await approveRosterLink("admin-1", "rel-1");
+    expect(approved).toEqual({ id: "rel-1", show_id: "show-1", status: "approved" });
+    expect(writes).toEqual([
+      {
+        table: "agent_show_relationships",
+        filters: [
+          { column: "id", value: "rel-1" },
+          { column: "status", value: "pending" },
+        ],
+        row: expect.objectContaining({ status: "approved" }),
+      },
+    ]);
+    expect(writes.some((write) => write.row.is_discoverable === true)).toBe(false);
   });
 
   it("does not write when a non-admin tries to approve a roster link", async () => {

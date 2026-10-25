@@ -118,8 +118,9 @@ export async function POST(request: NextRequest) {
 
     // is_verified, is_claimed, and podscan_id are ignored. A non-admin
     // create forces is_discoverable false and sets agent_id to the caller.
-    // That row stays out of the catalog until approveRosterLink sets
-    // is_discoverable true. An admin keeps is_discoverable unless the body
+    // That row stays out of the catalog until approveRosterLink publishes
+    // it, which happens only when the link's agent_id is the show's
+    // agent_id. An admin keeps is_discoverable unless the body
     // sets it false, and may pass agent_id. GET /api/shows/[id] still
     // returns a hidden row to the creating agent and to an admin.
     const show = await createShow(
