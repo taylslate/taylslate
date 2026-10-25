@@ -37,13 +37,11 @@ function table(rows: Record<string, Row>) {
         if (!row) return { data: null, error: null };
         if (name === "agent_show_relationships") {
           const rel = row.data;
-          if (
-            !rel ||
-            rel.status !== "approved" ||
-            filters.status !== "approved" ||
-            filters.agent_id !== rel.agent_id ||
-            filters.show_id !== rel.show_id
-          ) {
+          if (!rel) return { data: null, error: null };
+          if (filters.agent_id !== rel.agent_id || filters.show_id !== rel.show_id) {
+            return { data: null, error: null };
+          }
+          if (filters.status !== undefined && filters.status !== rel.status) {
             return { data: null, error: null };
           }
         }
@@ -75,21 +73,32 @@ describe("canEditShow", () => {
     expect(await canEditShow(USER, SHOW)).toBe(true);
   });
 
-  it("allows the approved agent and shows.agent_id", async () => {
+  it("allows an agent only when the roster link is approved", async () => {
     table({
       profiles: { data: { id: USER, email: "rep@taylslate.com", role: "agent" } },
-      shows: { data: { id: SHOW, agent_id: null, contact_email: "", data_sources: [] } },
+      shows: { data: { id: SHOW, agent_id: USER, contact_email: "", data_sources: [] } },
       agent_show_relationships: {
         data: { id: "rel", agent_id: USER, show_id: SHOW, status: "approved" },
       },
     });
     expect(await canEditShow(USER, SHOW)).toBe(true);
 
+    for (const status of ["pending", "rejected"]) {
+      table({
+        profiles: { data: { id: USER, email: "rep@taylslate.com", role: "agent" } },
+        shows: { data: { id: SHOW, agent_id: USER, contact_email: "", data_sources: [] } },
+        agent_show_relationships: {
+          data: { id: "rel", agent_id: USER, show_id: SHOW, status },
+        },
+      });
+      expect(await canEditShow(USER, SHOW)).toBe(false);
+    }
+
     table({
       profiles: { data: { id: USER, email: "rep@taylslate.com", role: "agent" } },
       shows: { data: { id: SHOW, agent_id: USER, contact_email: "", data_sources: [] } },
     });
-    expect(await canEditShow(USER, SHOW)).toBe(true);
+    expect(await canEditShow(USER, SHOW)).toBe(false);
   });
 
   it("refuses a brand, an unrelated agent, and an unrelated show user", async () => {

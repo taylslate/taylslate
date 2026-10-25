@@ -12,10 +12,11 @@
 --
 -- This revokes anon and public write, truncate, references, and
 -- trigger on every listed table. It also revokes anon select on
--- every listed table except public.shows. GET /api/shows and
--- GET /api/shows/[id] read shows through the anon key when no
--- session is present. That select grant stays. The policy
--- "Shows are publicly readable" is not changed.
+-- every listed table, including public.shows. A re-run must not
+-- grant that select back. The first paste of this file did grant
+-- it; that line is gone. 065 revokes it on a database that still
+-- has the old grant. The policy "Shows are publicly readable"
+-- is not changed.
 --
 -- authenticated keeps select, insert, update, and delete on the
 -- 22 tables the signed-in app uses. authenticated loses truncate,
@@ -34,8 +35,8 @@
 --    where table_schema = 'public'
 --      and grantee in ('anon', 'PUBLIC')
 --    order by grantee, table_name, privilege_type;
---   Expected: one row, anon / shows / SELECT. No other anon
---   privilege in public. PUBLIC has none on these tables.
+--   Expected: no rows. Anon and PUBLIC have no privileges on
+--   these tables. A re-run does not grant anon SELECT on shows.
 --   select table_name, privilege_type
 --     from information_schema.role_table_grants
 --    where table_schema = 'public'
@@ -80,13 +81,11 @@
 -- ============================================================
 
 -- -------------------- shows --------------------
--- Anon keeps select only. revoke all drops insert, update, delete,
--- truncate, references, and trigger, then select is granted back
--- so a re-run still leaves that one privilege.
+-- Anon loses every privilege, including SELECT. Do not grant it
+-- back. A re-run of this file must not restore anon SELECT.
 
 revoke all on table public.shows from public;
 revoke all on table public.shows from anon;
-grant select on table public.shows to anon;
 revoke truncate, references, trigger on table public.shows from authenticated;
 alter table public.shows enable row level security;
 

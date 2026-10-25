@@ -7,6 +7,7 @@ import {
   claimShow,
   getUserProfile,
 } from "@/lib/data/queries";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 
 export async function GET(request: NextRequest) {
   try {
@@ -89,6 +90,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const profile = await getUserProfile(user.id);
+    const admin = await isShowsAdmin(user.id);
+    const role = profile?.role as string | undefined;
+    if (!admin && role !== "agent") {
+      return NextResponse.json(
+        { error: "Only agents can create shows" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
 
     if (!body.name || !body.platform) {
@@ -105,26 +116,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const show = await createShow({
-      name: body.name,
-      platform: body.platform,
-      description: body.description ?? "",
-      audience_size: body.audience_size ?? 0,
-      rate_card: body.rate_card ?? {},
-      categories: body.categories ?? [],
-      tags: body.tags ?? [],
-      network: body.network,
-      contact: body.contact ?? { name: "", email: "", method: "email" },
-      ad_formats: body.ad_formats ?? [],
-      episode_cadence: body.episode_cadence ?? "weekly",
-      min_buy: body.min_buy,
-      price_type: body.price_type ?? (body.platform === "youtube" ? "flat_rate" : "cpm"),
-      avg_episode_length_min: body.avg_episode_length_min ?? 0,
-      current_sponsors: body.current_sponsors ?? [],
-      demographics: body.demographics ?? {},
-      audience_interests: body.audience_interests ?? [],
-      image_url: body.image_url,
-    });
+    // is_verified, is_claimed, and podscan_id are ignored. A non-admin
+    // show stays hidden until an admin approves it, and agent_id is the caller.
+    const show = await createShow(
+      {
+        name: body.name,
+        platform: body.platform,
+        description: body.description ?? "",
+        audience_size: body.audience_size ?? 0,
+        rate_card: body.rate_card ?? {},
+        categories: body.categories ?? [],
+        tags: body.tags ?? [],
+        network: body.network,
+        contact: body.contact ?? { name: "", email: "", method: "email" },
+        ad_formats: body.ad_formats ?? [],
+        episode_cadence: body.episode_cadence ?? "weekly",
+        min_buy: body.min_buy,
+        price_type: body.price_type ?? (body.platform === "youtube" ? "flat_rate" : "cpm"),
+        avg_episode_length_min: body.avg_episode_length_min ?? 0,
+        current_sponsors: body.current_sponsors ?? [],
+        demographics: body.demographics ?? {},
+        audience_interests: body.audience_interests ?? [],
+        image_url: body.image_url,
+        is_discoverable: admin ? body.is_discoverable !== false : false,
+        ...(admin
+          ? typeof body.agent_id === "string"
+            ? { agent_id: body.agent_id }
+            : {}
+          : { agent_id: user.id }),
+      },
+      { actor: { userId: user.id, admin } }
+    );
 
     if (!show) {
       return NextResponse.json(
@@ -134,8 +156,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Auto-create a pending roster link if the signed-in user is an agent.
-    const profile = await getUserProfile(user.id);
-    if (profile?.role === "agent") {
+    if (role === "agent") {
       try {
         await claimShow(show.id, body.commission_rate);
       } catch (claimError) {

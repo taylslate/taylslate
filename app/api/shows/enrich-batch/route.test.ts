@@ -50,23 +50,49 @@ describe("POST /api/shows/enrich-batch", () => {
     expect(getShowsNeedingEnrichment).not.toHaveBeenCalled();
   });
 
-  it("returns 403 when any listed show fails canEditShow and writes nothing", async () => {
+  it("skips a show that fails canEditShow and does not write it", async () => {
     canEditShow.mockResolvedValue(false);
     const res = await POST();
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.enriched).toBe(0);
+    expect(body.skipped).toBe(1);
+    expect(body.details).toEqual([
+      {
+        show_id: "show-1",
+        name: "Night Desk",
+        status: "skipped",
+        source: "not_permitted",
+      },
+    ]);
     expect(updateShowEnrichment).not.toHaveBeenCalled();
-    expect(canEditShow).toHaveBeenCalledWith("agent-1", "show-1");
   });
 
-  it("checks every show before enriching", async () => {
+  it("skips the show that fails canEditShow and still reports the rest", async () => {
     getShowsNeedingEnrichment.mockResolvedValue([
       { id: "show-1", name: "Night Desk", platform: "podcast" },
       { id: "show-2", name: "Day Desk", platform: "podcast" },
     ]);
     canEditShow.mockImplementation(async (_user: string, showId: string) => showId === "show-1");
     const res = await POST();
-    expect(res.status).toBe(403);
-    expect(canEditShow).toHaveBeenCalledWith("agent-1", "show-2");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.enriched).toBe(0);
+    expect(body.skipped).toBe(2);
+    expect(body.details).toEqual([
+      {
+        show_id: "show-1",
+        name: "Night Desk",
+        status: "skipped",
+        source: "no_podscan_key",
+      },
+      {
+        show_id: "show-2",
+        name: "Day Desk",
+        status: "skipped",
+        source: "not_permitted",
+      },
+    ]);
     expect(updateShowEnrichment).not.toHaveBeenCalled();
   });
 });

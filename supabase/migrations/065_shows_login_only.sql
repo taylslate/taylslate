@@ -8,8 +8,9 @@
 --
 -- 061 is reserved for the O1 drop of show_claims. 062, 063, and
 -- 064 are not in the repo. This is the next free number after 064.
--- Apply 066 after this file. Do not re-run 060 after this file:
--- 060 grants anon SELECT on public.shows back.
+-- Apply 066 after this file. The first paste of 060 left anon
+-- SELECT on public.shows. This file revokes it. The 060 file no
+-- longer grants that select back on a re-run.
 --
 -- 060 left anon one privilege, SELECT on public.shows, and left
 -- the policy "Shows are publicly readable". The app is login-only.
@@ -17,11 +18,16 @@
 -- revokes that select, and every other anon and public privilege
 -- on every table in public, so anon has nothing on public tables.
 --
--- It also changes default privileges so a new table, sequence, or
--- function created in public by the pasting role, by postgres, or
--- by supabase_admin (when that role exists) does not grant anything
--- to anon or to public. Existing function execute grants are not
--- swept. No migration grants anon execute.
+-- Default privileges: this paste runs as postgres. The unqualified
+-- ALTER DEFAULT PRIVILEGES statements, and the FOR ROLE postgres
+-- statements, stop new tables, sequences, and functions created by
+-- postgres from granting anything to anon or to public. That is
+-- the only default-privilege change this file can make on live
+-- Supabase. postgres cannot change supabase_admin's default
+-- privileges there (insufficient_privilege). The DO block raises
+-- a notice and continues. Changing supabase_admin's defaults is
+-- a follow-up. Existing function execute grants are not swept.
+-- No migration grants anon execute.
 --
 -- Authenticated DML outside the 26 tables in 060 is left in place.
 -- Session clients and RLS policies still use it. The safe fix is
@@ -125,7 +131,7 @@ begin
         );
       exception
         when insufficient_privilege then
-          raise notice '065: skipped default privileges for role %', role_name;
+          raise notice '065 follow-up: could not change default privileges for role %', role_name;
       end;
     end if;
   end loop;

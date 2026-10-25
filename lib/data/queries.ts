@@ -1033,35 +1033,55 @@ function flattenShowForDB(show: Record<string, unknown>): Record<string, unknown
 }
 
 export async function createShow(
-  showData: Partial<Show> & { name: string; platform: Platform; slug?: string }
+  showData: Partial<Show> & { name: string; platform: Platform; slug?: string },
+  options?: { actor?: { userId: string; admin: boolean } }
 ): Promise<Show | null> {
   // Use admin client to bypass RLS — shows table lacks INSERT policy for anon users.
   // An explicit slug lets internal materializers (accept-path non-catalog shows)
   // claim a private slug namespace so they never dedup into — or get reused by —
   // a discoverable catalog show. Everyone else derives the slug from the name.
-  const slug = showData.slug ?? generateSlug(showData.name);
+  //
+  // When actor is set, this is a session create (POST /api/shows). The request
+  // cannot set is_verified, is_claimed, or podscan_id. A non-admin row stays
+  // not discoverable and agent_id is the caller, until an admin approves it.
+  // Callers that omit actor keep their own flags. Those paths are unchanged.
+  const requested: Partial<Show> & { name: string; platform: Platform; slug?: string } = {
+    ...showData,
+  };
+  const actor = options?.actor;
+  if (actor) {
+    delete requested.is_verified;
+    delete requested.is_claimed;
+    delete requested.podscan_id;
+    if (!actor.admin) {
+      requested.is_discoverable = false;
+      requested.agent_id = actor.userId;
+    }
+  }
+
+  const slug = requested.slug ?? generateSlug(requested.name);
 
   // New-show ingest applies the purchase-power proxy (Wave 14 Phase 2B
   // Layer 1) so every persisted show carries audience_purchase_power going
   // forward. Respect an explicitly-provided value (non-clobber); only derive
   // from categories when the caller didn't set it.
   const audience_purchase_power =
-    showData.audience_purchase_power ??
-    categoriesToPurchasePowerScore(showData.categories ?? []);
+    requested.audience_purchase_power ??
+    categoriesToPurchasePowerScore(requested.categories ?? []);
 
   const dbRow = flattenShowForDB({
-    ...showData,
+    ...requested,
     audience_purchase_power,
     slug,
-    is_claimed: showData.is_claimed ?? false,
-    is_verified: showData.is_verified ?? false,
-    is_discoverable: showData.is_discoverable ?? true,
+    is_claimed: requested.is_claimed ?? false,
+    is_verified: requested.is_verified ?? false,
+    is_discoverable: requested.is_discoverable ?? true,
   });
 
   // Remove id field if present — let Supabase generate UUID
   delete dbRow.id;
 
-  console.log(`[createShow] Inserting show "${showData.name}" (platform: ${showData.platform}, slug: ${slug})`);
+  console.log(`[createShow] Inserting show "${requested.name}" (platform: ${requested.platform}, slug: ${slug})`);
 
   const { data, error } = await supabaseAdmin
     .from("shows")

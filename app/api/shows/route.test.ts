@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { createShow, claimShow, getUserProfile, getUser, getAllShows, getShowsFiltered } =
+const { createShow, claimShow, getUserProfile, getUser, getAllShows, getShowsFiltered, isShowsAdmin } =
   vi.hoisted(() => ({
     createShow: vi.fn(),
     claimShow: vi.fn(),
@@ -9,6 +9,7 @@ const { createShow, claimShow, getUserProfile, getUser, getAllShows, getShowsFil
     getUser: vi.fn(),
     getAllShows: vi.fn(),
     getShowsFiltered: vi.fn(),
+    isShowsAdmin: vi.fn(),
   }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -23,13 +24,26 @@ vi.mock("@/lib/data/queries", () => ({
   getUserProfile,
 }));
 
+vi.mock("@/lib/shows/can-edit-show", () => ({
+  isShowsAdmin,
+}));
+
 import { GET, POST } from "./route";
 
-function call() {
+function call(extra: Record<string, unknown> = {}) {
   return POST(
     new NextRequest("http://x/api/shows", {
       method: "POST",
-      body: JSON.stringify({ name: "Night Desk", platform: "podcast" }),
+      body: JSON.stringify({
+        name: "Night Desk",
+        platform: "podcast",
+        is_discoverable: true,
+        is_verified: true,
+        is_claimed: true,
+        podscan_id: "pod-1",
+        agent_id: "someone-else",
+        ...extra,
+      }),
     })
   );
 }
@@ -38,7 +52,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   getUser.mockResolvedValue({ data: { user: { id: "agent-1" } } });
   getUserProfile.mockResolvedValue({ role: "agent" });
+  isShowsAdmin.mockResolvedValue(false);
   createShow.mockResolvedValue({ id: "show-1", name: "Night Desk" });
+  claimShow.mockResolvedValue({ id: "rel-1" });
 });
 
 describe("GET /api/shows", () => {
@@ -71,6 +87,28 @@ describe("GET /api/shows", () => {
 });
 
 describe("POST /api/shows", () => {
+  it("returns 403 for a brand and does not create a show", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "brand-1" } } });
+    getUserProfile.mockResolvedValue({ role: "brand" });
+    const res = await call();
+    expect(res.status).toBe(403);
+    expect(createShow).not.toHaveBeenCalled();
+    expect(claimShow).not.toHaveBeenCalled();
+  });
+
+  it("creates an agent's show as not discoverable and ignores privilege fields", async () => {
+    const res = await call();
+    expect(res.status).toBe(201);
+    expect(createShow).toHaveBeenCalledTimes(1);
+    const [payload, options] = createShow.mock.calls[0];
+    expect(payload.is_discoverable).toBe(false);
+    expect(payload.agent_id).toBe("agent-1");
+    expect(payload).not.toHaveProperty("is_verified");
+    expect(payload).not.toHaveProperty("is_claimed");
+    expect(payload).not.toHaveProperty("podscan_id");
+    expect(options).toEqual({ actor: { userId: "agent-1", admin: false } });
+  });
+
   it("reports a roster-link failure instead of returning the show as created", async () => {
     claimShow.mockRejectedValue(new Error("insert failed"));
     const res = await call();

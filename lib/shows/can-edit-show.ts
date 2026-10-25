@@ -1,8 +1,9 @@
 // Who may write a catalog show.
 //
 // True for an internal admin (INTERNAL_ADMIN_EMAILS, or a profile role
-// of admin), the approved rep (an approved agent_show_relationships
-// row, or shows.agent_id), and a show user tied by getVerifiedProfileTies.
+// of admin), an agent whose roster link is approved, and a show user
+// tied by getVerifiedProfileTies. shows.agent_id alone is not enough.
+// A pending or rejected link does not grant edit rights.
 // A podscan id on the profile is not a tie. Anyone else is false.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -25,7 +26,6 @@ interface ProfileRow {
 
 interface ShowRow {
   id?: string;
-  agent_id?: string | null;
   contact_email?: string | null;
   data_sources?: unknown;
 }
@@ -54,12 +54,11 @@ export async function canEditShow(userId: string, showId: string): Promise<boole
 
   const { data, error } = await supabaseAdmin
     .from("shows")
-    .select("id, agent_id, contact_email, data_sources")
+    .select("id, contact_email, data_sources")
     .eq("id", showId)
     .maybeSingle();
   if (error || !data) return false;
   const show = data as ShowRow;
-  if (show.agent_id && show.agent_id === userId) return true;
 
   const { data: rel, error: relError } = await supabaseAdmin
     .from("agent_show_relationships")

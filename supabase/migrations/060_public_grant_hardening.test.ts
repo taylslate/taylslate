@@ -113,11 +113,10 @@ describe("migration 060 sql", () => {
     expect(statements).not.toMatch(/drop policy/i);
   });
 
-  it("leaves anon exactly one grant, select on shows", () => {
+  it("does not grant anon select on shows", () => {
     const grants = statements.match(/grant\b[^;]*\bto\s+anon\s*;/gi) ?? [];
-    expect(grants.map((grant) => grant.replace(/\s+/g, " ").trim())).toEqual([
-      "grant select on table public.shows to anon;",
-    ]);
+    expect(grants).toEqual([]);
+    expect(statements).not.toMatch(/grant select on table public\.shows to anon/i);
     expect(statements).toMatch(
       /revoke all on table public\.shows from anon;/i
     );
@@ -404,8 +403,8 @@ describe.skipIf(!bin)("migration 060 on throwaway postgres", () => {
     );
   }
 
-  it("gives anon select on shows and nothing else in public", () => {
-    expect(anonGrants()).toBe("shows SELECT");
+  it("gives anon nothing in public", () => {
+    expect(anonGrants()).toBe("");
     expect(
       query(
         "s1",
@@ -501,12 +500,12 @@ describe.skipIf(!bin)("migration 060 on throwaway postgres", () => {
     expect(rls).toBe(LISTED.map((table) => `${table}:true`).sort().join(","));
   });
 
-  it("rejects anon writes and truncates, and allows anon and authenticated select", () => {
+  it("rejects anon reads, writes, and truncates, and allows authenticated select", () => {
     const read = exec(
       "set role anon; select name from public.shows where name = 'Grant Check';"
     );
-    expect(read.status).toBe(0);
-    expect(read.text).toContain("Grant Check");
+    expect(read.status).not.toBe(0);
+    expect(read.text.toLowerCase()).toContain("permission denied");
 
     const insert = exec(
       "set role anon; insert into public.shows (name, platform) values ('Nope', 'podcast');"
@@ -552,14 +551,14 @@ describe.skipIf(!bin)("migration 060 on throwaway postgres", () => {
     ).toBe("0");
   });
 
-  it("applies a second time and keeps anon select on shows", () => {
+  it("applies a second time and does not give anon select on shows back", () => {
     file("s1", sqlPath);
-    expect(anonGrants()).toBe("shows SELECT");
+    expect(anonGrants()).toBe("");
     const read = exec(
       "set role anon; select name from public.shows where name = 'Grant Check';"
     );
-    expect(read.status).toBe(0);
-    expect(read.text).toContain("Grant Check");
+    expect(read.status).not.toBe(0);
+    expect(read.text.toLowerCase()).toContain("permission denied");
     const truncated = exec("set role anon; truncate public.shows;");
     expect(truncated.status).not.toBe(0);
     expect(truncated.text.toLowerCase()).toContain("permission denied");
