@@ -6,8 +6,14 @@ const { getAuthenticatedUser, getUserProfile, createClient, calls, state } = vi.
   createClient: vi.fn(),
   calls: [] as { table: string; op: string; payload: unknown; ilike: string | null; eq: [string, string][] }[],
   state: {
-    shows: [] as { id: string; name: string }[],
+    shows: [] as {
+      id: string;
+      name: string;
+      is_discoverable?: boolean | null;
+      agent_id?: string | null;
+    }[],
     failRecords: false,
+    failHints: false,
     importId: "import-1",
   },
 }));
@@ -145,14 +151,24 @@ beforeEach(() => {
   vi.clearAllMocks();
   calls.length = 0;
   state.failRecords = false;
+  state.failHints = false;
   state.importId = "import-1";
   state.shows = [
-    { id: "show-acquired", name: "Acquired" },
-    { id: "show-odd", name: "Odd Lots" },
+    { id: "show-acquired", name: "Acquired", is_discoverable: true, agent_id: null },
+    { id: "show-odd", name: "Odd Lots", is_discoverable: true, agent_id: null },
   ];
   getAuthenticatedUser.mockResolvedValue({ id: USER_ID, email: "brand@taylslate.com" });
   getUserProfile.mockResolvedValue({ id: USER_ID, role: "brand", email: "brand@taylslate.com" });
-  createClient.mockResolvedValue({ from: (table: string) => builderFor(table) });
+  createClient.mockResolvedValue({
+    from: (table: string) => builderFor(table),
+    rpc(fn: string, args: { match_key?: string }) {
+      calls.push({ table: fn, op: "rpc", payload: args, ilike: null, eq: [] });
+      if (state.failHints || fn !== "past_campaign_show_candidates") {
+        return Promise.resolve({ data: null, error: { message: "rpc failed" } });
+      }
+      return Promise.resolve({ data: state.shows, error: null });
+    },
+  });
 });
 
 describe("POST /api/imports/past-campaigns", () => {
@@ -181,6 +197,9 @@ describe("POST /api/imports/past-campaigns", () => {
     expect(body.records[0]).toMatchObject({
       show_name: "Acquired",
       matched_show_id: "show-acquired",
+      show_match_status: "matched",
+      show_match_reason: "unique_normalized_name",
+      show_match_confidence: 1,
       price_type: "flat",
       rate: 25,
       raw: { "Podcast Title": "Acquired", "Total Spend": "$2,250" },
@@ -188,18 +207,39 @@ describe("POST /api/imports/past-campaigns", () => {
     expect(body.records[1]).toMatchObject({
       show_name: "Mystery Hour",
       matched_show_id: null,
+      show_match_status: "ambiguous",
+      show_match_reason: "no_normalized_match",
+      show_match_confidence: 0,
       price_type: null,
       rate: 800,
     });
+    expect(JSON.stringify(body.records)).not.toContain("evil-show");
+
+    const recordInsert = calls.find(
+      (call) => call.table === "past_campaign_records" && call.op === "insert"
+    );
+    const inserted = recordInsert?.payload as Record<string, unknown>[];
+    expect(inserted[0].matched_show_id).toBe("show-acquired");
+    expect(inserted[1].matched_show_id).toBeNull();
+    expect(inserted[1].show_match_status).toBe("ambiguous");
 
     const tables = calls.map((call) => call.table);
     expect(tables).not.toContain("deals");
     expect(tables).not.toContain("show_profiles");
+    expect(tables).not.toContain("shows");
     expect(new Set(tables)).toEqual(
-      new Set(["shows", "past_campaign_imports", "past_campaign_records"])
+      new Set([
+        "past_campaign_show_candidates",
+        "past_campaign_imports",
+        "past_campaign_records",
+      ])
     );
     const showWrites = calls.filter((call) => call.table === "shows" && call.op !== "select");
     expect(showWrites).toEqual([]);
+    const hintKeys = calls
+      .filter((call) => call.op === "rpc")
+      .map((call) => (call.payload as { match_key?: string }).match_key);
+    expect(hintKeys).toEqual(["acquired", "mystery hour"]);
   });
 
   it("allows an agency account", async () => {
@@ -212,15 +252,86 @@ describe("POST /api/imports/past-campaigns", () => {
     expect(body.import.terms_version).toBeNull();
   });
 
-  it("leaves matched_show_id empty when two shows share the name", async () => {
+  it("leaves matched_show_id empty when two shows share the normalized name", async () => {
     state.shows = [
-      { id: "show-a", name: "Acquired" },
-      { id: "show-b", name: "acquired" },
+      { id: "show-a", name: "Acquired", is_discoverable: true, agent_id: null },
+      { id: "show-b", name: "The Acquired Podcast", is_discoverable: true, agent_id: null },
     ];
     const res = await POST(post(saveBody()) as never);
     expect(res.status).toBe(201);
     const body = await res.json();
+    expect(body.records[0]).toMatchObject({
+      matched_show_id: null,
+      show_match_status: "ambiguous",
+      show_match_reason: "multiple_normalized_matches",
+      show_match_confidence: 0,
+    });
+    const recordInsert = calls.find(
+      (call) => call.table === "past_campaign_records" && call.op === "insert"
+    );
+    const inserted = recordInsert?.payload as Record<string, unknown>[];
+    expect(inserted.every((row) => row.matched_show_id == null)).toBe(true);
+  });
+
+  it("matches a normalized name to one catalog show and ignores a client show id", async () => {
+    const res = await POST(
+      post(
+        saveBody({
+          records: [
+            {
+              show_name: "The Acquired Podcast!",
+              matched_show_id: "show-odd",
+              show_match_status: "ambiguous",
+              show_match_confidence: 0,
+            },
+          ],
+        })
+      ) as never
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.records[0]).toMatchObject({
+      show_name: "The Acquired Podcast!",
+      matched_show_id: "show-acquired",
+      show_match_status: "matched",
+      show_match_reason: "unique_normalized_name",
+      show_match_confidence: 1,
+    });
+  });
+
+  it("does not match a hidden show unless the caller created it", async () => {
+    state.shows = [
+      { id: "hidden-other", name: "Acquired", is_discoverable: false, agent_id: "other-agent" },
+      { id: "hidden-mine", name: "Secret", is_discoverable: false, agent_id: USER_ID },
+    ];
+    const res = await POST(
+      post(
+        saveBody({
+          records: [{ show_name: "The Acquired Show" }, { show_name: "Secret Podcast" }],
+        })
+      ) as never
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.records[0]).toMatchObject({
+      matched_show_id: null,
+      show_match_reason: "no_normalized_match",
+    });
+    expect(body.records[1]).toMatchObject({
+      matched_show_id: "hidden-mine",
+      show_match_status: "matched",
+      show_match_confidence: 1,
+    });
+  });
+
+  it("saves an ambiguous row when the candidate lookup fails", async () => {
+    state.failHints = true;
+    const res = await POST(post(saveBody()) as never);
+    expect(res.status).toBe(201);
+    const body = await res.json();
     expect(body.records[0].matched_show_id).toBeNull();
+    expect(body.records[0].show_match_status).toBe("ambiguous");
+    expect(body.records[1].matched_show_id).toBeNull();
   });
 
   it("rejects signed-out, show, and agent callers before writing", async () => {

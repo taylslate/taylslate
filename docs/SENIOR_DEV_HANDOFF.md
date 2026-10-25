@@ -486,3 +486,35 @@ The throwaway Postgres applied 001 through 067 and then 067 again. anon and PUBL
 - No email is sent. Other roster links are not changed. Conflicts are not auto-resolved.
 - The mockup at `/admin/mockups/roster-requests` is unchanged.
 
+## I2b: confident past-campaign show match
+
+### What was built
+
+The past-campaign save stores `matched_show_id` only when the normalized show name matches exactly one eligible show. Eligible means `shows.is_discoverable` is true, or the show is hidden and `shows.agent_id` is the signed-in caller. That is the creator stored on a non-admin show create. Zero matches and two or more matches leave `matched_show_id` null and mark the row `ambiguous` with confidence `0`. A unique match stores confidence `1` and reason `unique_normalized_name`.
+
+The key is ASCII lowercase, ASCII punctuation removed, a leading `the` removed, and a trailing `podcast` or `show` removed. The same rules are in `normalizeShowMatchKey` and in `normalize_show_match_key`. A body `matched_show_id` is ignored. A before-write trigger overwrites a direct insert or update, so a brand cannot force a link. The trigger and the route do not write `shows`.
+
+Ambiguous rows stay on the brand's private records. `refresh_pooled_import_priors` skips status `ambiguous`. A pre-067 row has a null status and still enters the pool when `matched_show_id` is already set. There is no brand matching screen.
+
+Migration 067 is not applied. A read-only count on `ldtmhafewfifdizgfrnn` found 0 `past_campaign_records` rows and 0 with `matched_show_id` set. Nothing was rewritten.
+
+### Where
+
+- `lib/imports/past-campaigns.ts`
+- `app/api/imports/past-campaigns/route.ts`
+- `supabase/migrations/067_past_campaign_show_match.sql`
+- `docs/jobs/I2b.md`
+
+### Tests
+
+`lib/imports/past-campaigns.test.ts`, `app/api/imports/past-campaigns/route.test.ts`, and `067_past_campaign_show_match.test.ts`. The throwaway Postgres checks ran here. `npx vitest run` passed 2157 tests. `npx tsc --noEmit` was clean. `npx next build` succeeded. No UI change.
+
+### Known gaps
+
+- Apply 067 after 066, only after merge and Chris's OK. Until then the save route writes columns and calls a function the live database does not have.
+- Ambiguous rows are not resolved. They stay private and out of the pool.
+- `lib/imports/review.ts` still labels an exact case-insensitive name. That label is not the stored link.
+- A consented unique match can feed the pool, including a hidden show this caller created when the show has a category. The pool does not store the show id.
+- ASCII punctuation only. Suffix stripping means `My Show` normalizes to `my`.
+- Outreach-materialized hidden shows have no `agent_id`, so they are not matched.
+

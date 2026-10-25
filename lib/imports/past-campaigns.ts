@@ -1,5 +1,7 @@
 // Parse a brand's past campaign file into drafts shaped like migration 054.
-// Parsing does not write. The save route stamps brand_id from the session.
+// Parsing does not write. The save route stamps brand_id from the session
+// and sets matched_show_id only for one normalized catalog name
+// (migration 067). A draft never carries a caller-chosen show id.
 
 import ExcelJS from "exceljs";
 import { callLLMWithFallback, loadPrompt } from "@/lib/llm/client";
@@ -57,11 +59,6 @@ export interface PastCampaignSaveInput {
   pooling_consent: boolean;
   terms_version: string | null;
   drafts: PastCampaignDraft[];
-}
-
-export interface ShowHint {
-  id: string;
-  name: string;
 }
 
 const MIME_BY_KIND: Record<PastCampaignSourceKind, ReadonlySet<string>> = {
@@ -286,31 +283,110 @@ export function parseSaveBody(body: unknown): PastCampaignSaveInput {
   };
 }
 
-export function normalizeShowKey(name: string): string {
-  return name.trim().toLowerCase();
+// ASCII punctuation, same 32 characters as normalize_show_match_key in
+// migration 067. A change here has to change that SQL function too.
+export const SHOW_MATCH_PUNCTUATION = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+
+const SHOW_MATCH_WHITESPACE = new Set([9, 10, 11, 12, 13, 32]);
+
+export type ShowMatchStatus = "matched" | "ambiguous";
+
+export type ShowMatchReason =
+  | "unique_normalized_name"
+  | "no_normalized_match"
+  | "multiple_normalized_matches";
+
+export interface ShowMatchCandidate {
+  id: string;
+  name: string;
+  is_discoverable?: boolean | null;
+  agent_id?: string | null;
 }
 
-export async function lookupShowHints(
-  names: string[],
-  query: (name: string) => Promise<ShowHint[]>
-): Promise<Map<string, string | null>> {
-  const map = new Map<string, string | null>();
-  const originals = new Map<string, string>();
-  for (const name of names) {
-    const key = normalizeShowKey(name);
-    if (!key || originals.has(key)) continue;
-    originals.set(key, name.trim());
+export interface ShowMatchDecision {
+  matched_show_id: string | null;
+  show_match_status: ShowMatchStatus;
+  show_match_reason: ShowMatchReason;
+  show_match_confidence: 0 | 1;
+}
+
+export function normalizeShowMatchKey(name: string): string {
+  let spaced = "";
+  for (const char of name) {
+    const code = char.charCodeAt(0);
+    if (code >= 65 && code <= 90) {
+      spaced += String.fromCharCode(code + 32);
+      continue;
+    }
+    if (SHOW_MATCH_PUNCTUATION.includes(char) || SHOW_MATCH_WHITESPACE.has(code)) {
+      spaced += " ";
+      continue;
+    }
+    spaced += char;
+  }
+  const collapsed = spaced.replace(/ +/g, " ").trim();
+  const withoutArticle = collapsed.replace(/^(?:the )+/, "");
+  return withoutArticle.replace(/(?: (?:podcast|show))+$/, "").trim();
+}
+
+export function eligibleShowCandidate(
+  show: ShowMatchCandidate,
+  callerId: string
+): boolean {
+  if (show.is_discoverable === true) return true;
+  return Boolean(callerId) && Boolean(show.agent_id) && show.agent_id === callerId;
+}
+
+export function decideShowMatch(
+  showName: string,
+  candidates: readonly ShowMatchCandidate[],
+  callerId: string
+): ShowMatchDecision {
+  const key = normalizeShowMatchKey(showName);
+  if (!key) return ambiguousDecision("no_normalized_match");
+
+  const ids: string[] = [];
+  for (const show of candidates) {
+    if (!show.id || ids.includes(show.id)) continue;
+    if (!eligibleShowCandidate(show, callerId)) continue;
+    if (normalizeShowMatchKey(show.name) !== key) continue;
+    ids.push(show.id);
   }
 
-  for (const [key, name] of originals) {
-    let rows: ShowHint[] = [];
+  if (ids.length === 1) {
+    return {
+      matched_show_id: ids[0],
+      show_match_status: "matched",
+      show_match_reason: "unique_normalized_name",
+      show_match_confidence: 1,
+    };
+  }
+  if (ids.length === 0) return ambiguousDecision("no_normalized_match");
+  return ambiguousDecision("multiple_normalized_matches");
+}
+
+export async function matchPastCampaignShows(
+  names: string[],
+  callerId: string,
+  query: (matchKey: string) => Promise<ShowMatchCandidate[]>
+): Promise<Map<string, ShowMatchDecision>> {
+  const map = new Map<string, ShowMatchDecision>();
+  const keys: string[] = [];
+  for (const name of names) {
+    const key = normalizeShowMatchKey(name);
+    if (!key || keys.includes(key)) continue;
+    keys.push(key);
+  }
+
+  for (const key of keys) {
+    let rows: ShowMatchCandidate[] = [];
     try {
-      rows = await query(name);
+      const loaded = await query(key);
+      rows = Array.isArray(loaded) ? loaded : [];
     } catch {
       rows = [];
     }
-    const hits = rows.filter((row) => normalizeShowKey(row.name) === key);
-    map.set(key, hits.length === 1 ? hits[0].id : null);
+    map.set(key, decideShowMatch(key, rows, callerId));
   }
   return map;
 }
@@ -319,24 +395,41 @@ export function buildRecordInserts(
   importId: string,
   brandId: string,
   drafts: PastCampaignDraft[],
-  showIdByName: Map<string, string | null>
+  matches: Map<string, ShowMatchDecision>
 ): Record<string, unknown>[] {
-  return drafts.map((draft) => ({
-    import_id: importId,
-    brand_id: brandId,
-    show_name: draft.show_name,
-    matched_show_id: showIdByName.get(normalizeShowKey(draft.show_name)) ?? null,
-    flight_start: draft.flight_start,
-    flight_end: draft.flight_end,
-    placement: draft.placement,
-    price_type: draft.price_type,
-    rate: draft.rate,
-    episodes: draft.episodes,
-    spend: draft.spend,
-    conversions: draft.conversions,
-    downloads: draft.downloads,
-    raw: draft.raw,
-  }));
+  return drafts.map((draft) => {
+    const key = normalizeShowMatchKey(draft.show_name);
+    const decision =
+      (key && matches.get(key)) || ambiguousDecision("no_normalized_match");
+    return {
+      import_id: importId,
+      brand_id: brandId,
+      show_name: draft.show_name,
+      matched_show_id: decision.matched_show_id,
+      show_match_status: decision.show_match_status,
+      show_match_reason: decision.show_match_reason,
+      show_match_confidence: decision.show_match_confidence,
+      flight_start: draft.flight_start,
+      flight_end: draft.flight_end,
+      placement: draft.placement,
+      price_type: draft.price_type,
+      rate: draft.rate,
+      episodes: draft.episodes,
+      spend: draft.spend,
+      conversions: draft.conversions,
+      downloads: draft.downloads,
+      raw: draft.raw,
+    };
+  });
+}
+
+function ambiguousDecision(reason: ShowMatchReason): ShowMatchDecision {
+  return {
+    matched_show_id: null,
+    show_match_status: "ambiguous",
+    show_match_reason: reason,
+    show_match_confidence: 0,
+  };
 }
 
 async function draftsFromMatrix(table: unknown[][]): Promise<PastCampaignDraft[]> {
