@@ -381,9 +381,9 @@ Migration 060 revokes excess privileges on the 26 public tables from the 2026-10
 
 ### Tests
 
-`npx vitest run` (2067 passed). `npx tsc --noEmit` is clean. `npx next build` is green. No live writes.
+`npx vitest run` (2062 passed, 5 skipped without Postgres). With Postgres binaries the same suite is 2067 passed. `npx tsc --noEmit` is clean. `npx next build` is green. No live writes.
 
-The test applies migrations 001 through 058, grants the live excess privileges, applies 060 twice, and checks anon has only `SELECT` on `shows`, anon and authenticated cannot truncate `shows`, `payments`, or `payouts`, anon insert on `shows` is denied, both roles can select `shows`, and authenticated has no privileges on the four service_role tables.
+The SQL checks always run. The throwaway database checks apply migrations 001 through 058, grant the live excess privileges, apply 060 twice, and check anon has only `SELECT` on `shows`, anon and authenticated cannot truncate `shows`, `payments`, or `payouts`, anon insert on `shows` is denied, both roles can select `shows`, and authenticated has no privileges on the four service_role tables. Those five tests are skipped when Postgres binaries are absent.
 
 ### Known gaps
 

@@ -1,5 +1,7 @@
-// Migration 060 on a throwaway Postgres. Applies 001 through 058, grants
-// the live excess privileges, then checks 060. Never uses a hosted database.
+// Migration 060. The SQL checks always run. The throwaway Postgres suite
+// applies 001 through 058, grants the live excess privileges, then checks
+// 060. That suite is skipped when Postgres binaries are absent. Never uses
+// a hosted database.
 
 import { spawnSync } from "node:child_process";
 import {
@@ -61,7 +63,7 @@ const statements = sql
   .filter((line) => !line.trim().startsWith("--"))
   .join("\n");
 
-function pgBin(): string {
+function pgBin(): string | null {
   const fromEnv = process.env.S1_PG_BIN;
   const candidates = [
     fromEnv,
@@ -74,9 +76,7 @@ function pgBin(): string {
       return dir;
     }
   }
-  throw new Error(
-    "PostgreSQL binaries not found. Install the server or set S1_PG_BIN."
-  );
+  return null;
 }
 
 function freePort(): Promise<number> {
@@ -164,20 +164,22 @@ describe("migration 060 sql", () => {
   });
 });
 
-describe("migration 060 on throwaway postgres", () => {
-  const bin = pgBin();
-  const dataDir = mkdtempSync(join(tmpdir(), "s1-pg-"));
+const bin = pgBin();
+
+describe.skipIf(!bin)("migration 060 on throwaway postgres", () => {
+  const pgRoot = bin ?? "";
+  let dataDir = "";
   let port = 0;
   let serviceRoleBefore = "";
   let policyCountBefore = "";
 
   function psql(args: string[], input?: string) {
-    return spawnSync(join(bin, "psql"), args, {
+    return spawnSync(join(pgRoot, "psql"), args, {
       encoding: "utf8",
       input,
       env: {
         ...process.env,
-        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        PATH: `${pgRoot}:${process.env.PATH ?? ""}`,
         LC_ALL: "C",
       },
     });
@@ -256,9 +258,10 @@ describe("migration 060 on throwaway postgres", () => {
   }
 
   beforeAll(async () => {
+    dataDir = mkdtempSync(join(tmpdir(), "s1-pg-"));
     port = await freePort();
     const init = spawnSync(
-      join(bin, "initdb"),
+      join(pgRoot, "initdb"),
       [
         "-D",
         dataDir,
@@ -275,7 +278,7 @@ describe("migration 060 on throwaway postgres", () => {
     }
 
     const start = spawnSync(
-      join(bin, "pg_ctl"),
+      join(pgRoot, "pg_ctl"),
       [
         "-D",
         dataDir,
@@ -290,7 +293,7 @@ describe("migration 060 on throwaway postgres", () => {
         encoding: "utf8",
         env: {
           ...process.env,
-          PATH: `${bin}:${process.env.PATH ?? ""}`,
+          PATH: `${pgRoot}:${process.env.PATH ?? ""}`,
           LC_ALL: "C",
         },
       }
@@ -382,7 +385,8 @@ describe("migration 060 on throwaway postgres", () => {
   }, 120_000);
 
   afterAll(() => {
-    spawnSync(join(bin, "pg_ctl"), ["-D", dataDir, "-m", "immediate", "stop"], {
+    if (!dataDir) return;
+    spawnSync(join(pgRoot, "pg_ctl"), ["-D", dataDir, "-m", "immediate", "stop"], {
       encoding: "utf8",
     });
     rmSync(dataDir, { recursive: true, force: true });
