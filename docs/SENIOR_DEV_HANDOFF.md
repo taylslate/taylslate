@@ -452,3 +452,37 @@ A search for cookie-client `insert`, `update`, `upsert`, or `delete` on `shows` 
 
 - `createShow` without an `actor` option, the backfill helpers, `lib/shows/apply-geography.ts`, and `app/api/admin/seed-deal` still write `shows` as service_role. Those callers were left as they were.
 
+## B3: admin roster-link approval
+
+### What was built
+
+Admins get `/admin/roster-requests`. It lists pending roster links, oldest first, with the agent email, show name, discoverable flag, source, exclusive flag, created time, and live conflict context. Approve calls `approveRosterLink` and does not edit that helper. A link that is not pending shows "Not pending" and writes nothing. Discoverable still flips only when `shows.agent_id` matches the link's agent. Reject requires a note of 1 to 500 characters, sets status `rejected` only while the row is pending, and writes nothing on `shows`. An exclusive conflict asks for a confirm before approve.
+
+The page 404s unless `isShowsAdmin` is true. The routes return 401 signed out and 403 for anyone else. Writes use `supabaseAdmin`.
+
+Migration 067 adds nullable `review_note`, `rejected_by`, and `rejected_at`. It is not applied. The list does not select those columns, so it works before the paste. Reject returns 503 until the paste.
+
+### Where
+
+- `app/(dashboard)/admin/roster-requests/page.tsx` at `/admin/roster-requests`
+- `app/(dashboard)/admin/roster-requests/roster-requests-client.tsx`
+- `app/api/admin/roster-links/route.ts` (`GET`)
+- `app/api/admin/roster-links/[id]/route.ts` (`POST` approve or reject)
+- `lib/reps/roster-review.ts`
+- `supabase/migrations/067_roster_link_review_note.sql` (not applied)
+- `docs/jobs/B3.md`
+
+### Tests
+
+`lib/reps/roster-review.test.ts`, `app/api/admin/roster-links/route.test.ts`, `app/api/admin/roster-links/[id]/route.test.ts`, `app/(dashboard)/admin/roster-requests/roster-requests.test.tsx`, and `supabase/migrations/067_roster_link_review_note.test.ts`.
+
+The throwaway Postgres applied 001 through 067 and then 067 again. anon and PUBLIC have no grants on `agent_show_relationships`. authenticated has SELECT. service_role has SELECT, INSERT, UPDATE, and DELETE. That matches what 065 left.
+
+### Known gaps
+
+- Ownership proof is omitted. `lib/ownership` is not on this branch. This job does not import it. Wire the pending or verified proof after O1 merges.
+- The page is not in the sidebar. `lib/nav/items.ts` was left alone. Open `/admin/roster-requests` directly.
+- Migration 067 is not applied on `ldtmhafewfifdizgfrnn`. Apply only after merge and Chris's OK. Until then, reject returns "Roster review notes are not available yet."
+- No email is sent. Other roster links are not changed. Conflicts are not auto-resolved.
+- The mockup at `/admin/mockups/roster-requests` is unchanged.
+
