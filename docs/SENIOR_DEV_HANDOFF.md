@@ -538,7 +538,7 @@ No app code was edited. The session-read audit is in `docs/jobs/S4.md`.
 
 ### Tests
 
-`supabase/migrations/071_shows_select_policy.test.ts`. SQL checks always run. The throwaway Postgres suite applies 001 through 066, PR 42's 067 when that file is available, then 071 twice. It is skipped when Postgres binaries are absent. No UI change. Screenshots are not applicable.
+`supabase/migrations/071_shows_select_policy.test.ts`. SQL checks always run. The throwaway Postgres suite applies 001 through 066, adds `shows.agent_id`, then main's 067 and every migration up to 070 that exists on disk, including PR 42's `068_past_campaign_show_match.sql`, then 071 twice. The #42 case fails when that 068 file is missing. The suite is skipped when Postgres binaries are absent. No UI change. Screenshots are not applicable.
 
 ### Known gaps
 

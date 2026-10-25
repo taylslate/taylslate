@@ -1,9 +1,10 @@
 // Migration 071. The SQL checks always run. The throwaway Postgres
-// suite applies 001 through 066, then 071 twice. It skips when
-// Postgres binaries are absent. Never uses a hosted database.
+// suite applies 001 through 066, adds shows.agent_id, then every
+// migration from 067 through 070 that is on disk, then 071 twice.
+// It skips when Postgres binaries are absent. Never uses a hosted database.
 //
-// PR 42's 067 is applied before 071 when that file is on disk or
-// S4_I2B_SQL points at it. O1 has not merged, so 061 is not applied.
+// 068_past_campaign_show_match.sql must be on disk. The #42 case
+// fails when that file is missing. O1 has not merged, so 061 is not applied.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -48,12 +49,8 @@ function pgBin(): string | null {
   return null;
 }
 
-function i2bSqlPath(): string | null {
-  const fromEnv = process.env.S4_I2B_SQL;
-  if (fromEnv && existsSync(fromEnv)) return fromEnv;
-  const sibling = join(__dirname, "067_past_campaign_show_match.sql");
-  if (existsSync(sibling)) return sibling;
-  return null;
+function i2bSqlPath(): string {
+  return join(__dirname, "068_past_campaign_show_match.sql");
 }
 
 describe("migration 071 sql", () => {
@@ -123,18 +120,17 @@ function freePort(): Promise<number> {
   });
 }
 
-function chainMigrations(): string[] {
+function chainMigrations(min: number, max: number): string[] {
   return readdirSync(__dirname)
     .filter((name) => /^\d{3}_.+\.sql$/.test(name))
     .map((name) => ({ name, n: Number(name.slice(0, 3)) }))
-    .filter((row) => row.n >= 1 && row.n <= 66)
+    .filter((row) => row.n >= min && row.n <= max)
     .sort((a, b) => a.n - b.n || a.name.localeCompare(b.name))
     .map((row) => join(__dirname, row.name));
 }
 
 describe.skipIf(!bin)("migration 071 on throwaway postgres", () => {
   const pgRoot = bin ?? "";
-  const i2bPath = i2bSqlPath();
   let dataDir = "";
   let port = 0;
   let explainText = "";
@@ -242,17 +238,18 @@ describe.skipIf(!bin)("migration 071 on throwaway postgres", () => {
       create table if not exists public.outcomes (id uuid primary key default gen_random_uuid());
     `);
 
-    for (const path of chainMigrations()) file(path);
+    for (const path of chainMigrations(1, 66)) file(path);
 
     // 001's CREATE TABLE omits shows.agent_id. 000 and the live table
-    // have the column and idx_shows_agent. 071 reads that column.
+    // have the column and idx_shows_agent. 068 and 071 read that column,
+    // so it has to exist before 067 through 070.
     query(`
       alter table public.shows
         add column if not exists agent_id uuid references public.profiles(id);
       create index if not exists idx_shows_agent on public.shows (agent_id);
     `);
 
-    if (i2bPath) file(i2bPath);
+    for (const path of chainMigrations(67, 70)) file(path);
     file(sqlPath);
     file(sqlPath);
 
@@ -423,6 +420,15 @@ describe.skipIf(!bin)("migration 071 on throwaway postgres", () => {
            and indexname = 'idx_agent_shows_show_agent_approved';
       `)
     ).toBe("idx_agent_shows_show_agent_approved");
+    expect(
+      query(`
+        select column_name
+          from information_schema.columns
+         where table_schema = 'public'
+           and table_name = 'agent_show_relationships'
+           and column_name = 'review_note';
+      `)
+    ).toBe("review_note");
   });
 
   it("uses an index for a hidden-show lookup", () => {
@@ -431,59 +437,60 @@ describe.skipIf(!bin)("migration 071 on throwaway postgres", () => {
     expect(explainText).toContain("idx_show_profiles_user");
   });
 
-  it.skipIf(!i2bPath)(
-    "returns the caller's own hidden shows from the #42 functions and no others",
-    () => {
-      expect(
-        asUser(
-          BRAND_B,
-          `select coalesce(string_agg(id::text, ',' order by id::text), '')
-             from public.past_campaign_show_candidates(
-               public.normalize_show_match_key('Hidden Desk')
-             );`
-        )
-      ).toBe("");
-      expect(
-        asUser(
-          AGENT_A,
-          `select id::text
-             from public.past_campaign_show_candidates(
-               public.normalize_show_match_key('Hidden Desk')
-             );`
-        )
-      ).toBe(HIDDEN);
+  it("returns the caller's own hidden shows from the #42 functions and no others", () => {
+    expect(
+      existsSync(i2bSqlPath()),
+      "068_past_campaign_show_match.sql is not on disk"
+    ).toBe(true);
+    expect(
+      asUser(
+        BRAND_B,
+        `select coalesce(string_agg(id::text, ',' order by id::text), '')
+           from public.past_campaign_show_candidates(
+             public.normalize_show_match_key('Hidden Desk')
+           );`
+      )
+    ).toBe("");
+    expect(
+      asUser(
+        AGENT_A,
+        `select id::text
+           from public.past_campaign_show_candidates(
+             public.normalize_show_match_key('Hidden Desk')
+           );`
+      )
+    ).toBe(HIDDEN);
 
-      const agentImport = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1";
-      const brandImport = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2";
+    const agentImport = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1";
+    const brandImport = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2";
+    query(`
+      insert into public.past_campaign_imports (id, brand_id, source_kind, status) values
+        ('${agentImport}', '${AGENT_A}', 'csv', 'confirmed'),
+        ('${brandImport}', '${BRAND_B}', 'csv', 'confirmed');
+    `);
+    expect(
+      asUser(
+        AGENT_A,
+        `insert into public.past_campaign_records (import_id, brand_id, show_name)
+         values ('${agentImport}', '${AGENT_A}', 'Hidden Desk')
+         returning matched_show_id::text;`
+      )
+    ).toBe(HIDDEN);
+    expect(
+      asUser(
+        BRAND_B,
+        `insert into public.past_campaign_records (import_id, brand_id, show_name)
+         values ('${brandImport}', '${BRAND_B}', 'Hidden Desk')
+         returning coalesce(matched_show_id::text, '');`
+      )
+    ).toBe("");
+    expect(
       query(`
-        insert into public.past_campaign_imports (id, brand_id, source_kind, status) values
-          ('${agentImport}', '${AGENT_A}', 'csv', 'confirmed'),
-          ('${brandImport}', '${BRAND_B}', 'csv', 'confirmed');
-      `);
-      expect(
-        asUser(
-          AGENT_A,
-          `insert into public.past_campaign_records (import_id, brand_id, show_name)
-           values ('${agentImport}', '${AGENT_A}', 'Hidden Desk')
-           returning matched_show_id::text;`
-        )
-      ).toBe(HIDDEN);
-      expect(
-        asUser(
-          BRAND_B,
-          `insert into public.past_campaign_records (import_id, brand_id, show_name)
-           values ('${brandImport}', '${BRAND_B}', 'Hidden Desk')
-           returning coalesce(matched_show_id::text, '');`
-        )
-      ).toBe("");
-      expect(
-        query(`
-          set role service_role;
-          insert into public.past_campaign_records (import_id, brand_id, show_name)
-          values ('${agentImport}', '${AGENT_A}', 'Hidden Desk')
-          returning matched_show_id::text;
-        `)
-      ).toBe(HIDDEN);
-    }
-  );
+        set role service_role;
+        insert into public.past_campaign_records (import_id, brand_id, show_name)
+        values ('${agentImport}', '${AGENT_A}', 'Hidden Desk')
+        returning matched_show_id::text;
+      `)
+    ).toBe(HIDDEN);
+  });
 });
