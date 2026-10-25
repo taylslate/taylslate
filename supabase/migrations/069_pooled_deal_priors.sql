@@ -8,8 +8,10 @@
 -- with the service role.
 --
 -- 061 is reserved. 062, 063, and 064 are not in the repo.
--- 067 on main is the roster-link review note. 068 is I2b (PR 42).
--- This file is 069. Apply it after 068.
+-- 067 is the roster-link review note. 068 (PR 42) is the only
+-- definition of refresh_pooled_import_priors(). This file is 069.
+-- It does not create, replace, revoke, or grant that function.
+-- Apply 069 after 068.
 --
 -- public.pooled_deal_priors is rebuilt by
 -- public.refresh_pooled_deal_priors(). The source is deals whose
@@ -35,20 +37,13 @@
 -- deal_conversion_reports.reported_conversions and
 -- guaranteed_downloads times the coalesced episode count.
 --
--- This file also replaces refresh_pooled_import_priors(). An
--- uploaded row enters only when the import is confirmed,
--- pooling_consent is true, matched_show_id is set, and
--- show_match_status is null or 'matched'. Ambiguous rows stay out.
--- A null status is a row from before 068. If matched_show_id does
--- not exist, the refresh empties the import pool and inserts
--- nothing. If show_match_status does not exist yet, that predicate
--- is left out of the executed statement so the missing column is
--- not referenced. On-platform deals are pooled by
--- refresh_pooled_deal_priors(), which does not read imports.
+-- Uploaded rows are not rebuilt here. 068 keeps them out unless
+-- matched_show_id is set and show_match_status is null or matched.
 --
--- The functions delete with WHERE true because of safeupdate.
--- They write only pooled_deal_priors and pooled_import_priors.
--- They do not write shows, show_profiles, show_surfaces, or benchmarks.
+-- The function deletes with WHERE true because of safeupdate.
+-- It writes only pooled_deal_priors.
+-- It does not write shows, show_profiles, show_surfaces, benchmarks,
+-- or pooled_import_priors.
 --
 -- Idempotent. Safe to re-run. No backfill.
 -- Grants come before RLS. service_role only. anon, authenticated,
@@ -74,13 +69,10 @@
 --   select grantee, privilege_type
 --     from information_schema.routine_privileges
 --    where routine_schema = 'public'
---      and routine_name in (
---        'refresh_pooled_deal_priors',
---        'refresh_pooled_import_priors'
---      )
---    order by routine_name, grantee, privilege_type;
+--      and routine_name = 'refresh_pooled_deal_priors'
+--    order by grantee, privilege_type;
 --   Expected execute: service_role. Not anon, not authenticated,
---   not public.
+--   not public. refresh_pooled_import_priors is unchanged by 069.
 -- ============================================================
 
 create table if not exists public.pooled_deal_priors (
@@ -371,124 +363,4 @@ revoke all on function public.refresh_pooled_deal_priors() from authenticated;
 grant execute on function public.refresh_pooled_deal_priors() to service_role;
 
 comment on function public.refresh_pooled_deal_priors() is
-  'Rebuilds pooled_deal_priors from booked, uncancelled deals. service_role only. Does not write shows or public show stats.';
-
--- -------------------- import refresh guard --------------------
--- 068 sets matched_show_id and show_match_status on a confident
--- auto-match. matched_show_id already exists from 054.
--- show_match_status does not, until 068. The status predicate is
--- appended only when that column exists, so a database that has
--- not applied 068 does not error. Ambiguous rows never enter.
--- A null show_match_status is a pre-068 row and still enters when
--- matched_show_id is set.
-
-create or replace function public.refresh_pooled_import_priors()
-returns integer
-language plpgsql
-security invoker
-set search_path = public
-as $fn$
-declare
-  inserted_count integer;
-  has_match boolean;
-  has_status boolean;
-  status_sql text := '';
-begin
-  select exists (
-    select 1
-      from information_schema.columns
-     where table_schema = 'public'
-       and table_name = 'past_campaign_records'
-       and column_name = 'matched_show_id'
-  ) into has_match;
-
-  select exists (
-    select 1
-      from information_schema.columns
-     where table_schema = 'public'
-       and table_name = 'past_campaign_records'
-       and column_name = 'show_match_status'
-  ) into has_status;
-
-  delete from public.pooled_import_priors where true;
-
-  if not has_match then
-    return 0;
-  end if;
-
-  if has_status then
-    status_sql := 'and (rec.show_match_status is null or rec.show_match_status = ''matched'')';
-  end if;
-
-  execute format($refresh$
-    insert into public.pooled_import_priors (
-      category,
-      placement,
-      price_type,
-      brand_count,
-      record_count,
-      median_cpm,
-      median_conversions_per_1k_downloads,
-      refreshed_at
-    )
-    select
-      grouped.category,
-      grouped.placement,
-      grouped.price_type,
-      grouped.brand_count,
-      grouped.record_count,
-      case
-        when grouped.price_type = 'cpm' then grouped.median_rate
-        else null
-      end,
-      grouped.median_conversions_per_1k,
-      now()
-    from (
-      select
-        cats.category,
-        rec.placement,
-        rec.price_type,
-        count(distinct rec.brand_id)::integer as brand_count,
-        count(*)::integer as record_count,
-        percentile_cont(0.5) within group (order by rec.rate)
-          filter (where rec.rate is not null) as median_rate,
-        percentile_cont(0.5) within group (
-          order by (rec.conversions::numeric * 1000) / nullif(rec.downloads, 0)
-        ) filter (
-          where rec.downloads is not null
-            and rec.downloads > 0
-            and rec.conversions is not null
-        ) as median_conversions_per_1k
-      from public.past_campaign_records rec
-      join public.past_campaign_imports imp
-        on imp.id = rec.import_id
-       and imp.brand_id = rec.brand_id
-      join public.shows sh
-        on sh.id = rec.matched_show_id
-      cross join lateral (
-        select distinct btrim(cat) as category
-        from unnest(coalesce(sh.categories, '{}'::text[])) as cat
-        where cat is not null
-          and btrim(cat) <> ''
-      ) cats
-      where imp.status = 'confirmed'
-        and imp.pooling_consent = true
-        and rec.matched_show_id is not null
-        %s
-      group by cats.category, rec.placement, rec.price_type
-      having count(distinct rec.brand_id) >= 5
-    ) grouped
-  $refresh$, status_sql);
-
-  get diagnostics inserted_count = row_count;
-  return inserted_count;
-end;
-$fn$;
-
-revoke all on function public.refresh_pooled_import_priors() from public;
-revoke all on function public.refresh_pooled_import_priors() from anon;
-revoke all on function public.refresh_pooled_import_priors() from authenticated;
-grant execute on function public.refresh_pooled_import_priors() to service_role;
-
-comment on function public.refresh_pooled_import_priors() is
-  'Rebuilds pooled_import_priors from confirmed imports with pooling_consent, matched_show_id set, and show_match_status null or matched. Ambiguous rows stay out. If matched_show_id does not exist, the pool is left empty. If show_match_status does not exist yet, that predicate is omitted. service_role only.';
+  'Rebuilds pooled_deal_priors from booked, uncancelled deals. service_role only. Does not write shows, public show stats, or pooled_import_priors.';

@@ -80,8 +80,25 @@ describe("migration 069 sql", () => {
 
   it("does not write shows or public show stats", () => {
     expect(statements).not.toMatch(
-      /\b(insert into|update|delete from)\s+public\.(shows|show_profiles|show_surfaces|benchmarks)\b/i
+      /\b(insert into|update|delete from)\s+public\.(shows|show_profiles|show_surfaces|benchmarks|pooled_import_priors)\b/i
     );
+  });
+
+  it("leaves refresh_pooled_import_priors to 068", () => {
+    expect(statements).not.toMatch(
+      /create or replace function public\.refresh_pooled_import_priors/i
+    );
+    expect(statements).not.toMatch(
+      /grant execute on function public\.refresh_pooled_import_priors/i
+    );
+    expect(statements).not.toMatch(
+      /revoke all on function public\.refresh_pooled_import_priors/i
+    );
+    expect(statements).not.toMatch(
+      /comment on function public\.refresh_pooled_import_priors/i
+    );
+    expect(sql).toContain("-- 069:");
+    expect(sql).not.toMatch(/^-- 067:/m);
   });
 });
 
@@ -384,7 +401,12 @@ describe.skipIf(!bin)("migration 069 on throwaway postgres", () => {
     ).toBe("20");
   });
 
-  it("pools only consented imports with matched_show_id, and guards a missing column", () => {
+  it("leaves the import refresh from 058 in place", () => {
+    const definition = query(
+      "select pg_get_functiondef('public.refresh_pooled_import_priors()'::regprocedure);"
+    );
+    expect(definition).toContain("rec.matched_show_id is not null");
+    expect(definition).not.toContain("show_match_status");
     expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
     expect(
       query(`
@@ -393,41 +415,8 @@ describe.skipIf(!bin)("migration 069 on throwaway postgres", () => {
          where category = 'Imports';
       `)
     ).toBe("5|23");
-
-    query(`
-      alter table public.past_campaign_records
-        add column show_match_status text;
-    `);
-    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
-    query(`
-      update public.past_campaign_records
-         set show_match_status = 'ambiguous'
-       where brand_id = '${uid(1)}';
-    `);
-    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("0");
-    query(`
-      update public.past_campaign_records
-         set show_match_status = 'matched'
-       where brand_id = '${uid(1)}';
-    `);
-    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
-    query(`
-      update public.past_campaign_records
-         set show_match_status = null
-       where brand_id = '${uid(1)}';
-    `);
-    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
-    query(`alter table public.past_campaign_records drop column show_match_status;`);
-    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
-
     query(`update public.past_campaign_records set matched_show_id = null;`);
     expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("0");
-    query(`alter table public.past_campaign_records drop column matched_show_id;`);
-    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("0");
-    query(`
-      alter table public.past_campaign_records
-        add column matched_show_id uuid references public.shows(id) on delete set null;
-    `);
   });
 
   it("denies anon and authenticated, and re-runs cleanly", () => {

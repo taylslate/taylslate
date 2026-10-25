@@ -565,7 +565,7 @@ Migration 061 is not applied. 065 and 066 are already on main. 061 does not gran
 
 ### What was built
 
-Anonymized priors from booked on-platform deals, plus the existing consented import pool when `matched_show_id` is set and `show_match_status` is null or `matched`. Booked means `show_signed`, `delivering`, `completed`, `signed`, or `live`, with `cancelled_at` null. A group needs at least 5 distinct brands (`coalesce(brand_profile_id, brand_id)`). The deal table stores no brand, deal, show, or user id. `agreed_cpm`, `agreed_placement`, and `agreed_episode_count` win when set. Outcome impressions are used only when `outcomes.booking_id` matches the deal. Uploaded rows stay out unless the import is confirmed, `pooling_consent` is true, `matched_show_id` is set, and the status is null or `matched`. Ambiguous rows stay out. If `matched_show_id` is missing, the import refresh empties its pool and does not reference the column. If `show_match_status` is missing, that predicate is omitted. Apply 069 after 068.
+Anonymized priors from booked on-platform deals. Booked means `show_signed`, `delivering`, `completed`, `signed`, or `live`, with `cancelled_at` null. A group needs at least 5 distinct brands (`coalesce(brand_profile_id, brand_id)`). The deal table stores no brand, deal, show, or user id. `agreed_cpm`, `agreed_placement`, and `agreed_episode_count` win when set. Outcome impressions are used only when `outcomes.booking_id` matches the deal. 069 does not replace `refresh_pooled_import_priors`. 068 is the only definition, and it keeps a row out unless `matched_show_id` is set and `show_match_status` is null or `matched`. Apply 069 after 068.
 
 `loadPooledPriors` merges the two tables. Deal priors win on a shared key. Import priors fill the rest. Discovery already calls that loader. A daily cron rebuilds both tables behind `CRON_SECRET`. `/terms` shows the approved consent line.
 
@@ -587,11 +587,11 @@ Anonymized priors from booked on-platform deals, plus the existing consented imp
 
 `npx vitest run supabase/migrations/069_pooled_deal_priors.test.ts lib/learning/pooled-deal-priors.test.ts lib/learning/pooled-priors.test.ts app/api/cron/pooled-priors/route.test.ts`
 
-The throwaway Postgres suite applies 001 through 069, checks 4 brands against 5, ignores cancelled and unsigned deals, skips an ambiguous import row once `show_match_status` exists, denies anon and authenticated select, execute, and truncate, and re-runs 069. It is skipped when Postgres binaries are absent. No live writes. PR 42 has not landed, so this branch is not rebased onto 068.
+The throwaway Postgres suite applies 001 through 069, checks 4 brands against 5, ignores cancelled and unsigned deals, denies anon and authenticated select, execute, and truncate, and re-runs 069. It is skipped when Postgres binaries are absent. No live writes. PR 42 has not landed, so this branch is not rebased onto 068. The ambiguous-row proof waits for that rebase.
 
 ### Known gaps
 
-- 069 is not applied. Do not refresh the hosted pool until Chris says so. Merge this after PR 42 lands as 068, then rebase onto that first.
+- 069 is not applied. Do not refresh the hosted pool until Chris says so. After PR 42 merges as 068, rebase onto it and add the ambiguous-row test on `lib/learning/pooled-priors.ts`.
 - `/terms` redirects signed-out visitors to `/login`. `proxy.ts` is outside this job.
 - The marketing footer Terms link still points at `#`.
 - The two pools are not summed. Each source keeps its own 5-brand bar so one brand cannot be counted twice.

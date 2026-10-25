@@ -148,13 +148,8 @@ describe("buildPooledDealPriors", () => {
     expect(sql).toContain("coalesce(d.agreed_episode_count, d.num_episodes)");
     expect(sql).toContain("nullif(btrim(d.agreed_placement), '')");
     expect(sql).toContain("delete from public.pooled_deal_priors where true");
-    expect(sql).toContain("column_name = 'matched_show_id'");
-    expect(sql).toContain("column_name = 'show_match_status'");
-    expect(sql).toContain("and rec.matched_show_id is not null");
-    expect(sql).toContain(
-      "and (rec.show_match_status is null or rec.show_match_status = ''matched'')"
-    );
-    expect(sql).toContain("imp.pooling_consent = true");
+    expect(sql).not.toContain("create or replace function public.refresh_pooled_import_priors");
+    expect(sql).not.toContain("grant execute on function public.refresh_pooled_import_priors");
     expect(sql).toContain("o.booking_id = d.id");
     expect(sql).not.toContain("o.show_id = d.show_id and");
     expect(sql).toContain("security invoker");
