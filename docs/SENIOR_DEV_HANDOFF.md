@@ -641,4 +641,29 @@ Migration 070 creates `api_write_actions` with RLS on and zero policies. `servic
 - `api_key_id` does not cascade when a key row is deleted. Deleting the profile still cascades the action through `brand_id`.
 - The campaign payload has no derived name. The manual brief route builds that name when it creates the row. This route only records the brief fields.
 
+## S4: signed-in shows SELECT
 
+### What was built
+
+Migration 071 replaces "Shows are publicly readable" (`USING (true)`) with "Shows readable by signed-in participants" `FOR SELECT TO authenticated`. A signed-in user sees a `shows` row when it is discoverable, when `shows.agent_id` is the caller, when the caller has an approved roster link, when the caller is `brand_id`, `agency_id`, or `agent_id` on a deal for that show, or when the caller has a verified tie. The tie is a deal whose `show_profile_id` is the caller's `show_profiles` row, or a `show_owner` row whose `contact_email` matches the caller's `profiles.email` and the caller has a `show_profiles` row. `show_profiles.podscan_id` is not a tie. There is no admin branch. The live `profiles_role_check` allows `brand`, `agency`, `agent`, and `show`.
+
+O1 has not merged and `show_ownership_proofs` does not exist, so that third tie is a follow-up. Policies on `agent_show_relationships`, `deals`, `show_profiles`, and `profiles` do not read `shows`, so the checks stay inline. `idx_agent_shows_show_agent_approved` is new. Anon and public still have nothing on `shows`. Authenticated keeps `SELECT` only. `service_role` is unchanged. 071 is not applied.
+
+No app code was edited. The session-read audit is in `docs/jobs/S4.md`.
+
+### Where
+
+- `supabase/migrations/071_shows_select_policy.sql`
+- `supabase/migrations/071_shows_select_policy.test.ts`
+- `docs/jobs/S4.md`
+
+### Tests
+
+`supabase/migrations/071_shows_select_policy.test.ts`. SQL checks always run. The throwaway Postgres suite applies 001 through 066, adds `shows.agent_id`, then main's 067 and every migration up to 070 that exists on disk, including PR 42's `068_past_campaign_show_match.sql`, then 071 twice. The #42 case fails when that 068 file is missing. The suite is skipped when Postgres binaries are absent. No UI change. Screenshots are not applicable.
+
+### Known gaps
+
+- An admin who is not the creator, an approved rep, a deal participant, or a verified tie no longer receives a hidden show from the session client. `GET` and `PATCH /api/shows/[id]`, `POST /api/shows/[id]/claim`, and `POST /api/shows/[id]/enrich` read `shows` before `isShowsAdmin` / `canEditShow`, so those routes 404 that case. Those files were not edited. There is no database admin signal to add to the policy.
+- `getShowBySlug` (`lib/data/queries.ts:1113`) is a session read. A hidden show the caller cannot see returns null, including `createShow`'s slug-conflict return. `queries.ts` belongs to O1 and was not edited.
+- The `show_ownership_proofs` branch waits until O1 has merged and the table exists.
+- `001_initial_schema.sql` omits `shows.agent_id`. The live table has it. 071 reads it and does not add it.
