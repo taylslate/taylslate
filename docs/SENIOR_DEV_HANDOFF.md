@@ -1092,3 +1092,44 @@ No page or component was edited. Screenshots are not applicable.
 - A channel whose topics do not overlap the ring can still score topical relevance at 20 (measured, not degraded) and land in the low band. Weights, band thresholds, and tiering were not changed.
 - No migration. `categories` is already `string[]` and holds the labels. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
 - Live confirmation waits on deploy. Chris or Angus runs a new More/Less campaign. Compare, read-only, to `cd7d3972`: YouTube channel count, countries, band spread, and topical relevance average. Quota errors show on the discovery `errors` list and in the runtime log as `YouTube query ... failed`.
+
+## D5
+
+### What was built
+
+YouTube discovery was searching one raw ring label. Campaign `25f63dd0` sent `ingredient-literate women's wellness`, got 0 channels, and never reached the market filter. D4 builds queries from ring labels only and drops the interest query whenever any ring exists.
+
+`buildYouTubeQueries` now normalizes each ring label before search. Hyphens and slashes become spaces, possessive `'s` is removed, other punctuation is dropped, and only the first 5 words are kept. `ingredient-literate women's wellness` becomes `ingredient literate women wellness`. A curly apostrophe is treated the same way.
+
+When that list is shorter than `MAX_YOUTUBE_SEARCHES` (4), the function tops up with `buildYouTubeQuery(brief)` (the existing interest and keyword query), then shorter tails of each ring: the last 3 words, then the last 2. A tail drops punctuation but keeps the letter s, so `women's wellness` becomes `womens wellness`. Duplicates are skipped. The list never exceeds 4. Four ring queries still do not take a top-up. A brief with no ring labels still uses the single interest query.
+
+`discoverFromYoutube` still logs each query and its channel count. If every search returns 0 channels, it runs the interest query once more when that string was not already searched and the run is still under 4 searches. Four empty searches do not add a fifth. Channels from that retry go through the same dedupe and market filter, then the same view and video filters. Those filters, scoring, weights, bands, podcast queries, the UI, env, and the database were not changed. The quota worst case stays 4 channel searches (705 units).
+
+### Where
+
+- `lib/discovery/category-mapping.ts` (`buildYouTubeQueries`, label normalization, top-up)
+- `lib/discovery/category-mapping.test.ts`
+- `lib/discovery/discover-shows.ts` (YouTube query loop and the empty retry only)
+- `lib/discovery/discover-shows.test.ts`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run lib/discovery/category-mapping.test.ts lib/discovery/discover-shows.test.ts` (2 files, 27 passed).
+
+Covers label normalization (hyphen, slash, straight and curly possessive `'s`, punctuation, 5-word cap), top-up for one ring `ingredient-literate women's wellness` plus Health & Wellness (`ingredient literate women wellness`, `fitness workout`, `literate womens wellness`, `womens wellness`), 4 rings with no top-up, the cap when tails would exceed 4, blank labels, the no-ring interest fallback, the podcast query list unchanged, one empty retry, no second interest search, no fifth search, no retry after a hit, and retry hits still passing the market filter.
+
+Full `npx vitest run`: 265 files, 2380 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 134 pages.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- Four ring queries that all return 0 do not get the interest retry. That would be a fifth `search.list` (100 more units). The cap stays at 4.
+- When top-up already included the interest query, the empty retry does not search it again.
+- A ring brief with no mapped interests and no keywords tops up with `buildYouTubeQuery`'s existing fallback, `popular creator`.
+- The full ring query drops possessive `'s` (`women`). The shorter tail keeps the s (`womens`). Both can run when the cap has room.
+- Normalization changes search text only. Stored ring labels are unchanged.
+- Market filter, min views, video count, brand-channel filter, scoring, weights, bands, and podcast query building were not changed.
+- No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
+- Live confirmation waits on deploy. Rerun a 1-ring campaign. Read-only: more than one YouTube query in the logs, a nonzero channel count, then the market filter count and YouTube rows in `conviction_scores`. Campaign `25f63dd0` is the reference (one query, `ingredient-literate women's wellness`, 0 channels).

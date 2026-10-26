@@ -4,8 +4,9 @@
 // IDs, YouTube search terms, and diverse discovery queries.
 //
 // Podscan: Uses /episodes/search with text queries + category filters
-// YouTube: one text query per confirmed ring (capped). Interest terms are
-// the fallback when a brief has no ring labels.
+// YouTube: one normalized query per confirmed ring (capped at 4). When a
+// run has fewer than 4 ring queries, top up with the interest/keyword query
+// and shorter ring tails. No ring labels: the interest/keyword query alone.
 // ============================================================
 
 import type { DiscoveryBrief } from "./discover-shows";
@@ -257,20 +258,25 @@ export function buildDiscoveryQueries(brief: DiscoveryBrief): {
 }
 
 /**
- * One YouTube channel search per confirmed ring. The allowed band is 3 to 5.
- * Four searches is 400 quota units (search.list is 100 each).
+ * One YouTube channel search per confirmed ring, plus top-up queries when
+ * the ring list is short. The allowed band is 3 to 5. Four searches is 400
+ * quota units (search.list is 100 each). The empty-result retry stays inside
+ * this cap, so a run never issues a fifth channel search.
  */
 export const MAX_YOUTUBE_SEARCHES = 4;
 
-/** Words kept from a ring label. A label is the ring's own search terms. */
-const RING_QUERY_WORD_CAP = 8;
+/** Words kept from a normalized ring label. */
+const RING_QUERY_WORD_CAP = 5;
 
 /**
- * One query per confirmed ring, in slot order, capped at MAX_YOUTUBE_SEARCHES.
- * Each query is that ring's label only. Interests and keywords are not mixed
- * in, so two campaigns do not collapse onto one generic search.
- * Identical labels count once. With no ring terms, fall back to the single
- * interest/keyword query (briefs that are not a conviction run).
+ * One normalized query per confirmed ring, in slot order, capped at
+ * MAX_YOUTUBE_SEARCHES. Hyphens and slashes become spaces, possessive 's
+ * and other punctuation are dropped, and only the first 5 words are kept.
+ * Identical labels count once. When fewer than 4 ring queries exist, top up
+ * with the interest/keyword query, then shorter tails (last 3 words, then
+ * last 2). A tail drops punctuation and keeps the letter s, so
+ * "women's wellness" becomes "womens wellness". With no ring terms, fall
+ * back to the single interest/keyword query.
  */
 export function buildYouTubeQueries(brief: {
   target_interests: string[];
@@ -279,30 +285,89 @@ export function buildYouTubeQueries(brief: {
 }): string[] {
   const queries: string[] = [];
   const seen = new Set<string>();
-  for (const term of brief.ring_terms ?? []) {
-    const query = ringLabelToYouTubeQuery(term);
-    if (!query) continue;
-    const key = query.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    queries.push(query);
-    if (queries.length >= MAX_YOUTUBE_SEARCHES) break;
-  }
-  if (queries.length > 0) return queries;
 
-  const fallback = buildYouTubeQuery(brief).trim();
-  return fallback ? [fallback] : [];
+  const push = (query: string): boolean => {
+    const trimmed = query.trim().replace(/\s+/g, " ");
+    if (!trimmed) return false;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) return false;
+    if (queries.length >= MAX_YOUTUBE_SEARCHES) return false;
+    seen.add(key);
+    queries.push(trimmed);
+    return true;
+  };
+
+  let ringQueries = 0;
+  for (const term of brief.ring_terms ?? []) {
+    const query = normalizeYouTubeRingLabel(term);
+    if (!query) continue;
+    if (push(query)) ringQueries += 1;
+    if (queries.length >= MAX_YOUTUBE_SEARCHES) return queries;
+  }
+
+  if (ringQueries === 0) {
+    const fallback = buildYouTubeQuery(brief).trim();
+    return fallback ? [fallback] : [];
+  }
+
+  push(buildYouTubeQuery(brief));
+  if (queries.length >= MAX_YOUTUBE_SEARCHES) return queries;
+
+  for (const term of brief.ring_terms ?? []) {
+    if (!normalizeYouTubeRingLabel(term)) continue;
+    for (const variant of shorterYouTubeRingVariants(term)) {
+      push(variant);
+      if (queries.length >= MAX_YOUTUBE_SEARCHES) return queries;
+    }
+  }
+
+  return queries;
 }
 
-function ringLabelToYouTubeQuery(label: string): string {
-  return label.trim().split(/\s+/).filter(Boolean).slice(0, RING_QUERY_WORD_CAP).join(" ");
+/**
+ * Search text for a ring label. Hyphens and slashes become spaces, possessive
+ * 's is removed, remaining punctuation is dropped, and at most 5 words remain.
+ */
+function normalizeYouTubeRingLabel(label: string): string {
+  const words = label
+    .trim()
+    .replace(/[-/]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) =>
+      word
+        .replace(/['\u2018\u2019\u02BC]s\b/gi, "")
+        .replace(/[^\p{L}\p{N}]+/gu, "")
+    )
+    .filter(Boolean)
+    .slice(0, RING_QUERY_WORD_CAP);
+  return words.join(" ");
+}
+
+/**
+ * Last 3 words, then last 2, with punctuation (including apostrophes) removed.
+ * "women's wellness" becomes "womens wellness".
+ */
+function shorterYouTubeRingVariants(label: string): string[] {
+  const words = label
+    .trim()
+    .replace(/[-/]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.replace(/[^\p{L}\p{N}]+/gu, ""))
+    .filter(Boolean);
+  const variants: string[] = [];
+  if (words.length >= 3) variants.push(words.slice(-3).join(" "));
+  if (words.length >= 2) variants.push(words.slice(-2).join(" "));
+  return variants;
 }
 
 /**
  * Build a YouTube search query from campaign brief interests + keywords.
  * YouTube API needs text queries — combine interest terms with keywords
  * for the best channel discovery results.
- * Used when a brief has no confirmed ring terms.
+ * Used when a brief has no confirmed ring terms, and as the top-up query
+ * when a run has fewer than MAX_YOUTUBE_SEARCHES ring queries.
  */
 export function buildYouTubeQuery(brief: {
   target_interests: string[];
