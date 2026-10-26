@@ -783,3 +783,26 @@ Covers a hidden show excluded from the list, a brand seeing name, platform, audi
 - `/crm/[showId]` is the existing brand show page. It 404s unless that brand already has a contact, note, or deal for the show. There is no catalog profile route, and this job could not add one.
 - `isRouteAllowedForRole("/shows/search", "brand")` stays false. The segment rule was not changed. This page checks brand or agency itself.
 - `lib/brand/tokens.css` still does not list `/shows/search` in its page comment. That file was not edited.
+
+## R1a: Onboarding rename: Sales Agent / Manager
+
+### What was built
+
+The onboarding role picker label for role id `agent` now reads "Sales Agent / Manager". The role value stays `agent`. Routes, the H1 role allowlist, login, OTP, and the show option are unchanged. Show self-sign-up stays out of this job.
+
+The only user-facing copy of that label was the role card title in `app/onboarding/roles.tsx`. A search of the repo found no other "Agent / Talent Manager" or "Talent Agent" string. Fixture names such as "Northwind Talent" and the IO line "Publisher / Talent Representative" are not this label and were left alone.
+
+### Where
+
+- `app/onboarding/roles.tsx` (title text only)
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx vitest run` (255 files, 2245 passed, 40 skipped), `npx tsc --noEmit`, and `npx next build` all passed. `app/onboarding/roles.test.tsx` still asserts the ids are brand, agency, and agent, with show excluded. No migration. No live data writes.
+
+### Known gaps
+
+- The card description is still "I represent shows and manage their ad inventory". Only the title changed.
+- R1b (show self-sign-up) is not in this change. It waits for S-E rate limits.
+- Screenshots were taken against a local mock auth server so the signed-in picker could render without a live Supabase write.
