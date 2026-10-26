@@ -4,6 +4,8 @@ Read-only inventory of Taylslate as of 2026-10-26. Live checks are `SELECT` only
 
 H1 status: SA-01, SA-02, and SA-03 were fixed by H1 (commit 632f420, migration 072_lock_money_columns). 072 is applied and verified on 2026-10-26: `payments` is SELECT-only for authenticated, trigger `profiles_protect_money_columns` exists, and a fee update as authenticated is rejected with 42501. The table inventory below is the earlier 2026-10-26 read and does not include 072.
 
+S-K status: SA-25 is fixed for `GET /api/shows`. A caller with no tie receives `id`, `name`, `platform`, `audience_size`, and `categories`, plus `image_url` and `description` when those strings are non-empty. Contact and rate card stay on the object for the owner, a `getVerifiedProfileTies` match on the caller's `show_profiles` row, an agent's own roster, or a brand or agency with a deal on that show. `show_profiles.podscan_id` is not a tie. `GET /api/shows/[id]` and `GET /api/v1/shows` are unchanged.
+
 Counts to verify:
 
 - Public tables: 43. `SELECT count(*) FROM pg_tables WHERE schemaname = 'public'` returned 43.
@@ -325,7 +327,7 @@ One row per `route.ts`. "Session" means `supabase.auth.getUser()` through `getAu
 | app/api/shows/[id]/route.ts | GET,PATCH | yes. Session (route.ts:15) | see route.ts:31 | no | field checks in the handler | no | none in route |
 | app/api/shows/enrich-batch/route.ts | POST | yes. Session (route.ts:37) | see route.ts:63 | no | field checks in the handler | no | none in route |
 | app/api/shows/import/route.ts | POST | yes. Session auth.getUser (route.ts:15) | isShowsAdmin or profile.role agent (route.ts:22). Body agent id is ignored | no | field checks in the handler | no | none. CSV is read with file.text() with no size or row cap (route.ts:37) |
-| app/api/shows/route.ts | GET,POST | yes. Session (route.ts:17) | see route.ts:94 | no | field checks in the handler | no | none in route |
+| app/api/shows/route.ts | GET,POST | yes. Session | GET: public fields unless owner, getVerifiedProfileTies, agent roster, or a deal (SA-25). POST: agent or shows admin | yes, after the auth check, for the tie and deal reads | field checks in the handler | no | none in route |
 | app/api/stripe/config/route.ts | GET | no. Returns the Stripe publishable key | none | no | field checks in the handler | no | none in route |
 | app/api/stripe/connect/create-account/route.ts | POST | yes. Session (route.ts:8) | no explicit id compare in the route. User-scoped client calls are limited by RLS | yes, after the auth check (route.ts:13) | field checks in the handler | no | none in route |
 | app/api/stripe/connect/onboarding-link/route.ts | POST | yes. Session (route.ts:14) | no explicit id compare in the route. User-scoped client calls are limited by RLS | yes, after the auth check (route.ts:19) | field checks in the handler | no | none in route |
@@ -505,6 +507,10 @@ Status: fixed by H1 (commit 632f420, migration 072_lock_money_columns). Applied 
 **SA-08. Outreach generation calls the model with no session.** `app/api/campaigns/outreach/generate/route.ts:9`. The body is a campaign object and there is no auth check and no body cap. Fix: require a session and a campaign the caller owns. Lane: S-E.
 
 **SA-09. A pitch token sends a login email to any address.** `app/api/auth/magic/start/route.ts:40` and `:53`. The outreach JWT has no expiry, the body email is not compared to `sent_to_email`, `bypassManagedReroute` is true, and there is no rate limit. The message is a real Taylslate login link. `GET /api/auth/magic` will create or sign in that email when the link is opened (`route.ts:49`). Fix: send only to the outreach contact, expire the pitch token, and rate limit. Lane: new (public-route auth) and S-E.
+
+**SA-25. GET /api/shows returned contact and rate card to any signed-in brand.** `app/api/shows/route.ts` GET, found during U1 (PR #52). A brand with no relationship to the show received `contact` (name, email, method) and `rate_card`, plus sponsors, slots, and income demographics. The U1 search client drops those fields in the browser after the response is already sent. Fix: build the JSON from an allowlist on the server. Return contact and rate card only to the owner, a verified tie from `getVerifiedProfileTies`, an agent's own roster, or a brand or agency with a deal on that show. Lane: S-K.
+
+Status: fixed for `GET /api/shows` by S-K. `GET /api/shows/[id]` and `GET /api/v1/shows` still return the full show. Those routes are outside this job.
 
 ### Medium
 
