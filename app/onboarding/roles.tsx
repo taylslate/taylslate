@@ -41,7 +41,7 @@ export const ONBOARDING_ROLES: OnboardingRole[] = [
   },
   {
     id: "agent",
-    title: "Agent / Talent Manager",
+    title: "Sales Agent / Manager",
     description: "I represent shows and manage their ad inventory",
     icon: (
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
