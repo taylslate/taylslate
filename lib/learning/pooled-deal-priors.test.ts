@@ -92,6 +92,11 @@ describe("buildPooledDealPriors", () => {
     expect(JSON.stringify(priors)).not.toContain("brand-");
   });
 
+  it("drops five booked brands when every deal is on a hidden show", () => {
+    expect(buildPooledDealPriors(brands(5, { discoverable: false }))).toEqual([]);
+    expect(buildPooledDealPriors(brands(5))).toHaveLength(1);
+  });
+
   it("counts a brand profile once and lets agreed fields win", () => {
     const completed = [
       row({
@@ -150,6 +155,7 @@ describe("buildPooledDealPriors", () => {
       "signed",
     ]);
     expect(sql).toContain("d.cancelled_at is null");
+    expect(sql).toContain("and sh.is_discoverable");
     expect(sql).toContain("count(distinct rows.brand_key) >= 5");
     expect(sql).toContain("check (brand_count >= 5)");
     expect(sql).toContain("coalesce(d.agreed_cpm, d.cpm_rate)");

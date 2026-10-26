@@ -3,6 +3,7 @@
 // buildPooledDealPriors is the pure form of refresh_pooled_deal_priors().
 // A deal counts when its status is signed, live, delivering, or
 // completed, and cancelled_at is empty. show_signed does not count.
+// A hidden show (discoverable false) does not count.
 // A group is (category, placement, price_type).
 // It is kept only when at least POOL_MIN_BRANDS distinct brands are in it.
 // Brand identity is coalesce(brand_profile_id, brand_id) and is dropped
@@ -35,6 +36,8 @@ export interface PooledDealSourceRow {
   brandProfileId: string | null;
   status: string;
   cancelledAt: string | null;
+  /** False keeps the deal out. Omitted means the show is discoverable. */
+  discoverable?: boolean;
   categories: string[];
   placement: string | null;
   agreedPlacement: string | null;
@@ -72,6 +75,7 @@ export function buildPooledDealPriors(rows: PooledDealSourceRow[]): PooledPrior[
   for (const row of rows) {
     if (!POOL_BOOKED_STATUSES.has(row.status)) continue;
     if (row.cancelledAt != null && row.cancelledAt.trim() !== "") continue;
+    if (row.discoverable === false) continue;
     const brandKey = (row.brandProfileId?.trim() || row.brandId?.trim() || "");
     if (!brandKey) continue;
 

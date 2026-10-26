@@ -256,12 +256,13 @@ describe.skipIf(!bin)("migration 069 on throwaway postgres", () => {
       );
     }
     lines.push(`
-      insert into public.shows (id, name, platform, categories) values
-        ('${show(1)}', 'Crime', 'podcast', array['True Crime']),
-        ('${show(2)}', 'News', 'podcast', array['News']),
-        ('${show(3)}', 'Comedy', 'podcast', array['Comedy']),
-        ('${show(4)}', 'Health', 'podcast', array['Health']),
-        ('${show(5)}', 'Imports', 'podcast', array['Imports']);
+      insert into public.shows (id, name, platform, categories, is_discoverable) values
+        ('${show(1)}', 'Crime', 'podcast', array['True Crime'], true),
+        ('${show(2)}', 'News', 'podcast', array['News'], true),
+        ('${show(3)}', 'Comedy', 'podcast', array['Comedy'], true),
+        ('${show(4)}', 'Health', 'podcast', array['Health'], true),
+        ('${show(5)}', 'Imports', 'podcast', array['Imports'], true),
+        ('${show(6)}', 'Hidden', 'podcast', array['Hidden'], false);
       insert into public.campaigns (id, user_id, name, budget_total)
         values ('${uid(900)}', '${brand(1)}', 'Pool', 1000);
       insert into public.brand_profiles (id, user_id)
@@ -304,6 +305,9 @@ describe.skipIf(!bin)("migration 069 on throwaway postgres", () => {
     });
     addDeal({ n: 6, showN: 1, brandN: 6, status: "completed", agreed: 999, cancelled: true });
     addDeal({ n: 9, showN: 1, brandN: 9, status: "show_signed", agreed: 999 });
+    for (let n = 1; n <= 5; n += 1) {
+      addDeal({ n: 40 + n, showN: 6, brandN: n, status: "completed", agreed: 80 });
+    }
     addDeal({ n: 7, showN: 1, brandN: 7, status: "brand_signed", agreed: 999 });
     addDeal({ n: 8, showN: 1, brandN: 8, status: "planning", agreed: 999 });
     for (let n = 1; n <= 4; n += 1) {
@@ -376,6 +380,7 @@ describe.skipIf(!bin)("migration 069 on throwaway postgres", () => {
     expect(rows).toBe(["Comedy|pre-roll|flat|5|5||", "True Crime|pre-roll|cpm|5|5|30|10"].join("\n"));
     expect(query("select count(*)::text from public.pooled_deal_priors where category = 'News';")).toBe("0");
     expect(query("select count(*)::text from public.pooled_deal_priors where category = 'Health';")).toBe("0");
+    expect(query("select count(*)::text from public.pooled_deal_priors where category = 'Hidden';")).toBe("0");
     const columns = query(`
       select string_agg(column_name, ',' order by ordinal_position)
         from information_schema.columns

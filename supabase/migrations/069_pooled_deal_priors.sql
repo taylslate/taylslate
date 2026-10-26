@@ -7,7 +7,7 @@
 -- /api/cron/pooled-priors, and it calls the two refresh functions
 -- with the service role.
 --
--- 061 is reserved. 062, 063, and 064 are not in the repo.
+-- 061 on main is show ownership. 062, 063, and 064 are not in the repo.
 -- 067 is the roster-link review note. 068 (PR 42) is the only
 -- definition of refresh_pooled_import_priors(). This file is 069.
 -- It does not create, replace, revoke, or grant that function.
@@ -17,7 +17,8 @@
 -- public.refresh_pooled_deal_priors(). The source is deals whose
 -- status is booked: signed, live, delivering, or completed. A
 -- cancelled deal stays out, including a booked status with
--- cancelled_at set. show_signed does not enter. Category comes from
+-- cancelled_at set. show_signed does not enter. A hidden show
+-- (is_discoverable false) does not enter. Category comes from
 -- shows.categories through deals.show_id. A show with no category
 -- contributes nothing. Groups are (category, placement, price_type).
 -- A group is kept only when count(distinct coalesce(brand_profile_id,
@@ -186,6 +187,7 @@ begin
   from public.deals d
   join public.shows sh
     on sh.id = d.show_id
+   and sh.is_discoverable
   left join public.deal_conversion_reports cr
     on cr.deal_id = d.id
   cross join lateral (
