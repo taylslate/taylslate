@@ -29,6 +29,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe } from "@/lib/stripe/server";
 import { createSetupIntentForBrand } from "@/lib/stripe/setup-intent";
 import { logEvent } from "@/lib/data/events";
+import { rejectSwitchedViewMoneyAction } from "@/lib/admin/view-guard";
 
 export const runtime = "nodejs";
 
@@ -45,6 +46,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const blocked = await rejectSwitchedViewMoneyAction(request);
+  if (blocked) return blocked;
+
   const user = await getAuthenticatedUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

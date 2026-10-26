@@ -11,3 +11,65 @@ export const TEST_ACCOUNTS = [
 ] as const;
 
 export type TestAccountKey = typeof TEST_ACCOUNTS[number]["key"];
+
+// Admin view switch. The cookie stores a key from this list, never a user id
+// from the client. An empty user id is not a configured target.
+export const ADMIN_VIEW_COOKIE_PREFIX = "test:";
+
+/** Left empty. No admin-owned agent test profile exists yet. Do not create one. */
+export const ADMIN_TEST_AGENT_USER_ID = "";
+
+export type AdminViewRole = "brand" | "show" | "agent";
+
+export interface AdminViewAccount {
+  key: string;
+  label: string;
+  userId: string;
+  email: string;
+  role: AdminViewRole;
+}
+
+export const ADMIN_VIEW_AGENT: AdminViewAccount = {
+  key: "agent1",
+  label: "Test Agent 1",
+  userId: ADMIN_TEST_AGENT_USER_ID,
+  email: "",
+  role: "agent",
+};
+
+export function adminViewAccounts(): AdminViewAccount[] {
+  const owned: AdminViewAccount[] = TEST_ACCOUNTS.map((account) => ({
+    key: account.key,
+    label: account.label,
+    userId: account.userId,
+    email: account.email,
+    role: account.role,
+  }));
+  return [...owned, ADMIN_VIEW_AGENT];
+}
+
+export function configuredAdminViewAccount(
+  role: AdminViewRole,
+): AdminViewAccount | null {
+  const account = adminViewAccounts().find((entry) => entry.role === role);
+  if (!account?.userId) return null;
+  return account;
+}
+
+export function isAdminViewCookie(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.startsWith(ADMIN_VIEW_COOKIE_PREFIX);
+}
+
+export function adminViewAccountFromCookie(
+  value: string | null | undefined,
+): AdminViewAccount | null {
+  if (!isAdminViewCookie(value) || !value) return null;
+  const key = value.slice(ADMIN_VIEW_COOKIE_PREFIX.length);
+  const account = adminViewAccounts().find((entry) => entry.key === key);
+  if (!account?.userId) return null;
+  return account;
+}
+
+export function adminViewCookieValue(account: AdminViewAccount): string {
+  return `${ADMIN_VIEW_COOKIE_PREFIX}${account.key}`;
+}

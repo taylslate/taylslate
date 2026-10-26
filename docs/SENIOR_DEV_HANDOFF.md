@@ -856,3 +856,40 @@ Clients of `GET /api/shows` on this branch:
 - A tie lookup that throws returns public fields for that request. The sensitive keys stay off the JSON.
 - `shows-client.tsx` still has an unused fallback that would read `contact` and `rate_card`. It does not run while `/shows` passes `initialShows`.
 - No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
+
+## V1
+
+### What was built
+
+An internal admin can switch the dashboard between Brand, Show, and Sales Agent from the signed-in admin account. The session user does not change. The view is one of the admin-owned test accounts in `lib/admin/test-accounts.ts` (Test Brand 1, Test Show 1). The cookie value is `test:<key>`. It is not a user id. Every read of that cookie checks the verified session email against `INTERNAL_ADMIN_EMAILS` again.
+
+Non-admins keep the existing brand/show switch. A non-admin who posts `agent`, or a role they do not own, is rejected. Agent has an entry, `ADMIN_VIEW_AGENT`, whose user id is the empty constant `ADMIN_TEST_AGENT_USER_ID`. While that constant is empty, the Agent control is disabled with "No test agent configured" and `POST /api/view-mode` rejects `agent`. No user or profile is created.
+
+The sidebar (`components/layout/Sidebar.tsx`) shows "Viewing as Test Brand 1" or "Viewing as Test Show 1" and an Exit button that clears the cookie. Admin pages still check `isInternalAdmin` on the session email. The view cookie does not open them.
+
+Charges, payouts, and card changes return 403 while that admin view cookie is active. A forged `test:` cookie on a non-admin session is ignored, and those routes keep their previous behavior. The existing `brand` / `show` cookie is not a money block.
+
+There is no `audit_log` table (S-F has not shipped one). TODO: when `audit_log` exists, write one row for each admin view switch (who, from, to, when).
+
+### Where
+
+- `app/api/view-mode/route.ts` (POST admin branch and GET)
+- `components/layout/Sidebar.tsx` (view switch and banner)
+- `lib/admin/test-accounts.ts` (`ADMIN_TEST_AGENT_USER_ID`, `ADMIN_VIEW_AGENT`)
+- `lib/admin/view-guard.ts`
+- `lib/data/queries.ts` (`getEffectiveRole` only)
+- `app/(dashboard)/layout.tsx` (stale view cookie clear only)
+- Guard at the top of `app/api/deals/[id]/charge-episode/route.ts`, `app/api/deals/[id]/setup-intent/route.ts`, `app/api/payouts/early/route.ts`, `app/api/stripe/payment-method/setup-intent/route.ts`, `app/api/stripe/payment-method/[id]/route.ts`, `app/api/stripe/customer/create/route.ts`
+
+### Tests
+
+`npx vitest run app/api/view-mode/route.test.ts lib/data/effective-role.test.ts lib/admin/view-guard.test.ts components/layout/Sidebar.test.tsx`
+
+Covers a non-admin rejected for agent and for a role they do not own, a forged `test:` cookie ignored without an admin session, admin brand and show switches, agent rejected while `ADMIN_TEST_AGENT_USER_ID` is empty, and each listed money route returning 403 in the switched view and the previous result outside it.
+
+### Known gaps
+
+- TODO: log each admin view switch to `audit_log` when S-F adds that table. Nothing is written today.
+- `ADMIN_TEST_AGENT_USER_ID` is empty. Agent cannot be selected. No agent user was created.
+- The view changes the dashboard role and the banner. Reads and writes stay on the signed-in admin id. Test Show 1's rows are not loaded, and nothing is written as that user.
+- `lib/stripe`, `lib/payouts`, and `lib/billing` were not changed. No migration.

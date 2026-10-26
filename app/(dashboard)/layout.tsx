@@ -45,6 +45,9 @@ export default async function DashboardLayout({
   if (profile.role === "show" && !showProfile?.onboarded_at) {
     redirect("/onboarding/show");
   }
+  // Stale view cookie clear. Includes a brand/show cookie with no matching
+  // profile, and an admin test-account cookie that failed the session
+  // admin check. Server Components cannot delete cookies.
   if (eff?.staleViewAs) {
     redirect("/api/view-mode/clear?next=/dashboard");
   }

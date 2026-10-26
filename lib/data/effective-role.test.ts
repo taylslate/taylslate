@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { fromBuilder, supabaseClient, cookieStore } = vi.hoisted(() => {
+const { fromBuilder, supabaseClient, cookieStore, getUser } = vi.hoisted(() => {
   const builder = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
@@ -17,10 +17,12 @@ const { fromBuilder, supabaseClient, cookieStore } = vi.hoisted(() => {
     maybeSingle: vi.fn(),
   };
   const store = { get: vi.fn() };
+  const getUser = vi.fn();
   return {
     fromBuilder: builder,
-    supabaseClient: { from: vi.fn(() => builder) },
+    supabaseClient: { from: vi.fn(() => builder), auth: { getUser } },
     cookieStore: store,
+    getUser,
   };
 });
 
@@ -80,6 +82,8 @@ describe("getEffectiveRole — integration with cookies + DB", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fromBuilder.maybeSingle.mockReset();
+    delete process.env.INTERNAL_ADMIN_EMAILS;
+    getUser.mockResolvedValue({ data: { user: null }, error: null });
   });
 
   it("brand-only user, no cookie → effectiveRole=brand, no Shows in nav, /shows blocked", async () => {
@@ -207,5 +211,118 @@ describe("getEffectiveRole — integration with cookies + DB", () => {
     arrange({ profileRole: null, hasBrandProfile: false, hasShowProfile: false });
     const r = await getEffectiveRole("u1");
     expect(r).toBeNull();
+  });
+
+  it("ignores a forged admin view cookie without an admin session", async () => {
+    arrange({
+      profileRole: "brand",
+      hasBrandProfile: true,
+      hasShowProfile: false,
+      viewAsCookie: "test:show1",
+    });
+    const r = await getEffectiveRole("u1");
+
+    expect(r!.effectiveRole).toBe("brand");
+    expect(r!.adminViewLabel).toBeNull();
+    expect(r!.staleViewAs).toBe(true);
+    expect(isRouteAllowedForRole("/shows", r!.effectiveRole)).toBe(false);
+    expect(getUser).toHaveBeenCalled();
+  });
+
+  it("ignores a forged admin view cookie from a signed-in non-admin", async () => {
+    process.env.INTERNAL_ADMIN_EMAILS = "admin@taylslate.com";
+    getUser.mockResolvedValue({
+      data: { user: { id: "u1", email: "person@example.com" } },
+      error: null,
+    });
+    arrange({
+      profileRole: "brand",
+      hasBrandProfile: true,
+      hasShowProfile: false,
+      viewAsCookie: "test:show1",
+    });
+    const r = await getEffectiveRole("u1");
+
+    expect(r!.effectiveRole).toBe("brand");
+    expect(r!.adminViewLabel).toBeNull();
+    expect(r!.staleViewAs).toBe(true);
+  });
+
+  it("lets an admin view point at Test Show 1 without a show profile", async () => {
+    process.env.INTERNAL_ADMIN_EMAILS = "admin@taylslate.com";
+    getUser.mockResolvedValue({
+      data: { user: { id: "u1", email: "admin@taylslate.com" } },
+      error: null,
+    });
+    arrange({
+      profileRole: "brand",
+      hasBrandProfile: true,
+      hasShowProfile: false,
+      viewAsCookie: "test:show1",
+    });
+    const r = await getEffectiveRole("u1");
+
+    expect(r!.effectiveRole).toBe("show");
+    expect(r!.adminViewLabel).toBe("Test Show 1");
+    expect(r!.staleViewAs).toBe(false);
+    expect(getNavItemsForRole(r!.effectiveRole).map((n) => n.href)).toContain("/shows");
+  });
+
+  it("lets an admin view point at Test Brand 1", async () => {
+    process.env.INTERNAL_ADMIN_EMAILS = "admin@taylslate.com";
+    getUser.mockResolvedValue({
+      data: { user: { id: "u1", email: "admin@taylslate.com" } },
+      error: null,
+    });
+    arrange({
+      profileRole: "show",
+      hasBrandProfile: false,
+      hasShowProfile: true,
+      viewAsCookie: "test:brand1",
+    });
+    const r = await getEffectiveRole("u1");
+
+    expect(r!.effectiveRole).toBe("brand");
+    expect(r!.adminViewLabel).toBe("Test Brand 1");
+    expect(r!.staleViewAs).toBe(false);
+    expect(isRouteAllowedForRole("/campaigns", r!.effectiveRole)).toBe(true);
+  });
+
+  it("rejects an admin agent view while no test agent is configured", async () => {
+    process.env.INTERNAL_ADMIN_EMAILS = "admin@taylslate.com";
+    getUser.mockResolvedValue({
+      data: { user: { id: "u1", email: "admin@taylslate.com" } },
+      error: null,
+    });
+    arrange({
+      profileRole: "brand",
+      hasBrandProfile: true,
+      hasShowProfile: false,
+      viewAsCookie: "test:agent1",
+    });
+    const r = await getEffectiveRole("u1");
+
+    expect(r!.effectiveRole).toBe("brand");
+    expect(r!.adminViewLabel).toBeNull();
+    expect(r!.staleViewAs).toBe(true);
+    expect(isRouteAllowedForRole("/shows", r!.effectiveRole)).toBe(false);
+  });
+
+  it("ignores an admin view cookie when the session user is someone else", async () => {
+    process.env.INTERNAL_ADMIN_EMAILS = "admin@taylslate.com";
+    getUser.mockResolvedValue({
+      data: { user: { id: "other", email: "admin@taylslate.com" } },
+      error: null,
+    });
+    arrange({
+      profileRole: "brand",
+      hasBrandProfile: true,
+      hasShowProfile: false,
+      viewAsCookie: "test:show1",
+    });
+    const r = await getEffectiveRole("u1");
+
+    expect(r!.effectiveRole).toBe("brand");
+    expect(r!.staleViewAs).toBe(true);
   });
 });

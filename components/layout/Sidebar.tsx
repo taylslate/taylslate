@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SignOutButton from "@/components/auth/SignOutButton";
 import {
   getNavItemsForRole,
@@ -120,6 +120,33 @@ export default function Sidebar({
   const router = useRouter();
   const [switching, setSwitching] = useState(false);
   const [loggingInAs, setLoggingInAs] = useState<string | null>(null);
+  const [adminViewLabel, setAdminViewLabel] = useState<string | null>(null);
+  const [agentConfigured, setAgentConfigured] = useState(false);
+  const [adminSwitching, setAdminSwitching] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/view-mode");
+        if (!res.ok) return;
+        const body = await res.json();
+        if (cancelled || !body || typeof body !== "object") return;
+        if ("label" in body) {
+          setAdminViewLabel(typeof body.label === "string" ? body.label : null);
+        }
+        if ("agentConfigured" in body) {
+          setAgentConfigured(body.agentConfigured === true);
+        }
+      } catch {
+        // The switcher still renders. Agent stays disabled.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, role]);
 
   const handleTestLogin = async (key: string) => {
     if (loggingInAs) return;
@@ -145,6 +172,51 @@ export default function Sidebar({
 
   const navItems = getNavItemsForRole(role);
   const primary = getPrimaryCtaForRole(role);
+
+  const switchAdminView = async (mode: "brand" | "show" | "agent") => {
+    if (adminSwitching) return;
+    setAdminSwitching(mode);
+    try {
+      const res = await fetch("/api/view-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      if (res.ok) {
+        const body = await res.json();
+        setAdminViewLabel(typeof body.label === "string" ? body.label : null);
+        setAdminSwitching(null);
+        router.replace("/dashboard");
+        router.refresh();
+      } else {
+        setAdminSwitching(null);
+      }
+    } catch {
+      setAdminSwitching(null);
+    }
+  };
+
+  const exitAdminView = async () => {
+    if (adminSwitching) return;
+    setAdminSwitching("clear");
+    try {
+      const res = await fetch("/api/view-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "clear" }),
+      });
+      if (res.ok) {
+        setAdminViewLabel(null);
+        setAdminSwitching(null);
+        router.replace("/dashboard");
+        router.refresh();
+      } else {
+        setAdminSwitching(null);
+      }
+    } catch {
+      setAdminSwitching(null);
+    }
+  };
 
   const handleSwitch = async () => {
     if (!canSwitchTo || switching) return;
@@ -188,6 +260,22 @@ export default function Sidebar({
           </span>
         </Link>
       </div>
+
+      {isAdmin && adminViewLabel && (
+        <div className="border-b border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-brands)] px-4 py-3">
+          <p className="text-xs font-medium text-[var(--ts-ink-on-paper)]">
+            Viewing as {adminViewLabel}
+          </p>
+          <button
+            type="button"
+            onClick={exitAdminView}
+            disabled={adminSwitching !== null}
+            className="mt-1 text-xs font-medium text-[var(--ts-accent-text)] underline disabled:opacity-50"
+          >
+            Exit
+          </button>
+        </div>
+      )}
 
       <div className="px-3 pt-4 pb-2">
         <Link
@@ -267,6 +355,40 @@ export default function Sidebar({
             >
               Managed brands
             </Link>
+            <div className="px-3 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">
+              View as
+            </div>
+            <button
+              type="button"
+              onClick={() => switchAdminView("brand")}
+              disabled={adminSwitching !== null}
+              className={`mb-1 w-full text-left text-xs font-medium disabled:opacity-50 ${navRow} ${quietRow}`}
+              style={{ borderRadius: tokens.radius }}
+            >
+              {adminSwitching === "brand" ? "Switching…" : "Brand"}
+            </button>
+            <button
+              type="button"
+              onClick={() => switchAdminView("show")}
+              disabled={adminSwitching !== null}
+              className={`mb-1 w-full text-left text-xs font-medium disabled:opacity-50 ${navRow} ${quietRow}`}
+              style={{ borderRadius: tokens.radius }}
+            >
+              {adminSwitching === "show" ? "Switching…" : "Show"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (agentConfigured) switchAdminView("agent");
+              }}
+              disabled={!agentConfigured || adminSwitching !== null}
+              className={`mb-1 w-full text-left text-xs font-medium disabled:opacity-50 ${navRow} ${
+                agentConfigured ? quietRow : "text-[var(--ts-ink-muted-on-paper)]"
+              }`}
+              style={{ borderRadius: tokens.radius }}
+            >
+              {agentConfigured ? "Agent" : "No test agent configured"}
+            </button>
             {testAccounts?.map((acct) => (
               <button
                 key={acct.key}
