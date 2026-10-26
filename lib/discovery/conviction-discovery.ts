@@ -316,7 +316,7 @@ export async function runConvictionDiscovery(
   const platforms: Platform[] =
     campaign?.platforms && campaign.platforms.length > 0
       ? campaign.platforms
-      : ["podcast"];
+      : ["podcast", "youtube"];
 
   const brief = buildDiscoveryBrief(pattern, rings, platforms);
   let discovery: DiscoveryResult;

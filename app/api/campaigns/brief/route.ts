@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
       budget_total: 0,
       // 2B's ring-driven discovery owns surface selection; the new intake
       // has no platform picker.
-      platforms: ["podcast"],
+      platforms: ["podcast", "youtube"],
       status: "draft",
       recommendations: [],
     });
@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
       name,
       brief: brief as unknown as Record<string, unknown>,
       budget_total: body.budget_total as number,
-      platforms: ["podcast"],
+      platforms: ["podcast", "youtube"],
       status: "draft",
       recommendations: [],
     });

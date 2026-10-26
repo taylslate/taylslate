@@ -940,3 +940,35 @@ No page or component was edited. Screenshots are not applicable.
 - Verify counts every 6-digit attempt, including one that will succeed. `login_otp_consume` still locks wrong codes until a later send.
 - `POST /api/auth/magic/start`, outreach generate, pitch accept/counter/decline, and the discovery, interpret, and enrich routes are outside this job's file list and are still unlimited.
 - Show CSV import still has no byte or row cap. Media-kit inflate still has no output cap.
+
+## D1
+
+### What was built
+
+A new campaign created by `POST /api/campaigns/brief` stores `platforms: ["podcast", "youtube"]` on both inserts (draft, and submit when no campaign id exists). Conviction discovery still uses the stored list when it is non-empty, so that new campaign's `discover()` brief includes `youtube`. When `platforms` is missing or empty, the fallback is `["podcast", "youtube"]`. A campaign that already stores `["podcast"]` stays podcast-only. Seed and admin routes are unchanged. No platform picker. Scoring, YouTube filters, quotas, and enrichment are unchanged. No backfill.
+
+### Where
+
+- `app/api/campaigns/brief/route.ts` (both `createCampaign` platform defaults)
+- `app/api/campaigns/brief/route.test.ts`
+- `lib/discovery/conviction-discovery.ts` (empty-platforms fallback only)
+- `lib/discovery/conviction-discovery.test.ts`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run app/api/campaigns/brief/route.test.ts lib/discovery/conviction-discovery.test.ts` (75 passed).
+
+The brief route test asserts both inserts pass `platforms: ["podcast", "youtube"]`. Conviction discovery asserts a new campaign (`["podcast", "youtube"]`) and an empty platform list both pass `youtube` into `discover()`, and a stored `["podcast"]` list does not.
+
+Full `npx vitest run`: 263 files, 2338 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 134 pages.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- Existing campaigns are not backfilled. Discovery for a row that already stores `["podcast"]` does not call YouTube.
+- There is still no platform picker. Every new brief-route campaign searches both.
+- YouTube filters, quotas, and enrichment are unchanged. A YouTube API error still lands in discovery `errors` and `sources.youtube` can stay 0.
+- Live confirmation waits on deploy. Chris runs a new campaign. YouTube calls should show in the runtime logs within the hour, and the discovery report should have `sources.youtube > 0` or a YouTube error.
+- No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
