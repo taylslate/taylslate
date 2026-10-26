@@ -1,8 +1,9 @@
 // Anonymized priors from booked on-platform deals.
 //
 // buildPooledDealPriors is the pure form of refresh_pooled_deal_priors().
-// A deal counts when its status is booked (show signed, or later) and
-// cancelled_at is empty. A group is (category, placement, price_type).
+// A deal counts when its status is signed, live, delivering, or
+// completed, and cancelled_at is empty. show_signed does not count.
+// A group is (category, placement, price_type).
 // It is kept only when at least POOL_MIN_BRANDS distinct brands are in it.
 // Brand identity is coalesce(brand_profile_id, brand_id) and is dropped
 // from the result. recordCount on the result is the deal count.
@@ -13,7 +14,6 @@
 // refreshPooledDealPriors calls the SQL function. The cron schedules it.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { BOOKED_DEAL_STATUSES } from "@/lib/discovery/market-signals";
 import {
   percentileCont,
   POOL_MIN_BRANDS,
@@ -22,6 +22,13 @@ import {
   toPoolPriceType,
   type PooledPrior,
 } from "@/lib/learning/pooled-priors";
+
+export const POOL_BOOKED_STATUSES = new Set([
+  "signed",
+  "live",
+  "delivering",
+  "completed",
+]);
 
 export interface PooledDealSourceRow {
   brandId: string | null;
@@ -63,7 +70,7 @@ export function buildPooledDealPriors(rows: PooledDealSourceRow[]): PooledPrior[
   const groups = new Map<string, DealGroup>();
 
   for (const row of rows) {
-    if (!BOOKED_DEAL_STATUSES.has(row.status)) continue;
+    if (!POOL_BOOKED_STATUSES.has(row.status)) continue;
     if (row.cancelledAt != null && row.cancelledAt.trim() !== "") continue;
     const brandKey = (row.brandProfileId?.trim() || row.brandId?.trim() || "");
     if (!brandKey) continue;

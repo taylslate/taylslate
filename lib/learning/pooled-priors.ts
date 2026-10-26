@@ -4,8 +4,10 @@
 // A group is (category, placement, price_type). It is kept only when
 // at least POOL_MIN_BRANDS distinct brands consented and confirmed.
 // Brand, import, record, and show identifiers are not on the result.
-// Rows that are not confirmed, not consented, unmatched, or missing a
-// category are skipped.
+// Rows that are not confirmed, not consented, unmatched, ambiguous,
+// tied to a hidden show, or missing a category are skipped. A null
+// show-match status is a pre-068 row and still enters when the show
+// id is set and the show is discoverable.
 //
 // The median is percentile_cont(0.5): position 1 + 0.5 * (n - 1),
 // interpolated. medianCpm is set only for price type cpm.
@@ -27,6 +29,10 @@ export interface PooledPriorSourceRow {
   status: string;
   poolingConsent: boolean;
   matchedShowId: string | null;
+  /** Null or omitted is a pre-068 row. Only null and matched enter. */
+  showMatchStatus?: string | null;
+  /** False keeps the row out. Omitted means the show is discoverable. */
+  discoverable?: boolean;
   categories: string[];
   placement: string | null;
   priceType: string | null;
@@ -85,6 +91,9 @@ export function buildPooledPriors(rows: PooledPriorSourceRow[]): PooledPrior[] {
     const brandId = row.brandId?.trim();
     if (!brandId) continue;
     if (!row.matchedShowId?.trim()) continue;
+    const matchStatus = row.showMatchStatus?.trim() || null;
+    if (matchStatus != null && matchStatus !== "matched") continue;
+    if (row.discoverable === false) continue;
 
     const categories = uniqueCategories(row.categories);
     if (categories.length === 0) continue;

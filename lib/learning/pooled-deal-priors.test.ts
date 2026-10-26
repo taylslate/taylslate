@@ -7,9 +7,9 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { BOOKED_DEAL_STATUSES } from "@/lib/discovery/market-signals";
 import {
   buildPooledDealPriors,
+  POOL_BOOKED_STATUSES,
   refreshPooledDealPriors,
   type PooledDealSourceRow,
 } from "./pooled-deal-priors";
@@ -68,6 +68,7 @@ describe("buildPooledDealPriors", () => {
       row({ brandId: "brand-6", status: "planning" }),
       row({ brandId: "brand-7", status: "io_sent" }),
       row({ brandId: "brand-8", status: "cancelled", cancelledAt: null }),
+      row({ brandId: "brand-8b", status: "show_signed" }),
       row({ brandId: "brand-9", status: "completed", cancelledAt: "2026-10-01" }),
       row({ brandId: "brand-10", categories: ["  "] }),
     ];
@@ -75,7 +76,7 @@ describe("buildPooledDealPriors", () => {
 
     const priors = buildPooledDealPriors([
       ...brands(4),
-      row({ brandId: "brand-5", status: "show_signed", agreedCpm: 50 }),
+      row({ brandId: "brand-5", status: "signed", agreedCpm: 50 }),
     ]);
     expect(priors).toEqual([
       {
@@ -138,9 +139,16 @@ describe("buildPooledDealPriors", () => {
   });
 
   it("stays in sync with the SQL refresh", () => {
-    for (const status of BOOKED_DEAL_STATUSES) {
+    for (const status of POOL_BOOKED_STATUSES) {
       expect(sql).toContain(`'${status}'`);
     }
+    expect(sql).not.toContain("'show_signed'");
+    expect([...POOL_BOOKED_STATUSES].sort()).toEqual([
+      "completed",
+      "delivering",
+      "live",
+      "signed",
+    ]);
     expect(sql).toContain("d.cancelled_at is null");
     expect(sql).toContain("count(distinct rows.brand_key) >= 5");
     expect(sql).toContain("check (brand_count >= 5)");

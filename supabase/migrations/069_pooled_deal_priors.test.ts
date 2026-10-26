@@ -233,7 +233,13 @@ describe.skipIf(!bin)("migration 069 on throwaway postgres", () => {
     ]);
     if (stub.status !== 0) throw new Error(stub.stderr || stub.stdout || "stub failed");
 
-    for (const path of migrationsThrough069()) file(path);
+    for (const path of migrationsThrough069()) {
+      // 001 does not add shows.agent_id. The live table has it, and 068 reads it.
+      if (path.endsWith("068_past_campaign_show_match.sql")) {
+        query("alter table public.shows add column if not exists agent_id uuid;");
+      }
+      file(path);
+    }
     file(sqlPath);
     seed();
   }, 180_000);
@@ -292,11 +298,12 @@ describe.skipIf(!bin)("migration 069 on throwaway postgres", () => {
         n: index + 1,
         showN: 1,
         brandN: index + 1,
-        status: index === 4 ? "show_signed" : "completed",
+        status: index === 4 ? "signed" : "completed",
         agreed: cpm,
       });
     });
     addDeal({ n: 6, showN: 1, brandN: 6, status: "completed", agreed: 999, cancelled: true });
+    addDeal({ n: 9, showN: 1, brandN: 9, status: "show_signed", agreed: 999 });
     addDeal({ n: 7, showN: 1, brandN: 7, status: "brand_signed", agreed: 999 });
     addDeal({ n: 8, showN: 1, brandN: 8, status: "planning", agreed: 999 });
     for (let n = 1; n <= 4; n += 1) {
@@ -389,7 +396,8 @@ describe.skipIf(!bin)("migration 069 on throwaway postgres", () => {
         add column if not exists reported_conversions integer,
         add column if not exists created_at timestamptz default now();
       insert into public.outcomes (booking_id, show_id, reported_impressions, reported_conversions)
-      select id, show_id, 2000, 40 from public.deals where status in ('completed', 'show_signed');
+      select id, show_id, 2000, 40 from public.deals
+       where status in ('signed', 'live', 'delivering', 'completed');
     `);
     refreshDeals();
     expect(
@@ -401,12 +409,14 @@ describe.skipIf(!bin)("migration 069 on throwaway postgres", () => {
     ).toBe("20");
   });
 
-  it("leaves the import refresh from 058 in place", () => {
+  it("keeps ambiguous and hidden-show rows out of the import pool", () => {
     const definition = query(
       "select pg_get_functiondef('public.refresh_pooled_import_priors()'::regprocedure);"
     );
     expect(definition).toContain("rec.matched_show_id is not null");
-    expect(definition).not.toContain("show_match_status");
+    expect(definition).toContain("rec.show_match_status is null");
+    expect(definition).toContain("rec.show_match_status = 'matched'");
+    expect(definition).toContain("sh.is_discoverable");
     expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
     expect(
       query(`
@@ -415,7 +425,33 @@ describe.skipIf(!bin)("migration 069 on throwaway postgres", () => {
          where category = 'Imports';
       `)
     ).toBe("5|23");
-    query(`update public.past_campaign_records set matched_show_id = null;`);
+
+    query(`
+      update public.past_campaign_records
+         set show_match_status = 'ambiguous',
+             matched_show_id = null,
+             show_match_reason = 'no_normalized_match',
+             show_match_confidence = 0
+       where brand_id = '${uid(1)}';
+    `);
+    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("0");
+
+    query(`
+      update public.past_campaign_records
+         set show_match_status = 'matched',
+             matched_show_id = (select id from public.shows where name = 'Imports'),
+             show_match_reason = 'unique_normalized_name',
+             show_match_confidence = 1
+       where brand_id = '${uid(1)}';
+    `);
+    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
+
+    query(`update public.shows set is_discoverable = false where name = 'Imports';`);
+    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("0");
+    query(`update public.shows set is_discoverable = true where name = 'Imports';`);
+    expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("1");
+
+    query(`update public.past_campaign_records set matched_show_id = null, show_match_status = null, show_match_reason = null, show_match_confidence = null;`);
     expect(query("set role service_role; select public.refresh_pooled_import_priors();")).toBe("0");
   });
 

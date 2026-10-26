@@ -24,6 +24,8 @@ function row(over: Partial<PooledPriorSourceRow> = {}): PooledPriorSourceRow {
     status: "confirmed",
     poolingConsent: true,
     matchedShowId: "show-1",
+    showMatchStatus: null,
+    discoverable: true,
     categories: ["True Crime"],
     placement: "mid-roll",
     priceType: "cpm",
@@ -45,7 +47,7 @@ function fiveBrands(over: Partial<PooledPriorSourceRow> = {}): PooledPriorSource
 }
 
 const sql = readFileSync(
-  join(process.cwd(), "supabase/migrations/058_pooled_import_priors.sql"),
+  join(process.cwd(), "supabase/migrations/068_past_campaign_show_match.sql"),
   "utf8"
 );
 
@@ -116,11 +118,36 @@ describe("buildPooledPriors", () => {
     expect(priors.every((prior) => prior.brandCount === 5 && prior.recordCount === 5)).toBe(true);
   });
 
+  it("keeps ambiguous and hidden-show rows out of the pool", () => {
+    expect(buildPooledPriors(fiveBrands({ showMatchStatus: "matched" }))).toHaveLength(1);
+    expect(buildPooledPriors(fiveBrands({ showMatchStatus: null }))).toHaveLength(1);
+
+    const ambiguous = fiveBrands({ showMatchStatus: "matched" });
+    ambiguous[0] = row({
+      brandId: "brand-1",
+      showMatchStatus: "ambiguous",
+      matchedShowId: null,
+    });
+    expect(buildPooledPriors(ambiguous)).toEqual([]);
+
+    const hidden = fiveBrands({ showMatchStatus: "matched" });
+    hidden[0] = row({
+      brandId: "brand-1",
+      showMatchStatus: "matched",
+      discoverable: false,
+    });
+    expect(buildPooledPriors(hidden)).toEqual([]);
+    expect(buildPooledPriors(fiveBrands({ discoverable: false }))).toEqual([]);
+  });
+
   it("stays in sync with the SQL refresh", () => {
     expect(sql).toContain("imp.status = 'confirmed'");
     expect(sql).toContain("imp.pooling_consent = true");
     expect(sql).toContain("count(distinct rec.brand_id) >= 5");
     expect(sql).toContain("rec.matched_show_id is not null");
+    expect(sql).toContain("rec.show_match_status is null");
+    expect(sql).toContain("rec.show_match_status = 'matched'");
+    expect(sql).toContain("and sh.is_discoverable");
     expect(sql).toContain("percentile_cont(0.5)");
     expect(sql).toContain("unnest");
     expect(sql).toContain("btrim(cat)");

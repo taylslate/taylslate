@@ -15,8 +15,9 @@
 --
 -- public.pooled_deal_priors is rebuilt by
 -- public.refresh_pooled_deal_priors(). The source is deals whose
--- status is booked (show_signed, delivering, completed, signed,
--- live) and whose cancelled_at is null. Category comes from
+-- status is booked: signed, live, delivering, or completed. A
+-- cancelled deal stays out, including a booked status with
+-- cancelled_at set. show_signed does not enter. Category comes from
 -- shows.categories through deals.show_id. A show with no category
 -- contributes nothing. Groups are (category, placement, price_type).
 -- A group is kept only when count(distinct coalesce(brand_profile_id,
@@ -235,7 +236,7 @@ begin
     ) src
   ) priced
   where d.cancelled_at is null
-    and d.status in ('show_signed', 'delivering', 'completed', 'signed', 'live')
+    and d.status in ('signed', 'live', 'delivering', 'completed')
     and coalesce(d.brand_profile_id, d.brand_id) is not null;
 
   select
