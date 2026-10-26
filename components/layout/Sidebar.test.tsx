@@ -215,4 +215,69 @@ describe("Sidebar chrome", () => {
     });
     expect(mockRefresh).toHaveBeenCalled();
   });
+
+  it("keeps the agent option hidden for a non-admin", () => {
+    render(<Sidebar role="brand" canSwitchTo="show" displayName="Chris Taylor" />);
+    expect(screen.queryByRole("button", { name: "No test agent configured" })).toBeNull();
+    expect(screen.queryByText(/Viewing as/)).toBeNull();
+  });
+
+  it("shows the admin view switch, a disabled agent, and a one-click exit", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "GET") {
+        return {
+          ok: true,
+          json: async () => ({
+            viewAs: "show",
+            label: "Test Show 1",
+            agentConfigured: false,
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({ ok: true, viewAs: null }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Sidebar role="show" isAdmin displayName="Chris Taylor" />);
+
+    expect(await screen.findByText("Viewing as Test Show 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Brand" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^Show$/ })).toBeEnabled();
+    const agent = screen.getByRole("button", { name: "No test agent configured" });
+    expect(agent).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "View as brand" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Exit" }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/view-mode",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ mode: "clear" }),
+        }),
+      );
+    });
+    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+    expect(mockRefresh).toHaveBeenCalled();
+  });
+
+  it("posts show from the admin view switch", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true, viewAs: "show", label: "Test Show 1" }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Sidebar role="brand" isAdmin displayName="Chris Taylor" />);
+    fireEvent.click(screen.getByRole("button", { name: /^Show$/ }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/view-mode",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ mode: "show" }),
+        }),
+      );
+    });
+  });
 });

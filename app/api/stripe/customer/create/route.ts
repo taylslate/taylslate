@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe } from "@/lib/stripe/server";
+import { rejectSwitchedViewMoneyAction } from "@/lib/admin/view-guard";
 
 export async function POST(request: NextRequest) {
+  const blocked = await rejectSwitchedViewMoneyAction(request);
+  if (blocked) return blocked;
+
   try {
     const user = await getAuthenticatedUser();
     if (!user) {

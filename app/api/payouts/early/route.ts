@@ -14,6 +14,7 @@ import { getAuthenticatedUser } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { transferEarlyPayoutForPayment } from "@/lib/payouts/transfer";
 import { EARLY_PAYOUT_FEE_PERCENTAGE } from "@/lib/payouts/constants";
+import { rejectSwitchedViewMoneyAction } from "@/lib/admin/view-guard";
 
 export const runtime = "nodejs";
 
@@ -37,6 +38,9 @@ interface ShowProfileRow {
 }
 
 export async function POST(request: NextRequest) {
+  const blocked = await rejectSwitchedViewMoneyAction(request);
+  if (blocked) return blocked;
+
   const user = await getAuthenticatedUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

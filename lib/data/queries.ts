@@ -9,6 +9,10 @@ import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isBrandSide } from "@/lib/nav/items";
 import { isInternalAdmin } from "@/lib/auth/admin";
+import {
+  adminViewAccountFromCookie,
+  isAdminViewCookie,
+} from "@/lib/admin/test-accounts";
 import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
 import { logEvent } from "./events";
 import { transformShow } from "./show-transform";
@@ -2426,12 +2430,18 @@ export interface EffectiveRoleResult {
    *  profile exist. Brand chrome offers show; show chrome offers brand.
    *  Null when either profile is missing. */
   canSwitchTo: UserRole | null;
+  /** Test-account label when an internal admin's view cookie resolved.
+   *  Null for everyone else, including a forged cookie. */
+  adminViewLabel: string | null;
 }
 
 /**
  * Resolve the role used by the dashboard chrome.
  * Reads `taylslate_view_as` cookie and only honors it when the alternate
  * profile row actually exists for this user. Falls back to profile.role.
+ * An admin test-account cookie (`test:<key>`) is honored only after a fresh
+ * session check against INTERNAL_ADMIN_EMAILS. A forged cookie is ignored
+ * and marked stale so the layout can clear it.
  * Returns null if the user has no profile.
  */
 export async function getEffectiveRole(
@@ -2451,10 +2461,30 @@ export async function getEffectiveRole(
   const cookieStore = await cookies();
   const viewAs = cookieStore.get(VIEW_AS_COOKIE)?.value;
   let effectiveRole: UserRole = baseRole;
-  if (viewAs === "brand" && hasBrandProfile) {
-    effectiveRole = "brand";
-  } else if (viewAs === "show" && hasShowProfile) {
-    effectiveRole = "show";
+  let adminViewLabel: string | null = null;
+  let staleViewAs = false;
+
+  if (isAdminViewCookie(viewAs)) {
+    const session = await getAuthenticatedUser();
+    const account =
+      session && session.id === userId && isInternalAdmin(session.email)
+        ? adminViewAccountFromCookie(viewAs)
+        : null;
+    if (account) {
+      effectiveRole = account.role;
+      adminViewLabel = account.label;
+    } else {
+      staleViewAs = true;
+    }
+  } else {
+    if (viewAs === "brand" && hasBrandProfile) {
+      effectiveRole = "brand";
+    } else if (viewAs === "show" && hasShowProfile) {
+      effectiveRole = "show";
+    }
+    staleViewAs =
+      (viewAs === "brand" && !hasBrandProfile) ||
+      (viewAs === "show" && !hasShowProfile);
   }
 
   // Follow the side on screen, not profiles.role. Keying this off baseRole
@@ -2464,10 +2494,6 @@ export async function getEffectiveRole(
     canSwitchTo = isBrandSide(effectiveRole) ? "show" : "brand";
   }
 
-  const staleViewAs =
-    (viewAs === "brand" && !hasBrandProfile) ||
-    (viewAs === "show" && !hasShowProfile);
-
   return {
     effectiveRole,
     baseRole,
@@ -2475,5 +2501,6 @@ export async function getEffectiveRole(
     hasShowProfile,
     staleViewAs,
     canSwitchTo,
+    adminViewLabel,
   };
 }

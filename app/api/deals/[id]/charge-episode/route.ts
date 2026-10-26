@@ -15,6 +15,7 @@ import {
   getWave12DealById,
 } from "@/lib/data/queries";
 import { isInternalAdmin } from "@/lib/auth/admin";
+import { rejectSwitchedViewMoneyAction } from "@/lib/admin/view-guard";
 import { chargeForEpisode } from "@/lib/stripe/payment-intent";
 
 export const runtime = "nodejs";
@@ -27,6 +28,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const blocked = await rejectSwitchedViewMoneyAction(request);
+  if (blocked) return blocked;
+
   const user = await getAuthenticatedUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
