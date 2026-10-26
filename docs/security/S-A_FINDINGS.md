@@ -2,7 +2,7 @@
 
 Read-only inventory of Taylslate as of 2026-10-26. Live checks are `SELECT` only against project `ldtmhafewfifdizgfrnn`. No rows were written, no migration was applied, and no Stripe call was made. App code, config, and settings were not changed.
 
-H1 status: SA-01, SA-02, and SA-03 were fixed by H1 (commit 632f420, migration 072_lock_money_columns). Live apply of 072 is still pending. The table inventory below is the 2026-10-26 read and does not include 072.
+H1 status: SA-01, SA-02, and SA-03 were fixed by H1 (commit 632f420, migration 072_lock_money_columns). 072 is applied and verified on 2026-10-26: `payments` is SELECT-only for authenticated, trigger `profiles_protect_money_columns` exists, and a fee update as authenticated is rejected with 42501. The table inventory below is the earlier 2026-10-26 read and does not include 072.
 
 Counts to verify:
 
@@ -482,15 +482,15 @@ Ranked. Each item has a location, the exploit in one sentence, a fix, and a lane
 
 **SA-01. A brand can set their own platform fee to zero.** `profiles` update policy (section 1) and `lib/stripe/payment-intent.ts:258`. A signed-in user `PATCH`es `/rest/v1/profiles` and sets `platform_fee_percentage` to 0, which the column allows, and the next `chargeForEpisode` snapshots that 0 and adds no platform fee. Fix: revoke column `UPDATE` on `platform_fee_percentage`, `plan`, `subscription_status`, `stripe_customer_id`, `stripe_subscription_id`, and `stripe_connect_account_id` from `authenticated`, and reject changes in a trigger the way `is_managed` already does. Lane: S-H/S-I. Cover it with an S-D test that the user JWT cannot change the fee.
 
-Status: fixed by H1 (commit 632f420, migration 072_lock_money_columns). Live apply of 072 is still pending.
+Status: fixed by H1 (commit 632f420, migration 072_lock_money_columns). Applied and verified on 2026-10-26.
 
 **SA-02. A deal participant can insert a payment row that skips the charge.** `payments` insert policy (section 1) and `lib/stripe/payment-intent.ts:145`. The caller inserts a `payments` row for their invoice with `status` `pending` and any non-null `stripe_payment_intent_id`, and `findExistingPayment` returns that row so Stripe is never called. Fix: remove the `authenticated` insert policy and grant on `payments`. Only `service_role` should insert payments. Lane: S-H/S-I, with an S-D test.
 
-Status: fixed by H1 (commit 632f420, migration 072_lock_money_columns). Live apply of 072 is still pending.
+Status: fixed by H1 (commit 632f420, migration 072_lock_money_columns). Applied and verified on 2026-10-26.
 
 **SA-03. Unauthenticated outreach send is an open mailer.** `app/api/campaigns/outreach/send/route.ts:15`. Anyone who can reach the route posts drafts and `resend.emails.send` delivers them from the outreach From address, with the caller's subject and body, and with no session, no recipient allowlist, and no cap on the array (`route.ts:68`). Fix: require a session and ownership of the campaign, cap the draft count and body size, and rate limit. Lane: new (public-route auth). Add an S-E limit even after auth.
 
-Status: fixed by H1 (commit 632f420, migration 072_lock_money_columns). Live apply of 072 is still pending.
+Status: fixed by H1 (commit 632f420, migration 072_lock_money_columns). Applied and verified on 2026-10-26.
 
 ### High
 

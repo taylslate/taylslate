@@ -700,7 +700,7 @@ Migration 072 locks the money columns on `profiles` and the writes on `payments`
 
 `POST /api/campaigns/outreach/send` requires `getAuthenticatedUser`, a `campaign_id`, and ownership (`campaigns.user_id`). It sends only when `show_id` and `contact_email` match a recommendation, YouTube recommendation, or expansion row stored on that campaign. Anything else is dropped. Caps are 50 drafts, 200 characters per subject, 10 KB per body, and 512 KB for the request. The From address and the email template are unchanged. Both outreach fetches in `campaign-detail.tsx` now send `campaign_id`.
 
-072 is not applied.
+072 is applied and verified on 2026-10-26: `payments` is SELECT-only for authenticated, trigger `profiles_protect_money_columns` exists, and a fee update as authenticated is rejected with 42501.
 
 ### Where
 
@@ -723,7 +723,7 @@ PGlite proves an authenticated user cannot insert or update `payments`, cannot c
 
 ### Known gaps
 
-- 072 is in the repo and is not applied. SA-01 and SA-02 stay open on `ldtmhafewfifdizgfrnn` until Chris applies it after merge.
+- 072 is applied and verified on 2026-10-26. SA-01 and SA-02 are closed on `ldtmhafewfifdizgfrnn`.
 - SA-03's route checks ship with this PR and do not wait on 072. There is still no cross-request rate limit. The per-request caps are the limit this job adds.
 - The recipient allowlist is the contact email stored on the campaign JSON. The owner can still edit that JSON through the campaigns update policy, then send. Shows are not re-read from `shows.contact_email`.
 - `ensureProfile` remains a cookie-client insert of `role` `brand` and `tier` `free`. The insert guard allows that shape and rejects anything else.
