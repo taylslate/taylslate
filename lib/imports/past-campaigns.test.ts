@@ -19,13 +19,20 @@ vi.mock("@/lib/llm/client", async () => {
 import { loadPrompt } from "@/lib/llm/client";
 import {
   PAST_CAMPAIGN_MAX_ROWS,
+  SHOW_MATCH_PUNCTUATION,
+  buildRecordInserts,
+  decideShowMatch,
   detectPastCampaignKind,
   draftsFromExtractedIO,
+  matchPastCampaignShows,
+  normalizeShowMatchKey,
   parseCsv,
   parsePdf,
   parseSaveBody,
   parseXlsx,
   PastCampaignImportError,
+  type PastCampaignDraft,
+  type ShowMatchCandidate,
 } from "./past-campaigns";
 
 const FIXTURE = path.join(process.cwd(), "lib/imports/fixtures");
@@ -328,6 +335,9 @@ describe("parseSaveBody", () => {
         {
           show_name: "Acquired",
           matched_show_id: "evil-show",
+          show_match_status: "matched",
+          show_match_reason: "unique_normalized_name",
+          show_match_confidence: 1,
           brand_id: "attacker",
           price_type: "flat_rate",
           rate: "25",
@@ -338,6 +348,8 @@ describe("parseSaveBody", () => {
 
     expect(parsed).not.toHaveProperty("brand_id");
     expect(JSON.stringify(parsed)).not.toContain("attacker");
+    expect(JSON.stringify(parsed)).not.toContain("unique_normalized_name");
+    expect(JSON.stringify(parsed)).not.toContain("evil-show");
     expect(parsed.file_name).toBe("past-campaign.csv");
     expect(parsed.pooling_consent).toBe(false);
     expect(parsed.terms_version).toBeNull();
@@ -360,3 +372,236 @@ describe("parseSaveBody", () => {
     ).toThrow(/terms_version/);
   });
 });
+
+const CALLER = "brand-1";
+
+const CATALOG: ShowMatchCandidate = {
+  id: "show-1",
+  name: "Acquired",
+  is_discoverable: true,
+  agent_id: null,
+};
+
+describe("normalizeShowMatchKey", () => {
+  it("uses the same 32 ASCII punctuation characters as migration 068", () => {
+    expect(SHOW_MATCH_PUNCTUATION).toHaveLength(32);
+    expect(new Set(SHOW_MATCH_PUNCTUATION).size).toBe(32);
+  });
+
+  it.each([
+    ["Acquired", "acquired"],
+    ["ACQUIRED", "acquired"],
+    ["The Acquired", "acquired"],
+    ["The The Acquired", "acquired"],
+    ["Acquired Podcast", "acquired"],
+    ["Acquired Show", "acquired"],
+    ["The Acquired Podcast", "acquired"],
+    ["The Acquired Show!", "acquired"],
+    ["  the   acquired   podcast  ", "acquired"],
+    ["the\tacquired\tpodcast", "acquired"],
+    ["Odd Lots, Bloomberg", "odd lots bloomberg"],
+    ["Joe's Podcast", "joe s"],
+    ["Acquired (Podcast)", "acquired"],
+    ["My-Show", "my"],
+    ["Daily Show Podcast", "daily"],
+    ["The Show", "show"],
+    ["Show", "show"],
+    ["theater", "theater"],
+    ["showing", "showing"],
+    ["the", "the"],
+    ["!!!", ""],
+    ["Café Podcast", "café"],
+    ["Joe\u2019s Podcast", "joe s"],
+    ["The\u00A0Acquired\u00A0Podcast", "acquired"],
+    ["CAFÉ Podcast", "café"],
+    ["ÉCOLE", "école"],
+    ["\u0130 Podcast", "i\u0307"],
+    ["\u0410\u041A\u0410", "\u0430\u043A\u0430"],
+    ["ΣΊΣΥΦΟΣ", "σίσυφοσ"],
+  ])("normalizes %j to %j", (input, expected) => {
+    expect(normalizeShowMatchKey(input)).toBe(expected);
+    expect(normalizeShowMatchKey(normalizeShowMatchKey(input))).toBe(expected);
+  });
+});
+
+describe("decideShowMatch", () => {
+  it("matches one catalog show after normalization", () => {
+    expect(decideShowMatch("The Acquired Podcast!", [CATALOG], CALLER)).toEqual({
+      matched_show_id: "show-1",
+      show_match_status: "matched",
+      show_match_reason: "unique_normalized_name",
+      show_match_confidence: 1,
+    });
+  });
+
+  it("leaves a name with no candidate unmatched", () => {
+    expect(decideShowMatch("Mystery Hour", [CATALOG], CALLER)).toMatchObject({
+      matched_show_id: null,
+      show_match_status: "ambiguous",
+      show_match_reason: "no_normalized_match",
+      show_match_confidence: 0,
+    });
+  });
+
+  it("leaves two catalog shows unmatched", () => {
+    const decision = decideShowMatch(
+      "Acquired",
+      [CATALOG, { id: "show-2", name: "acquired podcast", is_discoverable: true, agent_id: null }],
+      CALLER
+    );
+    expect(decision).toMatchObject({
+      matched_show_id: null,
+      show_match_reason: "multiple_normalized_matches",
+      show_match_confidence: 0,
+    });
+  });
+
+  it("does not match a hidden show the caller did not create", () => {
+    const decision = decideShowMatch(
+      "Secret",
+      [{ id: "hid", name: "The Secret Show", is_discoverable: false, agent_id: "other" }],
+      CALLER
+    );
+    expect(decision.matched_show_id).toBeNull();
+    expect(decision.show_match_reason).toBe("no_normalized_match");
+  });
+
+  it("matches a hidden show the caller created", () => {
+    const decision = decideShowMatch(
+      "Secret Podcast",
+      [{ id: "hid", name: "Secret", is_discoverable: false, agent_id: CALLER }],
+      CALLER
+    );
+    expect(decision).toMatchObject({
+      matched_show_id: "hid",
+      show_match_status: "matched",
+      show_match_confidence: 1,
+    });
+  });
+
+  it("keeps the catalog match when someone else's hidden show normalizes the same way", () => {
+    const decision = decideShowMatch(
+      "Acquired",
+      [
+        CATALOG,
+        { id: "hid", name: "The Acquired Podcast", is_discoverable: false, agent_id: "other" },
+      ],
+      CALLER
+    );
+    expect(decision.matched_show_id).toBe("show-1");
+  });
+
+  it("treats a catalog show plus the caller's hidden show as ambiguous", () => {
+    const decision = decideShowMatch(
+      "Acquired",
+      [CATALOG, { id: "hid", name: "Acquired", is_discoverable: false, agent_id: CALLER }],
+      CALLER
+    );
+    expect(decision.matched_show_id).toBeNull();
+    expect(decision.show_match_reason).toBe("multiple_normalized_matches");
+  });
+
+  it("does not treat a missing discoverable flag as a catalog show", () => {
+    expect(
+      decideShowMatch("Acquired", [{ id: "x", name: "Acquired", agent_id: null }], CALLER)
+        .matched_show_id
+    ).toBeNull();
+  });
+
+  it("does not match an empty key to every punctuated name", () => {
+    expect(
+      decideShowMatch("!!!", [{ id: "x", name: "???", is_discoverable: true, agent_id: null }], CALLER)
+        .matched_show_id
+    ).toBeNull();
+  });
+
+  it("counts one show id once", () => {
+    expect(decideShowMatch("Acquired", [CATALOG, { ...CATALOG }], CALLER).matched_show_id).toBe(
+      "show-1"
+    );
+  });
+});
+
+describe("buildRecordInserts", () => {
+  it("writes the decision and ignores a show id already on the draft", () => {
+    const matches = new Map([
+      ["acquired", decideShowMatch("The Acquired Podcast", [CATALOG], CALLER)],
+    ]);
+    const draft: PastCampaignDraft = {
+      show_name: "The Acquired Podcast",
+      matched_show_id: "evil-show",
+      flight_start: null,
+      flight_end: null,
+      placement: null,
+      price_type: null,
+      rate: null,
+      episodes: null,
+      spend: null,
+      conversions: null,
+      downloads: null,
+      raw: {},
+    };
+    const rows = buildRecordInserts("imp-1", CALLER, [draft], matches);
+    expect(rows[0]).toMatchObject({
+      import_id: "imp-1",
+      brand_id: CALLER,
+      show_name: "The Acquired Podcast",
+      matched_show_id: "show-1",
+      show_match_status: "matched",
+      show_match_reason: "unique_normalized_name",
+      show_match_confidence: 1,
+    });
+    expect(JSON.stringify(rows)).not.toContain("evil-show");
+  });
+
+  it("stores an empty key as ambiguous and does not ask the catalog", async () => {
+    const queried: string[] = [];
+    const matches = await matchPastCampaignShows(["!!!", "The Acquired Podcast", "Acquired"], CALLER, async (key) => {
+      queried.push(key);
+      return [CATALOG];
+    });
+    expect(queried).toEqual(["acquired"]);
+    const rows = buildRecordInserts(
+      "imp-1",
+      CALLER,
+      [
+        { ...blankDraft("!!!"), matched_show_id: "evil-show" },
+        blankDraft("Acquired"),
+      ],
+      matches
+    );
+    expect(rows[0]).toMatchObject({
+      matched_show_id: null,
+      show_match_reason: "no_normalized_match",
+      show_match_confidence: 0,
+    });
+    expect(rows[1].matched_show_id).toBe("show-1");
+  });
+
+  it("saves a failed lookup as no match", async () => {
+    const matches = await matchPastCampaignShows(["Acquired"], CALLER, async () => {
+      throw new Error("down");
+    });
+    expect(matches.get("acquired")).toMatchObject({
+      matched_show_id: null,
+      show_match_reason: "no_normalized_match",
+    });
+  });
+});
+
+function blankDraft(showName: string): PastCampaignDraft {
+  return {
+    show_name: showName,
+    matched_show_id: null,
+    flight_start: null,
+    flight_end: null,
+    placement: null,
+    price_type: null,
+    rate: null,
+    episodes: null,
+    spend: null,
+    conversions: null,
+    downloads: null,
+    raw: {},
+  };
+}
