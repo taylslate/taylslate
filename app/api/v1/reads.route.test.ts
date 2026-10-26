@@ -58,6 +58,10 @@ const SHOW_PUBLIC = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
 const SHOW_OWNED = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
 const SHOW_HIDDEN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
 const SHOW_HOST = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4";
+const SHOW_OWNER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5";
+const SHOW_REP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6";
+const CALLER_SHOW_PROFILE = "99999999-9999-4999-8999-999999999992";
+const DEAL_REP = "cccccccc-cccc-4ccc-8ccc-ccccccccccc5";
 const CAMP = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1";
 const CAMP_OTHER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb8";
 const DEAL_BRAND = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
@@ -70,7 +74,9 @@ const FIXED_NOW = new Date("2026-10-21T23:18:10.000Z");
 
 interface ShowJson {
   id: string;
-  verified: boolean;
+  verified?: boolean;
+  contact?: { email?: string | null };
+  rates?: { midroll_cpm?: number | null; preroll_cpm?: number | null };
 }
 
 function call<Route>(
@@ -403,17 +409,42 @@ describe("brand isolation", () => {
     const hostShow = byId.get(SHOW_HOST);
     const ownedShow = byId.get(SHOW_OWNED);
     if (!publicShow || !hostShow || !ownedShow) throw new Error("missing show page row");
-    expect(publicShow.verified).toBe(false);
-    expect(hostShow.verified).toBe(true);
+    expect(publicShow).toEqual({
+      id: SHOW_PUBLIC,
+      name: "Public",
+      platform: "podcast",
+      audience_size: 5000,
+      categories: ["business"],
+    });
+    expect(hostShow).toEqual({
+      id: SHOW_HOST,
+      name: "Host tied",
+      platform: "podcast",
+      audience_size: 2000,
+      categories: ["culture"],
+    });
     expect(ownedShow.verified).toBe(true);
-    expect(Object.keys(publicShow).sort()).toEqual([...SHOW_FIELDS].sort());
+    expect(Object.keys(ownedShow).sort()).toEqual([...SHOW_FIELDS].sort());
     const body = JSON.stringify(rows);
-    expect(body).toContain("secret@example.com");
+    expect(body).not.toContain("secret@example.com");
     expect(body).toContain("owned@example.com");
-    expect(body).toContain("host@example.com");
+    expect(body).not.toContain("host@example.com");
     expect(body).not.toContain("hidden@example.com");
     expect(body).not.toContain("rate@example.com");
     expect(body).not.toContain(OTHER);
+
+    const listedPublic = await call(getShow, "/api/v1/shows/" + SHOW_PUBLIC, secret, SHOW_PUBLIC);
+    expect(listedPublic.status).toBe(200);
+    const publicBody = await listedPublic.json();
+    expect(publicBody.data).toEqual({
+      id: SHOW_PUBLIC,
+      name: "Public",
+      platform: "podcast",
+      audience_size: 5000,
+      categories: ["business"],
+    });
+    expect(JSON.stringify(publicBody)).not.toContain("secret@example.com");
+    expect(JSON.stringify(publicBody)).not.toContain("rate@example.com");
 
     const owned = await call(getShow, "/api/v1/shows/" + SHOW_OWNED, secret, SHOW_OWNED);
     expect(owned.status).toBe(200);
@@ -425,6 +456,90 @@ describe("brand isolation", () => {
 
     const junk = await call(getShow, "/api/v1/shows/not-a-uuid", secret, "not-a-uuid");
     expect(junk.status).toBe(404);
+  });
+
+  it("returns the full row to the owner and to a verified rep", async () => {
+    const secret = await readKey();
+    const brand = bridge.data!.tables.profiles.find((row) => row.id === BRAND);
+    if (!brand) throw new Error("missing brand profile");
+    brand.email = "owner@example.com";
+    bridge.data!.tables.show_profiles.push({ id: CALLER_SHOW_PROFILE, user_id: BRAND });
+    bridge.data!.tables.shows.push(
+      {
+        id: SHOW_OWNER,
+        name: "Owner show",
+        platform: "podcast",
+        categories: ["news"],
+        audience_size: 1000,
+        is_discoverable: true,
+        contact_email: "owner@example.com",
+        data_sources: ["show_owner"],
+        rate_card: { midroll_cpm: 40 },
+        created_at: "2026-03-05T00:00:00.000Z",
+      },
+      {
+        id: SHOW_REP,
+        name: "Rep show",
+        platform: "podcast",
+        categories: ["comedy"],
+        audience_size: 3000,
+        is_discoverable: true,
+        contact_email: "rep-secret@example.com",
+        rate_card: { preroll_cpm: 15 },
+        created_at: "2026-03-06T00:00:00.000Z",
+      },
+      {
+        id: SHOW_PUBLIC,
+        name: "Untied",
+        platform: "podcast",
+        categories: ["business"],
+        audience_size: 500,
+        is_discoverable: true,
+        contact_email: "untied@example.com",
+        rate_card: { midroll_cpm: 22 },
+        created_at: "2026-03-04T00:00:00.000Z",
+      }
+    );
+    bridge.data!.tables.deals.push({
+      id: DEAL_REP,
+      brand_id: OTHER,
+      show_id: SHOW_REP,
+      show_profile_id: CALLER_SHOW_PROFILE,
+      created_at: "2026-03-06T00:00:00.000Z",
+      status: "planning",
+    });
+
+    const listed = await call(listShows, "/api/v1/shows", secret);
+    expect(listed.status).toBe(200);
+    const rows = ((await listed.json()) as { data: ShowJson[] }).data;
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const ownerShow = byId.get(SHOW_OWNER);
+    const repShow = byId.get(SHOW_REP);
+    const untied = byId.get(SHOW_PUBLIC);
+    if (!ownerShow || !repShow || !untied) throw new Error("missing show row");
+
+    expect(ownerShow.contact?.email).toBe("owner@example.com");
+    expect(ownerShow.rates?.midroll_cpm).toBe(40);
+    expect(ownerShow.verified).toBe(true);
+    expect(Object.keys(ownerShow).sort()).toEqual([...SHOW_FIELDS].sort());
+    expect(repShow.contact?.email).toBe("rep-secret@example.com");
+    expect(repShow.rates?.preroll_cpm).toBe(15);
+    expect(repShow.verified).toBe(true);
+    expect(untied).toEqual({
+      id: SHOW_PUBLIC,
+      name: "Untied",
+      platform: "podcast",
+      audience_size: 500,
+      categories: ["business"],
+    });
+
+    const owner = await call(getShow, "/api/v1/shows/" + SHOW_OWNER, secret, SHOW_OWNER);
+    expect(owner.status).toBe(200);
+    expect((await owner.json()).data.contact.email).toBe("owner@example.com");
+
+    const rep = await call(getShow, "/api/v1/shows/" + SHOW_REP, secret, SHOW_REP);
+    expect(rep.status).toBe(200);
+    expect((await rep.json()).data.contact.email).toBe("rep-secret@example.com");
   });
 
   it("includes legacy brand_id deals and Wave 12 profile deals, and hides the rest", async () => {

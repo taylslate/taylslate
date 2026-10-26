@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getShowById, updateShow } from "@/lib/data/queries";
 import type { Show } from "@/lib/data/types";
 import { canEditShow, isShowsAdmin, showWritePatch } from "@/lib/shows/can-edit-show";
+import { fullShowIdsForCaller, projectShows } from "@/lib/shows/public-fields";
 
 export async function GET(
   _request: NextRequest,
@@ -32,7 +33,9 @@ export async function GET(
         return NextResponse.json({ error: "Show not found" }, { status: 404 });
       }
     }
-    return NextResponse.json({ show });
+    const fullIds = await fullShowIdsForCaller(user.id, [show]);
+    const [projected] = projectShows([show], fullIds);
+    return NextResponse.json({ show: projected });
   } catch (error) {
     console.error("Error fetching show:", error);
     return NextResponse.json({ error: "Failed to fetch show" }, { status: 500 });
