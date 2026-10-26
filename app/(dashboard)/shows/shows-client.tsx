@@ -112,7 +112,7 @@ export default function ShowsClient({ initialShows }: { initialShows?: AgentShow
       rate_card: { preroll_cpm: formPrerollCpm ? Number(formPrerollCpm) : undefined, midroll_cpm: formMidrollCpm ? Number(formMidrollCpm) : undefined, postroll_cpm: formPostrollCpm ? Number(formPostrollCpm) : undefined, flat_rate: formFlatRate ? Number(formFlatRate) : undefined },
       price_type: formPriceType, ad_formats: editingShow?.ad_formats ?? ["host_read"],
       episode_cadence: formEpisodeCadence, avg_episode_length_min: editingShow?.avg_episode_length_min ?? 60,
-      current_sponsors: editingShow?.current_sponsors ?? [], is_claimed: true, is_verified: false,
+      current_sponsors: editingShow?.current_sponsors ?? [], is_claimed: false, is_verified: false,
       available_slots: formAvailableSlots ? Number(formAvailableSlots) : undefined,
       created_at: editingShow?.created_at ?? now, updated_at: now,
       commission_rate: formCommissionRate ? Number(formCommissionRate) / 100 : undefined,

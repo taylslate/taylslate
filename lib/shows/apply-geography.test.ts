@@ -13,6 +13,7 @@ const db = {
   show_profiles: [] as Row[],
   profiles: [] as Row[],
   deals: [] as Row[],
+  show_ownership_proofs: [] as Row[],
 };
 
 const filtersSeen: Array<{ table: string; filters: Filter[] }> = [];
@@ -39,6 +40,7 @@ function rowsFor(table: string): Row[] {
   if (table === "show_profiles") return db.show_profiles;
   if (table === "profiles") return db.profiles;
   if (table === "deals") return db.deals;
+  if (table === "show_ownership_proofs") return db.show_ownership_proofs;
   return [];
 }
 
@@ -128,6 +130,7 @@ function seedCatalog() {
   ];
   db.profiles = [{ id: "user-imposter", email: "imposter@example.com" }];
   db.deals = [];
+  db.show_ownership_proofs = [];
   filtersSeen.length = 0;
 }
 
@@ -342,5 +345,47 @@ describe("verified profile ties", () => {
         { ...identity, contactEmail: "imposter@example.com", dataSources: ["show_owner"] },
       ])
     ).toEqual([{ showId: CATALOG_ID, profileId: "prof-imposter" }]);
+  });
+
+  it("ties a verified ownership proof and ignores podscan id", async () => {
+    db.show_profiles[0].podscan_id = "pd_other";
+    db.show_ownership_proofs.push({
+      show_id: CATALOG_ID,
+      show_profile_id: "prof-imposter",
+      status: "verified",
+      podscan_id: "pd_smartless",
+    });
+    expect(await getVerifiedProfileTies([identity])).toEqual([
+      { showId: CATALOG_ID, profileId: "prof-imposter" },
+    ]);
+    const proofCalls = filtersSeen.filter((call) => call.table === "show_ownership_proofs");
+    expect(proofCalls.length).toBeGreaterThan(0);
+    expect(
+      proofCalls.every((call) => call.filters.every((filter) => filter.column !== "podscan_id"))
+    ).toBe(true);
+    expect(
+      proofCalls.some((call) =>
+        call.filters.some((filter) => filter.column === "status" && filter.value === "verified")
+      )
+    ).toBe(true);
+  });
+
+  it("does not tie pending, rejected, or contested proofs", async () => {
+    db.show_ownership_proofs.push(
+      { show_id: CATALOG_ID, show_profile_id: "prof-imposter", status: "pending" },
+      { show_id: CATALOG_ID, show_profile_id: "prof-imposter", status: "rejected" },
+      { show_id: CATALOG_ID, show_profile_id: "prof-imposter", status: "contested" },
+      { show_id: CATALOG_ID, show_profile_id: "prof-imposter", status: "expired" }
+    );
+    expect(await getVerifiedProfileTies([identity])).toEqual([]);
+  });
+
+  it("does not tie a verified proof that has no show profile", async () => {
+    db.show_ownership_proofs.push({
+      show_id: CATALOG_ID,
+      show_profile_id: null,
+      status: "verified",
+    });
+    expect(await getVerifiedProfileTies([identity])).toEqual([]);
   });
 });

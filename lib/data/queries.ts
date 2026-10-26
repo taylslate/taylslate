@@ -1367,7 +1367,7 @@ export async function importShows(
     const dbRow = flattenShowForDB({
       ...showData,
       slug,
-      is_claimed: true,
+      is_claimed: false,
       is_verified: false,
     });
     // is_exclusive is a roster-link field, not a shows column.
