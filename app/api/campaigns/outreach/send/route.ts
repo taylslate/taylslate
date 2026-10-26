@@ -5,6 +5,7 @@ import { EMAIL_FROM_OUTREACH } from "@/lib/email/addresses";
 import { resolveManagedDelivery } from "@/lib/email/send";
 import { renderCampaignOutreachEmail } from "@/lib/email/templates/campaign-outreach";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { enforceOutreachSend } from "@/lib/security/rate-limit";
 
 interface OutreachEmailInput {
   show_id: string;
@@ -84,6 +85,9 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const limited = await enforceOutreachSend(user.id);
+  if (limited) return limited;
 
   const raw = await request.text();
   if (Buffer.byteLength(raw, "utf8") > MAX_REQUEST_BYTES) {

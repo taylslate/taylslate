@@ -12,6 +12,7 @@ import {
   ONBOARDING_RETURN_COOKIE_OPTIONS,
   sanitizeReturnPath,
 } from "@/lib/auth/onboarding-return";
+import { enforceAuthMagic } from "@/lib/security/rate-limit";
 
 function siteOrigin(req: NextRequest): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
@@ -20,6 +21,9 @@ function siteOrigin(req: NextRequest): string {
 }
 
 export async function GET(request: NextRequest) {
+  const limited = await enforceAuthMagic(request);
+  if (limited) return limited;
+
   const url = new URL(request.url);
   const token = url.searchParams.get("token");
   const origin = siteOrigin(request);

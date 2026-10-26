@@ -28,6 +28,10 @@ vi.mock("@/lib/data/queries", () => ({
   getUserProfile: (...args: unknown[]) => getUserProfile(...args),
 }));
 
+vi.mock("@/lib/security/rate-limit", () => ({
+  enforceUpload: vi.fn(async () => null),
+}));
+
 vi.mock("@/lib/llm/client", async () => {
   const actual = await vi.importActual<typeof import("@/lib/llm/client")>("@/lib/llm/client");
   return {

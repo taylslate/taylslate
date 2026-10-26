@@ -21,6 +21,10 @@ vi.mock("@/lib/shows/can-edit-show", () => ({
   isShowsAdmin,
 }));
 
+vi.mock("@/lib/security/rate-limit", () => ({
+  enforceUpload: vi.fn(async () => null),
+}));
+
 import { POST } from "./route";
 
 function call() {

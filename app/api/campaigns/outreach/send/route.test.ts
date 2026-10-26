@@ -4,11 +4,12 @@ import { NextRequest } from "next/server";
 const USER_ID = "22222222-2222-4222-8222-222222222222";
 const CAMPAIGN_ID = "11111111-1111-4111-8111-111111111111";
 
-const { resendSend, resolveManagedDelivery, getAuthenticatedUser, maybeSingle } = vi.hoisted(() => ({
+const { resendSend, resolveManagedDelivery, getAuthenticatedUser, maybeSingle, rpc } = vi.hoisted(() => ({
   resendSend: vi.fn(),
   resolveManagedDelivery: vi.fn(),
   getAuthenticatedUser: vi.fn(),
   maybeSingle: vi.fn(),
+  rpc: vi.fn(async () => ({ data: true, error: null })),
 }));
 
 vi.mock("@/lib/email/send", () => ({
@@ -24,6 +25,7 @@ vi.mock("@/lib/data/queries", () => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
+    rpc,
     from: () => ({
       select: () => ({
         eq: () => ({ maybeSingle }),

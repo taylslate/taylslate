@@ -19,6 +19,7 @@ import type {
 } from "@/lib/data/types";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { resolveBrandName } from "./_shared";
+import { enforceOutreachSend } from "@/lib/security/rate-limit";
 
 interface CreateOutreachBody {
   campaign_id: string;
@@ -82,6 +83,9 @@ function validate(body: CreateOutreachBody): string | null {
 export async function POST(request: NextRequest) {
   const user = await getAuthenticatedUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const limited = await enforceOutreachSend(user.id);
+  if (limited) return limited;
 
   let body: CreateOutreachBody;
   try {

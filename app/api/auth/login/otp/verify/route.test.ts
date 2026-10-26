@@ -99,10 +99,13 @@ beforeEach(() => {
     };
     return chain;
   });
-  rpc.mockImplementation(async (_name: string, args: LoginOtpRpcArgs) => ({
-    data: applyLoginOtpRpc(store, args, Date.now()),
-    error: null,
-  }));
+  rpc.mockImplementation(async (name: string, args: LoginOtpRpcArgs) => {
+    if (name === "rate_limit_hit") return { data: true, error: null };
+    return {
+      data: applyLoginOtpRpc(store, args, Date.now()),
+      error: null,
+    };
+  });
   createUser.mockResolvedValue({ data: { user: { id: "new-show" } }, error: null });
   deleteUser.mockResolvedValue({ data: {}, error: null });
   generateLink.mockResolvedValue({

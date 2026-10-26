@@ -30,6 +30,7 @@ import {
   mintLoginOtpCode,
   type LoginOtpLimitDecision,
 } from "@/lib/auth/login-otp-limit";
+import { enforceLoginCodeSend } from "@/lib/security/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -87,6 +88,9 @@ export async function POST(request: NextRequest) {
     outreachId = tokenPayload.outreach_id;
     outreachContactEmail = normalizeLoginEmail(outreach.sent_to_email);
   }
+
+  const rateLimited = await enforceLoginCodeSend(request, email);
+  if (rateLimited) return rateLimited;
 
   const { data: existing, error: lookupError } = await supabaseAdmin
     .from("profiles")

@@ -21,6 +21,7 @@ vi.mock("@/lib/data/queries", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
     from: () => adminFromBuilder,
+    rpc: vi.fn(async () => ({ data: true, error: null })),
   },
 }));
 

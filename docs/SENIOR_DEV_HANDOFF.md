@@ -893,3 +893,50 @@ Covers a non-admin rejected for agent and for a role they do not own, a forged `
 - `ADMIN_TEST_AGENT_USER_ID` is empty. Agent cannot be selected. No agent user was created.
 - The view changes the dashboard role and the banner. Reads and writes stay on the signed-in admin id. Test Show 1's rows are not loaded, and nothing is written as that user.
 - `lib/stripe`, `lib/payouts`, and `lib/billing` were not changed. No migration.
+
+## S-E: Rate limits
+
+### What was built
+
+Migration 073 adds `public.rate_limit_events` and `public.rate_limit_hit(bucket, key, max, window_seconds)`. The function is `SECURITY DEFINER` with `search_path = public`. It locks the bucket and key, deletes rows older than 2 days, and inserts a hit only when the count inside the window is still under max. RLS is on with no policy. `service_role` has select, insert, update, delete, and execute. anon, authenticated, and public have none. Authenticated also has truncate, references, and trigger revoked. 073 is not applied. Nothing was run against `ldtmhafewfifdizgfrnn`.
+
+`lib/security/rate-limit.ts` calls that function through `supabaseAdmin`. Email keys are the SHA-256 of the lowercased address. User keys are the user id. IP keys are the first `x-forwarded-for` hop, then `x-real-ip`. Over the limit the route returns 429, `Retry-After`, and `Too many requests. Try again later.` A database error fails closed on code send, verify, magic, outreach send, and uploads (503 `unavailable`). `failureMode: "open"` is for a read. No read route uses it.
+
+Checks sit at the top of the handler, after the existing auth or token gate where that gate has to run first. Login code send runs before the profile lookup, so a known email and an unknown email get the same 429. The existing `login_otp_consume` rules are unchanged.
+
+### Where
+
+- `supabase/migrations/073_rate_limits.sql`
+- `supabase/migrations/073_rate_limits.test.ts`
+- `lib/security/rate-limit.ts`
+- `lib/security/rate-limit.test.ts`
+- `docs/security/RATE_LIMITS.md`
+- `app/api/auth/magic/route.ts` (10 per IP per hour)
+- `app/api/auth/login/otp/route.ts` (3 per email per 15 minutes, 10 per IP per hour)
+- `app/api/auth/login/otp/verify/route.ts` (5 per email per 15 minutes)
+- `app/api/campaigns/outreach/send/route.ts` (20 per user per hour, 100 per user per day)
+- `app/api/outreach/route.ts` (same outreach caps)
+- `app/api/deals/import/route.ts` (20 per IP per hour)
+- `app/api/shows/import/route.ts` (20 per user per hour)
+- `app/api/show-profile/media-kit/route.ts` (20 per user per hour)
+
+B1 route, not on this branch: `POST /api/reps/roster/import` (open PR 48). The limit is 10 per user per hour via `enforceRosterImport`. Its 500-row and 1 MB caps stay on that branch.
+
+Route tests that already mocked `rpc` or `supabaseAdmin` now let `rate_limit_hit` return true, or mock `enforceUpload` as allowed, so the previous success responses stay. Those files are `app/api/auth/login/otp/route.test.ts`, `app/api/auth/login/otp/verify/route.test.ts`, `app/api/campaigns/outreach/send/route.test.ts`, `app/api/outreach/route.test.ts`, `app/api/deals/import/route.test.ts`, `app/api/shows/import/route.test.ts`, and `app/api/show-profile/media-kit/route.test.ts`.
+
+### Tests
+
+`npx vitest run lib/security/rate-limit.test.ts supabase/migrations/073_rate_limits.test.ts`
+
+The helper test trips and resets every constant, checks email-hash and IP keys, verify lockout, identical 429 bodies for a known and an unknown email, fail-closed send and outreach, fail-open reads, and unchanged under-limit responses for magic, campaign outreach send, deal import, media kit, and show import. PGlite applies 073 twice and shows anon and authenticated cannot select, insert, update, delete, or execute. `service_role` can execute and select. Each window denies at max and allows again after the rows are older than the window. No live database write and no real email.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- 073 is not applied. Wired routes fail closed until Chris applies it after merge.
+- `POST /api/reps/roster/import` is not in this tree. The one-line `enforceRosterImport` call is still to be added on that branch. The 500-row and 1 MB caps were not edited.
+- `POST /api/deals/import` is limited by IP. Adding `getAuthenticatedUser` on the PDF branch would change a path that currently does not load a session.
+- Verify counts every 6-digit attempt, including one that will succeed. `login_otp_consume` still locks wrong codes until a later send.
+- `POST /api/auth/magic/start`, outreach generate, pitch accept/counter/decline, and the discovery, interpret, and enrich routes are outside this job's file list and are still unlimited.
+- Show CSV import still has no byte or row cap. Media-kit inflate still has no output cap.
