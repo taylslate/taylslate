@@ -23,6 +23,7 @@ import {
   MAX_YOUTUBE_SEARCHES,
 } from "./category-mapping";
 import { podscanPodcastToShow, youtubeChannelToShow } from "./format-discovered-show";
+import { absorbDiscoveredChannels, takeLibraryThenLive } from "@/lib/youtube-library/read";
 import { redactSecretParams } from "./redact-secrets";
 import {
   mediumPriorsForShow,
@@ -55,10 +56,10 @@ export interface DiscoveryResult {
 /** Minimum audience size for discovered shows */
 const MIN_PODCAST_AUDIENCE = 5000;
 /** Floor when average views come from a recent-video stats fetch. */
-const MIN_YOUTUBE_AVG_VIEWS = 10000;
+export const MIN_YOUTUBE_AVG_VIEWS = 10000;
 /** Floor when average views fall back to total views / video count. */
-const MIN_YOUTUBE_AVG_VIEWS_FALLBACK = 5000;
-const MIN_YOUTUBE_VIDEO_COUNT = 10;
+export const MIN_YOUTUBE_AVG_VIEWS_FALLBACK = 5000;
+export const MIN_YOUTUBE_VIDEO_COUNT = 10;
 
 /** search.list maxResults per video search. YouTube allows up to 50. */
 const YOUTUBE_SEARCH_MAX_RESULTS = 50;
@@ -161,7 +162,12 @@ export async function discoverShows(brief: DiscoveryBrief): Promise<DiscoveryRes
   const [podcastShows, youtubeShows] = await Promise.all([
     wantsPodcast ? discoverFromPodscan(brief, errors) : Promise.resolve([]),
     wantsYoutube
-      ? discoverFromYoutube(youtubeQueries, errors, youtubeInterestFallback)
+      ? discoverFromYoutube(
+          youtubeQueries,
+          errors,
+          youtubeInterestFallback,
+          brief.target_interests
+        )
       : Promise.resolve([]),
   ]);
 
@@ -272,10 +278,11 @@ async function discoverFromPodscan(
 }
 
 /**
- * Search YouTube videos for the planned queries (capped at 4). searchVideos
- * orders by view count over the last 12 months and sends regionCode=US and
- * relevanceLanguage=en. Channel ids come from snippet.channelId, first
- * occurrence wins, in that rank order. Channel search is not also run.
+ * Search YouTube videos for the planned queries (capped at 4). The live
+ * top-up calls searchVideos with order relevance, over the last 12 months,
+ * with regionCode=US and relevanceLanguage=en. Channel ids come from
+ * snippet.channelId, first occurrence wins, in that rank order. Channel
+ * search is not also run.
  * The market filter below is the hard keep/drop, using the channel-details
  * response. Recent video stats still run for the top 10 channels that
  * survive it.
@@ -284,6 +291,19 @@ async function discoverFromPodscan(
  * was not already searched and the 4-search cap still has room.
  */
 export async function discoverFromYoutube(
+  queries: string[],
+  errors: string[],
+  interestFallback = "",
+  interests: string[] = []
+): Promise<Show[]> {
+  return takeLibraryThenLive({
+    ringTerms: queries,
+    interests,
+    live: () => discoverFromYoutubeLive(queries, errors, interestFallback),
+  });
+}
+
+async function discoverFromYoutubeLive(
   queries: string[],
   errors: string[],
   interestFallback = ""
@@ -302,7 +322,7 @@ export async function discoverFromYoutube(
 
     const runQuery = async (query: string, idx: number) => {
       try {
-        const hits = await client.searchVideos(query, YOUTUBE_SEARCH_MAX_RESULTS);
+        const hits = await client.searchVideos(query, YOUTUBE_SEARCH_MAX_RESULTS, "relevance");
         const found = uniqueChannelIds(hits);
         console.log(
           `[discovery] YouTube query ${idx + 1} "${query.slice(0, 40)}" → ${found.length} channels`
@@ -442,7 +462,25 @@ export async function discoverFromYoutube(
     );
     console.log(`[discovery] YouTube returned: ${kept.length}`);
 
-    return kept.map((ch) => youtubeChannelToShow(ch, statsMap.get(ch.channelId) ?? undefined));
+    const shows = kept.map((ch) => youtubeChannelToShow(ch, statsMap.get(ch.channelId) ?? undefined));
+    const sourceQuery = queries.join(" | ").slice(0, 500);
+    const seenAt = new Date().toISOString();
+    try {
+      await absorbDiscoveredChannels(
+        kept.map((ch) => ({
+          details: ch,
+          passedMarketFilter: true,
+          brandFlag: null,
+          source: "discovery" as const,
+          sourceQuery,
+          averageViews: statsMap.get(ch.channelId)?.averageViews,
+          now: seenAt,
+        }))
+      );
+    } catch {
+      // The library write is fail-soft. Live shows still return.
+    }
+    return shows;
   } catch (err) {
     const message = redactSecretParams(err instanceof Error ? err.message : "unknown error");
     const stack = err instanceof Error ? err.stack : undefined;

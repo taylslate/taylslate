@@ -1263,3 +1263,60 @@ No page or component was edited. Screenshots are not applicable.
 - Recent stats still run on the top 10 after the market filter, before the video-count and brand checks (D7). A tiny or brand channel in that ten can still use a stats call.
 - No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
 - Live confirmation waits on deploy. This PR does not merge and does not rerun a campaign. After deploy, rerun the 1-ring Ritual campaign within the hour. Target: at least 10 YouTube channels reach scoring. Read the funnel logs. Campaign `48925bc6` is the reference (4 channel searches, 3 returned, the views floors dropped 47).
+
+## L1 YouTube channel library
+
+### What was built
+
+A private YouTube creator catalog. Discovery reads it before a live search. The rows are not shows. `show_id` is set only when `shows.youtube_channel_id` matches, or a podcast show's stored YouTube link resolves to that channel exactly once. Zero matches and two or more matches stay unlinked. The pull never inserts a `shows` row.
+
+Migration 074 adds `public.youtube_channels` and `public.youtube_pull_queue`. RLS is on. There are no policies. `service_role` has select, insert, update, and delete. `anon`, `authenticated`, and `public` have nothing. `authenticated` also has truncate, references, and trigger revoked. `youtube_pull_queue.created_at` is the resume order. The pull stamps it one millisecond apart so a single insert keeps category order.
+
+Twenty category sets (4 to 6 phrases each) and `data/youtube-seeds.csv` (header only) seed the queue on the first pull. The daily pull budget is 8,000 units. A video search is 100. `searchVideos` takes an `order` argument and defaults to `relevance`. The category pull and the live discovery top-up both pass `relevance`. `channels.list` is 1 per 50 ids. A search that would pass the budget is not started, and that queue row stays pending. Seed handles and usernames resolve with one `channels.list` (1 unit). A bare channel id costs 0 to resolve, then 1 to fetch details. Each channel is stored whether or not it passes the same market filter, brand check, and view floors discovery already uses. The API key is never logged. Cron and tag errors go through `redactSecretParams` before they are logged. Pull errors keep the HTTP status and a quota reason only.
+
+Step A writes deterministic niche tags from topic labels and keywords onto the existing 17-name taxonomy. Step B runs inside the refresh cron. Untagged or old-version rows go to the existing LLM (`callLLMWithFallback`, `maxRetries: 0`) in batches of 50. The daily cap is 400 channels. Tags outside the taxonomy are dropped. `niche_tags_version` and `tagged_at` are set.
+
+The refresh cron walks oldest `stats_refreshed_at` first, 1,000 units a day. A row older than 30 days that this run did not refresh is deleted when it has no show, or has its YouTube-sourced fields cleared when it does. A channel missing from `channels.list`, or a 404, is deleted.
+
+`discoverFromYoutube` reads eligible library rows first: passed the market filter, no brand flag, same video-count and view floors, stats under 30 days, scored by niche tag and topic overlap with the ring terms and interests, top 60. The live video search runs only when fewer than 10 match, with `order=relevance`. Those live results are upserted with source `discovery`. The returned shape is still `Show`. Scoring, weights, bands, and tiers are unchanged. This does not re-add the D8 channel-to-video search or the `maxResults` change. Those already shipped on main. A missing table, or no Supabase service key, is a no-op and discovery falls through to the live search.
+
+Crons: `GET /api/cron/youtube-library-pull` at 17:00 UTC and `GET /api/cron/youtube-library-refresh` at 18:00 UTC. Both require `Authorization: Bearer <CRON_SECRET>`. A missing secret is 401. `vercel.json` regions are unchanged. `app/api/cron/pooled-priors/route.test.ts` asserts the full cron list, so those two entries were added there.
+
+### Where
+
+- `supabase/migrations/074_youtube_channels.sql`
+- `supabase/migrations/074_youtube_channels.test.ts`
+- `lib/youtube-library/categories.ts`, `seeds.ts`, `pull.ts`, `store.ts`, `tags.ts`, `refresh.ts`, `read.ts`, and each `.test.ts`
+- `data/youtube-seeds.csv`
+- `app/api/cron/youtube-library-pull/route.ts` and `route.test.ts`
+- `app/api/cron/youtube-library-refresh/route.ts` and `route.test.ts`
+- `vercel.json` (two cron entries only)
+- `app/api/cron/pooled-priors/route.test.ts` (cron-list assertion)
+- `lib/discovery/discover-shows.ts` (`discoverFromYoutube` reads the library first; live top-up uses `order=relevance`)
+- `lib/discovery/discover-shows.test.ts` (live top-up passes `relevance`)
+- `lib/enrichment/youtube.ts` (`searchVideos` `order` argument, default `relevance`)
+- `lib/enrichment/youtube.test.ts`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run supabase/migrations/074_youtube_channels.test.ts lib/youtube-library app/api/cron/youtube-library-pull app/api/cron/youtube-library-refresh lib/discovery/discover-shows.test.ts app/api/cron/pooled-priors/route.test.ts` (12 files, 66 passed).
+
+PGlite: RLS on for both tables; `anon` and `authenticated` denied; `service_role` allowed; queue unique on kind and value; `show_id` `on delete set null`.
+
+Unit: budget stop at 250 units (two searches, 202 units, the third query stays pending and runs the next day); queue dedupe; handle resolution without the API key in the error; unique-only show linking; deterministic tag mapping; batch cap of 400; refresh order, 30-day null or delete, and 404 delete; cron auth; library-first reads with and without the live top-up. Existing discovery fixtures still pass because a missing library returns no rows and the live search runs.
+
+Full `npx vitest run`: 275 files, 2429 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 136 pages. The live top-up asserts `searchVideos` is called with `relevance`. `searchVideos` still sends `viewCount` when that order is passed.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- Migration 074 is in the PR and was not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and Chris's own-words OK. Until then both crons no-op when the table is missing.
+- `data/youtube-seeds.csv` is a header. Chris fills channel URLs or ids. An empty file still queues the category phrases.
+- A category query that spends its search (100) and then runs out of budget before `channels.list` stays pending and is searched again the next day.
+- Refresh treats every id omitted from a `channels.list` response as gone and deletes it. A 404 on the batch deletes that batch.
+- Deterministic tags that match the current taxonomy version are kept. The LLM runs only for untagged rows and rows below `niche_tags_version`.
+- Library reads page at most 50,000 eligible rows. Ranking still returns at most 60.
+- `custom_url` is used in memory for the show-link check. It is not a column. The database link uses `shows.youtube_channel_id` and stored surface links.
+- No live write, charge, or send. This PR does not merge. After 074 is applied, the day-1 check is row count, units logged, and category spread. Do not rerun a campaign to prove the library until that apply.
