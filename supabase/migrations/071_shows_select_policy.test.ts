@@ -212,6 +212,10 @@ describe.skipIf(!bin)("migration 071 on throwaway postgres", () => {
       returns uuid language sql stable as $$
         select nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'sub', '')::uuid
       $$;
+      create or replace function auth.role()
+      returns text language sql stable as $$
+        select nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'role', '')
+      $$;
       create schema if not exists storage;
       create table if not exists storage.objects (
         id uuid primary key default gen_random_uuid(),
@@ -234,6 +238,7 @@ describe.skipIf(!bin)("migration 071 on throwaway postgres", () => {
       end $$;
       grant usage on schema auth to anon, authenticated, service_role;
       grant execute on function auth.uid() to anon, authenticated, service_role;
+      grant execute on function auth.role() to anon, authenticated, service_role;
       create table if not exists public.show_claims (id uuid primary key default gen_random_uuid());
       create table if not exists public.outcomes (id uuid primary key default gen_random_uuid());
     `);
@@ -487,8 +492,9 @@ describe.skipIf(!bin)("migration 071 on throwaway postgres", () => {
     expect(
       query(`
         set role service_role;
-        insert into public.past_campaign_records (import_id, brand_id, show_name)
-        values ('${agentImport}', '${AGENT_A}', 'Hidden Desk')
+        insert into public.past_campaign_records
+          (import_id, brand_id, show_name, matched_show_id)
+        values ('${agentImport}', '${AGENT_A}', 'Hidden Desk', '${HIDDEN}')
         returning matched_show_id::text;
       `)
     ).toBe(HIDDEN);
