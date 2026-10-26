@@ -19,6 +19,7 @@ import {
   type ConvictionDiscoveryDeps,
 } from "./conviction-discovery";
 import {
+  excludeDeadYouTube,
   excludeExcludedGenres,
   isExcludedGenre,
   mergeSimulcasts,
@@ -1049,5 +1050,115 @@ describe("runConvictionDiscovery", () => {
     const result = await runConvictionDiscovery("camp-1", h.deps);
     // Persist succeeded → conviction_scores rows still written.
     expect(result.scoredCount).toBeGreaterThan(0);
+  });
+
+  it("logs platform counts at each stage and returns the same scored shows", async () => {
+    const podcast = recoveryShow({ id: "pod-1", name: "Recovery Lab", platform: "podcast" });
+    const simulcast = recoveryShow({
+      id: "yt-sim",
+      name: "Recovery Lab",
+      platform: "youtube",
+      youtube_channel_id: "UCsim",
+      audience_size: 12000,
+    });
+    const tube = recoveryShow({
+      id: "yt-tube",
+      name: "Tube Lab",
+      platform: "youtube",
+      audience_size: 20000,
+    });
+    const dead = recoveryShow({
+      id: "yt-dead",
+      name: "Dead Tube",
+      platform: "youtube",
+      audience_size: 0,
+    });
+    const sleep = recoveryShow({
+      id: "yt-sleep",
+      name: "Sleep Sounds",
+      platform: "youtube",
+      audience_size: 30000,
+      categories: ["sleep"],
+      audience_interests: ["sleep"],
+    });
+    const discovered = [podcast, simulcast, tube, dead, sleep];
+    const rings = [makeRing(), makeRing({ id: "ring-2", slot_position: 1, label: "home cooks" })];
+    const pattern = makePattern("mid");
+    const discoveryErrors = ['YouTube query "ring": quotaExceeded', "channels.list down"];
+
+    const expectedCandidates = mergeSimulcasts(
+      excludeDeadYouTube(excludeExcludedGenres(discovered))
+    );
+    fillPurchasePower(expectedCandidates);
+    const expectedGroups = scoreCandidatesAgainstRings(expectedCandidates, rings, pattern, {
+      benchmarks: [],
+      firstTimeBrand: false,
+    });
+
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { deps } = makeDeps({
+        discovered,
+        rings,
+        pattern,
+        platforms: ["podcast", "youtube"],
+        discover: async () => ({
+          discovered,
+          sources: { podscan: 1, youtube: 4 },
+          errors: discoveryErrors,
+        }),
+      });
+      const result = await runConvictionDiscovery("camp-1", deps);
+
+      expect(result.errors).toEqual(discoveryErrors);
+      expect(result.candidateCount).toBe(expectedCandidates.length);
+      expect(result.rings.map((group) => group.shows.map((entry) => entry.show))).toEqual(
+        expectedGroups.map((group) => group.shows.map((entry) => entry.show))
+      );
+      expect(result.rings.map((group) => group.shows.map((entry) => entry.score))).toEqual(
+        expectedGroups.map((group) => group.shows.map((entry) => entry.score))
+      );
+      expect(result.rings[0].shows[0].show.surfaces?.youtube?.youtube_channel_id).toBe("UCsim");
+      expect(log.mock.calls.map((call) => call[0])).toEqual([
+        "[conviction-discovery] after discover: podcast=1 youtube=4",
+        "[conviction-discovery] after excludeExcludedGenres: podcast=1 youtube=3",
+        "[conviction-discovery] after excludeDeadYouTube: podcast=1 youtube=2",
+        "[conviction-discovery] after mergeSimulcasts: podcast=1 youtube=1",
+        "[conviction-discovery] after scoring: podcast=2 youtube=2",
+      ]);
+      expect(warn.mock.calls.map((call) => call[0])).toEqual(
+        discoveryErrors.map((message) => `[conviction-discovery] ${message}`)
+      );
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it("redacts a discovery error that contains key=ABC", async () => {
+    const raw = "YouTube discovery failed: key=ABC";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const { deps } = makeDeps({
+        discovered: [recoveryShow()],
+        discover: async () => ({
+          discovered: [recoveryShow()],
+          sources: { podscan: 0, youtube: 0 },
+          errors: [raw],
+        }),
+      });
+      const result = await runConvictionDiscovery("camp-1", deps);
+      const warned = warn.mock.calls.map((call) => call.map((part) => String(part)).join(" ")).join("\n");
+      const stored = result.errors.join("\n");
+      expect(warned).toContain("[conviction-discovery] YouTube discovery failed: key=[redacted]");
+      expect(warned).not.toContain("ABC");
+      expect(stored).toContain("YouTube discovery failed: key=[redacted]");
+      expect(stored).not.toContain("ABC");
+    } finally {
+      warn.mockRestore();
+      log.mockRestore();
+    }
   });
 });
