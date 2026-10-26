@@ -700,7 +700,7 @@ Migration 072 locks the money columns on `profiles` and the writes on `payments`
 
 `POST /api/campaigns/outreach/send` requires `getAuthenticatedUser`, a `campaign_id`, and ownership (`campaigns.user_id`). It sends only when `show_id` and `contact_email` match a recommendation, YouTube recommendation, or expansion row stored on that campaign. Anything else is dropped. Caps are 50 drafts, 200 characters per subject, 10 KB per body, and 512 KB for the request. The From address and the email template are unchanged. Both outreach fetches in `campaign-detail.tsx` now send `campaign_id`.
 
-072 is not applied.
+072 is applied and verified on 2026-10-26: `payments` is SELECT-only for authenticated, trigger `profiles_protect_money_columns` exists, and a fee update as authenticated is rejected with 42501.
 
 ### Where
 
@@ -723,10 +723,30 @@ PGlite proves an authenticated user cannot insert or update `payments`, cannot c
 
 ### Known gaps
 
-- 072 is in the repo and is not applied. SA-01 and SA-02 stay open on `ldtmhafewfifdizgfrnn` until Chris applies it after merge.
+- 072 is applied and verified on 2026-10-26. SA-01 and SA-02 are closed on `ldtmhafewfifdizgfrnn`.
 - SA-03's route checks ship with this PR and do not wait on 072. There is still no cross-request rate limit. The per-request caps are the limit this job adds.
 - The recipient allowlist is the contact email stored on the campaign JSON. The owner can still edit that JSON through the campaigns update policy, then send. Shows are not re-read from `shows.contact_email`.
 - `ensureProfile` remains a cookie-client insert of `role` `brand` and `tier` `free`. The insert guard allows that shape and rejects anything else.
 - A table-level UPDATE grant still covers the locked columns. The column revoke does not remove it. The trigger rejects the write.
 - `reset_monthly_campaigns` is invoker and updates `campaigns_this_month`. Nothing in the app calls it. An authenticated call would now fail the trigger.
 
+## S-A
+
+### What was built
+
+Read-only security inventory. Live `SELECT` against project `ldtmhafewfifdizgfrnn` on 2026-10-26. 43 public tables, 120 `app/api` routes, findings SA-01 through SA-24. No app code, migration, config, or settings change. No live writes, charges, or sends.
+
+### Where
+
+- `docs/security/S-A_FINDINGS.md`
+
+### Tests
+
+No new vitest tests. This job is docs only. Verification: the table count in the doc is 43, matching `pg_tables` for `public`. The route table has 120 rows, matching `route.ts` files under `app/api`. `git diff --stat` is only this file and the findings doc. `npx next build` is recorded on the PR. No page or component was touched. Screenshots are not applicable.
+
+### Known gaps
+
+- The audit did not send a user JWT. PostgREST writes in SA-01 through SA-05 and SA-24 are inferred from grants, policies, and the charge code, not from a live probe.
+- `/callback` was not re-walked.
+- `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were read and not edited.
+- No migration was applied. Paul reviews. Do not merge.
