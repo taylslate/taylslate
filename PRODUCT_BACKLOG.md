@@ -110,12 +110,10 @@ Things that must finish before GTM. The launch bar.
 - **All three layers COMPLETE.** Layer 3 (return-to-admin) shipped + verified live July 7, 2026 (commit `a4e3805`, Codex clean) — see SHIPPED section for detail. The locked opaque-token / sha256-at-rest / atomic-single-use security requirement was met exactly (no HMAC-over-plaintext). The cookie-trust gap is closed and the impersonation loop is complete; the tool is now safe for routine use (onboarding brand/agent friends).
 
 ### Direct show search
-- Brands who come in with a specific target list (knowing the shows they want) have no way to search for them by name
-- Currently discovery is AI-generative only — brand enters brief, AI recommends
-- Add a search bar to the discovery experience that hits Podscan's search endpoint, returns matching shows, lets brand select and add to media plan
-- Coexists with AI discovery, doesn't replace it
-- **Effort:** 2-3 days
-- **Why:** Real brands sometimes know what they want. Forcing them through AI discovery when they want to search for "Acquired" specifically is unnecessary friction. Both flows feed into the same media plan UI.
+- Brands and agencies can search discoverable shows by name at `/shows/search`. A result links to that show's CRM page (`/crm/[showId]`).
+- Discovery is still AI-generative. A search bar inside discovery that hits Podscan, then adds the show to a media plan, is still open.
+- Catalog search coexists with AI discovery.
+- **Why:** Real brands sometimes know what they want. Forcing them through AI discovery when they want to search for "Acquired" specifically is unnecessary friction. The remaining work is Podscan search inside discovery, feeding the same media plan.
 
 ### Test mode for full transaction loop
 - Currently no clean way to test full brand-side discovery → outreach → deal → IO → payment flow with two accounts you control

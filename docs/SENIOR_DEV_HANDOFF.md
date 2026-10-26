@@ -750,3 +750,36 @@ No new vitest tests. This job is docs only. Verification: the table count in the
 - `/callback` was not re-walked.
 - `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were read and not edited.
 - No migration was applied. Paul reviews. Do not merge.
+
+## U1
+
+### What was built
+
+A brand or agency can search discoverable shows by name at `/shows/search`. The page calls the existing `GET /api/shows?search=` with `limit=50`. The typed value is trimmed, cut at 100 characters, and `%`, `_`, and `\` are escaped before they are sent. Results show name, platform, audience size, and category. Each row links to the existing brand show page at `/crm/[showId]`. Empty, loading, and error states are on the page. A hidden show (`is_discoverable` false) is dropped before render. Contact email, rate card, and the rest of the catalog payload are not rendered. An agent or a show who opens the URL is sent to `/dashboard`. `/shows` is unchanged.
+
+The brand and agency nav in `lib/nav/items.ts` gained one entry, Search, pointing at `/shows/search`. Show and agent nav are the same list as before.
+
+### Where
+
+- `app/(dashboard)/shows/search/page.tsx`
+- `app/(dashboard)/shows/search/search-client.tsx`
+- `app/(dashboard)/shows/search/search-client.test.tsx`
+- `lib/nav/items.ts` (the `BRAND_NAV` line only)
+- `lib/nav/items.test.ts` (brand label list now includes Search; show and agent assertions are unchanged)
+- `PRODUCT_BACKLOG.md` (Direct show search)
+
+### Tests
+
+`app/(dashboard)/shows/search/search-client.test.tsx` and `lib/nav/items.test.ts`.
+
+Covers a hidden show excluded from the list, a brand seeing name, platform, audience, and category, the CRM link, an empty query making no request, a 401 response rendering the sign-in error, a failed search, wildcard escaping on the query string, the 50 row cap, and role gates: brand and agency render the page, signed-out goes to `/login`, no role goes to `/onboarding`, agent and show go to `/dashboard`. `GET /api/shows` already returns 401 with no session (`app/api/shows/route.test.ts`). No live writes.
+
+### Known gaps
+
+- `GET /api/shows` and `GET /api/shows/[id]` still return the full show, including contact and rate card, to any signed-in caller. This page does not render those fields. Those routes were not edited.
+- Name search is `ilike` on `shows.name` only. A topic that is not in the name does not match. The API category param is an exact `categories` contains check and is not wired to this one box.
+- `limit=50` is what this page sends. Other callers can still pass a limit up to 100.
+- Wildcard escaping is on this page's request. A direct call to `GET /api/shows?search=` can still pass raw `%` and `_`.
+- `/crm/[showId]` is the existing brand show page. It 404s unless that brand already has a contact, note, or deal for the show. There is no catalog profile route, and this job could not add one.
+- `isRouteAllowedForRole("/shows/search", "brand")` stays false. The segment rule was not changed. This page checks brand or agency itself.
+- `lib/brand/tokens.css` still does not list `/shows/search` in its page comment. That file was not edited.
