@@ -554,6 +554,95 @@ describe("ConvictionDiscoveryView — not-yet-scored states", () => {
       expect(screen.getByText(/may be open in another tab/i)).toBeInTheDocument()
     );
     expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("discovering-state")).not.toBeInTheDocument();
+  });
+});
+
+// The refresh transition in Next 16 does not settle, so completion is "the
+// server props changed", and an error drops the scoring state without a refresh.
+describe("ConvictionDiscoveryView — discovery completion clears the scoring state", () => {
+  function unscoredElement(discoveryRan = false) {
+    return (
+      <ConvictionDiscoveryView
+        campaignId="camp-1"
+        campaignName="Sauna Box Q3"
+        budgetTotal={30000}
+        universe={legacyUniverse([{ ring: ring(), shows: [] }], false)}
+        discoveryRan={discoveryRan}
+      />
+    );
+  }
+
+  it("renders results when discover succeeds and the refreshed props arrive", async () => {
+    // A refresh that never resolves must not leave the scoring state up.
+    mockRefresh.mockImplementation(() => new Promise(() => {}));
+    const view = render(unscoredElement());
+
+    expect(screen.getByTestId("discovering-state")).toBeInTheDocument();
+    await waitFor(() => expect(mockRefresh).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId("discovering-state")).toBeInTheDocument();
+
+    view.rerender(
+      <ConvictionDiscoveryView
+        campaignId="camp-1"
+        campaignName="Sauna Box Q3"
+        budgetTotal={30000}
+        universe={scoredConvictionUniverse()}
+        tiered={tieredUniverse({ test: [tieredShow()] })}
+        discoveryRan={true}
+      />
+    );
+
+    expect(screen.queryByTestId("discovering-state")).not.toBeInTheDocument();
+    expect(screen.getByText("The Recovery Lab")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Re-run discovery" })).toBeEnabled();
+  });
+
+  it("clears the scoring state when the refresh re-reads an empty run", async () => {
+    mockRefresh.mockImplementation(() => new Promise(() => {}));
+    const view = render(unscoredElement());
+    await waitFor(() => expect(mockRefresh).toHaveBeenCalledTimes(1));
+
+    view.rerender(unscoredElement(true));
+
+    expect(screen.queryByTestId("discovering-state")).not.toBeInTheDocument();
+    expect(screen.getByText(/No shows cleared the bar/i)).toBeInTheDocument();
+  });
+
+  it("clears the scoring state when discover returns an error", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "Discovery couldn't finish. Try again." }),
+    })) as unknown as typeof fetch;
+
+    render(unscoredElement());
+
+    await waitFor(() =>
+      expect(screen.getByText("Discovery didn't complete")).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("discovering-state")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Discovery couldn't finish. Try again.")
+    ).toBeInTheDocument();
+    expect(mockRefresh).not.toHaveBeenCalled();
+  });
+
+  it("clears the scoring state when the discover request throws", async () => {
+    global.fetch = vi.fn(async () => {
+      throw new Error("offline");
+    }) as unknown as typeof fetch;
+
+    render(unscoredElement());
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Network error reaching discovery. Try again.")
+      ).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("discovering-state")).not.toBeInTheDocument();
+    expect(screen.getByText("Discovery didn't complete")).toBeInTheDocument();
+    expect(mockRefresh).not.toHaveBeenCalled();
   });
 });
 

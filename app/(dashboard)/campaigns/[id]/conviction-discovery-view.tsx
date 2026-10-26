@@ -254,7 +254,6 @@ export default function ConvictionDiscoveryView({
   marketSignalsByShow,
 }: ConvictionDiscoveryViewProps) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
 
   const [discovering, setDiscovering] = useState(false);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
@@ -272,6 +271,31 @@ export default function ConvictionDiscoveryView({
   // is a once-per-visit action; the manual "Re-run discovery" button is the
   // explicit re-trigger and is NOT gated by this.
   const autoFiredRef = useRef(false);
+  // True from a successful POST until the refreshed server props commit.
+  // The ref is what `finally` reads (state set in that tick has not flushed).
+  // The state is what render reads, so a StrictMode double render still sees
+  // the run as in flight and still clears `discovering` when props land.
+  const awaitingRefreshRef = useRef(false);
+  const [awaitingRefresh, setAwaitingRefresh] = useState(false);
+  // Server props this view has already rendered. A refresh keeps the component
+  // mounted, so completion is "these props changed", not a transition flag.
+  const [serverSnap, setServerSnap] = useState({
+    universe,
+    discoveryRan,
+    tiered,
+  });
+  if (
+    serverSnap.universe !== universe ||
+    serverSnap.discoveryRan !== discoveryRan ||
+    serverSnap.tiered !== tiered
+  ) {
+    setServerSnap({ universe, discoveryRan, tiered });
+    if (awaitingRefresh) {
+      awaitingRefreshRef.current = false;
+      setAwaitingRefresh(false);
+      setDiscovering(false);
+    }
+  }
 
   const runDiscovery = useCallback(async () => {
     if (inFlightRef.current) return;
@@ -305,14 +329,23 @@ export default function ConvictionDiscoveryView({
         return;
       }
       // Re-read the server component so the persisted scores render (or the
-      // ran-but-empty state shows). router.refresh keeps this component mounted;
-      // isPending bridges the window so there's no flash back to "loading".
-      startTransition(() => router.refresh());
+      // ran-but-empty state shows). router.refresh keeps this component mounted.
+      // Do not wrap it in startTransition. On Next 16 that transition's
+      // isPending stays true after the refresh, and the scoring state never
+      // leaves until a full reload. `discovering` stays up until the new
+      // server props commit, and drops immediately on error or 409.
+      awaitingRefreshRef.current = true;
+      setAwaitingRefresh(true);
+      router.refresh();
     } catch {
+      awaitingRefreshRef.current = false;
+      setAwaitingRefresh(false);
       setDiscoverError("Network error reaching discovery. Try again.");
     } finally {
       inFlightRef.current = false;
-      setDiscovering(false);
+      if (!awaitingRefreshRef.current) {
+        setDiscovering(false);
+      }
     }
   }, [campaignId, router]);
 
@@ -342,13 +375,13 @@ export default function ConvictionDiscoveryView({
 
   if (!universe.hasScores) {
     // Explicit phase ordering (each checked before the next):
-    //   1. actively running / refreshing → loading
+    //   1. actively running / waiting on the refreshed props → loading
     //   2. 409 notice → another run owns discovery; soft, no re-fire
     //   3. hard error → retry
     //   4. ran but kept nothing → empty (no re-fire)
     //   5. otherwise → pre-fire frame; the auto-fire effect is about to run
     const body = (() => {
-      if (discovering || isPending) {
+      if (discovering) {
         return <DiscoveringState ringCount={universe.rings.length} />;
       }
       if (discoverNotice) {
@@ -407,7 +440,7 @@ export default function ConvictionDiscoveryView({
         initialSpotCount={testSpotCount ?? DEFAULT_SPOT_COUNT}
         initialPlacement={testPlacement ?? DEFAULT_PLACEMENT}
         onRerun={runDiscovery}
-        rerunning={discovering || isPending}
+        rerunning={discovering}
         router={router}
         marketSignalsByShow={marketSignalsByShow}
       />
