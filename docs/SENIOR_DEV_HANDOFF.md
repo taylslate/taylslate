@@ -560,3 +560,38 @@ Migration 061 is not applied. 065 and 066 are already on main. 061 does not gran
 - No `updated_at` trigger on `show_ownership_proofs`. O2 sets `updated_at` when it writes.
 - Ownership labels are not on any screen. Brand-facing UI must not grow a badge from this export.
 - 061 is not applied on `ldtmhafewfifdizgfrnn`.
+
+## L2
+
+### What was built
+
+Anonymized priors from booked on-platform deals. Booked means `signed`, `live`, `delivering`, or `completed`, with `cancelled_at` null. `show_signed` does not enter. A hidden show does not enter. A group needs at least 5 distinct brands (`coalesce(brand_profile_id, brand_id)`). The deal table stores no brand, deal, show, or user id. `agreed_cpm`, `agreed_placement`, and `agreed_episode_count` win when set. Outcome impressions are used only when `outcomes.booking_id` matches the deal. 069 does not replace `refresh_pooled_import_priors`. 068 is the only definition. A row stays out unless `matched_show_id` is set, `show_match_status` is null or `matched`, and the show is discoverable. Ambiguous rows and hidden shows stay out.
+
+`loadPooledPriors` merges the two tables. Deal priors win on a shared key. Import priors fill the rest. Discovery already calls that loader. A daily cron rebuilds both tables behind `CRON_SECRET`. `/terms` shows the approved consent line.
+
+### Where
+
+- `supabase/migrations/069_pooled_deal_priors.sql` (not applied)
+- `supabase/migrations/069_pooled_deal_priors.test.ts`
+- `lib/learning/pooled-deal-priors.ts`
+- `lib/learning/pooled-deal-priors.test.ts`
+- `lib/learning/pooled-priors.ts`
+- `lib/learning/pooled-priors.test.ts`
+- `app/api/cron/pooled-priors/route.ts`
+- `app/api/cron/pooled-priors/route.test.ts`
+- `vercel.json` (one cron, `0 16 * * *`)
+- `app/terms/page.tsx`
+- `docs/jobs/L2.md`
+
+### Tests
+
+`npx vitest run supabase/migrations/069_pooled_deal_priors.test.ts lib/learning/pooled-deal-priors.test.ts lib/learning/pooled-priors.test.ts app/api/cron/pooled-priors/route.test.ts`
+
+The throwaway Postgres suite applies 001 through 069, including 061 from main `4c5aa7b`. It checks 4 brands against 5, ignores cancelled, `show_signed`, and unsigned deals, drops five booked brands on a hidden show, keeps ambiguous and hidden-show rows out of the import pool, denies anon and authenticated select, execute, and truncate, and re-runs 069. It is skipped when Postgres binaries are absent. No live writes.
+
+### Known gaps
+
+- 069 is not applied. Do not refresh the hosted pool until Chris says so. 068 is on main.
+- Backlog item j. On main `4c5aa7b`, `/terms` is not in `proxy.ts` `isPublicRoute`, and the footer Terms link is still `#`.
+- The two pools are not summed. Each source keeps its own 5-brand bar so one brand cannot be counted twice.
+- `outcomes` is joined on `booking_id = deals.id`. A `show_id`-only join is not used.
