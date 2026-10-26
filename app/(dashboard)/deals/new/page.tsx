@@ -26,6 +26,16 @@ function FieldError({ message }: { message?: string }) {
   return <p className="mt-1.5 text-xs text-[var(--ts-accent-text)]">{message}</p>;
 }
 
+function cpmFromCard(
+  card: { preroll_cpm?: number; midroll_cpm?: number; postroll_cpm?: number } | null | undefined,
+  placement: Placement
+): number | undefined {
+  if (!card) return undefined;
+  if (placement === "pre-roll") return card.preroll_cpm;
+  if (placement === "mid-roll") return card.midroll_cpm;
+  return card.postroll_cpm;
+}
+
 export default function NewDealPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -75,18 +85,14 @@ export default function NewDealPage() {
 
   const selectedShow = shows.find((s) => s.id === showId);
 
-  // Auto-fill CPM from show rate card when show + placement changes
+  // Auto-fill CPM from the rate card when the show and placement change.
+  // A catalog row may omit rate_card. The rate field stays empty for the
+  // brand to fill in, and the page does not throw.
   const handleShowChange = (id: string) => {
     setShowId(id);
     const show = shows.find((s) => s.id === id);
     if (show && priceType === "cpm") {
-      const rate =
-        placement === "pre-roll"
-          ? show.rate_card.preroll_cpm
-          : placement === "mid-roll"
-          ? show.rate_card.midroll_cpm
-          : show.rate_card.postroll_cpm;
-      if (rate) setCpmRate(rate);
+      setCpmRate(cpmFromCard(show.rate_card, placement) ?? "");
     }
     if (show && !guaranteedDownloads) {
       setGuaranteedDownloads(show.audience_size);
@@ -96,13 +102,7 @@ export default function NewDealPage() {
   const handlePlacementChange = (p: Placement) => {
     setPlacement(p);
     if (selectedShow && priceType === "cpm") {
-      const rate =
-        p === "pre-roll"
-          ? selectedShow.rate_card.preroll_cpm
-          : p === "mid-roll"
-          ? selectedShow.rate_card.midroll_cpm
-          : selectedShow.rate_card.postroll_cpm;
-      if (rate) setCpmRate(rate);
+      setCpmRate(cpmFromCard(selectedShow.rate_card, p) ?? "");
     }
   };
 

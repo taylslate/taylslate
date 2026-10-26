@@ -62,6 +62,7 @@ function chain(result: { data: unknown; error: { message: string } | null }) {
 function admin(opts: {
   profile?: { id: string } | null;
   deals?: Array<{ show_id: string; brand_id?: string; agency_id?: string }>;
+  roster?: Array<{ show_id: string; status: string }>;
 }) {
   from.mockImplementation((table: unknown) => {
     if (table === "show_profiles") {
@@ -69,6 +70,9 @@ function admin(opts: {
     }
     if (table === "deals") {
       return chain({ data: opts.deals ?? [], error: null });
+    }
+    if (table === "agent_show_relationships") {
+      return chain({ data: opts.roster ?? [], error: null });
     }
     return chain({ data: null, error: null });
   });
@@ -181,5 +185,17 @@ describe("fullShowIdsForCaller", () => {
       deals: [{ show_id: SHOW, brand_id: "other-brand" }],
     });
     expect(await fullShowIdsForCaller(USER, [secretShow])).toEqual(new Set());
+  });
+
+  it("includes an approved roster show and skips a pending link", async () => {
+    admin({
+      roster: [
+        { show_id: SHOW, status: "approved" },
+        { show_id: OTHER, status: "pending" },
+      ],
+    });
+    expect(
+      await fullShowIdsForCaller(USER, [secretShow, { ...secretShow, id: OTHER }])
+    ).toEqual(new Set([SHOW]));
   });
 });

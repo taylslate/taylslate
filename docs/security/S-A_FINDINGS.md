@@ -4,7 +4,7 @@ Read-only inventory of Taylslate as of 2026-10-26. Live checks are `SELECT` only
 
 H1 status: SA-01, SA-02, and SA-03 were fixed by H1 (commit 632f420, migration 072_lock_money_columns). 072 is applied and verified on 2026-10-26: `payments` is SELECT-only for authenticated, trigger `profiles_protect_money_columns` exists, and a fee update as authenticated is rejected with 42501. The table inventory below is the earlier 2026-10-26 read and does not include 072.
 
-S-K status: SA-25 is fixed for `GET /api/shows`. A caller with no tie receives `id`, `name`, `platform`, `audience_size`, and `categories`, plus `image_url` and `description` when those strings are non-empty. Contact and rate card stay on the object for the owner, a `getVerifiedProfileTies` match on the caller's `show_profiles` row, an agent's own roster, or a brand or agency with a deal on that show. `show_profiles.podscan_id` is not a tie. `GET /api/shows/[id]` and `GET /api/v1/shows` are unchanged.
+S-K status: SA-25 is fixed for `GET /api/shows`, `GET /api/shows/[id]`, `GET /api/v1/shows`, and `GET /api/v1/shows/[id]`. A caller with no tie receives `id`, `name`, `platform`, `audience_size`, and `categories`, plus `image_url` and `description` when those strings are non-empty. Contact and rate card stay on the object for the owner, a `getVerifiedProfileTies` match on the caller's `show_profiles` row, an approved roster link, or a brand or agency with a deal on that show (`brand_id`, `agency_id`, or `brand_profile_id`). `show_profiles.podscan_id` is not a tie. API key scope checks on `/api/v1/shows` are unchanged. New Deal leaves the rate field empty when `rate_card` is missing.
 
 Counts to verify:
 
@@ -324,7 +324,7 @@ One row per `route.ts`. "Session" means `supabase.auth.getUser()` through `getAu
 | app/api/show-surfaces/route.ts | GET,PUT | yes. Session (route.ts:4) | no explicit id compare in the route. User-scoped client calls are limited by RLS | no | field checks in the handler | no | none in route |
 | app/api/shows/[id]/claim/route.ts | POST | yes. Session (route.ts:17) | see route.ts:40 | no | field checks in the handler | no | none in route |
 | app/api/shows/[id]/enrich/route.ts | POST | yes. Session (route.ts:38) | see route.ts:56 | no | field checks in the handler | no | none in route |
-| app/api/shows/[id]/route.ts | GET,PATCH | yes. Session (route.ts:15) | see route.ts:31 | no | field checks in the handler | no | none in route |
+| app/api/shows/[id]/route.ts | GET,PATCH | yes. Session (route.ts:15) | GET: hidden show still 404 unless creator or admin. Public fields unless owner, getVerifiedProfileTies, approved roster, or a deal (SA-25). PATCH unchanged | yes, after the auth check, for the tie and deal reads | field checks in the handler | no | none in route |
 | app/api/shows/enrich-batch/route.ts | POST | yes. Session (route.ts:37) | see route.ts:63 | no | field checks in the handler | no | none in route |
 | app/api/shows/import/route.ts | POST | yes. Session auth.getUser (route.ts:15) | isShowsAdmin or profile.role agent (route.ts:22). Body agent id is ignored | no | field checks in the handler | no | none. CSV is read with file.text() with no size or row cap (route.ts:37) |
 | app/api/shows/route.ts | GET,POST | yes. Session | GET: public fields unless owner, getVerifiedProfileTies, agent roster, or a deal (SA-25). POST: agent or shows admin | yes, after the auth check, for the tie and deal reads | field checks in the handler | no | none in route |
@@ -347,8 +347,8 @@ One row per `route.ts`. "Session" means `supabase.auth.getUser()` through `getAu
 | app/api/v1/health/route.ts | GET | yes. Bearer API key resolveApiRequest (lib/api/auth.ts:94), then read scope | key brand_id must match a profiles row | no | field checks in the handler | yes. enforceApiRateLimit 60/min (lib/api/rate-limit.ts:42). Failure is 500, not a bypass | none in route |
 | app/api/v1/openapi.json/route.ts | GET | no. Public API description | none | no | thin | no | none in route |
 | app/api/v1/outreach/route.ts | POST | yes. Bearer API key via withApiWrite (lib/api/v1/handler.ts:92). Scope is the write scope named in the file | brandId from the key. Writes record a pending action and do not run the campaign | no | thin | yes. enforceApiRateLimit 60/min inside the wrapper | 64KB (lib/api/v1/handler.ts:81) |
-| app/api/v1/shows/[id]/route.ts | GET | yes. Bearer API key via withApiRead (lib/api/v1/handler.ts:42), read scope | brandId from the key. Another brand's id is 404 | no | thin | yes. enforceApiRateLimit 60/min inside the wrapper | none in route |
-| app/api/v1/shows/route.ts | GET | yes. Bearer API key via withApiRead (lib/api/v1/handler.ts:42), read scope | brandId from the key. Another brand's id is 404 | no | thin | yes. enforceApiRateLimit 60/min inside the wrapper | none in route |
+| app/api/v1/shows/[id]/route.ts | GET | yes. Bearer API key via withApiRead (lib/api/v1/handler.ts:42), read scope | brandId from the key. Another brand's private show is 404. Public fields unless the key's brand is tied (SA-25). Scope rules unchanged | yes, after the key check, for the tie and deal reads | thin | yes. enforceApiRateLimit 60/min inside the wrapper | none in route |
+| app/api/v1/shows/route.ts | GET | yes. Bearer API key via withApiRead (lib/api/v1/handler.ts:42), read scope | brandId from the key. Public fields unless the key's brand is tied (SA-25). Scope rules unchanged | yes, after the key check, for the tie and deal reads | thin | yes. enforceApiRateLimit 60/min inside the wrapper | none in route |
 | app/api/view-mode/clear/route.ts | GET | no. Deletes the view-as cookie and redirects (route.ts:11) | none | no | thin | no | none in route |
 | app/api/view-mode/route.ts | POST | yes. Session auth.getUser (route.ts:17) | brand or show mode requires that profile (route.ts:42 and route.ts:50) | no | field checks in the handler | no | none in route |
 | app/api/webhooks/docusign/route.ts | POST | yes. HMAC verifyDocuSignSignature (route.ts:261) before any write. No session | deal looked up by envelope id after the signature check (route.ts:288) | yes, after the auth check (route.ts:55) | field checks in the handler | no | none in route |
@@ -510,7 +510,7 @@ Status: fixed by H1 (commit 632f420, migration 072_lock_money_columns). Applied 
 
 **SA-25. GET /api/shows returned contact and rate card to any signed-in brand.** `app/api/shows/route.ts` GET, found during U1 (PR #52). A brand with no relationship to the show received `contact` (name, email, method) and `rate_card`, plus sponsors, slots, and income demographics. The U1 search client drops those fields in the browser after the response is already sent. Fix: build the JSON from an allowlist on the server. Return contact and rate card only to the owner, a verified tie from `getVerifiedProfileTies`, an agent's own roster, or a brand or agency with a deal on that show. Lane: S-K.
 
-Status: fixed for `GET /api/shows` by S-K. `GET /api/shows/[id]` and `GET /api/v1/shows` still return the full show. Those routes are outside this job.
+Status: fixed by S-K for `GET /api/shows`, `GET /api/shows/[id]`, `GET /api/v1/shows`, and `GET /api/v1/shows/[id]`. The same `lib/shows/public-fields.ts` helper projects each response. A caller with no tie receives the public allowlist. The full object stays for the owner, a verified profile tie, an approved roster link, or a deal on that show. API key scope checks on `/api/v1/shows` are unchanged. New Deal treats a missing `rate_card` as an empty rate field.
 
 ### Medium
 

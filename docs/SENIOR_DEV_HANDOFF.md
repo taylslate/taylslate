@@ -811,38 +811,48 @@ The only user-facing copy of that label was the role card title in `app/onboardi
 
 ### What was built
 
-`GET /api/shows` no longer returns the show object to every signed-in caller. The JSON is built from an allowlist: `id`, `name`, `platform`, `audience_size`, `categories`, plus `image_url` and `description` when those values are non-empty strings. `image_url` is the existing image column. Contact, rate card, sponsors, slots, demographics, and every other key are absent for a caller with no tie.
+`GET /api/shows`, `GET /api/shows/[id]`, `GET /api/v1/shows`, and `GET /api/v1/shows/[id]` no longer return the show object to every caller. The JSON is built from an allowlist: `id`, `name`, `platform`, `audience_size`, `categories`, plus `image_url` and `description` when those values are non-empty strings. `image_url` is the existing image column. Contact, rate card, sponsors, slots, demographics, and every other key are absent for a caller with no tie.
 
-The full show object is still returned for a show the caller owns or is otherwise tied to. A tie is the caller's `show_profiles` row in `getVerifiedProfileTies` (a deal `show_profile_id`, a `show_owner` contact email, or a verified ownership proof). `show_profiles.podscan_id` is not read and is not a tie. A brand or agency with a `deals` row on that show (`brand_id` or `agency_id`) also receives the full object for that show only. An agent still receives their own roster from the approved-link query, in full, and that path does not call `getVerifiedProfileTies`. A requested `limit` is still forwarded and still clamps at 100. There is no new default of 50. The U1 search client sends `limit=50`. Signed-out callers still receive 401. `POST /api/shows` is unchanged.
+The full show object is still returned for a show the caller owns or is otherwise tied to. A tie is the caller's `show_profiles` row in `getVerifiedProfileTies` (a deal `show_profile_id`, a `show_owner` contact email, or a verified ownership proof). `show_profiles.podscan_id` is not read and is not a tie. A brand or agency with a `deals` row on that show (`brand_id`, `agency_id`, or the caller's `brand_profile_id`) also receives the full object for that show only. An approved `agent_show_relationships` row does too. An agent still receives their own roster from the approved-link query on `GET /api/shows`, in full, and that path does not call `getVerifiedProfileTies`. A requested `limit` is still forwarded and still clamps at 100. There is no new default of 50. The U1 search client sends `limit=50`. Signed-out callers still receive 401. A missing API key on `/api/v1/shows` still receives 401. A key without `read` still receives 403. `POST /api/shows` and `PATCH /api/shows/[id]` are unchanged. Hidden-show visibility on `GET /api/shows/[id]` is unchanged: a non-creator who is not an admin still gets 404. A creator or admin with no tie gets the public allowlist.
+
+New Deal reads `rate_card` only through an optional lookup. With no rate card the CPM field stays empty and the page does not throw. A present card still fills the CPM for the selected placement.
+
+SA-25 is marked fixed for those four GET handlers.
 
 ### Where
 
 - `app/api/shows/route.ts` (`GET` only)
 - `app/api/shows/route.test.ts`
+- `app/api/shows/[id]/route.ts` (`GET` only)
+- `app/api/shows/[id]/route.test.ts`
+- `app/api/v1/shows/route.ts` (`GET` only)
+- `app/api/v1/shows/[id]/route.ts` (`GET` only)
+- `app/api/v1/reads.route.test.ts` (show field assertions and owner / verified-rep cases; scope test unchanged)
+- `app/(dashboard)/deals/new/page.tsx` (rate card handling only)
+- `app/(dashboard)/deals/new/page.test.tsx`
 - `lib/shows/public-fields.ts`
 - `lib/shows/public-fields.test.ts`
 - `docs/security/S-A_FINDINGS.md` (SA-25)
 
 ### Tests
 
-`npx vitest run lib/shows/public-fields.test.ts app/api/shows/route.test.ts`
+`npx vitest run lib/shows/public-fields.test.ts app/api/shows/route.test.ts app/api/shows/[id]/route.test.ts app/api/v1/reads.route.test.ts app/(dashboard)/deals/new/page.test.tsx`
 
-Covers a brand with no tie (public fields only, no contact, no rate card, podscan id not passed into the tie lookup), an owner (full row for the tied show, public fields for the other), a verified rep (full roster row, `limit=50` still forwarded, tie lookup not called), an anonymous caller (401), and a brand with a deal (full row for that show only). The helper tests also cover an agency deal, a deal that belongs to someone else, a tie for a different profile, and blank image and description.
+Covers a brand with no tie (public fields only, no contact, no rate card, podscan id not passed into the tie lookup), an owner (full row), a verified rep (full row), and an anonymous caller (401) on `GET /api/shows`, `GET /api/shows/[id]`, and both `/api/v1/shows` handlers. The v1 scope test still expects 403 `API key lacks the required scope.` for a write-only key. New Deal renders when the catalog row has no `rate_card`, leaves the CPM input empty, and still fills 25 when `midroll_cpm` is present.
 
 Clients of `GET /api/shows` on this branch:
 
 - `app/(dashboard)/dashboard/dashboard-client.tsx` reads `length` and `platform` only. Both remain.
-- `app/(dashboard)/deals/new/page.tsx` reads `name`, `audience_size`, and `rate_card`. `rate_card` is removed when the brand has no deal on that show. Selecting a show then reads `show.rate_card.preroll_cpm` and throws. The file is outside this job and was not edited.
+- `app/(dashboard)/deals/new/page.tsx` reads `name`, `audience_size`, and `rate_card`. A missing card leaves the rate empty.
 - `app/(dashboard)/shows/shows-client.tsx` fetches `GET /api/shows` only when `initialShows` is omitted. `/shows` always passes `initialShows` from the server query, so that fetch does not run. The fallback would read `contact` and `rate_card`. Not edited.
 - U1 (`origin/cursor/u1-brand-show-search-4cb2`, not on main) `toPublicShow` reads `id`, `name`, `platform`, `audience_size`, `categories`, and `is_discoverable`. It does not read `contact` or `rate_card`. A missing `is_discoverable` does not drop the row. That file was not edited.
 
-No page or component was edited. Screenshots are not applicable.
+`/deals/new` is behind the auth gate, so this run did not capture a signed-in before/after screenshot. The page layout is unchanged. The rate field behavior is covered by `page.test.tsx`.
 
 ### Known gaps
 
-- `GET /api/shows/[id]` and `GET /api/v1/shows` still return contact and rate card to a signed-in brand. SA-25 names them. Those files were not edited.
-- New Deal (`app/(dashboard)/deals/new/page.tsx`) still assumes `rate_card` is present on every row from `GET /api/shows?limit=100`. A brand with no deal on the selected show will throw when the select changes. Listed, not fixed.
 - The server does not add a 50-row cap. `limit` still clamps at 100, and a request with no limit still returns the discoverable catalog. The 50 cap lives on the U1 search client, which is not merged.
-- An admin with no tie receives public fields. There is no admin branch, matching the shows SELECT policy.
+- An admin or creating agent with no tie receives public fields on `GET /api/shows/[id]`. There is no admin branch for the field allowlist, matching the shows SELECT policy. Hidden-show visibility is unchanged.
 - A tie lookup that throws returns public fields for that request. The sensitive keys stay off the JSON.
+- `shows-client.tsx` still has an unused fallback that would read `contact` and `rate_card`. It does not run while `/shows` passes `initialShows`.
 - No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
