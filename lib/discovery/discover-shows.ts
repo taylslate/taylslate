@@ -7,15 +7,19 @@
 // STRATEGY:
 // 1. Search Podscan via /episodes/search with 5-6 diverse text queries,
 //    each filtered by category IDs. Extract unique podcasts from results.
-// 2. Search YouTube by interest terms (YouTube API needs keywords)
+// 2. Search YouTube once per confirmed ring (capped). US/English is a hard filter.
 // 3. Deduplicate across all queries by podcast_id
 // 4. Claude scores the final fit using brand context + keywords
 // ============================================================
 
 import type { Show, ShowSurface } from "@/lib/data/types";
 import { getPodscanClientSafe, type PodscanPodcast } from "@/lib/enrichment/podscan";
-import { getYouTubeClientSafe } from "@/lib/enrichment/youtube";
-import { buildYouTubeQuery, buildDiscoveryQueries } from "./category-mapping";
+import { getYouTubeClientSafe, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
+import {
+  buildYouTubeQueries,
+  buildDiscoveryQueries,
+  MAX_YOUTUBE_SEARCHES,
+} from "./category-mapping";
 import { podscanPodcastToShow, youtubeChannelToShow } from "./format-discovered-show";
 import {
   mediumPriorsForShow,
@@ -30,6 +34,12 @@ export interface DiscoveryBrief {
   target_gender?: string;
   campaign_goals?: string;
   platforms: string[];
+  /**
+   * Confirmed ring labels in slot order. YouTube builds one search per
+   * label, capped at MAX_YOUTUBE_SEARCHES. Briefs that are not a conviction
+   * run omit this and get one interest/keyword search.
+   */
+  ring_terms?: string[];
 }
 
 export interface DiscoveryResult {
@@ -43,6 +53,29 @@ const MIN_PODCAST_AUDIENCE = 5000;
 const MIN_YOUTUBE_AVG_VIEWS = 10000;
 const MIN_YOUTUBE_VIDEO_COUNT = 20;
 
+/** search.list maxResults per ring. YouTube allows up to 50. */
+const YOUTUBE_SEARCH_MAX_RESULTS = 25;
+/** channels.list accepts at most 50 ids per call. */
+const YOUTUBE_CHANNEL_ID_BATCH = 50;
+
+/**
+ * YouTube Data API units for one discovery run.
+ * Channel search: MAX_YOUTUBE_SEARCHES x 100 = 400.
+ * Channel details: 1 unit per batch of 50 ids. Worst case is 4 x 25 = 100
+ * channels, which is 2 calls.
+ * Recent video stats stay on the top 3 channels that pass the market
+ * filter. Each is one search.list (100) plus one videos.list (1) = 303.
+ * Worst case: 400 + 2 + 303 = 705.
+ */
+export const YOUTUBE_DISCOVERY_QUOTA = {
+  channelSearch: MAX_YOUTUBE_SEARCHES * 100,
+  channelDetailsWorstCase: Math.ceil(
+    (MAX_YOUTUBE_SEARCHES * YOUTUBE_SEARCH_MAX_RESULTS) / YOUTUBE_CHANNEL_ID_BATCH
+  ),
+  recentVideoStats: 3 * (100 + 1),
+  worstCase: 705,
+} as const;
+
 /** Keywords that indicate a YouTube channel is a brand/company, not a creator */
 const BRAND_CHANNEL_KEYWORDS = [
   "shop", "store", "buy now", "official website", "our products",
@@ -54,11 +87,12 @@ const BRAND_CHANNEL_KEYWORDS = [
  * Discover shows from Podscan and YouTube APIs based on a campaign brief.
  *
  * Podscan: 5-6 diverse queries via /episodes/search, extracting unique podcasts.
- * YouTube: searched by interest terms (YouTube API requires text queries).
+ * YouTube: one text query per confirmed ring (YouTube API requires text queries).
  *
  * API budget per call:
  * - Podscan: 5-6 requests (well within 10/min limit with staggering)
- * - YouTube: 1 search + 1 batch channel details + up to 3 video stats = ~5 requests
+ * - YouTube quota units (Data API v3: search.list = 100, channels.list = 1,
+ *   videos.list = 1). See YOUTUBE_DISCOVERY_QUOTA.
  */
 export async function discoverShows(brief: DiscoveryBrief): Promise<DiscoveryResult> {
   const errors: string[] = [];
@@ -67,13 +101,14 @@ export async function discoverShows(brief: DiscoveryBrief): Promise<DiscoveryRes
   const wantsPodcast = brief.platforms.includes("podcast");
   const wantsYoutube = brief.platforms.includes("youtube");
 
-  // Build YouTube query from interests (YouTube API needs text, not category IDs)
-  const youtubeQuery = buildYouTubeQuery(brief);
+  // One YouTube query per confirmed ring. searchChannels keeps regionCode=US
+  // and relevanceLanguage=en.
+  const youtubeQueries = buildYouTubeQueries(brief);
 
   // Run Podscan + YouTube discovery in parallel
   const [podcastShows, youtubeShows] = await Promise.all([
     wantsPodcast ? discoverFromPodscan(brief, errors) : Promise.resolve([]),
-    wantsYoutube ? discoverFromYoutube(youtubeQuery, errors) : Promise.resolve([]),
+    wantsYoutube ? discoverFromYoutube(youtubeQueries, errors) : Promise.resolve([]),
   ]);
 
   discovered.push(...podcastShows, ...youtubeShows);
@@ -183,28 +218,77 @@ async function discoverFromPodscan(
 }
 
 /**
- * Search YouTube for channels. Makes 1 search + 1 batch details call.
- * YouTube API requires text queries, so we use interest-derived terms.
- * Optionally fetches recent video stats for top 3 channels.
+ * Search YouTube once per confirmed ring (capped). searchChannels sends
+ * regionCode=US and relevanceLanguage=en. Those bias ranking. The market
+ * filter below is the hard keep/drop, using the channel-details response.
+ * Recent video stats still run for the top 3 channels that survive it.
  */
 async function discoverFromYoutube(
-  query: string,
+  queries: string[],
   errors: string[]
 ): Promise<Show[]> {
   const client = getYouTubeClientSafe();
   if (!client) return [];
 
-  try {
-    const searchResults = await client.searchChannels(query, 20);
-    if (searchResults.length === 0) return [];
+  const capped = queries
+    .map((q) => q.trim())
+    .filter(Boolean)
+    .slice(0, MAX_YOUTUBE_SEARCHES);
+  if (capped.length === 0) return [];
 
-    const channelIds = searchResults.map((r) => r.channelId);
-    const channelDetails = await client.getMultipleChannelDetails(channelIds);
+  try {
+    console.log(`[discovery] Running ${capped.length} YouTube queries...`);
+
+    const batches = await Promise.all(
+      capped.map(async (query, idx) => {
+        try {
+          const hits = await client.searchChannels(query, YOUTUBE_SEARCH_MAX_RESULTS);
+          console.log(
+            `[discovery] YouTube query ${idx + 1} "${query.slice(0, 40)}" → ${hits.length} channels`
+          );
+          return hits;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "unknown error";
+          console.warn(`[discovery] YouTube query ${idx + 1} failed: ${msg}`);
+          errors.push(`YouTube query "${query.slice(0, 40)}": ${msg}`);
+          return [];
+        }
+      })
+    );
+
+    const orderedIds: string[] = [];
+    const seen = new Set<string>();
+    for (const hits of batches) {
+      for (const hit of hits) {
+        if (!hit.channelId || seen.has(hit.channelId)) continue;
+        seen.add(hit.channelId);
+        orderedIds.push(hit.channelId);
+      }
+    }
+    if (orderedIds.length === 0) return [];
+
+    const channelDetails: YouTubeChannelDetails[] = [];
+    for (let i = 0; i < orderedIds.length; i += YOUTUBE_CHANNEL_ID_BATCH) {
+      const slice = orderedIds.slice(i, i + YOUTUBE_CHANNEL_ID_BATCH);
+      const details = await client.getMultipleChannelDetails(slice);
+      channelDetails.push(...details);
+    }
     if (channelDetails.length === 0) return [];
 
-    const top3 = channelDetails
-      .sort((a, b) => b.subscriberCount - a.subscriberCount)
-      .slice(0, 3);
+    const byId = new Map(channelDetails.map((ch) => [ch.channelId, ch]));
+    const ordered = orderedIds
+      .map((id) => byId.get(id))
+      .filter((ch): ch is NonNullable<typeof ch> => !!ch);
+
+    // Hard market filter before the view/video filters and before scoring.
+    const inMarket = ordered.filter((ch) => passesYouTubeMarketFilter(ch));
+    console.log(
+      `[discovery] YouTube after market filter: ${inMarket.length} of ${ordered.length}`
+    );
+    if (inMarket.length === 0) return [];
+
+    const ranked = [...inMarket].sort((a, b) => b.subscriberCount - a.subscriberCount);
+    const top3 = ranked.slice(0, 3);
 
     const statsPromises = top3.map((ch) =>
       client.getRecentVideoStats(ch.channelId, 5).catch(() => null)
@@ -218,7 +302,7 @@ async function discoverFromYoutube(
       }
     }
 
-    return channelDetails
+    return ranked
       .filter((ch) => {
         // Filter out channels with too few videos — real creators have substantial libraries
         if (ch.videoCount < MIN_YOUTUBE_VIDEO_COUNT) return false;
@@ -239,6 +323,76 @@ async function discoverFromYoutube(
     errors.push(`YouTube discovery failed: ${err instanceof Error ? err.message : "unknown error"}`);
     return [];
   }
+}
+
+const ENGLISH_FUNCTION_WORDS = new Set([
+  "the", "and", "of", "to", "a", "in", "for", "with", "on", "your", "you",
+  "our", "this", "that", "is", "are", "from", "how", "what", "why", "about",
+  "my", "we", "it", "be", "or", "at", "by", "as", "an", "not", "have", "has",
+  "was", "were", "but", "can", "will", "just", "more", "all", "into", "than",
+  "then", "them", "their", "his", "her", "its", "if", "so", "do", "does",
+  "did", "been", "being", "these", "those", "there", "here", "when", "where",
+  "who", "which", "also", "because", "while", "after", "before", "over",
+  "under", "between", "through", "each", "other", "some", "any", "every",
+]);
+
+// Function words that mark Latin-script text as not English. Used only when
+// the channel has no country and no English language tag.
+const NON_ENGLISH_LATIN =
+  /\b(que|los|las|una|unos|para|con|por|del|les|des|une|dans|und|der|die|das|nicht|ein|eine|nao|como|mais|esta|este|hola|bonjour|gracias|muito|voce|juga|yang|dengan|untuk|dari)\b/i;
+
+function languageTagIsEnglish(tag: string | null | undefined): boolean {
+  if (!tag) return false;
+  const primary = tag.trim().toLowerCase().split(/[-_]/)[0];
+  return primary === "en";
+}
+
+function textReadsAsEnglish(title: string, description: string): boolean {
+  const text = `${title} ${description}`.trim();
+  if (!text) return false;
+
+  let latin = 0;
+  let nonLatin = 0;
+  for (const ch of text) {
+    if (!/\p{L}/u.test(ch)) continue;
+    if (/\p{Script=Latin}/u.test(ch)) latin++;
+    else nonLatin++;
+  }
+  const letters = latin + nonLatin;
+  if (letters === 0) return false;
+  if (nonLatin / letters >= 0.2) return false;
+
+  const tokens = text.toLowerCase().match(/[a-z]+/g) ?? [];
+  let englishHits = 0;
+  for (const token of tokens) {
+    if (ENGLISH_FUNCTION_WORDS.has(token)) englishHits++;
+  }
+  if (englishHits >= 2) return true;
+  if (NON_ENGLISH_LATIN.test(text) && englishHits === 0) return false;
+
+  const accented = text.match(/[àáâãäåæçèéêëìíîïñòóôõöùúûüýÿœ]/gi)?.length ?? 0;
+  if (accented >= 2 && englishHits === 0) return false;
+  if (englishHits >= 1) return true;
+  return nonLatin === 0 && latin > 0;
+}
+
+/**
+ * Keep a channel when snippet.country is US, or when country is missing and
+ * either defaultLanguage or the title/description reads as English.
+ * A set country other than US (IN, GB, ...) is dropped even if the copy is
+ * English. Runs on channel details, before scoring.
+ */
+export function passesYouTubeMarketFilter(channel: {
+  country?: string | null;
+  defaultLanguage?: string | null;
+  title?: string | null;
+  description?: string | null;
+}): boolean {
+  const country = (channel.country ?? "").trim().toUpperCase();
+  if (country === "US") return true;
+  if (country) return false;
+  if (languageTagIsEnglish(channel.defaultLanguage)) return true;
+  return textReadsAsEnglish(channel.title ?? "", channel.description ?? "");
 }
 
 // ============================================================

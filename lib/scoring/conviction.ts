@@ -410,6 +410,15 @@ interface TopicalResult {
   degraded: boolean;
 }
 
+/**
+ * Labels topical relevance reads. Podcast discovery writes genres here.
+ * YouTube discovery writes topic labels and channel keywords on the same
+ * fields. An empty list is the unmeasured path (neutral, degraded).
+ */
+export function topicalRelevanceInputs(show: Show): string[] {
+  return [...(show.categories ?? []), ...(show.audience_interests ?? [])];
+}
+
 const STOPWORDS = new Set([
   "the", "a", "an", "and", "or", "of", "for", "to", "in", "on", "with",
   "is", "are", "this", "that", "who", "their", "they", "it", "as", "at",
@@ -423,11 +432,8 @@ function scoreTopicalRelevance(
 ): TopicalResult {
   // Normalize BEFORE dedup so case/separator variants of the same category
   // (e.g. "Recovery" in categories and "recovery" in interests) collapse.
-  const showCats = uniqueNonEmpty(
-    [...(show.categories ?? []), ...(show.audience_interests ?? [])].map(
-      normalizeText
-    )
-  );
+  // Podcast genres and YouTube topic labels both live on these two fields.
+  const showCats = uniqueNonEmpty(topicalRelevanceInputs(show).map(normalizeText));
 
   const attrs = (pattern.product_attributes ?? {}) as Record<string, unknown>;
   const productCategory = readStr(attrs.category);

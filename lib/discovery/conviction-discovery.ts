@@ -674,6 +674,8 @@ export function buildDiscoveryBrief(
     target_interests,
     keywords,
     platforms: platforms as string[],
+    // Ring labels only. Keywords stay the category fragments above.
+    ring_terms: dedupeStrings(ringLabels),
   };
 }
 

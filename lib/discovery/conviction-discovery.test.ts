@@ -524,6 +524,22 @@ describe("buildDiscoveryBrief", () => {
     // every emitted interest is a real Podscan bucket (no near-miss keys)
     for (const i of brief.target_interests) expect(isKnownPodscanInterest(i)).toBe(true);
   });
+
+  it("passes confirmed ring labels through for YouTube search, and not as keywords", () => {
+    const brief = buildDiscoveryBrief(
+      makePattern("mid"),
+      [
+        makeRing({ label: "endurance athletes" }),
+        makeRing({ label: "busy parents", slot_position: 1 }),
+        makeRing({ label: "   " }),
+        makeRing({ label: "endurance athletes", slot_position: 2 }),
+      ],
+      ["podcast", "youtube"]
+    );
+    expect(brief.ring_terms).toEqual(["endurance athletes", "busy parents"]);
+    expect(brief.keywords).not.toContain("endurance athletes");
+    expect(brief.keywords).not.toContain("busy parents");
+  });
 });
 
 describe("mapTopicsToInterests", () => {

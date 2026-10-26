@@ -14,6 +14,8 @@ export interface YouTubeChannelSnippet {
   customUrl?: string;
   publishedAt: string;
   country?: string;
+  /** ISO 639-1, sometimes with a region subtag (en, en-US). */
+  defaultLanguage?: string;
   thumbnails: {
     default?: { url: string; width: number; height: number };
     medium?: { url: string; width: number; height: number };
@@ -32,11 +34,19 @@ export interface YouTubeChannelTopicDetails {
   topicCategories?: string[]; // Wikipedia URLs like "https://en.wikipedia.org/wiki/Entertainment"
 }
 
+export interface YouTubeChannelBrandingSettings {
+  channel?: {
+    /** Space-separated. Quoted phrases group words. */
+    keywords?: string;
+  };
+}
+
 export interface YouTubeChannel {
   id: string;
   snippet: YouTubeChannelSnippet;
   statistics: YouTubeChannelStatistics;
   topicDetails?: YouTubeChannelTopicDetails;
+  brandingSettings?: YouTubeChannelBrandingSettings;
 }
 
 export interface YouTubeVideoStatistics {
@@ -66,7 +76,11 @@ export interface YouTubeChannelDetails {
   subscriberCount: number;
   videoCount: number;
   totalViewCount: number;
+  /** Readable topic labels. Wikipedia URLs are converted before this is set. */
   topicCategories: string[];
+  /** brandingSettings.channel.keywords, split into phrases. Empty when unset. */
+  keywords?: string[];
+  defaultLanguage?: string;
 }
 
 export interface YouTubeVideoStats {
@@ -84,6 +98,74 @@ export interface YouTubeRecentStats {
   averageLikes: number;
   averageComments: number;
   totalVideosAnalyzed: number;
+}
+
+// snippet + topicDetails + brandingSettings, plus statistics for the
+// existing video-count and view filters.
+const CHANNEL_DETAIL_PARTS = "snippet,statistics,topicDetails,brandingSettings";
+
+/**
+ * Wikipedia topic URL to a readable label.
+ * https://en.wikipedia.org/wiki/Physical_fitness → "Physical fitness"
+ */
+export function wikipediaTopicUrlToLabel(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  let slug = trimmed;
+  const wiki = trimmed.match(/\/wiki\/([^?#]+)/);
+  if (wiki) {
+    slug = wiki[1];
+  } else if (trimmed.includes("/")) {
+    const parts = trimmed.split("/").filter(Boolean);
+    slug = parts[parts.length - 1] ?? "";
+  }
+  slug = slug.replace(/\/+$/, "");
+  try {
+    slug = decodeURIComponent(slug.replace(/\+/g, "%20"));
+  } catch {
+    // Keep the raw slug when it is not valid percent-encoding.
+  }
+  return slug.replace(/_/g, " ").trim();
+}
+
+/** Split brandingSettings.channel.keywords. Quoted phrases stay together. */
+export function parseYouTubeChannelKeywords(raw: string | undefined | null): string[] {
+  if (!raw) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /"([^"]*)"|(\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(raw)) !== null) {
+    const term = (match[1] ?? match[2] ?? "").trim();
+    if (!term) continue;
+    const key = term.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(term);
+  }
+  return out;
+}
+
+function mapYouTubeChannel(channel: YouTubeChannel): YouTubeChannelDetails {
+  const topicCategories = (channel.topicDetails?.topicCategories ?? [])
+    .map((url) => wikipediaTopicUrlToLabel(url))
+    .filter(Boolean);
+
+  return {
+    channelId: channel.id,
+    title: channel.snippet.title,
+    description: channel.snippet.description,
+    customUrl: channel.snippet.customUrl,
+    country: channel.snippet.country,
+    defaultLanguage: channel.snippet.defaultLanguage,
+    publishedAt: channel.snippet.publishedAt,
+    thumbnailUrl: channel.snippet.thumbnails?.high?.url ?? channel.snippet.thumbnails?.medium?.url,
+    subscriberCount: parseInt(channel.statistics.subscriberCount, 10) || 0,
+    videoCount: parseInt(channel.statistics.videoCount, 10) || 0,
+    totalViewCount: parseInt(channel.statistics.viewCount, 10) || 0,
+    topicCategories,
+    keywords: parseYouTubeChannelKeywords(channel.brandingSettings?.channel?.keywords),
+  };
 }
 
 // ---- Client ----
@@ -146,69 +228,32 @@ export class YouTubeClient {
 
   /**
    * Get full channel details: subscriber count, video count, description, thumbnails, topics.
+   * statistics stays in the part list because video count and view count feed the existing filters.
    */
   async getChannelDetails(channelId: string): Promise<YouTubeChannelDetails | null> {
     const res = await this.request<{ items?: YouTubeChannel[] }>("/channels", {
-      part: "snippet,statistics,topicDetails",
+      part: CHANNEL_DETAIL_PARTS,
       id: channelId,
     });
 
     const channel = res.items?.[0];
     if (!channel) return null;
-
-    // Extract topic names from Wikipedia URLs
-    const topicCategories = (channel.topicDetails?.topicCategories ?? []).map((url) => {
-      const parts = url.split("/");
-      return parts[parts.length - 1].replace(/_/g, " ");
-    });
-
-    return {
-      channelId: channel.id,
-      title: channel.snippet.title,
-      description: channel.snippet.description,
-      customUrl: channel.snippet.customUrl,
-      country: channel.snippet.country,
-      publishedAt: channel.snippet.publishedAt,
-      thumbnailUrl: channel.snippet.thumbnails.high?.url ?? channel.snippet.thumbnails.medium?.url,
-      subscriberCount: parseInt(channel.statistics.subscriberCount, 10) || 0,
-      videoCount: parseInt(channel.statistics.videoCount, 10) || 0,
-      totalViewCount: parseInt(channel.statistics.viewCount, 10) || 0,
-      topicCategories,
-    };
+    return mapYouTubeChannel(channel);
   }
 
   /**
    * Get details for multiple channels in a single API call.
-   * YouTube Data API natively supports comma-separated channel IDs.
+   * YouTube Data API natively supports comma-separated channel IDs (max 50).
    */
   async getMultipleChannelDetails(channelIds: string[]): Promise<YouTubeChannelDetails[]> {
     if (channelIds.length === 0) return [];
 
     const res = await this.request<{ items?: YouTubeChannel[] }>("/channels", {
-      part: "snippet,statistics,topicDetails",
+      part: CHANNEL_DETAIL_PARTS,
       id: channelIds.join(","),
     });
 
-    return (res.items ?? []).map((channel) => {
-      const topicCategories = (channel.topicDetails?.topicCategories ?? []).map((url) => {
-        const parts = url.split("/");
-        return parts[parts.length - 1].replace(/_/g, " ");
-      });
-
-      return {
-        channelId: channel.id,
-        title: channel.snippet.title,
-        description: channel.snippet.description,
-        customUrl: channel.snippet.customUrl,
-        country: channel.snippet.country,
-        publishedAt: channel.snippet.publishedAt,
-        thumbnailUrl: channel.snippet.thumbnails.high?.url ?? channel.snippet.thumbnails.medium?.url,
-        subscriberCount: parseInt(channel.statistics.subscriberCount, 10) || 0,
-        videoCount: parseInt(channel.statistics.videoCount, 10) || 0,
-        totalViewCount: parseInt(channel.statistics.viewCount, 10) || 0,
-        topicCategories,
-      };
-    });
+    return (res.items ?? []).map((channel) => mapYouTubeChannel(channel));
   }
 
   /**

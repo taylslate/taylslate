@@ -1043,3 +1043,52 @@ A local render of this component (fetch stubbed, so no discover POST) went from 
 - Completion is a change in server prop identity. If `router.refresh()` bails out because the RSC payload is unchanged, `discovering` stays true. A discover that writes scores, or that flips `discoveryRan`, changes that payload.
 - The portfolio-override refresh still uses its own `startTransition`. It keys the busy state off `recomputing`, which is cleared in `finally`, not off `isPending`.
 - No live discover was run. Campaign `17e94ff3` was not loaded. No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
+
+## D4
+
+### What was built
+
+YouTube discovery runs one search per confirmed ring, from that ring's own label, capped at `MAX_YOUTUBE_SEARCHES = 4`. Each search uses `maxResults` 25. `searchChannels` still sends `regionCode=US` and `relevanceLanguage=en`. Channels are deduped by channel id across the searches. A brief with no ring labels still uses the single interest/keyword query.
+
+After the channel-details call, a channel is kept only when `snippet.country` is US, or when country is missing and `snippet.defaultLanguage` or the title/description reads as English. Any other set country (IN, GB, and the rest) is dropped before the view and video filters and before scoring. The min average views, video-count, and brand-channel filters are unchanged. The zero-view YouTube filter and simulcast merge are unchanged. Podcast query building is unchanged.
+
+Channel details now request `snippet,statistics,topicDetails,brandingSettings`. `statistics` stays because the video-count and view filters read it. Wikipedia topic URLs become readable labels. `brandingSettings.channel.keywords` is split (quoted phrases stay together). Both land on `categories` and `audience_interests`, the same fields a podcast's genres use. Topical relevance reads those two fields and nothing else. A channel with neither topics nor keywords stays on the unmeasured path (topical relevance 50, degraded).
+
+Quota per run, Data API units (`search.list` = 100, `channels.list` = 1, `videos.list` = 1): channel search 4 x 100 = 400; channel details 1 per batch of 50 ids, worst case 4 x 25 = 100 channels = 2; recent video stats still run for the top 3 channels that pass the market filter, each one search.list (100) plus one videos.list (1) = 303. Worst case 400 + 2 + 303 = 705. A failed ring search is recorded on `errors` and the other rings still return.
+
+### Where
+
+- `lib/discovery/category-mapping.ts` (`buildYouTubeQueries`, `MAX_YOUTUBE_SEARCHES`)
+- `lib/discovery/category-mapping.test.ts`
+- `lib/discovery/discover-shows.ts` (per-ring search, dedupe, market filter, quota constant)
+- `lib/discovery/discover-shows.test.ts`
+- `lib/enrichment/youtube.ts` (detail parts, topic labels, keywords, `defaultLanguage`)
+- `lib/enrichment/youtube.test.ts`
+- `lib/discovery/format-discovered-show.ts` (`youtubeChannelToShow` topic mapping)
+- `lib/discovery/format-discovered-show.test.ts`
+- `lib/discovery/conviction-discovery.ts` (`ring_terms` on the brief only)
+- `lib/discovery/conviction-discovery.test.ts` (that field only)
+- `lib/scoring/conviction.ts` (`topicalRelevanceInputs` only)
+- `lib/scoring/conviction.test.ts`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run lib/discovery/category-mapping.test.ts lib/discovery/discover-shows.test.ts lib/discovery/format-discovered-show.test.ts lib/enrichment/youtube.test.ts lib/scoring/conviction.test.ts lib/discovery/conviction-discovery.test.ts` (120 passed).
+
+Covers the 4-search cap, per-ring queries that do not mix in other rings' keywords, duplicate labels, dedupe across searches, detail batches of 50, US kept, IN dropped, missing country + English kept, missing country + non-English dropped, a failed ring search, topic URL to label, keyword splitting, the detail `part` list, and a YouTube show with fitness/nutrition topics scoring topical relevance 85 on the same inputs as a podcast with those genres. A recovery podcast fixture stays at topical relevance 85, audience fit 50, purchase power 50. The podcast query list for a health brief is unchanged.
+
+Full `npx vitest run`: 265 files, 2371 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 134 pages.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- Country other than US is dropped even when the copy is English. A UK, CA, or AU channel with `snippet.country` set does not reach scoring. A channel with no country and English copy does.
+- When country and `defaultLanguage` are both missing, Latin-script titles with no foreign function words are treated as English. A non-English name in Latin letters can pass. Devanagari, Arabic, CJK, and Latin function words such as para/los/und are dropped.
+- If `defaultLanguage` is not English but the title or description reads as English, the channel is kept. The rule is country missing AND (language tag OR the text).
+- Recent video stats still cost 3 search.list calls (300 units) on top of the 400 channel-search units. The documented worst case is 705, not 400.
+- `searchChannels` is shared with the enrich routes. Those admin lookups still send `regionCode=US` and `relevanceLanguage=en` (D2).
+- A channel whose topics do not overlap the ring can still score topical relevance at 20 (measured, not degraded) and land in the low band. Weights, band thresholds, and tiering were not changed.
+- No migration. `categories` is already `string[]` and holds the labels. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
+- Live confirmation waits on deploy. Chris or Angus runs a new More/Less campaign. Compare, read-only, to `cd7d3972`: YouTube channel count, countries, band spread, and topical relevance average. Quota errors show on the discovery `errors` list and in the runtime log as `YouTube query ... failed`.

@@ -2,9 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   scoreShowConviction,
   convictionWeights,
+  topicalRelevanceInputs,
   STRONG_DIMENSION_THRESHOLD,
   type ConvictionScore,
 } from "./conviction";
+import {
+  podscanPodcastToShow,
+  youtubeChannelToShow,
+} from "@/lib/discovery/format-discovered-show";
 import { getEffectiveWeights } from "./weights";
 import { TRUSTED_HOST_NOTE } from "./trusted-host";
 import type { GenreBenchmark } from "./benchmarks";
@@ -319,6 +324,76 @@ describe("missing audience data is unmeasured for YouTube and podcast alike", ()
     expect(tagged.composite).toBeLessThan(bare.composite);
     expect(tagged.composite).toBeLessThan(50);
     expect(tagged.band).toBe<ConvictionBand>("low");
+  });
+
+  it("scores fitness and nutrition topics on YouTube through the same path as a podcast with those genres", () => {
+    const genres = ["Fitness", "Nutrition"];
+    const ring = makeRing({
+      label: "fitness and nutrition",
+      reasoning: "home workouts and nutrition",
+    });
+    const pattern = makePattern("mid", { category: "fitness nutrition", key_attributes: [] });
+    const youtubeShow = youtubeChannelToShow({
+      channelId: "UC-fit",
+      title: "Fit Lab",
+      description: "Training",
+      publishedAt: "2020-01-01T00:00:00Z",
+      subscriberCount: 100000,
+      videoCount: 40,
+      totalViewCount: 1_000_000,
+      topicCategories: ["https://en.wikipedia.org/wiki/Physical_fitness", "Nutrition"],
+      keywords: ["fitness", "home workout"],
+    });
+    const podcastShow = podscanPodcastToShow({
+      podcast_id: "pd_fit",
+      podcast_name: "Fit Pod",
+      podcast_categories: youtubeShow.categories,
+    });
+
+    expect(youtubeShow.categories).toEqual(podcastShow.categories);
+    expect(youtubeShow.audience_interests).toEqual(podcastShow.audience_interests);
+    expect(topicalRelevanceInputs(youtubeShow)).toEqual(topicalRelevanceInputs(podcastShow));
+    expect(youtubeShow.categories).toEqual([
+      "Physical fitness",
+      "Nutrition",
+      "fitness",
+      "home workout",
+    ]);
+
+    const youtube = scoreShowConviction(youtubeShow, ring, pattern);
+    const podcast = scoreShowConviction(podcastShow, ring, pattern);
+    expect(youtube.topicalRelevance).toBe(85);
+    expect(youtube.drivers.topicalRelevance).toEqual({ degraded: false });
+    expect(youtube.topicalRelevance).toBe(podcast.topicalRelevance);
+    expect(youtube.drivers.topicalRelevance).toEqual(podcast.drivers.topicalRelevance);
+
+    // Same genres, no topic data: the existing unmeasured path.
+    const bare = youtubeChannelToShow({
+      channelId: "UC-bare",
+      title: "Bare",
+      description: "",
+      publishedAt: "2020-01-01T00:00:00Z",
+      subscriberCount: 100000,
+      videoCount: 40,
+      totalViewCount: 1_000_000,
+      topicCategories: [],
+    });
+    const bareScore = scoreShowConviction(bare, ring, pattern);
+    expect(bare.categories).toEqual([]);
+    expect(bareScore.topicalRelevance).toBe(50);
+    expect(bareScore.drivers.topicalRelevance.degraded).toBe(true);
+  });
+
+  it("keeps the recovery podcast fixture on the measured topical score", () => {
+    const result = scoreShowConviction(
+      makeShow({ categories: ["Recovery"], audience_interests: ["Recovery"] }),
+      makeRing(),
+      makePattern("mid")
+    );
+    expect(result.topicalRelevance).toBe(85);
+    expect(result.drivers.topicalRelevance.degraded).toBe(false);
+    expect(result.audienceFit).toBe(50);
+    expect(result.purchasePower).toBe(50);
   });
 });
 

@@ -4,7 +4,8 @@
 // IDs, YouTube search terms, and diverse discovery queries.
 //
 // Podscan: Uses /episodes/search with text queries + category filters
-// YouTube: Uses interest terms as text search (YouTube API needs text)
+// YouTube: one text query per confirmed ring (capped). Interest terms are
+// the fallback when a brief has no ring labels.
 // ============================================================
 
 import type { DiscoveryBrief } from "./discover-shows";
@@ -256,9 +257,52 @@ export function buildDiscoveryQueries(brief: DiscoveryBrief): {
 }
 
 /**
+ * One YouTube channel search per confirmed ring. The allowed band is 3 to 5.
+ * Four searches is 400 quota units (search.list is 100 each).
+ */
+export const MAX_YOUTUBE_SEARCHES = 4;
+
+/** Words kept from a ring label. A label is the ring's own search terms. */
+const RING_QUERY_WORD_CAP = 8;
+
+/**
+ * One query per confirmed ring, in slot order, capped at MAX_YOUTUBE_SEARCHES.
+ * Each query is that ring's label only. Interests and keywords are not mixed
+ * in, so two campaigns do not collapse onto one generic search.
+ * Identical labels count once. With no ring terms, fall back to the single
+ * interest/keyword query (briefs that are not a conviction run).
+ */
+export function buildYouTubeQueries(brief: {
+  target_interests: string[];
+  keywords: string[];
+  ring_terms?: string[];
+}): string[] {
+  const queries: string[] = [];
+  const seen = new Set<string>();
+  for (const term of brief.ring_terms ?? []) {
+    const query = ringLabelToYouTubeQuery(term);
+    if (!query) continue;
+    const key = query.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    queries.push(query);
+    if (queries.length >= MAX_YOUTUBE_SEARCHES) break;
+  }
+  if (queries.length > 0) return queries;
+
+  const fallback = buildYouTubeQuery(brief).trim();
+  return fallback ? [fallback] : [];
+}
+
+function ringLabelToYouTubeQuery(label: string): string {
+  return label.trim().split(/\s+/).filter(Boolean).slice(0, RING_QUERY_WORD_CAP).join(" ");
+}
+
+/**
  * Build a YouTube search query from campaign brief interests + keywords.
  * YouTube API needs text queries — combine interest terms with keywords
  * for the best channel discovery results.
+ * Used when a brief has no confirmed ring terms.
  */
 export function buildYouTubeQuery(brief: {
   target_interests: string[];
