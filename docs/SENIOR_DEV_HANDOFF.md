@@ -1133,3 +1133,46 @@ No page or component was edited. Screenshots are not applicable.
 - Market filter, min views, video count, brand-channel filter, scoring, weights, bands, and podcast query building were not changed.
 - No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
 - Live confirmation waits on deploy. Rerun a 1-ring campaign. Read-only: more than one YouTube query in the logs, a nonzero channel count, then the market filter count and YouTube rows in `conviction_scores`. Campaign `25f63dd0` is the reference (one query, `ingredient-literate women's wellness`, 0 channels).
+
+## D6
+
+### What was built
+
+YouTube discovery now logs every stage where a channel can disappear. Filters, thresholds, scoring, weights, the returned shows, the UI, env, and the database are unchanged.
+
+`discoverFromYoutube`, after the existing market-filter line, logs exclusive drop counts for the three post-filters in the same order they already ran: `videoCount < 20`, brand-keyword description match, and `avgViews < 10000`. A channel dropped by an earlier check is not counted again. The brand-keyword line names the first matching keyword for the first 5 channels (channel title and keyword). It also logs the median average views of the channels that survive all three, and the count returned. The median of an even count is the average of the two middle values. When nothing survives, the median is `n/a`.
+
+The outer catch still pushes `YouTube discovery failed: ...` and returns `[]`. It also `console.error`s the message and stack. A `key=` query value in that log line is replaced with `[redacted]`. The `errors` array keeps the raw message.
+
+`runConvictionDiscovery` logs podcast and YouTube counts at five points: after discover, after `excludeExcludedGenres`, after `excludeDeadYouTube`, after `mergeSimulcasts`, and after scoring. The scoring line counts kept entries, so a show on two rings is counted twice. A simulcast YouTube row counts as podcast after the merge, because the podcast row is the one that remains. Each string in `discovery.errors` is also `console.warn`ed. Those strings are still copied onto the result `errors` array.
+
+### Where
+
+- `lib/discovery/discover-shows.ts` (log lines and the catch only)
+- `lib/discovery/conviction-discovery.ts` (log lines only)
+- `lib/discovery/discover-shows.test.ts`
+- `lib/discovery/conviction-discovery.test.ts`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run lib/discovery/discover-shows.test.ts lib/discovery/conviction-discovery.test.ts` (2 files, 73 passed).
+
+The YouTube fixture asserts the returned shows equal the shows `youtubeChannelToShow` builds for the four survivors (including a channel at exactly 20 videos and exactly 10,000 average views). The same run asserts the drop counts, the two named keywords, the survivor median, and the returned count. A six-channel brand fixture returns `[]` and names only the first 5 keywords. A thrown channel-details error returns `[]`, keeps the raw message on `errors`, and logs the message and stack with `key=` redacted. A non-Error throw logs `unknown error`.
+
+The conviction fixture runs the same shows through `excludeExcludedGenres`, `excludeDeadYouTube`, `mergeSimulcasts`, `fillPurchasePower`, and `scoreCandidatesAgainstRings`, and asserts the orchestrator returns those shows and scores. The five log lines are `podcast=1 youtube=4`, then `1/3`, `1/2`, `1/1`, and after two rings `podcast=2 youtube=2`. Both discovery errors are warned and still present on the result.
+
+Full `npx vitest run`, `npx tsc --noEmit`, and `npx next build` are recorded after this verification pass.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- These lines go to the runtime log only. They are not stored on the campaign.
+- Early returns before the post-filters (no client, no queries, no channel ids, no details, or zero channels after the market filter) do not print the post-filter lines. The market-filter line still prints when channel details came back.
+- The brand-keyword line uses the first keyword in the existing list, and only the first 5 dropped channels. Later matches are a count only.
+- `console.error` redacts `key=` query values. The discovery `errors` entry is still the raw message.
+- The scoring count is entries, not distinct shows. A simulcast's YouTube row is gone after merge and the podcast row carries that surface.
+- Filters, thresholds, scoring, weights, and the shows returned were not changed. This does not fix campaign `ce672dc1`. It names the stage.
+- No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
+- Live confirmation waits on deploy. Rerun `ce672dc1` or a new 1-ring campaign within the hour. Read the YouTube count at each logged stage, and any `YouTube discovery failed` error. D7 is the fix against that stage.

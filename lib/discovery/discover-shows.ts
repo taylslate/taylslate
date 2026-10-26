@@ -323,27 +323,88 @@ export async function discoverFromYoutube(
       }
     }
 
-    return ranked
-      .filter((ch) => {
-        // Filter out channels with too few videos — real creators have substantial libraries
-        if (ch.videoCount < MIN_YOUTUBE_VIDEO_COUNT) return false;
+    // Same three checks, same order, as the previous single filter.
+    // Counts are exclusive: a channel dropped for video count is not
+    // counted again as a brand channel or as low views.
+    const kept: YouTubeChannelDetails[] = [];
+    let droppedVideoCount = 0;
+    let droppedBrandKeyword = 0;
+    const brandKeywordMatches: string[] = [];
+    let droppedAvgViews = 0;
+    const survivorAvgViews: number[] = [];
 
-        // Filter out brand/company channels by checking description for commercial keywords
-        const descLower = (ch.description ?? "").toLowerCase();
-        const isBrandChannel = BRAND_CHANNEL_KEYWORDS.some((kw) => descLower.includes(kw));
-        if (isBrandChannel) return false;
+    for (const ch of ranked) {
+      if (ch.videoCount < MIN_YOUTUBE_VIDEO_COUNT) {
+        droppedVideoCount++;
+        continue;
+      }
 
-        // Use avg views if available, otherwise estimate from total views / video count
-        const stats = statsMap.get(ch.channelId);
-        const avgViews = stats?.averageViews ??
-          Math.round(ch.totalViewCount / Math.max(ch.videoCount, 1));
-        return avgViews >= MIN_YOUTUBE_AVG_VIEWS;
-      })
-      .map((ch) => youtubeChannelToShow(ch, statsMap.get(ch.channelId) ?? undefined));
+      const descLower = (ch.description ?? "").toLowerCase();
+      const matchedKeyword = BRAND_CHANNEL_KEYWORDS.find((kw) => descLower.includes(kw));
+      if (matchedKeyword) {
+        droppedBrandKeyword++;
+        if (brandKeywordMatches.length < 5) {
+          brandKeywordMatches.push(`"${ch.title}" matched "${matchedKeyword}"`);
+        }
+        continue;
+      }
+
+      const stats = statsMap.get(ch.channelId);
+      const avgViews =
+        stats?.averageViews ?? Math.round(ch.totalViewCount / Math.max(ch.videoCount, 1));
+      if (avgViews < MIN_YOUTUBE_AVG_VIEWS) {
+        droppedAvgViews++;
+        continue;
+      }
+
+      kept.push(ch);
+      survivorAvgViews.push(avgViews);
+    }
+
+    const medianAvgViews = medianNumber(survivorAvgViews);
+    console.log(
+      `[discovery] YouTube dropped videoCount < ${MIN_YOUTUBE_VIDEO_COUNT}: ${droppedVideoCount}`
+    );
+    console.log(
+      `[discovery] YouTube dropped brand keyword: ${droppedBrandKeyword}` +
+        (brandKeywordMatches.length > 0
+          ? `; first ${brandKeywordMatches.length}: ${brandKeywordMatches.join("; ")}`
+          : "")
+    );
+    console.log(
+      `[discovery] YouTube dropped avgViews < ${MIN_YOUTUBE_AVG_VIEWS}: ${droppedAvgViews}`
+    );
+    console.log(
+      `[discovery] YouTube survivor median avgViews: ${medianAvgViews === null ? "n/a" : medianAvgViews}`
+    );
+    console.log(`[discovery] YouTube returned: ${kept.length}`);
+
+    return kept.map((ch) => youtubeChannelToShow(ch, statsMap.get(ch.channelId) ?? undefined));
   } catch (err) {
-    errors.push(`YouTube discovery failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    const message = err instanceof Error ? err.message : "unknown error";
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error(
+      "[discovery] YouTube discovery failed:",
+      redactSecretParams(message),
+      stack ? redactSecretParams(stack) : stack
+    );
+    errors.push(`YouTube discovery failed: ${message}`);
     return [];
   }
+}
+
+/** Median of a numeric list. Even counts average the two middle values. */
+function medianNumber(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid];
+  return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/** Keep an API key out of a log line. The errors array keeps the raw message. */
+function redactSecretParams(text: string): string {
+  return text.replace(/([?&]key=)[^&\s]+/gi, "$1[redacted]");
 }
 
 /**

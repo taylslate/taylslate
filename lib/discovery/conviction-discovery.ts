@@ -329,14 +329,23 @@ export async function runConvictionDiscovery(
     return empty(pattern.id);
   }
   errors.push(...discovery.errors);
+  for (const message of discovery.errors) {
+    console.warn(`[conviction-discovery] ${message}`);
+  }
 
   // Hard filters BEFORE scoring → fold simulcasts → hydrate demographics →
   // fill PP. §11 Sleep/ASMR genre exclusion + Phase 2C Layer 1b zero-view
   // YouTube (dead inventory; drop before merge so a dead YT surface can't
   // price a simulcast). Both run on raw discovered shows, before any scoring.
-  const candidates = mergeSimulcasts(
-    excludeDeadYouTube(excludeExcludedGenres(discovery.discovered))
-  );
+  // Split so each stage can be counted. The functions are the same calls.
+  const afterDiscover = discovery.discovered;
+  logPlatformCounts("after discover", afterDiscover);
+  const afterGenres = excludeExcludedGenres(afterDiscover);
+  logPlatformCounts("after excludeExcludedGenres", afterGenres);
+  const afterDeadYouTube = excludeDeadYouTube(afterGenres);
+  logPlatformCounts("after excludeDeadYouTube", afterDeadYouTube);
+  const candidates = mergeSimulcasts(afterDeadYouTube);
+  logPlatformCounts("after mergeSimulcasts", candidates);
   // Audience-fit hydration MUST run pre-scoring: the scorer reads these
   // in-memory candidates, never the shows table. DB-first (backfilled rows),
   // then Podscan demographics for the rest. Fail-soft twice over (internal
@@ -364,6 +373,10 @@ export async function runConvictionDiscovery(
     benchmarks,
     firstTimeBrand,
   });
+  logPlatformCounts(
+    "after scoring",
+    groups.flatMap((group) => group.shows.map((entry) => entry.show))
+  );
 
   // Layer 4: attach reasoning prose to each kept entry IN PASS — the in-memory
   // groups carry the Layer 2 drivers + full Show objects (neither persisted),
@@ -486,6 +499,16 @@ export async function runConvictionDiscovery(
 }
 
 // ---- Helpers ----
+
+function logPlatformCounts(stage: string, shows: Array<{ platform: string }>): void {
+  let podcast = 0;
+  let youtube = 0;
+  for (const show of shows) {
+    if (show.platform === "podcast") podcast += 1;
+    else if (show.platform === "youtube") youtube += 1;
+  }
+  console.log(`[conviction-discovery] ${stage}: podcast=${podcast} youtube=${youtube}`);
+}
 
 /**
  * Run a dependency call, swallowing any throw to honor the fail-soft contract

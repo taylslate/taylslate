@@ -535,3 +535,253 @@ describe("YouTube interest retry on empty", () => {
     expect(result.map((show) => show.youtube_channel_id)).toEqual(["US1"]);
   });
 });
+
+function recentStats(averageViews: number) {
+  return {
+    videos: [],
+    averageViews,
+    averageLikes: 0,
+    averageComments: 0,
+    totalVideosAnalyzed: 5,
+  };
+}
+
+describe("YouTube post-filter stage logs", () => {
+  beforeEach(() => {
+    vi.mocked(getYouTubeClientSafe).mockReset();
+  });
+
+  it("returns the same shows and logs each post-filter drop", async () => {
+    const channels = [
+      detail({
+        channelId: "IN1",
+        title: "Fit Tuber",
+        country: "IN",
+        subscriberCount: 1_000_000,
+        videoCount: 100,
+        totalViewCount: 9_000_000,
+        description: "The best fitness channel for your home workouts",
+      }),
+      detail({
+        channelId: "FEW",
+        title: "Few Videos",
+        subscriberCount: 900_000,
+        videoCount: 19,
+        totalViewCount: 5_000_000,
+      }),
+      detail({
+        channelId: "BRAND",
+        title: "Maker Co",
+        subscriberCount: 400_000,
+        videoCount: 80,
+        totalViewCount: 8_000_000,
+        description: "We manufacture home gym equipment for your training",
+      }),
+      detail({
+        channelId: "KEEP_HIGH",
+        title: "High Views",
+        subscriberCount: 250_000,
+        videoCount: 40,
+        totalViewCount: 2_000_000,
+      }),
+      detail({
+        channelId: "KEEP_MID",
+        title: "Mid Views",
+        subscriberCount: 80_000,
+        videoCount: 30,
+        totalViewCount: 1_200_000,
+      }),
+      detail({
+        channelId: "BRAND2",
+        title: "Founded Brand",
+        subscriberCount: 60_000,
+        videoCount: 50,
+        totalViewCount: 4_000_000,
+        description: "Founded in 2014. The channel for your training and your health",
+      }),
+      detail({
+        channelId: "KEEP_LOW",
+        title: "Steady Views",
+        subscriberCount: 50_000,
+        videoCount: 25,
+        totalViewCount: 500_000,
+      }),
+      detail({
+        channelId: "KEEP_EDGE",
+        title: "Edge Views",
+        subscriberCount: 30_000,
+        videoCount: 20,
+        totalViewCount: 200_000,
+      }),
+      detail({
+        channelId: "LOW",
+        title: "Low Views",
+        subscriberCount: 20_000,
+        videoCount: 40,
+        totalViewCount: 200_000,
+      }),
+    ];
+    const byId = new Map(channels.map((channel) => [channel.channelId, channel]));
+    const highStats = recentStats(80_000);
+
+    vi.mocked(getYouTubeClientSafe).mockReturnValue({
+      searchChannels: vi.fn(async () =>
+        channels.map((channel) => ({
+          channelId: channel.channelId,
+          title: channel.title,
+          description: channel.description,
+        }))
+      ),
+      getMultipleChannelDetails: vi.fn(async (ids: string[]) =>
+        ids.map((id) => byId.get(id)).filter((row): row is YouTubeChannelDetails => !!row)
+      ),
+      getRecentVideoStats: vi.fn(async (channelId: string) => {
+        if (channelId === "KEEP_HIGH") return highStats;
+        if (channelId === "FEW") return recentStats(90_000);
+        if (channelId === "BRAND") return recentStats(70_000);
+        return recentStats(1);
+      }),
+    } as never);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-26T20:00:00.000Z"));
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const expected = [
+        youtubeChannelToShow(byId.get("KEEP_HIGH")!, highStats),
+        youtubeChannelToShow(byId.get("KEEP_MID")!),
+        youtubeChannelToShow(byId.get("KEEP_LOW")!),
+        youtubeChannelToShow(byId.get("KEEP_EDGE")!),
+      ];
+      const errors: string[] = [];
+      const result = await discoverFromYoutube(["endurance athletes"], errors);
+
+      expect(result).toEqual(expected);
+      expect(errors).toEqual([]);
+      expect(log.mock.calls.map((call) => call[0])).toEqual([
+        `[discovery] Running 1 YouTube queries...`,
+        `[discovery] YouTube query 1 "endurance athletes" → 9 channels`,
+        `[discovery] YouTube after market filter: 8 of 9`,
+        `[discovery] YouTube dropped videoCount < 20: 1`,
+        `[discovery] YouTube dropped brand keyword: 2; first 2: "Maker Co" matched "we manufacture"; "Founded Brand" matched "founded in"`,
+        `[discovery] YouTube dropped avgViews < 10000: 1`,
+        `[discovery] YouTube survivor median avgViews: 30000`,
+        `[discovery] YouTube returned: 4`,
+      ]);
+    } finally {
+      log.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("names only the first 5 brand-keyword channels and returns none", async () => {
+    const cases = [
+      { title: "Brand 1", description: "a shop for lifters and your training", keyword: "shop" },
+      { title: "Brand 2", description: "the store for your training", keyword: "store" },
+      { title: "Brand 3", description: "buy now for your training plan", keyword: "buy now" },
+      {
+        title: "Brand 4",
+        description: "our official website for your training",
+        keyword: "official website",
+      },
+      { title: "Brand 5", description: "see our products for your training", keyword: "our products" },
+      { title: "Brand 6", description: "order now for your training", keyword: "order now" },
+    ];
+    const channels = cases.map((row, index) =>
+      detail({
+        channelId: `BR${index + 1}`,
+        title: row.title,
+        description: row.description,
+        subscriberCount: (cases.length - index) * 100_000,
+        videoCount: 40,
+        totalViewCount: 4_000_000,
+      })
+    );
+
+    vi.mocked(getYouTubeClientSafe).mockReturnValue({
+      searchChannels: vi.fn(async () =>
+        channels.map((channel) => ({
+          channelId: channel.channelId,
+          title: channel.title,
+          description: channel.description,
+        }))
+      ),
+      getMultipleChannelDetails: vi.fn(async () => channels),
+      getRecentVideoStats: vi.fn(async () => recentStats(50_000)),
+    } as never);
+
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const result = await discoverFromYoutube(["endurance athletes"], []);
+      expect(result).toEqual([]);
+      const lines = log.mock.calls.map((call) => String(call[0]));
+      expect(lines).toContain(
+        `[discovery] YouTube dropped brand keyword: 6; first 5: ${cases
+          .slice(0, 5)
+          .map((row) => `"${row.title}" matched "${row.keyword}"`)
+          .join("; ")}`
+      );
+      expect(lines).toContain(`[discovery] YouTube dropped videoCount < 20: 0`);
+      expect(lines).toContain(`[discovery] YouTube dropped avgViews < 10000: 0`);
+      expect(lines).toContain(`[discovery] YouTube survivor median avgViews: n/a`);
+      expect(lines).toContain(`[discovery] YouTube returned: 0`);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("logs a swallowed YouTube failure and still returns no shows", async () => {
+    const boom = new Error(
+      "YouTube API error 400: https://www.googleapis.com/youtube/v3/channels?key=SECRETVALUE&part=snippet"
+    );
+    vi.mocked(getYouTubeClientSafe).mockReturnValue({
+      searchChannels: vi.fn(async () => [{ channelId: "US1", title: "US One", description: "a" }]),
+      getMultipleChannelDetails: vi.fn(async () => {
+        throw boom;
+      }),
+      getRecentVideoStats: vi.fn(),
+    } as never);
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const errors: string[] = [];
+      const result = await discoverFromYoutube(["endurance athletes"], errors);
+      expect(result).toEqual([]);
+      expect(errors).toEqual([`YouTube discovery failed: ${boom.message}`]);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const logged = errorSpy.mock.calls[0].map((part) => String(part)).join("\n");
+      expect(logged).toContain("YouTube discovery failed:");
+      expect(logged).toContain("YouTube API error 400:");
+      expect(logged).toContain("key=[redacted]");
+      expect(logged).not.toContain("SECRETVALUE");
+      expect(logged).toContain("discover-shows.test.ts");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("logs a non-Error throw as unknown error", async () => {
+    vi.mocked(getYouTubeClientSafe).mockReturnValue({
+      searchChannels: vi.fn(async () => [{ channelId: "US1", title: "US One", description: "a" }]),
+      getMultipleChannelDetails: vi.fn(async () => {
+        throw "nope";
+      }),
+      getRecentVideoStats: vi.fn(),
+    } as never);
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const errors: string[] = [];
+      const result = await discoverFromYoutube(["endurance athletes"], errors);
+      expect(result).toEqual([]);
+      expect(errors).toEqual(["YouTube discovery failed: unknown error"]);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[discovery] YouTube discovery failed:",
+        "unknown error",
+        undefined
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+});
