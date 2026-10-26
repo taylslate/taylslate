@@ -10,11 +10,16 @@ import type { UserRole } from "@/lib/data/types";
 const ALL_ROLES: UserRole[] = ["brand", "agency", "agent", "show"];
 
 describe("getNavItemsForRole", () => {
-  it("brand sees Dashboard, Campaigns, Deals, CRM, Invoices, Settings (no Shows)", () => {
+  it("brand sees Dashboard, Campaigns, Deals, CRM, Search, Invoices, Settings (no Shows)", () => {
     const items = getNavItemsForRole("brand");
     const labels = items.map((i) => i.label);
-    expect(labels).toEqual(["Dashboard", "Campaigns", "Deals", "CRM", "Invoices", "Settings"]);
+    expect(labels).toEqual(["Dashboard", "Campaigns", "Deals", "CRM", "Search", "Invoices", "Settings"]);
     expect(labels).not.toContain("Shows");
+    expect(items.find((i) => i.label === "Search")).toEqual({
+      label: "Search",
+      href: "/shows/search",
+      iconKey: "shows",
+    });
     expect(items.find((i) => i.label === "CRM")).toEqual({
       label: "CRM",
       href: "/crm",
