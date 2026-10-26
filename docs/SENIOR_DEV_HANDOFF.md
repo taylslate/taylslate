@@ -1011,3 +1011,35 @@ No page or component was edited. Screenshots are not applicable.
 - Weights, band thresholds, and tiering were not changed. A US/English channel whose topics do not overlap the ring can still land in the low band.
 - No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
 - Live confirmation waits on deploy. Chris runs a new campaign. Compare that run's YouTube band spread, read-only, to campaign `17e94ff3` (18 YouTube channels, all low, average composite 42, against 152 medium or high podcasts).
+
+## D3
+
+### What was built
+
+The "Scoring the show universe" state now leaves on its own when discovery finishes. Campaign `17e94ff3` had already finished discover with no errors, and the scoring state stayed up until a reload.
+
+`runDiscovery` was calling `startTransition(() => router.refresh())` and treating `useTransition`'s `isPending` as the bridge until the server component re-read. On Next 16 that pending flag does not settle, so the scoring branch stayed true and the refreshed props did not replace it. A reload worked because it never entered that transition.
+
+The success path now calls `router.refresh()` on its own. `discovering` stays true until the server props (`universe`, `discoveryRan`, or `tiered`) change identity, which is the re-read landing. Results render then, and the re-run button returns to "Re-run discovery". An HTTP error, a thrown request, and a 409 clear `discovering` immediately and do not refresh. Layout, copy, styles, animations, and the discover API are unchanged.
+
+### Where
+
+- `app/(dashboard)/campaigns/[id]/conviction-discovery-view.tsx` (discover-completion state only)
+- `app/(dashboard)/campaigns/[id]/conviction-discovery-view.test.tsx`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run "app/(dashboard)/campaigns/[id]/conviction-discovery-view.test.tsx"` (35 passed).
+
+The new cases cover a refresh that never resolves: scored props replace the scoring state and show the result, an empty re-read shows the empty copy, an HTTP 500 shows the error, and a thrown request shows the network error. In each failure the scoring state is gone and `router.refresh` is not called. The 409 notice still replaces the scoring state.
+
+Full `npx vitest run`: 264 files, 2347 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 134 pages.
+
+A local render of this component (fetch stubbed, so no discover POST) went from "Scoring the show universe" to The Recovery Lab with "Re-run discovery" enabled, without a reload. The error query cleared the scoring state to "Discovery didn't complete". Shots: `d3-before-scoring.png`, `d3-after-results.png`, `d3-error-cleared.png`.
+
+### Known gaps
+
+- Completion is a change in server prop identity. If `router.refresh()` bails out because the RSC payload is unchanged, `discovering` stays true. A discover that writes scores, or that flips `discoveryRan`, changes that payload.
+- The portfolio-override refresh still uses its own `startTransition`. It keys the busy state off `recomputing`, which is cleared in `finally`, not off `isPending`.
+- No live discover was run. Campaign `17e94ff3` was not loaded. No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
