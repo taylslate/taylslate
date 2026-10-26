@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { YouTubeClient } from "./youtube";
+import {
+  YouTubeClient,
+  parseYouTubeChannelKeywords,
+  wikipediaTopicUrlToLabel,
+} from "./youtube";
 
 function stubFetch(body: unknown) {
-  const fetchMock = vi.fn(async () => {
+  const fetchMock = vi.fn(async (_input: string | URL | Request) => {
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -56,5 +60,93 @@ describe("YouTube search market filters", () => {
     expect(url.searchParams.get("regionCode")).toBe("US");
     expect(url.searchParams.get("relevanceLanguage")).toBe("en");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("wikipedia topic labels", () => {
+  it("turns a Wikipedia topic URL into a readable label", () => {
+    expect(wikipediaTopicUrlToLabel("https://en.wikipedia.org/wiki/Physical_fitness")).toBe(
+      "Physical fitness"
+    );
+    expect(wikipediaTopicUrlToLabel("https://en.wikipedia.org/wiki/Health")).toBe("Health");
+    expect(
+      wikipediaTopicUrlToLabel("https://en.wikipedia.org/wiki/Lifestyle_(sociology)")
+    ).toBe("Lifestyle (sociology)");
+    expect(
+      wikipediaTopicUrlToLabel("https://en.wikipedia.org/wiki/Physical%20fitness")
+    ).toBe("Physical fitness");
+    expect(wikipediaTopicUrlToLabel("")).toBe("");
+  });
+
+  it("splits channel keywords and keeps quoted phrases", () => {
+    expect(parseYouTubeChannelKeywords('fitness "home workout" nutrition fitness')).toEqual([
+      "fitness",
+      "home workout",
+      "nutrition",
+    ]);
+    expect(parseYouTubeChannelKeywords(undefined)).toEqual([]);
+    expect(parseYouTubeChannelKeywords("")).toEqual([]);
+  });
+});
+
+describe("channel details parts", () => {
+  it("requests snippet, statistics, topicDetails, and brandingSettings and maps topics", async () => {
+    const fetchMock = stubFetch({
+      items: [
+        {
+          id: "UCfit",
+          snippet: {
+            title: "Fit Lab",
+            description: "Training",
+            publishedAt: "2020-01-01T00:00:00.000Z",
+            country: "US",
+            defaultLanguage: "en",
+            thumbnails: { high: { url: "https://img.example/fit.jpg", width: 1, height: 1 } },
+          },
+          statistics: {
+            viewCount: "1000",
+            subscriberCount: "50",
+            hiddenSubscriberCount: false,
+            videoCount: "40",
+          },
+          topicDetails: {
+            topicCategories: [
+              "https://en.wikipedia.org/wiki/Physical_fitness",
+              "https://en.wikipedia.org/wiki/Nutrition",
+            ],
+          },
+          brandingSettings: {
+            channel: { keywords: 'fitness "home workout" nutrition' },
+          },
+        },
+      ],
+    });
+    const client = new YouTubeClient("test-key");
+    const rows = await client.getMultipleChannelDetails(["UCfit"]);
+
+    const raw = String(fetchMock.mock.calls[0][0]);
+    const url = new URL(raw);
+    expect(url.pathname).toBe("/youtube/v3/channels");
+    expect(url.searchParams.get("part")).toBe(
+      "snippet,statistics,topicDetails,brandingSettings"
+    );
+    expect(url.searchParams.get("id")).toBe("UCfit");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].country).toBe("US");
+    expect(rows[0].defaultLanguage).toBe("en");
+    expect(rows[0].topicCategories).toEqual(["Physical fitness", "Nutrition"]);
+    expect(rows[0].keywords).toEqual(["fitness", "home workout", "nutrition"]);
+    expect(rows[0].videoCount).toBe(40);
+  });
+
+  it("uses the same parts for a single channel", async () => {
+    const fetchMock = stubFetch({ items: [] });
+    const client = new YouTubeClient("test-key");
+    const row = await client.getChannelDetails("UCfit");
+    expect(row).toBeNull();
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.searchParams.get("part")).toBe(
+      "snippet,statistics,topicDetails,brandingSettings"
+    );
   });
 });

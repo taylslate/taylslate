@@ -10,7 +10,11 @@ import type {
   PodscanPodcast,
   PodscanReach,
 } from "@/lib/enrichment/podscan";
-import type { YouTubeChannelDetails, YouTubeRecentStats } from "@/lib/enrichment/youtube";
+import {
+  wikipediaTopicUrlToLabel,
+  type YouTubeChannelDetails,
+  type YouTubeRecentStats,
+} from "@/lib/enrichment/youtube";
 
 /**
  * Decode HTML entities that Podscan returns in podcast names/descriptions.
@@ -219,6 +223,38 @@ export function podscanDemographicsToShowDemographics(
 }
 
 /**
+ * Topic label for the show. A Wikipedia URL becomes the article title.
+ * Labels the client already converted pass through.
+ */
+function asYouTubeTopicLabel(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/wikipedia\.org\/wiki\//i.test(trimmed) || /^https?:\/\//i.test(trimmed)) {
+    return wikipediaTopicUrlToLabel(trimmed);
+  }
+  return trimmed;
+}
+
+/**
+ * Topics plus channel keywords, on the same fields a podcast's genres use
+ * (categories and audience_interests). Empty when the channel has neither.
+ */
+export function youtubeTopicLabels(channel: YouTubeChannelDetails): string[] {
+  const raw = [...(channel.topicCategories ?? []), ...(channel.keywords ?? [])];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const label = asYouTubeTopicLabel(item);
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+  }
+  return out;
+}
+
+/**
  * Convert a YouTube channel to a Taylslate Show.
  */
 export function youtubeChannelToShow(
@@ -230,6 +266,7 @@ export function youtubeChannelToShow(
     Math.round(channel.totalViewCount / Math.max(channel.videoCount, 1));
 
   const now = new Date().toISOString();
+  const topics = youtubeTopicLabels(channel);
 
   return {
     id: `discovered-youtube-${channel.channelId}`,
@@ -238,7 +275,7 @@ export function youtubeChannelToShow(
     description: channel.description ?? "",
     image_url: channel.thumbnailUrl ?? undefined,
 
-    categories: channel.topicCategories ?? [],
+    categories: topics,
     tags: [],
 
     network: undefined,
@@ -251,7 +288,7 @@ export function youtubeChannelToShow(
 
     audience_size: audienceSize,
     demographics: {} as ShowDemographics,
-    audience_interests: channel.topicCategories ?? [],
+    audience_interests: topics,
 
     rate_card: { flat_rate: getDefaultYouTubeFlatRate(channel.subscriberCount) },
     price_type: "flat_rate",

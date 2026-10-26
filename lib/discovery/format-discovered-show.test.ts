@@ -3,7 +3,9 @@ import { describe, it, expect } from "vitest";
 import {
   podscanPodcastToShow,
   podscanDemographicsToShowDemographics,
+  youtubeChannelToShow,
 } from "./format-discovered-show";
+import type { YouTubeChannelDetails } from "@/lib/enrichment/youtube";
 import type { PodscanDemographics, PodscanPodcast } from "@/lib/enrichment/podscan";
 
 function makePodcast(overrides: Partial<PodscanPodcast> = {}): PodscanPodcast {
@@ -105,5 +107,52 @@ describe("podscanDemographicsToShowDemographics", () => {
       ],
     });
     expect(demo).toEqual({ age_25_34: 40 });
+  });
+});
+
+function youtubeChannel(
+  overrides: Partial<YouTubeChannelDetails> = {}
+): YouTubeChannelDetails {
+  return {
+    channelId: "UCfit",
+    title: "Fit Lab",
+    description: "Training",
+    publishedAt: "2020-01-01T00:00:00Z",
+    subscriberCount: 100000,
+    videoCount: 40,
+    totalViewCount: 1_000_000,
+    topicCategories: [],
+    ...overrides,
+  };
+}
+
+describe("youtubeChannelToShow topics", () => {
+  it("maps topic URLs and keywords onto the same fields a podcast uses for genres", () => {
+    const show = youtubeChannelToShow(
+      youtubeChannel({
+        topicCategories: ["https://en.wikipedia.org/wiki/Physical_fitness", "Nutrition"],
+        keywords: ["fitness", "Nutrition", "home workout"],
+      })
+    );
+    const podcast = podscanPodcastToShow({
+      podcast_id: "pd_fit",
+      podcast_name: "Fit Pod",
+      podcast_categories: ["Physical fitness", "Nutrition", "fitness", "home workout"],
+    });
+    expect(show.categories).toEqual([
+      "Physical fitness",
+      "Nutrition",
+      "fitness",
+      "home workout",
+    ]);
+    expect(show.audience_interests).toEqual(show.categories);
+    expect(show.categories).toEqual(podcast.categories);
+    expect(show.audience_interests).toEqual(podcast.audience_interests);
+  });
+
+  it("leaves categories empty when the channel has no topics and no keywords", () => {
+    const show = youtubeChannelToShow(youtubeChannel());
+    expect(show.categories).toEqual([]);
+    expect(show.audience_interests).toEqual([]);
   });
 });
