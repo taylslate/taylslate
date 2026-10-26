@@ -60,6 +60,8 @@ describe("GET /api/cron/pooled-priors", () => {
       { path: "/api/cron/deal-timeouts", schedule: "0 14 * * *" },
       { path: "/api/cron/conversion-alerts", schedule: "0 15 * * *" },
       { path: "/api/cron/pooled-priors", schedule: "0 16 * * *" },
+      { path: "/api/cron/youtube-library-pull", schedule: "0 17 * * *" },
+      { path: "/api/cron/youtube-library-refresh", schedule: "0 18 * * *" },
     ]);
   });
 });
