@@ -132,6 +132,9 @@ export class YouTubeClient {
       q: query,
       type: "channel",
       maxResults,
+      // Discovery is a US/English buy. These bias channel search to that market.
+      regionCode: "US",
+      relevanceLanguage: "en",
     });
 
     return (res.items ?? []).map((item) => ({
@@ -222,6 +225,8 @@ export class YouTubeClient {
       type: "video",
       order: "date",
       maxResults: maxVideos,
+      regionCode: "US",
+      relevanceLanguage: "en",
     });
 
     const videoIds = (searchRes.items ?? []).map((item) => item.id.videoId).filter(Boolean);

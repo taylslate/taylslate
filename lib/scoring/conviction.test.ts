@@ -218,6 +218,110 @@ describe("high-AOV brief → AOV tilt active, purchase power weighted", () => {
   });
 });
 
+describe("missing audience data is unmeasured for YouTube and podcast alike", () => {
+  const emptyDemo = {} as ShowDemographics;
+
+  it("scores a YouTube channel with no demographics the same as a podcast with no demographics", () => {
+    const shared = {
+      name: "Same Name",
+      categories: [] as string[],
+      audience_interests: [] as string[],
+      demographics: emptyDemo,
+    };
+    const ring = makeRing();
+    const pattern = patternWithTarget("low");
+    const youtube = scoreShowConviction(
+      makeShow({ ...shared, id: "discovered-youtube-UC1", platform: "youtube" }),
+      ring,
+      pattern
+    );
+    const podcast = scoreShowConviction(
+      makeShow({ ...shared, id: "discovered-podscan-x", platform: "podcast" }),
+      ring,
+      pattern
+    );
+
+    expect(youtube.audienceFit).toBe(50);
+    expect(youtube.drivers.audienceFit).toEqual({ degraded: true, coverage: 0 });
+    expect(youtube.audienceFit).toBe(podcast.audienceFit);
+    expect(youtube.drivers.audienceFit).toEqual(podcast.drivers.audienceFit);
+    expect(youtube.topicalRelevance).toBe(podcast.topicalRelevance);
+    expect(youtube.purchasePower).toBe(podcast.purchasePower);
+    expect(youtube.composite).toBe(podcast.composite);
+    expect(youtube.band).toBe(podcast.band);
+  });
+
+  it("does not score missing YouTube demographics down when the brief has a target", () => {
+    const shared = {
+      name: "Same Name",
+      categories: ["Physical fitness", "Entertainment"],
+      audience_interests: ["Physical fitness", "Entertainment"],
+      demographics: emptyDemo,
+    };
+    const ring = makeRing();
+    const pattern = patternWithTarget("low");
+    const youtube = scoreShowConviction(
+      makeShow({ ...shared, id: "discovered-youtube-UC1", platform: "youtube" }),
+      ring,
+      pattern
+    );
+    const podcast = scoreShowConviction(
+      makeShow({ ...shared, id: "discovered-podscan-x", platform: "podcast" }),
+      ring,
+      pattern
+    );
+
+    // A target with no show age, gender, or country shares is unmeasured,
+    // the same neutral 50 a podcast gets. It is not a low measured score.
+    expect(youtube.audienceFit).toBe(50);
+    expect(youtube.drivers.audienceFit).toEqual({ degraded: true, coverage: 0 });
+    expect(youtube.audienceFit).toBe(podcast.audienceFit);
+    expect(youtube.drivers.audienceFit).toEqual(podcast.drivers.audienceFit);
+    expect(youtube.composite).toBe(podcast.composite);
+  });
+
+  it("pulls a topic-tagged YouTube channel down through topical relevance, not audience fit", () => {
+    const ring = makeRing({ label: "protocol-driven recovery", reasoning: "" });
+    const pattern = patternWithTarget("low");
+    const bare = scoreShowConviction(
+      makeShow({
+        id: "discovered-youtube-bare",
+        platform: "youtube",
+        demographics: emptyDemo,
+        categories: [],
+        audience_interests: [],
+        audience_purchase_power: 50,
+      }),
+      ring,
+      pattern
+    );
+    const tagged = scoreShowConviction(
+      makeShow({
+        id: "discovered-youtube-tagged",
+        platform: "youtube",
+        demographics: emptyDemo,
+        categories: ["Entertainment"],
+        audience_interests: ["Entertainment"],
+        audience_purchase_power: 25,
+      }),
+      ring,
+      pattern
+    );
+
+    expect(tagged.audienceFit).toBe(bare.audienceFit);
+    expect(tagged.audienceFit).toBe(50);
+    expect(tagged.drivers.audienceFit.degraded).toBe(true);
+    expect(bare.drivers.topicalRelevance.degraded).toBe(true);
+    expect(bare.topicalRelevance).toBe(50);
+    expect(tagged.drivers.topicalRelevance.degraded).toBe(false);
+    expect(tagged.topicalRelevance).toBeLessThan(bare.topicalRelevance);
+    expect(tagged.purchasePower).toBe(25);
+    expect(tagged.composite).toBeLessThan(bare.composite);
+    expect(tagged.composite).toBeLessThan(50);
+    expect(tagged.band).toBe<ConvictionBand>("low");
+  });
+});
+
 describe("sparse demographics → degraded audience, no throw", () => {
   it("empty demographics + no structured target → audience neutral 50, degraded, band not high", () => {
     const show = makeShow({

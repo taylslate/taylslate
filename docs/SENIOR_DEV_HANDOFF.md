@@ -972,3 +972,42 @@ No page or component was edited. Screenshots are not applicable.
 - YouTube filters, quotas, and enrichment are unchanged. A YouTube API error still lands in discovery `errors` and `sources.youtube` can stay 0.
 - Live confirmation waits on deploy. Chris runs a new campaign. YouTube calls should show in the runtime logs within the hour, and the discovery report should have `sources.youtube > 0` or a YouTube error.
 - No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
+
+## D2
+
+### What was built
+
+YouTube discovery search now sends `regionCode=US` and `relevanceLanguage=en`. That covers both `search.list` calls in `YouTubeClient`: channel search (`searchChannels`) and the recent-video search inside `getRecentVideoStats`. The same two methods are what `discoverFromYoutube` calls. Min-views, video-count, quotas, weights, bands, and tiering are unchanged.
+
+Audience fit was not changed. A YouTube channel with no demographics already takes the podcast path: no age, gender, or country signal means audience fit 50, `degraded: true`, `coverage: 0` (`NEUTRAL_DEGRADED_SCORE`). A structured target on the brief does not turn that gap into a low measured score. `hydrateCandidateDemographics` already skips non-podcast platforms on the Podscan fetch, so a discovered YouTube channel stays at `{}` unless a same-slug catalog row already has demographics.
+
+What pulled campaign `17e94ff3`'s YouTube channels into the low band is not missing audience data. `youtubeChannelToShow` copies YouTube topic categories into `categories` and `audience_interests`. Those categories are a measured topical score: zero token overlap with the ring scores 20 and `degraded: false`, while a channel with no categories stays unmeasured at 50. `fillPurchasePower` then writes a purchase-power proxy from the same categories before scoring. The exact topic `Entertainment` maps to 25. With audience pinned at the unmeasured 50, a low measured topical score (and, when the topic is low-tier, purchase power 25) composites under the medium floor of 50. Off-market channels from the unfiltered search are the inventory that hits that path. The US/English search params are the change that should shrink that inventory. Scoring was left alone.
+
+### Where
+
+- `lib/enrichment/youtube.ts` (search params on both `/search` calls only)
+- `lib/enrichment/youtube.test.ts`
+- `lib/scoring/conviction.test.ts` (missing-data equality only; `conviction.ts` unchanged)
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+`lib/discovery/hydrate-demographics.ts` was read and not edited. Its existing test already skips a YouTube candidate with a podscan id.
+
+### Tests
+
+`npx vitest run lib/enrichment/youtube.test.ts lib/scoring/conviction.test.ts` (29 passed).
+
+Channel search and recent-video search both assert `regionCode=US` and `relevanceLanguage=en`. Conviction asserts a YouTube channel with empty demographics matches a podcast with the same inputs on audience fit, degraded flag, coverage, and composite, including when the brief has an age and gender target. A third case shows an `Entertainment` topic drops topical relevance and the composite while audience fit stays 50.
+
+Full `npx vitest run`: 264 files, 2343 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 134 pages.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- `searchChannels` and `getRecentVideoStats` are shared with `POST /api/shows/[id]/enrich` and the enrich-batch route. Those admin searches now send the same US/English params. A non-US channel looked up by name can miss.
+- `regionCode` on the recent-video search can drop videos that are not viewable in the US. That can change average views. The 10,000-view and 20-video filters were not edited.
+- `relevanceLanguage` is a YouTube relevance hint, not a hard language filter. `regionCode` is the country constraint.
+- Same-slug DB hydration can still copy a catalog show's demographics onto a YouTube candidate. That is measured data, not the missing-data path.
+- Weights, band thresholds, and tiering were not changed. A US/English channel whose topics do not overlap the ring can still land in the low band.
+- No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
+- Live confirmation waits on deploy. Chris runs a new campaign. Compare that run's YouTube band spread, read-only, to campaign `17e94ff3` (18 YouTube channels, all low, average composite 42, against 152 medium or high podcasts).
