@@ -8,6 +8,7 @@ import {
   hasAudienceGeography,
   parseMediaKitGeography,
 } from "@/lib/shows/media-kit-geo";
+import { enforceUpload } from "@/lib/security/rate-limit";
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,6 +23,9 @@ export async function POST(request: NextRequest) {
     if (!(await isShowsAdmin(user.id)) && role !== "agent") {
       return NextResponse.json({ error: "Only agents can import shows" }, { status: 403 });
     }
+
+    const limited = await enforceUpload(request, user.id);
+    if (limited) return limited;
 
     const contentType = request.headers.get("content-type") || "";
     let shows: Array<Partial<import("@/lib/data/types").Show> & { name: string; platform: "podcast" | "youtube" }>;

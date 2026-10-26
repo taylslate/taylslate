@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/data/queries";
 import { parseMediaKitGeography, hasAudienceGeography } from "@/lib/shows/media-kit-geo";
 import { extractKitText } from "@/lib/shows/media-kit-text";
+import { enforceUpload } from "@/lib/security/rate-limit";
 
 const MEDIA_KIT_MAX = 20_000;
 const MAX_BYTES = 2_000_000;
@@ -13,6 +14,9 @@ const MAX_BYTES = 2_000_000;
 export async function POST(request: NextRequest) {
   const user = await getAuthenticatedUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const limited = await enforceUpload(request, user.id);
+  if (limited) return limited;
 
   let text = "";
   try {

@@ -6,6 +6,10 @@ vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: (...args: unknown[]) => getAuthenticatedUser(...args),
 }));
 
+vi.mock("@/lib/security/rate-limit", () => ({
+  enforceUpload: vi.fn(async () => null),
+}));
+
 import { POST } from "./route";
 
 function jsonRequest(body: unknown): Request {

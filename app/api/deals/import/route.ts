@@ -9,8 +9,12 @@ import {
   parsePastCampaignFile,
   PastCampaignImportError,
 } from "@/lib/imports/past-campaigns";
+import { enforceUpload } from "@/lib/security/rate-limit";
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceUpload(request, null);
+  if (limited) return limited;
+
   const contentType = request.headers.get("content-type") ?? "";
 
   // --- PDF Upload Path ---

@@ -33,6 +33,7 @@ import {
   type LoginOtpLimitDecision,
 } from "@/lib/auth/login-otp-limit";
 import { createShowAccount } from "@/lib/auth/login-otp-show";
+import { enforceLoginCodeVerify } from "@/lib/security/rate-limit";
 import {
   ONBOARDING_RETURN_COOKIE,
   ONBOARDING_RETURN_COOKIE_OPTIONS,
@@ -110,6 +111,9 @@ export async function POST(request: NextRequest) {
   if (!isSixDigitCode(code)) {
     return NextResponse.json({ error: LOGIN_OTP_INVALID }, { status: 400 });
   }
+
+  const rateLimited = await enforceLoginCodeVerify(email);
+  if (rateLimited) return rateLimited;
 
   const ip = loginOtpClientIp(request.headers);
   // The verify action increments wrong_codes under the email row lock and
