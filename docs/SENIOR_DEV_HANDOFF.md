@@ -1119,7 +1119,7 @@ When that list is shorter than `MAX_YOUTUBE_SEARCHES` (4), the function tops up 
 
 Covers label normalization (hyphen, slash, straight and curly possessive `'s`, punctuation, 5-word cap), top-up for one ring `ingredient-literate women's wellness` plus Health & Wellness (`ingredient literate women wellness`, `fitness workout`, `literate womens wellness`, `womens wellness`), 4 rings with no top-up, the cap when tails would exceed 4, blank labels, the no-ring interest fallback, the podcast query list unchanged, one empty retry, no second interest search, no fifth search, no retry after a hit, and retry hits still passing the market filter.
 
-Full `npx vitest run`, `npx tsc --noEmit`, and `npx next build` are recorded after this verification pass.
+Full `npx vitest run`: 265 files, 2380 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 134 pages.
 
 No page or component was edited. Screenshots are not applicable.
 
