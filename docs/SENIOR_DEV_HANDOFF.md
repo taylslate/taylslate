@@ -452,6 +452,74 @@ A search for cookie-client `insert`, `update`, `upsert`, or `delete` on `shows` 
 
 - `createShow` without an `actor` option, the backfill helpers, `lib/shows/apply-geography.ts`, and `app/api/admin/seed-deal` still write `shows` as service_role. Those callers were left as they were.
 
+## B3: admin roster-link approval
+
+### What was built
+
+Admins get `/admin/roster-requests`. It lists pending roster links, oldest first, with the agent email, show name, discoverable flag, source, exclusive flag, created time, and live conflict context. Approve calls `approveRosterLink` and does not edit that helper. A link that is not pending shows "Not pending" and writes nothing. Discoverable still flips only when `shows.agent_id` matches the link's agent. Reject requires a note of 1 to 500 characters, sets status `rejected` only while the row is pending, and writes nothing on `shows`. An exclusive conflict asks for a confirm before approve.
+
+The page 404s unless `isShowsAdmin` is true. The routes return 401 signed out and 403 for anyone else. Writes use `supabaseAdmin`.
+
+Migration 067 adds nullable `review_note`, `rejected_by`, and `rejected_at`. It is not applied. The list does not select those columns, so it works before the paste. Reject returns 503 until the paste.
+
+### Where
+
+- `app/(dashboard)/admin/roster-requests/page.tsx` at `/admin/roster-requests`
+- `app/(dashboard)/admin/roster-requests/roster-requests-client.tsx`
+- `app/api/admin/roster-links/route.ts` (`GET`)
+- `app/api/admin/roster-links/[id]/route.ts` (`POST` approve or reject)
+- `lib/reps/roster-review.ts`
+- `supabase/migrations/067_roster_link_review_note.sql` (not applied)
+- `docs/jobs/B3.md`
+
+### Tests
+
+`lib/reps/roster-review.test.ts`, `app/api/admin/roster-links/route.test.ts`, `app/api/admin/roster-links/[id]/route.test.ts`, `app/(dashboard)/admin/roster-requests/roster-requests.test.tsx`, and `supabase/migrations/067_roster_link_review_note.test.ts`.
+
+The throwaway Postgres applied 001 through 067 and then 067 again. anon and PUBLIC have no grants on `agent_show_relationships`. authenticated has SELECT. service_role has SELECT, INSERT, UPDATE, and DELETE. That matches what 065 left.
+
+### Known gaps
+
+- Ownership proof is omitted. `lib/ownership` is not on this branch. This job does not import it. Wire the pending or verified proof after O1 merges.
+- The page is not in the sidebar. `lib/nav/items.ts` was left alone. Open `/admin/roster-requests` directly.
+- Migration 067 is not applied on `ldtmhafewfifdizgfrnn`. Apply only after merge and Chris's OK. Until then, reject returns "Roster review notes are not available yet."
+- No email is sent. Other roster links are not changed. Conflicts are not auto-resolved.
+- The mockup at `/admin/mockups/roster-requests` is unchanged.
+
+## I2b: confident past-campaign show match
+
+### What was built
+
+The past-campaign save stores `matched_show_id` only when the normalized show name matches exactly one eligible show. Eligible means `shows.is_discoverable` is true, or the show is hidden and `shows.agent_id` is the signed-in caller. That is the creator stored on a non-admin show create. Zero matches and two or more matches leave `matched_show_id` null and mark the row `ambiguous` with confidence `0`. A unique match stores confidence `1` and reason `unique_normalized_name`.
+
+The key folds U+2019 to an apostrophe and U+00A0 to a space, replaces U+0130 with i plus a combining dot, then lowercases one code point at a time. A final capital sigma stays σ. `ΣΊΣΥΦΟΣ` becomes `σίσυφοσ`. ASCII punctuation is removed, a leading `the` is removed, and a trailing `podcast` or `show` is removed. The same rules are in `normalizeShowMatchKey` and in `normalize_show_match_key`. That SQL function sets `search_path` to empty. A body `matched_show_id` is ignored. A before-write trigger overwrites a brand insert or update. It leaves the row unchanged when `auth.role()` is `service_role`, or when `current_user` is `service_role` or `postgres`. The status check still applies. The trigger and the route do not write `shows`.
+
+A `service_role` or `postgres` write skips matching. A row that write leaves with a null status and a set show id enters the pool when the show is discoverable. The user-session save route is the only writer today. A `service_role` or `postgres` insert is a trust boundary.
+
+Ambiguous rows stay on the brand's private records. `refresh_pooled_import_priors` skips status `ambiguous` and skips a show that is not discoverable. A pre-068 row has a null status and still enters the pool when `matched_show_id` is already set and the show is discoverable. If a show is hidden later, its rows leave the pool on the next refresh. That is intended. There is no brand matching screen.
+
+Migration 068 is not applied. A read-only count on `ldtmhafewfifdizgfrnn`, taken before this renumber, found 0 `past_campaign_records` rows and 0 with `matched_show_id` set. Nothing was rewritten. 067 on main is the roster-link review note.
+
+### Where
+
+- `lib/imports/past-campaigns.ts`
+- `app/api/imports/past-campaigns/route.ts`
+- `supabase/migrations/068_past_campaign_show_match.sql`
+- `docs/jobs/I2b.md`
+
+### Tests
+
+`lib/imports/past-campaigns.test.ts`, `app/api/imports/past-campaigns/route.test.ts`, and `068_past_campaign_show_match.test.ts`. The throwaway Postgres checks ran here. `npx vitest run` passed 2198 tests. `npx tsc --noEmit` was clean. `npx next build` succeeded. No UI change.
+
+### Known gaps
+
+- Apply 068 after 067, only after merge and Chris's OK. Until then the save route writes columns and calls a function the live database does not have.
+- Ambiguous rows are not resolved. They stay private and out of the pool.
+- `lib/imports/review.ts` still labels an exact case-insensitive name. That label is not the stored link.
+- A consented unique match of a discoverable show can feed the pool. The pool does not store the show id. A hidden show does not enter.
+- Suffix stripping means `My Show` normalizes to `my`. An em dash stays in the key.
+- Outreach-materialized hidden shows have no `agent_id`, so they are not matched.
+
 ## O1: show ownership status, proofs, and the verified tie
 
 ### What was built
@@ -492,4 +560,3 @@ Migration 061 is not applied. 065 and 066 are already on main. 061 does not gran
 - No `updated_at` trigger on `show_ownership_proofs`. O2 sets `updated_at` when it writes.
 - Ownership labels are not on any screen. Brand-facing UI must not grow a badge from this export.
 - 061 is not applied on `ldtmhafewfifdizgfrnn`.
-
