@@ -373,7 +373,7 @@ describe("discoverShows YouTube rings", () => {
   });
 
   it("searches the normalized label, the interest query, and the shorter tail for one ring", async () => {
-    const searchChannels = vi.fn(async () => []);
+    const searchChannels = vi.fn(async (_query: string, _maxResults?: number) => []);
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
       searchChannels,
       getMultipleChannelDetails: vi.fn(),
@@ -400,7 +400,7 @@ describe("discoverShows YouTube rings", () => {
   });
 
   it("does not add a fifth search when 4 ring searches all return 0 channels", async () => {
-    const searchChannels = vi.fn(async () => []);
+    const searchChannels = vi.fn(async (_query: string, _maxResults?: number) => []);
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
       searchChannels,
       getMultipleChannelDetails: vi.fn(),
@@ -439,7 +439,7 @@ describe("YouTube interest retry on empty", () => {
   });
 
   it("runs the interest fallback once when every search returns 0 and the cap has room", async () => {
-    const searchChannels = vi.fn(async () => []);
+    const searchChannels = vi.fn(async (_query: string, _maxResults?: number) => []);
     const getMultipleChannelDetails = vi.fn();
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
       searchChannels,
@@ -513,7 +513,7 @@ describe("YouTube interest retry on empty", () => {
   });
 
   it("does not retry when a planned search already returned channels", async () => {
-    const searchChannels = vi.fn(async () => [
+    const searchChannels = vi.fn(async (_query: string, _maxResults?: number) => [
       { channelId: "US1", title: "US One", description: "a" },
     ]);
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
