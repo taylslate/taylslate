@@ -747,7 +747,10 @@ describe("YouTube post-filter stage logs", () => {
       const errors: string[] = [];
       const result = await discoverFromYoutube(["endurance athletes"], errors);
       expect(result).toEqual([]);
-      expect(errors).toEqual([`YouTube discovery failed: ${boom.message}`]);
+      expect(errors).toEqual([
+        "YouTube discovery failed: YouTube API error 400: https://www.googleapis.com/youtube/v3/channels?key=[redacted]&part=snippet",
+      ]);
+      expect(errors.join("\n")).not.toContain("SECRETVALUE");
       expect(errorSpy).toHaveBeenCalledTimes(1);
       const logged = errorSpy.mock.calls[0].map((part) => String(part)).join("\n");
       expect(logged).toContain("YouTube discovery failed:");

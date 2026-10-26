@@ -23,6 +23,7 @@ import {
   MAX_YOUTUBE_SEARCHES,
 } from "./category-mapping";
 import { podscanPodcastToShow, youtubeChannelToShow } from "./format-discovered-show";
+import { redactSecretParams } from "./redact-secrets";
 import {
   mediumPriorsForShow,
   podcastSurfaceFromShow,
@@ -259,7 +260,7 @@ export async function discoverFromYoutube(
         );
         return hits;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "unknown error";
+        const msg = redactSecretParams(err instanceof Error ? err.message : "unknown error");
         console.warn(`[discovery] YouTube query ${idx + 1} failed: ${msg}`);
         errors.push(`YouTube query "${query.slice(0, 40)}": ${msg}`);
         return [];
@@ -381,11 +382,11 @@ export async function discoverFromYoutube(
 
     return kept.map((ch) => youtubeChannelToShow(ch, statsMap.get(ch.channelId) ?? undefined));
   } catch (err) {
-    const message = err instanceof Error ? err.message : "unknown error";
+    const message = redactSecretParams(err instanceof Error ? err.message : "unknown error");
     const stack = err instanceof Error ? err.stack : undefined;
     console.error(
       "[discovery] YouTube discovery failed:",
-      redactSecretParams(message),
+      message,
       stack ? redactSecretParams(stack) : stack
     );
     errors.push(`YouTube discovery failed: ${message}`);
@@ -400,11 +401,6 @@ function medianNumber(values: number[]): number | null {
   const mid = Math.floor(sorted.length / 2);
   if (sorted.length % 2 === 1) return sorted[mid];
   return (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-/** Keep an API key out of a log line. The errors array keeps the raw message. */
-function redactSecretParams(text: string): string {
-  return text.replace(/([?&]key=)[^&\s]+/gi, "$1[redacted]");
 }
 
 /**

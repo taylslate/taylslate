@@ -43,6 +43,7 @@ import {
   type DiscoveryBrief,
   type DiscoveryResult,
 } from "./discover-shows";
+import { redactSecretParams } from "./redact-secrets";
 import {
   scoreShowConviction,
   type ConvictionScore,
@@ -328,9 +329,10 @@ export async function runConvictionDiscovery(
     );
     return empty(pattern.id);
   }
-  errors.push(...discovery.errors);
   for (const message of discovery.errors) {
-    console.warn(`[conviction-discovery] ${message}`);
+    const safe = redactSecretParams(message);
+    errors.push(safe);
+    console.warn(`[conviction-discovery] ${safe}`);
   }
 
   // Hard filters BEFORE scoring → fold simulcasts → hydrate demographics →

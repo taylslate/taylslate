@@ -1135,4 +1135,30 @@ describe("runConvictionDiscovery", () => {
       warn.mockRestore();
     }
   });
+
+  it("redacts a discovery error that contains key=ABC", async () => {
+    const raw = "YouTube discovery failed: key=ABC";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const { deps } = makeDeps({
+        discovered: [recoveryShow()],
+        discover: async () => ({
+          discovered: [recoveryShow()],
+          sources: { podscan: 0, youtube: 0 },
+          errors: [raw],
+        }),
+      });
+      const result = await runConvictionDiscovery("camp-1", deps);
+      const warned = warn.mock.calls.map((call) => call.map((part) => String(part)).join(" ")).join("\n");
+      const stored = result.errors.join("\n");
+      expect(warned).toContain("[conviction-discovery] YouTube discovery failed: key=[redacted]");
+      expect(warned).not.toContain("ABC");
+      expect(stored).toContain("YouTube discovery failed: key=[redacted]");
+      expect(stored).not.toContain("ABC");
+    } finally {
+      warn.mockRestore();
+      log.mockRestore();
+    }
+  });
 });
