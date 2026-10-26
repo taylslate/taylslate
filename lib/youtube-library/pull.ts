@@ -115,7 +115,7 @@ export function createLibraryYoutubeApi(client?: YouTubeClient | null): LibraryY
     async search(query: string) {
       if (!youtube) throw new Error("YOUTUBE_API_KEY is not set");
       try {
-        const hits = await youtube.searchVideos(query, 50);
+        const hits = await youtube.searchVideos(query, 50, "relevance");
         return uniqueIds(hits.map((hit) => hit.channelId));
       } catch (err) {
         throw scrubYoutubeError(err);

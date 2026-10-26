@@ -278,10 +278,11 @@ async function discoverFromPodscan(
 }
 
 /**
- * Search YouTube videos for the planned queries (capped at 4). searchVideos
- * orders by view count over the last 12 months and sends regionCode=US and
- * relevanceLanguage=en. Channel ids come from snippet.channelId, first
- * occurrence wins, in that rank order. Channel search is not also run.
+ * Search YouTube videos for the planned queries (capped at 4). The live
+ * top-up calls searchVideos with order relevance, over the last 12 months,
+ * with regionCode=US and relevanceLanguage=en. Channel ids come from
+ * snippet.channelId, first occurrence wins, in that rank order. Channel
+ * search is not also run.
  * The market filter below is the hard keep/drop, using the channel-details
  * response. Recent video stats still run for the top 10 channels that
  * survive it.
@@ -321,7 +322,7 @@ async function discoverFromYoutubeLive(
 
     const runQuery = async (query: string, idx: number) => {
       try {
-        const hits = await client.searchVideos(query, YOUTUBE_SEARCH_MAX_RESULTS);
+        const hits = await client.searchVideos(query, YOUTUBE_SEARCH_MAX_RESULTS, "relevance");
         const found = uniqueChannelIds(hits);
         console.log(
           `[discovery] YouTube query ${idx + 1} "${query.slice(0, 40)}" → ${found.length} channels`

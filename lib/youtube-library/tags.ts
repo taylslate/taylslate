@@ -3,6 +3,7 @@
 // Step B asks the existing LLM, in batches, and drops anything outside
 // that list. LLM_MAX_RETRIES stays 0: the call passes maxRetries 0.
 
+import { redactSecretParams } from "@/lib/discovery/redact-secrets";
 import { callLLMWithFallback } from "@/lib/llm/client";
 
 export const NICHE_TAGS_VERSION = 1;
@@ -283,7 +284,7 @@ export async function runNicheTagBatches(input: {
       parsed = parseTagResponse(text, new Set(rows.map((row) => row.channel_id)));
     } catch (err) {
       const message = err instanceof Error ? err.message : "llm error";
-      log(`[youtube-library] tag call failed: ${message.replace(/key=[^\s&]+/gi, "key=[redacted]").slice(0, 200)}`);
+      log(`[youtube-library] tag call failed: ${redactSecretParams(message).slice(0, 200)}`);
       return { channels: tagged, calls, stopped: "llm_error" };
     }
     for (const row of rows) {

@@ -79,6 +79,7 @@ describe("batch tagging cap", () => {
 
   it("stops the batch when the model call throws and leaves those rows unsaved", async () => {
     const save = vi.fn();
+    const lines: string[] = [];
     const result = await runNicheTagBatches({
       cap: 400,
       load: async () => [
@@ -94,8 +95,10 @@ describe("batch tagging cap", () => {
       complete: async () => {
         throw new Error("key=super-secret-key boom");
       },
-      log: () => {},
+      log: (line) => lines.push(line),
     });
+    expect(lines.join("\n")).toContain("key=[redacted]");
+    expect(lines.join("\n")).not.toContain("super-secret-key");
     expect(result.stopped).toBe("llm_error");
     expect(result.channels).toBe(0);
     expect(save).not.toHaveBeenCalled();

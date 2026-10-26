@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 describe("YouTube search market filters", () => {
-  it("searches videos by view count for the last 12 months in the US English market", async () => {
+  it("searches videos for the last 12 months in the US English market", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-26T21:46:00.000Z"));
     try {
@@ -73,7 +73,7 @@ describe("YouTube search market filters", () => {
       expect(url.pathname).toBe("/youtube/v3/search");
       expect(url.searchParams.get("part")).toBe("snippet");
       expect(url.searchParams.get("type")).toBe("video");
-      expect(url.searchParams.get("order")).toBe("viewCount");
+      expect(url.searchParams.get("order")).toBe("relevance");
       expect(url.searchParams.get("videoDuration")).toBe("medium");
       expect(url.searchParams.get("publishedAfter")).toBe("2025-10-26T21:46:00.000Z");
       expect(url.searchParams.get("regionCode")).toBe("US");
@@ -102,6 +102,10 @@ describe("YouTube search market filters", () => {
         },
       ]);
       expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      await client.searchVideos("home fitness", 50, "viewCount");
+      const ranked = new URL(String(fetchMock.mock.calls[1][0]));
+      expect(ranked.searchParams.get("order")).toBe("viewCount");
     } finally {
       vi.useRealTimers();
     }

@@ -235,7 +235,7 @@ describe("discoverShows YouTube rings", () => {
       ],
     ]);
 
-    const searchVideos = vi.fn(async (query: string, _maxResults?: number) => {
+    const searchVideos = vi.fn(async (query: string, _maxResults?: number, _order?: string) => {
       if (query === "endurance athletes") {
         return [
           { channelId: "US1", title: "US One", description: "a" },
@@ -289,6 +289,7 @@ describe("discoverShows YouTube rings", () => {
       "home cooking",
     ]);
     expect(searchVideos.mock.calls.every((call) => call[1] === 50)).toBe(true);
+    expect(searchVideos.mock.calls.every((call) => call[2] === "relevance")).toBe(true);
     expect(getMultipleChannelDetails).toHaveBeenCalledTimes(1);
     expect(getMultipleChannelDetails.mock.calls[0][0]).toEqual([
       "US1",

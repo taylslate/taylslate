@@ -203,15 +203,17 @@ export class YouTubeClient {
   }
 
   /**
-   * Search popular videos in the last 12 months, then read each video's channel.
+   * Search videos in the last 12 months, then read each video's channel.
    * search.list type=video matches titles people watch. type=channel matches
    * channel names, which is how niche phrases return small channels.
    * Costs 100 quota units, the same as searchChannels.
-   * publishedAfter is 12 months before this call. Rank order is viewCount.
+   * publishedAfter is 12 months before this call. order defaults to relevance.
+   * Pass viewCount when the caller wants popular videos first.
    */
   async searchVideos(
     query: string,
-    maxResults = 50
+    maxResults = 50,
+    order: "relevance" | "viewCount" = "relevance"
   ): Promise<{ channelId: string; videoId: string; title: string; description: string }[]> {
     const publishedAfter = new Date();
     publishedAfter.setUTCMonth(publishedAfter.getUTCMonth() - 12);
@@ -225,7 +227,7 @@ export class YouTubeClient {
       part: "snippet",
       q: query,
       type: "video",
-      order: "viewCount",
+      order,
       videoDuration: "medium",
       publishedAfter: publishedAfter.toISOString(),
       regionCode: "US",

@@ -9,6 +9,7 @@
 // is applied. The API key is never logged.
 
 import { NextRequest, NextResponse } from "next/server";
+import { redactSecretParams } from "@/lib/discovery/redact-secrets";
 import { runYoutubeLibraryRefresh } from "@/lib/youtube-library/refresh";
 
 export const maxDuration = 300;
@@ -21,7 +22,7 @@ function authorized(req: NextRequest): boolean {
 
 function safeError(err: unknown): string {
   const message = err instanceof Error ? err.message : "refresh failed";
-  return message.replace(/key=[^\s&]+/gi, "key=[redacted]").slice(0, 300);
+  return redactSecretParams(message).slice(0, 300);
 }
 
 export async function GET(request: NextRequest) {
