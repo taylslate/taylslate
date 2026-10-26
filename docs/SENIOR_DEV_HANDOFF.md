@@ -994,9 +994,11 @@ What pulled campaign `17e94ff3`'s YouTube channels into the low band is not miss
 
 ### Tests
 
-`npx vitest run lib/enrichment/youtube.test.ts lib/scoring/conviction.test.ts`
+`npx vitest run lib/enrichment/youtube.test.ts lib/scoring/conviction.test.ts` (29 passed).
 
 Channel search and recent-video search both assert `regionCode=US` and `relevanceLanguage=en`. Conviction asserts a YouTube channel with empty demographics matches a podcast with the same inputs on audience fit, degraded flag, coverage, and composite, including when the brief has an age and gender target. A third case shows an `Entertainment` topic drops topical relevance and the composite while audience fit stays 50.
+
+Full `npx vitest run`: 264 files, 2343 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 134 pages.
 
 No page or component was edited. Screenshots are not applicable.
 
