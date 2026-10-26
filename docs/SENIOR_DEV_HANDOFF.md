@@ -1162,7 +1162,7 @@ The YouTube fixture asserts the returned shows equal the shows `youtubeChannelTo
 
 The conviction fixture runs the same shows through `excludeExcludedGenres`, `excludeDeadYouTube`, `mergeSimulcasts`, `fillPurchasePower`, and `scoreCandidatesAgainstRings`, and asserts the orchestrator returns those shows and scores. The five log lines are `podcast=1 youtube=4`, then `1/3`, `1/2`, `1/1`, and after two rings `podcast=2 youtube=2`. Both discovery errors are warned and still present on the result.
 
-Full `npx vitest run`, `npx tsc --noEmit`, and `npx next build` are recorded after this verification pass.
+Full `npx vitest run`: 265 files, 2385 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 134 pages.
 
 No page or component was edited. Screenshots are not applicable.
 
