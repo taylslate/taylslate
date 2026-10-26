@@ -552,6 +552,53 @@ describe("mapTopicsToInterests", () => {
 // ============================================================
 
 describe("runConvictionDiscovery", () => {
+  it("passes youtube to discover() for a new campaign", async () => {
+    const briefs: Array<{ platforms: string[] }> = [];
+    const { deps } = makeDeps({
+      platforms: ["podcast", "youtube"],
+      discover: async (brief) => {
+        briefs.push(brief);
+        return { discovered: [], sources: { podscan: 0, youtube: 0 }, errors: [] };
+      },
+    });
+
+    await runConvictionDiscovery("camp-1", deps);
+
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0].platforms).toEqual(["podcast", "youtube"]);
+  });
+
+  it("falls back to podcast and youtube when platforms is empty", async () => {
+    const briefs: Array<{ platforms: string[] }> = [];
+    const { deps } = makeDeps({
+      platforms: [],
+      discover: async (brief) => {
+        briefs.push(brief);
+        return { discovered: [], sources: { podscan: 0, youtube: 0 }, errors: [] };
+      },
+    });
+
+    await runConvictionDiscovery("camp-1", deps);
+
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0].platforms).toEqual(["podcast", "youtube"]);
+  });
+
+  it("keeps an existing podcast-only campaign off YouTube", async () => {
+    const briefs: Array<{ platforms: string[] }> = [];
+    const { deps } = makeDeps({
+      platforms: ["podcast"],
+      discover: async (brief) => {
+        briefs.push(brief);
+        return { discovered: [], sources: { podscan: 0, youtube: 0 }, errors: [] };
+      },
+    });
+
+    await runConvictionDiscovery("camp-1", deps);
+
+    expect(briefs[0].platforms).toEqual(["podcast"]);
+  });
+
   it("scores a universe across multiple confirmed rings and records one row per (show, ring)", async () => {
     const rings = [
       makeRing({ id: "ring-a", slot_position: 0 }),

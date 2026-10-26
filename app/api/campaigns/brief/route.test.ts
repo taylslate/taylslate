@@ -101,6 +101,7 @@ describe("POST /api/campaigns/brief", () => {
         budget_total: 0,
         status: "draft",
         brief: { version: 2 },
+        platforms: ["podcast", "youtube"],
       })
     );
   });
@@ -152,6 +153,7 @@ describe("POST /api/campaigns/brief", () => {
 
     const created = mockCreateCampaign.mock.calls[0][0];
     expect(created.name).toMatch(/^SaunaBox — /);
+    expect(created.platforms).toEqual(["podcast", "youtube"]);
     expect(created.brief.customer_context.reused_from_pattern_id).toBe("pat_1");
     expect(created.brief.customer_context.delta_text).toBe("New SKU launched");
   });
