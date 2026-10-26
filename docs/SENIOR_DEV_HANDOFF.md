@@ -690,3 +690,43 @@ No vitest test. The check is re-running the two gitleaks commands in the report 
 - `.gitignore` does not name `*.key`, `*.p12`, `*.pfx`, or `id_rsa`. None of those names are in history. The file was not edited.
 - After `npx next build`, `gitleaks detect --no-git` also walks gitignored `.next` and flags local Next preview and cache keys. Those values are not in git. The clean-tree result is 0.
 
+## H1
+
+### What was built
+
+Migration 072 locks the money columns on `profiles` and the writes on `payments`. `profiles_protect_money_columns` rejects a change to `platform_fee_percentage`, `plan`, `subscription_status`, `stripe_customer_id`, `stripe_subscription_id`, `stripe_connect_account_id`, `role`, `tier`, `seat_count`, or `campaigns_this_month` unless the caller is `service_role` or a migration role. A non-service insert may only start as `tier` `free`, `role` `brand` or `show`, and the defaults for the fee, plan, subscription status, Stripe ids, seat count, and monthly counter. `ensureProfile` still inserts `role` `brand` and `tier` `free` through the cookie client. Authenticated loses insert, update, delete, truncate, references, and trigger on `payments`. INSERT and UPDATE policies on `payments` are dropped. SELECT policies stay. Column UPDATE on the locked profile columns is revoked from authenticated. The table-level UPDATE grant stays so `full_name` still updates. The trigger is the enforcement.
+
+`POST /api/onboarding/role` takes `{role}` for the signed-in user and writes `role` plus `tier` `free` with `supabaseAdmin`. The allowlist is `brand`, `agency`, and `agent`. `admin` is rejected. The write is allowed only before brand or show `onboarded_at` is set, and only while `role` is null or `brand` and the user has no campaigns, show profile, or roster link. `handleRoleSelect` calls this route. The picker, loading, and redirects are unchanged.
+
+`POST /api/campaigns/outreach/send` requires `getAuthenticatedUser`, a `campaign_id`, and ownership (`campaigns.user_id`). It sends only when `show_id` and `contact_email` match a recommendation, YouTube recommendation, or expansion row stored on that campaign. Anything else is dropped. Caps are 50 drafts, 200 characters per subject, 10 KB per body, and 512 KB for the request. The From address and the email template are unchanged. Both outreach fetches in `campaign-detail.tsx` now send `campaign_id`.
+
+072 is not applied.
+
+### Where
+
+- `supabase/migrations/072_lock_money_columns.sql`
+- `supabase/migrations/072_lock_money_columns.test.ts`
+- `app/api/onboarding/role/route.ts`
+- `app/api/onboarding/role/route.test.ts`
+- `app/api/campaigns/outreach/send/route.ts`
+- `app/api/campaigns/outreach/send/route.test.ts`
+- `app/onboarding/page.tsx` (`handleRoleSelect` only)
+- `app/(dashboard)/campaigns/[id]/campaign-detail.tsx` (the two outreach/send bodies only)
+- `docs/security/S-A_FINDINGS.md` (copied from open PR 50, then SA-01, SA-02, and SA-03 status lines)
+- `package.json` and `package-lock.json` (`@electric-sql/pglite`, dev dependency for the migration test)
+
+### Tests
+
+`npx vitest run supabase/migrations/072_lock_money_columns.test.ts app/api/onboarding/role/route.test.ts app/api/campaigns/outreach/send/route.test.ts`
+
+PGlite proves an authenticated user cannot insert or update `payments`, cannot change any locked profile column, can update `full_name`, and `service_role` can change the fee. The `ensureProfile` insert passes. `tier` `pro` and `role` `agent` inserts from authenticated fail. Route tests cover 401, 403, the caps, 413, a dropped recipient, and the mocked Resend happy path. No live database write and no real email.
+
+### Known gaps
+
+- 072 is in the repo and is not applied. SA-01 and SA-02 stay open on `ldtmhafewfifdizgfrnn` until Chris applies it after merge.
+- SA-03's route checks ship with this PR and do not wait on 072. There is still no cross-request rate limit. The per-request caps are the limit this job adds.
+- The recipient allowlist is the contact email stored on the campaign JSON. The owner can still edit that JSON through the campaigns update policy, then send. Shows are not re-read from `shows.contact_email`.
+- `ensureProfile` remains a cookie-client insert of `role` `brand` and `tier` `free`. The insert guard allows that shape and rejects anything else.
+- A table-level UPDATE grant still covers the locked columns. The column revoke does not remove it. The trigger rejects the write.
+- `reset_monthly_campaigns` is invoker and updates `campaigns_this_month`. Nothing in the app calls it. An authenticated call would now fail the trigger.
+

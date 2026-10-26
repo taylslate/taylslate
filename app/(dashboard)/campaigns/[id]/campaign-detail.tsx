@@ -152,7 +152,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
       const res = await fetch("/api/campaigns/outreach/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ drafts: [draft] }),
+        body: JSON.stringify({ campaign_id: campaign.id, drafts: [draft] }),
       });
       const data = await res.json();
       if (!res.ok || !data.results?.[0]?.success) {
@@ -179,7 +179,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
       const res = await fetch("/api/campaigns/outreach/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ drafts: unsent }),
+        body: JSON.stringify({ campaign_id: campaign.id, drafts: unsent }),
       });
       const data = await res.json();
       if (data.results) {
