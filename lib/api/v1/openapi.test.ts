@@ -90,4 +90,63 @@ describe("api v1 openapi", () => {
       { $ref: "#/components/parameters/id" },
     ]);
   });
+
+  it("documents pending writes and resolves every local ref", () => {
+    const doc = openApiDocument() as {
+      openapi: string;
+      paths: Record<string, Record<string, {
+        operationId?: string;
+        security?: unknown;
+        responses?: Record<string, unknown>;
+        parameters?: unknown[];
+      }>>;
+      components: {
+        schemas: Record<string, { properties?: Record<string, unknown>; required?: string[] }>;
+        parameters: Record<string, unknown>;
+      };
+    };
+
+    expect(doc.paths["/api/v1/campaigns"].get.operationId).toBe("listCampaigns");
+    expect(doc.paths["/api/v1/campaigns"].post.security).toEqual([{ bearerAuth: [] }]);
+    expect(doc.paths["/api/v1/outreach"].post.parameters).toEqual([
+      { $ref: "#/components/parameters/idempotencyKey" },
+    ]);
+    expect(doc.components.schemas.Contact.required).toEqual(["name", "email", "method"]);
+    expect(Object.keys(doc.components.schemas.Contact.properties ?? {})).toEqual([
+      ...CONTACT_FIELDS,
+    ]);
+
+    const codes = new Set<string>();
+    for (const path of ["/api/v1/campaigns", "/api/v1/outreach", "/api/v1/actions", "/api/v1/actions/{id}"]) {
+      for (const operation of Object.values(doc.paths[path])) {
+        for (const code of Object.keys(operation.responses ?? {})) codes.add(code);
+      }
+    }
+    for (const code of ["200", "202", "400", "401", "403", "404", "409", "413", "415", "422", "429", "500"]) {
+      expect(codes.has(code)).toBe(true);
+    }
+
+    const refs: string[] = [];
+    const walk = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        for (const item of value) walk(item);
+        return;
+      }
+      if (typeof value !== "object" || value === null) return;
+      for (const [key, child] of Object.entries(value)) {
+        if (key === "$ref" && typeof child === "string") refs.push(child);
+        else walk(child);
+      }
+    };
+    walk(doc);
+    for (const ref of refs) {
+      if (ref.startsWith("#/components/schemas/")) {
+        expect(doc.components.schemas[ref.slice("#/components/schemas/".length)]).toBeTruthy();
+      } else if (ref.startsWith("#/components/parameters/")) {
+        expect(doc.components.parameters[ref.slice("#/components/parameters/".length)]).toBeTruthy();
+      } else {
+        throw new Error(`Unresolved ref ${ref}`);
+      }
+    }
+  });
 });

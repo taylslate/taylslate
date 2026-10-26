@@ -203,6 +203,63 @@ function errorResponse(description: string, extra?: Schema): Schema {
   return response;
 }
 
+function actionReceipt(): Schema {
+  return {
+    description: "The recorded action. A replay returns the original row.",
+    content: {
+      "application/json": {
+        schema: { $ref: "#/components/schemas/ActionReceipt" },
+      },
+    },
+  };
+}
+
+function writeOperation(options: {
+  operationId: string;
+  summary: string;
+  scope: "write:campaigns" | "write:outreach";
+  bodyRef: string;
+  notFound: boolean;
+}): Schema {
+  const responses: Record<string, Schema> = {
+    "200": actionReceipt(),
+    "202": actionReceipt(),
+    "400": errorResponse("Idempotency-Key is missing or not 1 to 128 printable characters."),
+    "401": errorResponse("Missing or invalid API key."),
+    "403": errorResponse(`API key lacks the ${options.scope} scope.`),
+    "409": errorResponse("Idempotency key was already used with a different payload."),
+    "413": errorResponse("Request body is too large."),
+    "415": errorResponse("Request body must be JSON."),
+    "422": errorResponse("The body failed validation."),
+    "429": errorResponse("Rate limit exceeded.", {
+      "Retry-After": {
+        description: "Seconds until the current window resets.",
+        schema: { type: "integer" },
+      },
+    }),
+    "500": errorResponse("API request failed."),
+  };
+  if (options.notFound) {
+    responses["404"] = errorResponse("Not found.");
+  }
+  return {
+    operationId: options.operationId,
+    summary: options.summary,
+    security: [{ bearerAuth: [] }],
+    "x-required-scope": options.scope,
+    parameters: [{ $ref: "#/components/parameters/idempotencyKey" }],
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: { $ref: `#/components/schemas/${options.bodyRef}` },
+        },
+      },
+    },
+    responses,
+  };
+}
+
 function readOperation(options: {
   operationId: string;
   summary: string;
@@ -254,7 +311,7 @@ export function openApiDocument(): Schema {
       title: "Taylslate API",
       version: "1.0.0",
       description:
-        "Brand-scoped read API. Send Authorization: Bearer with an API key that includes the read scope. GET /api/v1/openapi.json does not require a key. Lists are ordered by created_at descending, then id descending. Page size defaults to 25 and clamps at 100.",
+        "Brand-scoped read API. Send Authorization: Bearer with an API key that includes the read scope. GET /api/v1/openapi.json does not require a key. Lists are ordered by created_at descending, then id descending. Page size defaults to 25 and clamps at 100. Write calls require write:campaigns or write:outreach, an Idempotency-Key of 1 to 128 printable characters, and a JSON body of at most 64 KB. A write is recorded as a pending action and is not executed.",
     },
     servers: [{ url: "https://www.taylslate.com" }],
     security: [{ bearerAuth: [] }],
@@ -281,6 +338,13 @@ export function openApiDocument(): Schema {
           summary: "List campaigns for this brand.",
           responseRef: "CampaignPage",
           paginated: true,
+        }),
+        post: writeOperation({
+          operationId: "createCampaignAction",
+          summary: "Record a campaign create. Nothing is executed.",
+          scope: "write:campaigns",
+          bodyRef: "CampaignCreate",
+          notFound: true,
         }),
       },
       "/api/v1/campaigns/{id}": {
@@ -324,6 +388,31 @@ export function openApiDocument(): Schema {
           idParam: true,
         }),
       },
+      "/api/v1/outreach": {
+        post: writeOperation({
+          operationId: "createOutreachDraft",
+          summary: "Record an outreach draft. Nothing is sent.",
+          scope: "write:outreach",
+          bodyRef: "OutreachDraft",
+          notFound: true,
+        }),
+      },
+      "/api/v1/actions": {
+        get: readOperation({
+          operationId: "listActions",
+          summary: "List recorded write actions for this brand.",
+          responseRef: "ActionPage",
+          paginated: true,
+        }),
+      },
+      "/api/v1/actions/{id}": {
+        get: readOperation({
+          operationId: "getAction",
+          summary: "Read one recorded write action for this brand.",
+          responseRef: "ActionItem",
+          idParam: true,
+        }),
+      },
     },
     components: {
       securitySchemes: {
@@ -356,6 +445,14 @@ export function openApiDocument(): Schema {
           in: "path",
           required: true,
           schema: { type: "string", format: "uuid" },
+        },
+        idempotencyKey: {
+          name: "Idempotency-Key",
+          in: "header",
+          required: true,
+          description:
+            "1 to 128 printable ASCII characters. The same key and payload return the original action.",
+          schema: { type: "string", minLength: 1, maxLength: 128 },
         },
       },
       schemas: {
@@ -396,6 +493,138 @@ export function openApiDocument(): Schema {
         PlanItem: itemSchema("Plan", true),
         DealPage: pageSchema("Deal"),
         DealItem: itemSchema("Deal"),
+        CampaignCreate: {
+          type: "object",
+          additionalProperties: false,
+          required: ["goals", "budget_total", "flight"],
+          description:
+            "Fields the manual brief accepts. A fresh brief requires product and customer_text. A reuse sends customer_context.reused_from_pattern_id instead.",
+          properties: {
+            product: { $ref: "#/components/schemas/CampaignProduct" },
+            customer_text: { type: "string" },
+            customer_context: { $ref: "#/components/schemas/CustomerContext" },
+            goals: {
+              type: "array",
+              minItems: 1,
+              maxItems: 3,
+              items: {
+                type: "string",
+                enum: [
+                  "test_channel",
+                  "scale_winner",
+                  "direct_response",
+                  "brand_awareness",
+                  "lead_gen",
+                ],
+              },
+            },
+            goals_context: { type: "string" },
+            budget_total: { type: "number", minimum: 5000 },
+            flight: { $ref: "#/components/schemas/CampaignFlight" },
+            exclusions_text: { type: "string" },
+          },
+        },
+        CampaignProduct: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "brand_name",
+            "category",
+            "product_description",
+            "aov_bucket",
+            "aov_reasoning",
+            "key_attributes",
+            "source",
+            "url",
+          ],
+          properties: {
+            brand_name: { type: "string" },
+            category: { type: "string" },
+            product_description: { type: "string" },
+            aov_bucket: { type: "string", enum: ["low", "mid", "high"] },
+            aov_reasoning: { type: "string" },
+            key_attributes: stringArray,
+            source: { type: "string", enum: ["url", "paragraph"] },
+            url: nullableString,
+          },
+        },
+        CampaignFlight: {
+          type: "object",
+          additionalProperties: false,
+          required: ["mode"],
+          properties: {
+            mode: { type: "string", enum: ["preset", "dates"] },
+            preset: {
+              type: "string",
+              enum: ["asap", "next_30_days", "next_60_days", "next_quarter"],
+            },
+            start_date: { type: "string" },
+            end_date: { type: "string" },
+          },
+        },
+        CustomerContext: {
+          type: "object",
+          additionalProperties: false,
+          required: ["reused_from_pattern_id"],
+          properties: {
+            reused_from_pattern_id: { type: "string", format: "uuid" },
+            delta_text: { type: "string" },
+            product_url: nullableString,
+            changed_fields: { type: "object" },
+            product_attributes: { type: "object" },
+          },
+        },
+        OutreachDraft: {
+          type: "object",
+          additionalProperties: false,
+          required: ["show_id", "subject", "body"],
+          properties: {
+            show_id: { type: "string", format: "uuid" },
+            subject: { type: "string", minLength: 1, maxLength: 200 },
+            body: { type: "string", minLength: 30, maxLength: 5000 },
+          },
+        },
+        ActionReceipt: {
+          type: "object",
+          additionalProperties: false,
+          required: ["action_id", "status"],
+          properties: {
+            action_id: { type: "string", format: "uuid" },
+            status: {
+              type: "string",
+              enum: ["pending", "approved", "rejected", "expired"],
+            },
+          },
+        },
+        Action: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "id",
+            "kind",
+            "status",
+            "idempotency_key",
+            "payload",
+            "created_at",
+            "decided_at",
+            "decided_by",
+          ],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            kind: { type: "string", enum: ["campaign.create", "outreach.draft"] },
+            status: {
+              type: "string",
+              enum: ["pending", "approved", "rejected", "expired"],
+            },
+            idempotency_key: { type: "string" },
+            payload: { type: "object" },
+            created_at: { type: "string" },
+            decided_at: nullableString,
+            decided_by: nullableString,
+          },
+        },
+        ActionPage: pageSchema("Action"),
+        ActionItem: itemSchema("Action"),
       },
     },
   };

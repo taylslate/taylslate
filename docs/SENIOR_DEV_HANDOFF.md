@@ -520,6 +520,127 @@ Migration 068 is not applied. A read-only count on `ldtmhafewfifdizgfrnn`, taken
 - Suffix stripping means `My Show` normalizes to `my`. An em dash stays in the key.
 - Outreach-materialized hidden shows have no `agent_id`, so they are not matched.
 
+## O1: show ownership status, proofs, and the verified tie
+
+### What was built
+
+Two states, unclaimed and verified, plus a Pending tag. `shows.ownership_status` defaults to `unclaimed` and only allows those two values. Pending is not stored as a state. `getOwnershipState` sets `pending` when a `show_ownership_proofs` row is pending or an `agent_show_relationships` row is pending. The labels Verified, Unclaimed, and Pending are exported for owner and admin views. No screen renders them. There is no public badge. Discovery, scoring, booking, and visibility do not read the state.
+
+`public.show_ownership_proofs` is the table O2 and O4 will write. This job does not write rows. Columns cover the code check (`code_hash` is sha256, never the plaintext), the target feed or channel, check and miss counts, and the decision fields. One verified proof per show. `getVerifiedProfileTies` treats a verified row as a tie on `(show_id, show_profile_id)`. Pending, rejected, contested, and expired rows are not ties. A null `show_profile_id` is not a tie. `podscan_id` is not read.
+
+`isPayoutOwnerVerified(showId, showProfileId)` is true only when a verified proof ties that pair. It is not imported by `lib/payouts`, and it does not import payout, Stripe, billing, or aircheck code. Wiring it before the first payout is a separate job.
+
+The three production writers that set `is_claimed: true` now pass false, matching `createShow`'s default. Search, not the stale line numbers in the job note: `importShows` in `lib/data/queries.ts`, `buildShowFromForm` in `app/(dashboard)/shows/shows-client.tsx` (add and edit), and `resolveOwnerShowId` in `lib/data/show-surfaces.ts`. The Shows form does not render the flag. `shows.is_claimed` is not dropped. The column comment marks it deprecated. `show_claims` is dropped at the end of 061. A DO block raises and stops the paste if the table has any rows. The check uses `to_regclass('public.show_claims')`, so a rerun after the drop still succeeds. It had 0 rows on Oct 24, 2026. Re-confirm that count read-only before applying.
+
+Migration 061 is not applied. 065 and 066 are already on main. 061 does not grant or revoke on `shows`, so authenticated keeps SELECT only from 066.
+
+### Where
+
+- `supabase/migrations/061_show_ownership.sql`
+- `supabase/migrations/061_show_ownership.test.ts`
+- `lib/ownership/status.ts`
+- `lib/ownership/status.test.ts`
+- `lib/ownership/payout-gate.ts`
+- `lib/ownership/payout-gate.test.ts`
+- `lib/shows/apply-geography.ts` (third tie branch only)
+- `lib/shows/apply-geography.test.ts`
+- `lib/data/queries.ts` (`importShows` `is_claimed`)
+- `app/(dashboard)/shows/shows-client.tsx` (`buildShowFromForm` `is_claimed`)
+- `lib/data/show-surfaces.ts` (`resolveOwnerShowId` `is_claimed`)
+- `docs/jobs/O1.md`
+
+### Tests
+
+`npx vitest run`: 2135 passed. The throwaway Postgres suite applies 001 through 060, then 065, then 066, then 061 twice. Anon cannot read proofs. Authenticated can read only its own proofs and cannot write. The policy `Owners read own ownership proofs` exists. Seeding one `show_claims` row makes 061 fail and leaves that row in place. Grant rows are in `docs/jobs/O1.md`. `npx tsc --noEmit` is clean and `npx next build` is green. No live writes.
+
+### Known gaps
+
+- `isPayoutOwnerVerified` is not called from `lib/payouts`. A payout can still run for an unverified owner until a separate job wires the helper. Do not wire it without Chris's OK.
+- `lib/data/seed.ts` still sets `is_claimed: true` on demo rows. `scripts/seed-from-podscan.ts` and `scripts/seed-shows-only.ts` copy the field through. Those files are outside this job.
+- No `updated_at` trigger on `show_ownership_proofs`. O2 sets `updated_at` when it writes.
+- Ownership labels are not on any screen. Brand-facing UI must not grow a badge from this export.
+- 061 is not applied on `ldtmhafewfifdizgfrnn`.
+
+## L2
+
+### What was built
+
+Anonymized priors from booked on-platform deals. Booked means `signed`, `live`, `delivering`, or `completed`, with `cancelled_at` null. `show_signed` does not enter. A hidden show does not enter. A group needs at least 5 distinct brands (`coalesce(brand_profile_id, brand_id)`). The deal table stores no brand, deal, show, or user id. `agreed_cpm`, `agreed_placement`, and `agreed_episode_count` win when set. Outcome impressions are used only when `outcomes.booking_id` matches the deal. 069 does not replace `refresh_pooled_import_priors`. 068 is the only definition. A row stays out unless `matched_show_id` is set, `show_match_status` is null or `matched`, and the show is discoverable. Ambiguous rows and hidden shows stay out.
+
+`loadPooledPriors` merges the two tables. Deal priors win on a shared key. Import priors fill the rest. Discovery already calls that loader. A daily cron rebuilds both tables behind `CRON_SECRET`. `/terms` shows the approved consent line.
+
+### Where
+
+- `supabase/migrations/069_pooled_deal_priors.sql` (not applied)
+- `supabase/migrations/069_pooled_deal_priors.test.ts`
+- `lib/learning/pooled-deal-priors.ts`
+- `lib/learning/pooled-deal-priors.test.ts`
+- `lib/learning/pooled-priors.ts`
+- `lib/learning/pooled-priors.test.ts`
+- `app/api/cron/pooled-priors/route.ts`
+- `app/api/cron/pooled-priors/route.test.ts`
+- `vercel.json` (one cron, `0 16 * * *`)
+- `app/terms/page.tsx`
+- `docs/jobs/L2.md`
+
+### Tests
+
+`npx vitest run supabase/migrations/069_pooled_deal_priors.test.ts lib/learning/pooled-deal-priors.test.ts lib/learning/pooled-priors.test.ts app/api/cron/pooled-priors/route.test.ts`
+
+The throwaway Postgres suite applies 001 through 069, including 061 from main `4c5aa7b`. It checks 4 brands against 5, ignores cancelled, `show_signed`, and unsigned deals, drops five booked brands on a hidden show, keeps ambiguous and hidden-show rows out of the import pool, denies anon and authenticated select, execute, and truncate, and re-runs 069. It is skipped when Postgres binaries are absent. No live writes.
+
+### Known gaps
+
+- 069 is not applied. Do not refresh the hosted pool until Chris says so. 068 is on main.
+- Backlog item j. On main `4c5aa7b`, `/terms` is not in `proxy.ts` `isPublicRoute`, and the footer Terms link is still `#`.
+- The two pools are not summed. Each source keeps its own 5-brand bar so one brand cannot be counted twice.
+- `outcomes` is joined on `booking_id = deals.id`. A `show_id`-only join is not used.
+
+## A3: public API v1 writes recorded as pending actions (migration 070)
+
+### What was built
+
+The first public API v1 writes. `POST /api/v1/campaigns` (`write:campaigns`) and `POST /api/v1/outreach` (`write:outreach`) validate a JSON body and insert one `api_write_actions` row. The response is `202` with `{ action_id, status: "pending" }`. The same `Idempotency-Key` and the same payload hash returns that row with `200`. The same key with a different payload returns `409`. A unique-violation race re-reads and settles the same way.
+
+Nothing is executed. These routes do not insert or update campaigns, deals, outreach, shows, or `agent_show_relationships`. They do not send email and they do not charge.
+
+`withApiWrite` sits next to `withApiRead`. It resolves the bearer key, applies the same per-key rate limit, then requires the named scope. `Idempotency-Key` must be 1 to 128 printable ASCII characters after trim. A body over 64 KB is `413`. A body that is not `application/json`, or that fails `JSON.parse`, is `415`. Scope is checked before the body, so a read-only key is `403` without a body. A key whose `brand_id` is not a `profiles` row is `401` through the existing `keyTiedToUser` check.
+
+`GET /api/v1/actions` and `GET /api/v1/actions/{id}` use `withApiRead` and the `read` scope. They return only the calling brand's rows, newest first, with the same cursor as the other lists. Another brand's id is `404`.
+
+An outreach draft's show must be discoverable, or owned by the brand through a deal (`deals.brand_id` or a `brand_profiles` row for that user). Otherwise the response is `404` and no row is inserted. A replay of an already stored action skips that check.
+
+The campaign body matches the manual brief submit checks: product, customer text or a reused pattern uuid, one to three goals, budget at least $5,000, and a flight preset or dates. Unknown keys are `422`. The outreach body requires a show id, a subject of 1 to 200 printable characters, and a body of 30 to 5000 characters.
+
+Migration 070 creates `api_write_actions` with RLS on and zero policies. `service_role` is granted all privileges. `anon`, `public`, and `authenticated` are revoked, including `truncate`, `references`, and `trigger` on `authenticated`. The job placeholder was 069. That file was not created. 070 is not applied.
+
+### Where
+
+- `supabase/migrations/070_api_write_actions.sql`
+- `supabase/migrations/070_api_write_actions.test.ts`
+- `lib/api/v1/writes.ts`
+- `lib/api/v1/writes.test.ts`
+- `lib/api/v1/handler.ts` (`withApiWrite` added; `withApiRead` unchanged)
+- `lib/api/v1/openapi.ts`
+- `lib/api/v1/openapi.test.ts`
+- `app/api/v1/campaigns/route.ts` (`POST` added; `GET` unchanged)
+- `app/api/v1/outreach/route.ts`
+- `app/api/v1/actions/route.ts`
+- `app/api/v1/actions/[id]/route.ts`
+- `app/api/v1/writes.route.test.ts`
+- `docs/jobs/A3.md`
+
+### Tests
+
+`lib/api/v1/writes.test.ts`, `app/api/v1/writes.route.test.ts`, `supabase/migrations/070_api_write_actions.test.ts`, and `lib/api/v1/openapi.test.ts`. The route test asserts the only mutation is an insert into `api_write_actions`. The throwaway Postgres suite applies migrations 001 through 070, then applies 070 again, and checks RLS, constraints, and grants. No UI change, so no screenshots.
+
+### Known gaps
+
+- No approve or reject path. Status stays `pending` until a later job.
+- A reused campaign pattern id is checked as a uuid. It is not loaded, so ownership of that pattern is not checked until something executes the action.
+- `api_key_id` does not cascade when a key row is deleted. Deleting the profile still cascades the action through `brand_id`.
+- The campaign payload has no derived name. The manual brief route builds that name when it creates the row. This route only records the brief fields.
+
 ## S4: signed-in shows SELECT
 
 ### What was built
@@ -546,4 +667,3 @@ No app code was edited. The session-read audit is in `docs/jobs/S4.md`.
 - `getShowBySlug` (`lib/data/queries.ts:1113`) is a session read. A hidden show the caller cannot see returns null, including `createShow`'s slug-conflict return. `queries.ts` belongs to O1 and was not edited.
 - The `show_ownership_proofs` branch waits until O1 has merged and the table exists.
 - `001_initial_schema.sql` omits `shows.agent_id`. The live table has it. 071 reads it and does not add it.
-
