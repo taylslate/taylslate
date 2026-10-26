@@ -667,3 +667,26 @@ No app code was edited. The session-read audit is in `docs/jobs/S4.md`.
 - `getShowBySlug` (`lib/data/queries.ts:1113`) is a session read. A hidden show the caller cannot see returns null, including `createShow`'s slug-conflict return. `queries.ts` belongs to O1 and was not edited.
 - The `show_ownership_proofs` branch waits until O1 has merged and the table exists.
 - `001_initial_schema.sql` omits `shows.agent_id`. The live table has it. 071 reads it and does not add it.
+
+## S-B: Secret scan
+
+### What was built
+
+A docs-only scan of the working tree and of every commit reachable from this clone (426 commits, 2655 blobs). Gitleaks 8.30.1 reported no leaks. The required prefix grep found zero credential-shaped values: no live Stripe key, no test Stripe key, no webhook secret with a real body, no JWT, no PEM private key, and no long `api_key` assignment. The report lists every prefix hit with file, commit, a 4-character prefix, and whether the line is in HEAD. The rotation list is empty. The report also records the GitHub clicks for Secret Protection and push protection, and the clicks to install the Socket GitHub app on `taylslate/taylslate`. No setting was changed.
+
+### Where
+
+- `docs/security/S-B_SECRET_SCAN.md`
+
+### Tests
+
+No vitest test. The check is re-running the two gitleaks commands in the report (history walk and `--no-git` tree walk) and `npx next build`. No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- Gitleaks reports 401 commits scanned. `git rev-list --all` is 426, including 22 merges. The blob walk covers every object those 426 commits reach.
+- Vercel env, Stripe, Supabase, DocuSign, and Resend dashboards were not read. A key that never entered git is outside this result.
+- GitHub secret-scanning alerts were not downloaded, because the alert payload can contain the secret.
+- `.gitignore` does not name `*.key`, `*.p12`, `*.pfx`, or `id_rsa`. None of those names are in history. The file was not edited.
+- After `npx next build`, `gitleaks detect --no-git` also walks gitignored `.next` and flags local Next preview and cache keys. Those values are not in git. The clean-tree result is 0.
+
