@@ -210,7 +210,13 @@ describe.skipIf(!bin)("migration 070 on throwaway postgres", () => {
       create table if not exists public.outcomes (id uuid primary key default gen_random_uuid());
     `);
 
-    for (const path of migrationFiles()) file(path);
+    for (const path of migrationFiles()) {
+      // 001 does not add shows.agent_id. The live table has it, and 068 reads it.
+      if (path.endsWith("068_past_campaign_show_match.sql")) {
+        query("alter table public.shows add column if not exists agent_id uuid;");
+      }
+      file(path);
+    }
     file(sqlPath);
   }, 180_000);
 
