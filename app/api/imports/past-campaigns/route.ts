@@ -3,9 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getAuthenticatedUser, getUserProfile } from "@/lib/data/queries";
 import {
   buildRecordInserts,
-  lookupShowHints,
+  matchPastCampaignShows,
   parseSaveBody,
   PastCampaignImportError,
+  type ShowMatchCandidate,
 } from "@/lib/imports/past-campaigns";
 
 export async function POST(request: NextRequest) {
@@ -32,16 +33,19 @@ export async function POST(request: NextRequest) {
 
     const parsed = parseSaveBody(body);
     const supabase = await createClient();
-    const showIds = await lookupShowHints(
+    // The session user is the only caller. A brand_id in the body is ignored.
+    // past_campaign_show_candidates is login-only (migration 068) and already
+    // drops hidden shows this caller did not create. The decision below
+    // applies that rule again. A failed lookup saves the row unmatched.
+    const matches = await matchPastCampaignShows(
       parsed.drafts.map((draft) => draft.show_name),
-      async (name) => {
-        const { data, error } = await supabase
-          .from("shows")
-          .select("id, name")
-          .ilike("name", name)
-          .limit(2);
-        if (error || !data) return [];
-        return data as { id: string; name: string }[];
+      user.id,
+      async (matchKey) => {
+        const { data, error } = await supabase.rpc("past_campaign_show_candidates", {
+          match_key: matchKey,
+        });
+        if (error || !Array.isArray(data)) return [];
+        return data as ShowMatchCandidate[];
       }
     );
 
@@ -65,12 +69,12 @@ export async function POST(request: NextRequest) {
     }
 
     const importId = inserted.data.id as string;
-    const recordRows = buildRecordInserts(importId, user.id, parsed.drafts, showIds);
+    const recordRows = buildRecordInserts(importId, user.id, parsed.drafts, matches);
     const recorded = await supabase
       .from("past_campaign_records")
       .insert(recordRows)
       .select(
-        "id, import_id, brand_id, show_name, matched_show_id, flight_start, flight_end, placement, price_type, rate, episodes, spend, conversions, downloads, raw"
+        "id, import_id, brand_id, show_name, matched_show_id, show_match_status, show_match_reason, show_match_confidence, flight_start, flight_end, placement, price_type, rate, episodes, spend, conversions, downloads, raw"
       );
 
     if (recorded.error || !Array.isArray(recorded.data) || recorded.data.length !== recordRows.length) {

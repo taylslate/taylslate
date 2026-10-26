@@ -329,7 +329,7 @@ async function resolveOwnerShowId(
       method: "email",
     },
     data_sources: ["show_owner"],
-    is_claimed: true,
+    is_claimed: false,
     is_verified: false,
     is_discoverable: false,
   });
