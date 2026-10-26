@@ -957,9 +957,11 @@ A new campaign created by `POST /api/campaigns/brief` stores `platforms: ["podca
 
 ### Tests
 
-`npx vitest run app/api/campaigns/brief/route.test.ts lib/discovery/conviction-discovery.test.ts`
+`npx vitest run app/api/campaigns/brief/route.test.ts lib/discovery/conviction-discovery.test.ts` (75 passed).
 
 The brief route test asserts both inserts pass `platforms: ["podcast", "youtube"]`. Conviction discovery asserts a new campaign (`["podcast", "youtube"]`) and an empty platform list both pass `youtube` into `discover()`, and a stored `["podcast"]` list does not.
+
+Full `npx vitest run`: 263 files, 2338 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 134 pages.
 
 No page or component was edited. Screenshots are not applicable.
 
