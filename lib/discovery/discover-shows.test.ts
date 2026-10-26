@@ -28,6 +28,7 @@ import {
   excludeDeadYouTube,
   isDeadYouTube,
   passesYouTubeMarketFilter,
+  youtubeBrandMatch,
   youtubeInterestRetry,
 } from "./discover-shows";
 import {
@@ -150,16 +151,18 @@ describe("passesYouTubeMarketFilter", () => {
 });
 
 describe("YouTube discovery quota", () => {
-  it("documents 4 x 100 channel searches plus detail calls", () => {
+  it("documents 4 x 100 channel searches, detail calls, and top-10 recent stats", () => {
     expect(YOUTUBE_DISCOVERY_QUOTA.channelSearch).toBe(400);
     expect(YOUTUBE_DISCOVERY_QUOTA.channelDetailsWorstCase).toBe(2);
-    expect(YOUTUBE_DISCOVERY_QUOTA.recentVideoStats).toBe(303);
+    // Top 10 market survivors: 10 x (search.list 100 + videos.list 1) = 1,010.
+    // Channel search 400 + channel details 2 = 402. 1,010 + 402 = 1,412.
+    expect(YOUTUBE_DISCOVERY_QUOTA.recentVideoStats).toBe(1010);
     expect(YOUTUBE_DISCOVERY_QUOTA.worstCase).toBe(
       YOUTUBE_DISCOVERY_QUOTA.channelSearch +
         YOUTUBE_DISCOVERY_QUOTA.channelDetailsWorstCase +
         YOUTUBE_DISCOVERY_QUOTA.recentVideoStats
     );
-    expect(YOUTUBE_DISCOVERY_QUOTA.worstCase).toBe(705);
+    expect(YOUTUBE_DISCOVERY_QUOTA.worstCase).toBe(1412);
   });
 });
 
@@ -546,12 +549,118 @@ function recentStats(averageViews: number) {
   };
 }
 
+describe("youtubeBrandMatch", () => {
+  it("keeps shop-my and merch-store lines, and a bare shop or store", () => {
+    expect(youtubeBrandMatch({ title: "The Dr. Gundry Podcast", description: "shop my favorites" })).toBe(
+      null
+    );
+    expect(
+      youtubeBrandMatch({ title: "Jordan Dorn | Zuma Nutrition", description: "merch store" })
+    ).toBe(null);
+    expect(youtubeBrandMatch({ title: "Lab", description: "a shop for lifters and your training" })).toBe(
+      null
+    );
+    expect(youtubeBrandMatch({ title: "Lab", description: "the store for your training" })).toBe(null);
+    expect(youtubeBrandMatch({ title: "Lab", description: "SHOP MY FAVORITES" })).toBe(null);
+    expect(youtubeBrandMatch({ title: "Lab", description: "Merch Store" })).toBe(null);
+  });
+
+  it("does not treat shop or store as a substring of another word", () => {
+    expect(youtubeBrandMatch({ title: "Lab", description: "restore your workshop" })).toBe(null);
+    expect(youtubeBrandMatch({ title: "Costco", description: "training for your health" })).toBe(null);
+    expect(youtubeBrandMatch({ title: "Shop Talk", description: "training for your health" })).toBe(null);
+    expect(youtubeBrandMatch({ title: "Official Gear", description: "training for your health" })).toBe(
+      null
+    );
+  });
+
+  it("drops a strong commercial phrase when the description has no creator signal", () => {
+    expect(
+      youtubeBrandMatch({
+        title: "Supplement Brand",
+        description: "Visit our official website and use code SAVE",
+      })
+    ).toBe("official website");
+    expect(youtubeBrandMatch({ title: "Brand", description: "see our products for your training" })).toBe(
+      "our products"
+    );
+    expect(youtubeBrandMatch({ title: "Brand", description: "buy now for your plan" })).toBe("buy now");
+    expect(youtubeBrandMatch({ title: "Brand", description: "free shipping on every order" })).toBe(
+      "free shipping"
+    );
+    expect(youtubeBrandMatch({ title: "Brand", description: "use code SAVE at checkout" })).toBe(
+      "use code"
+    );
+    expect(youtubeBrandMatch({ title: "Brand", description: "contact customer service" })).toBe(
+      "customer service"
+    );
+    expect(youtubeBrandMatch({ title: "Brand", description: "order now for delivery" })).toBe("order now");
+  });
+
+  it("does not match a commercial phrase inside a longer word", () => {
+    expect(youtubeBrandMatch({ title: "Brand", description: "buy nowadays" })).toBe(null);
+    expect(youtubeBrandMatch({ title: "Brand", description: "use codec in your edit" })).toBe(null);
+    expect(youtubeBrandMatch({ title: "Brand", description: "unofficial website" })).toBe(null);
+    expect(youtubeBrandMatch({ title: "Brand", description: "our production notes" })).toBe(null);
+  });
+
+  it("keeps a commercial phrase when the description has a creator signal", () => {
+    expect(
+      youtubeBrandMatch({
+        title: "Dr. Gundry",
+        description: "I'm a host. Visit our official website and use code GUNDRY. Shop my favorites.",
+      })
+    ).toBe(null);
+    expect(
+      youtubeBrandMatch({
+        title: "Trainer",
+        description: "use code FIT on my merch store",
+      })
+    ).toBe(null);
+  });
+
+  it("drops a title that ends with a company marker even when the description is a creator", () => {
+    expect(
+      youtubeBrandMatch({ title: "Maker Co", description: "shop my favorites" })
+    ).toBe("Co");
+    expect(youtubeBrandMatch({ title: "Maker Co.", description: "the channel for your training" })).toBe(
+      "Co"
+    );
+    expect(youtubeBrandMatch({ title: "Acme, Inc.", description: "the channel for your training" })).toBe(
+      "Inc"
+    );
+    expect(youtubeBrandMatch({ title: "Acme LLC", description: "the channel for your training" })).toBe(
+      "LLC"
+    );
+    expect(youtubeBrandMatch({ title: "Nike Official", description: "the channel for your training" })).toBe(
+      "Official"
+    );
+    expect(youtubeBrandMatch({ title: "Gear Store", description: "the channel for your training" })).toBe(
+      "Store"
+    );
+    expect(youtubeBrandMatch({ title: "Gear Shop", description: "shop my favorites" })).toBe("Shop");
+  });
+
+  it("does not drop old substring keywords that are not a strong phrase or a title marker", () => {
+    expect(
+      youtubeBrandMatch({
+        title: "Founded Brand",
+        description: "Founded in 2014. We manufacture home gym equipment. Shop now. Discount code inside.",
+      })
+    ).toBe(null);
+  });
+});
+
 describe("YouTube post-filter stage logs", () => {
   beforeEach(() => {
     vi.mocked(getYouTubeClientSafe).mockReset();
   });
 
-  it("returns the same shows and logs each post-filter drop", async () => {
+  it("keeps creator lines and applies both video-count and average-view floors", async () => {
+    const tenStats = recentStats(20_000);
+    const shopStats = recentStats(15_000);
+    const merchStats = recentStats(12_000);
+    const recentEdgeStats = recentStats(10_000);
     const channels = [
       detail({
         channelId: "IN1",
@@ -566,11 +675,42 @@ describe("YouTube post-filter stage logs", () => {
         channelId: "FEW",
         title: "Few Videos",
         subscriberCount: 900_000,
-        videoCount: 19,
+        videoCount: 9,
         totalViewCount: 5_000_000,
       }),
       detail({
-        channelId: "BRAND",
+        channelId: "TEN",
+        title: "Ten Videos",
+        subscriberCount: 800_000,
+        videoCount: 10,
+        totalViewCount: 60_000,
+      }),
+      detail({
+        channelId: "SHOP_MY",
+        title: "The Dr. Gundry Podcast",
+        subscriberCount: 700_000,
+        videoCount: 19,
+        totalViewCount: 1_900_000,
+        description: "shop my favorites",
+      }),
+      detail({
+        channelId: "MERCH",
+        title: "Jordan Dorn | Zuma Nutrition",
+        subscriberCount: 600_000,
+        videoCount: 40,
+        totalViewCount: 2_000_000,
+        description: "merch store",
+      }),
+      detail({
+        channelId: "COMMERCIAL",
+        title: "Supplement Brand",
+        subscriberCount: 500_000,
+        videoCount: 80,
+        totalViewCount: 8_000_000,
+        description: "Visit our official website and use code SAVE",
+      }),
+      detail({
+        channelId: "TITLE_CO",
         title: "Maker Co",
         subscriberCount: 400_000,
         videoCount: 80,
@@ -578,51 +718,67 @@ describe("YouTube post-filter stage logs", () => {
         description: "We manufacture home gym equipment for your training",
       }),
       detail({
-        channelId: "KEEP_HIGH",
-        title: "High Views",
-        subscriberCount: 250_000,
+        channelId: "RECENT_MID",
+        title: "Recent Mid",
+        subscriberCount: 300_000,
         videoCount: 40,
         totalViewCount: 2_000_000,
       }),
       detail({
-        channelId: "KEEP_MID",
-        title: "Mid Views",
+        channelId: "RECENT_EDGE",
+        title: "Recent Edge",
+        subscriberCount: 250_000,
+        videoCount: 40,
+        totalViewCount: 40_000,
+      }),
+      detail({
+        channelId: "RECENT_LOW",
+        title: "Recent Low",
+        subscriberCount: 200_000,
+        videoCount: 40,
+        totalViewCount: 2_000_000,
+      }),
+      detail({
+        channelId: "FALLBACK_MID",
+        title: "Catalog Mid",
         subscriberCount: 80_000,
-        videoCount: 30,
-        totalViewCount: 1_200_000,
+        videoCount: 40,
+        totalViewCount: 240_000,
       }),
       detail({
-        channelId: "BRAND2",
-        title: "Founded Brand",
-        subscriberCount: 60_000,
-        videoCount: 50,
-        totalViewCount: 4_000_000,
-        description: "Founded in 2014. The channel for your training and your health",
-      }),
-      detail({
-        channelId: "KEEP_LOW",
-        title: "Steady Views",
+        channelId: "FALLBACK_EDGE",
+        title: "Catalog Edge",
         subscriberCount: 50_000,
-        videoCount: 25,
-        totalViewCount: 500_000,
-      }),
-      detail({
-        channelId: "KEEP_EDGE",
-        title: "Edge Views",
-        subscriberCount: 30_000,
-        videoCount: 20,
-        totalViewCount: 200_000,
-      }),
-      detail({
-        channelId: "LOW",
-        title: "Low Views",
-        subscriberCount: 20_000,
         videoCount: 40,
         totalViewCount: 200_000,
       }),
+      detail({
+        channelId: "FALLBACK_LOW",
+        title: "Catalog Low",
+        subscriberCount: 40_000,
+        videoCount: 40,
+        totalViewCount: 199_960,
+      }),
     ];
     const byId = new Map(channels.map((channel) => [channel.channelId, channel]));
-    const highStats = recentStats(80_000);
+    const statsById: Record<string, ReturnType<typeof recentStats> | null> = {
+      FEW: recentStats(90_000),
+      TEN: tenStats,
+      SHOP_MY: shopStats,
+      MERCH: merchStats,
+      COMMERCIAL: recentStats(50_000),
+      TITLE_CO: recentStats(70_000),
+      RECENT_MID: recentStats(6_000),
+      RECENT_EDGE: recentEdgeStats,
+      RECENT_LOW: recentStats(9_999),
+      FALLBACK_MID: null,
+    };
+    const getRecentVideoStats = vi.fn(async (channelId: string) => {
+      if (!(channelId in statsById)) {
+        throw new Error(`unexpected stats fetch ${channelId}`);
+      }
+      return statsById[channelId];
+    });
 
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
       searchChannels: vi.fn(async () =>
@@ -635,12 +791,7 @@ describe("YouTube post-filter stage logs", () => {
       getMultipleChannelDetails: vi.fn(async (ids: string[]) =>
         ids.map((id) => byId.get(id)).filter((row): row is YouTubeChannelDetails => !!row)
       ),
-      getRecentVideoStats: vi.fn(async (channelId: string) => {
-        if (channelId === "KEEP_HIGH") return highStats;
-        if (channelId === "FEW") return recentStats(90_000);
-        if (channelId === "BRAND") return recentStats(70_000);
-        return recentStats(1);
-      }),
+      getRecentVideoStats,
     } as never);
 
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -648,25 +799,40 @@ describe("YouTube post-filter stage logs", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       const expected = [
-        youtubeChannelToShow(byId.get("KEEP_HIGH")!, highStats),
-        youtubeChannelToShow(byId.get("KEEP_MID")!),
-        youtubeChannelToShow(byId.get("KEEP_LOW")!),
-        youtubeChannelToShow(byId.get("KEEP_EDGE")!),
+        youtubeChannelToShow(byId.get("TEN")!, tenStats),
+        youtubeChannelToShow(byId.get("SHOP_MY")!, shopStats),
+        youtubeChannelToShow(byId.get("MERCH")!, merchStats),
+        youtubeChannelToShow(byId.get("RECENT_EDGE")!, recentEdgeStats),
+        youtubeChannelToShow(byId.get("FALLBACK_MID")!),
+        youtubeChannelToShow(byId.get("FALLBACK_EDGE")!),
       ];
       const errors: string[] = [];
       const result = await discoverFromYoutube(["endurance athletes"], errors);
 
       expect(result).toEqual(expected);
       expect(errors).toEqual([]);
+      expect(getRecentVideoStats.mock.calls.map((call) => call[0])).toEqual([
+        "FEW",
+        "TEN",
+        "SHOP_MY",
+        "MERCH",
+        "COMMERCIAL",
+        "TITLE_CO",
+        "RECENT_MID",
+        "RECENT_EDGE",
+        "RECENT_LOW",
+        "FALLBACK_MID",
+      ]);
       expect(log.mock.calls.map((call) => call[0])).toEqual([
         `[discovery] Running 1 YouTube queries...`,
-        `[discovery] YouTube query 1 "endurance athletes" → 9 channels`,
-        `[discovery] YouTube after market filter: 8 of 9`,
-        `[discovery] YouTube dropped videoCount < 20: 1`,
-        `[discovery] YouTube dropped brand keyword: 2; first 2: "Maker Co" matched "we manufacture"; "Founded Brand" matched "founded in"`,
-        `[discovery] YouTube dropped avgViews < 10000: 1`,
-        `[discovery] YouTube survivor median avgViews: 30000`,
-        `[discovery] YouTube returned: 4`,
+        `[discovery] YouTube query 1 "endurance athletes" → 13 channels`,
+        `[discovery] YouTube after market filter: 12 of 13`,
+        `[discovery] YouTube dropped videoCount < 10: 1`,
+        `[discovery] YouTube dropped brand keyword: 2; first 2: "Supplement Brand" matched "official website"; "Maker Co" matched "Co"`,
+        `[discovery] YouTube dropped avgViews: 3 (recent < 10000: 2, fallback < 5000: 1)`,
+        `[discovery] YouTube avgViews method: recent=6 fallback=3`,
+        `[discovery] YouTube survivor median avgViews: 11000`,
+        `[discovery] YouTube returned: 6`,
       ]);
     } finally {
       log.mockRestore();
@@ -676,16 +842,16 @@ describe("YouTube post-filter stage logs", () => {
 
   it("names only the first 5 brand-keyword channels and returns none", async () => {
     const cases = [
-      { title: "Brand 1", description: "a shop for lifters and your training", keyword: "shop" },
-      { title: "Brand 2", description: "the store for your training", keyword: "store" },
-      { title: "Brand 3", description: "buy now for your training plan", keyword: "buy now" },
       {
-        title: "Brand 4",
-        description: "our official website for your training",
+        title: "Brand 1",
+        description: "Visit our official website for your training",
         keyword: "official website",
       },
-      { title: "Brand 5", description: "see our products for your training", keyword: "our products" },
-      { title: "Brand 6", description: "order now for your training", keyword: "order now" },
+      { title: "Brand 2", description: "see our products for your training", keyword: "our products" },
+      { title: "Brand 3", description: "buy now for your training plan", keyword: "buy now" },
+      { title: "Brand 4", description: "free shipping on your training gear", keyword: "free shipping" },
+      { title: "Brand 5", description: "use code SAVE for your training", keyword: "use code" },
+      { title: "Brand 6", description: "contact customer service for your training", keyword: "customer service" },
     ];
     const channels = cases.map((row, index) =>
       detail({
@@ -721,8 +887,11 @@ describe("YouTube post-filter stage logs", () => {
           .map((row) => `"${row.title}" matched "${row.keyword}"`)
           .join("; ")}`
       );
-      expect(lines).toContain(`[discovery] YouTube dropped videoCount < 20: 0`);
-      expect(lines).toContain(`[discovery] YouTube dropped avgViews < 10000: 0`);
+      expect(lines).toContain(`[discovery] YouTube dropped videoCount < 10: 0`);
+      expect(lines).toContain(
+        `[discovery] YouTube dropped avgViews: 0 (recent < 10000: 0, fallback < 5000: 0)`
+      );
+      expect(lines).toContain(`[discovery] YouTube avgViews method: recent=0 fallback=0`);
       expect(lines).toContain(`[discovery] YouTube survivor median avgViews: n/a`);
       expect(lines).toContain(`[discovery] YouTube returned: 0`);
     } finally {
