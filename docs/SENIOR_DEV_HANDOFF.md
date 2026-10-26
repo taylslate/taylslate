@@ -730,3 +730,23 @@ PGlite proves an authenticated user cannot insert or update `payments`, cannot c
 - A table-level UPDATE grant still covers the locked columns. The column revoke does not remove it. The trigger rejects the write.
 - `reset_monthly_campaigns` is invoker and updates `campaigns_this_month`. Nothing in the app calls it. An authenticated call would now fail the trigger.
 
+## S-A
+
+### What was built
+
+Read-only security inventory. Live `SELECT` against project `ldtmhafewfifdizgfrnn` on 2026-10-26. 43 public tables, 120 `app/api` routes, findings SA-01 through SA-24. No app code, migration, config, or settings change. No live writes, charges, or sends.
+
+### Where
+
+- `docs/security/S-A_FINDINGS.md`
+
+### Tests
+
+No new vitest tests. This job is docs only. Verification: the table count in the doc is 43, matching `pg_tables` for `public`. The route table has 120 rows, matching `route.ts` files under `app/api`. `git diff --stat` is only this file and the findings doc. `npx next build` is recorded on the PR. No page or component was touched. Screenshots are not applicable.
+
+### Known gaps
+
+- The audit did not send a user JWT. PostgREST writes in SA-01 through SA-05 and SA-24 are inferred from grants, policies, and the charge code, not from a live probe.
+- `/callback` was not re-walked.
+- `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were read and not edited.
+- No migration was applied. Paul reviews. Do not merge.
