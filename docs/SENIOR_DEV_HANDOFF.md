@@ -1177,3 +1177,48 @@ No page or component was edited. Screenshots are not applicable.
 - Filters, thresholds, scoring, weights, and the shows returned were not changed. This does not fix campaign `ce672dc1`. It names the stage.
 - No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
 - Live confirmation waits on deploy. Rerun `ce672dc1` or a new 1-ring campaign within the hour. Read the YouTube count at each logged stage, and any `YouTube discovery failed` error. D7 is the fix against that stage.
+
+## D7
+
+### What was built
+
+YouTube pre-filters keep more real US creators. The dead-YouTube filter, the market filter, scoring, weights, bands, tiers, podcast discovery, the UI, env, and the database are unchanged.
+
+Brand check is `youtubeBrandMatch`. Phrases match on word boundaries. Bare "shop" and "store" are not description keywords, so "shop my favorites" and "merch store" stay, and so do "workshop" and "restore". A description marks a brand only when it has a strong commercial phrase and no creator signal. The phrases are "official website", "our products", "buy now", "free shipping", "use code", "customer service", and "order now". Creator signals, also word boundaries in the description, are: i, i'm, i am, my, me, host, creator, podcast, youtuber, vlog, vlogs, vlogger, merch, favorite, favorites. A title that ends with Inc, LLC, Official, Store, Shop, or Co is a brand even when the description has a creator signal. A trailing period on the title is ignored. The D6 match log is the same shape: the drop count, then the first 5 `"title" matched "keyword"` pairs. The logged keyword is the first matching phrase, or the title marker when the phrase did not fire.
+
+`MIN_YOUTUBE_VIDEO_COUNT` is 10 (was 20). A channel with 10 videos can pass. 9 still drops.
+
+Recent video stats are fetched for the top 10 market survivors by subscriber count (was 3). When that call returns stats, the average-views floor stays 10,000. When it does not (the channel is outside the top 10, or the call returns null or throws), the floor is 5,000 on total views divided by video count. The views drop line names both floors. A separate line logs how many channels that reached the views check used each method, including channels the views check then dropped. Channels dropped earlier for video count or brand are not in that count.
+
+Quota, Data API units: channel search 4 x 100 = 400; channel details worst case 2; recent stats 10 x (search.list 100 + videos.list 1) = 1,010. 1,010 + 402 = 1,412, about 1.4k per run. A cap of 6 would be 6 x 101 + 402 = 1,008, about 1k. This change uses 10.
+
+`key=` redaction on the YouTube error path is unchanged. This change does not log the API key.
+
+### Where
+
+- `lib/discovery/discover-shows.ts` (post-filter block, brand match, video-count floor, average-views floors, quota)
+- `lib/discovery/discover-shows.test.ts`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run lib/discovery/discover-shows.test.ts` (29 passed).
+
+Brand cases: "shop my favorites" and "merch store" stay, including The Dr. Gundry Podcast and Jordan Dorn | Zuma Nutrition titles; bare "shop" and "store" stay; "workshop" and "restore" stay; "official website" plus "use code" drops as "official website"; each strong phrase drops on its own; "buy nowadays", "use codec", "unofficial website", and "our production" stay; a creator signal ("I'm", "my", "merch") keeps a commercial phrase; title endings Inc, LLC, Official, Store, Shop, and Co drop even with "shop my favorites"; "founded in", "we manufacture", "shop now", and "discount code" no longer drop. "Costco", "Shop Talk", and "Official Gear" do not match a title marker.
+
+Funnel fixture: video count 9 drops and 10 stays; video count 19 stays; recent stats 6,000 and 9,999 drop while 10,000 stays; catalog fallback 6,000 and 5,000 stay while 4,999 drops. Recent stats are requested for the top 10 market survivors only. The log lines assert both floors, the method counts (recent=6, fallback=3), the two named brand matches, and the survivor median. A six-channel brand fixture still returns none and names only the first 5. The redacted `key=` error cases are unchanged.
+
+Full `npx vitest run`: 265 files, 2393 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 134 pages.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- A brand description that also says I, my, me, host, creator, podcast, merch, favorite, or vlog is not dropped by the phrase list. A title marker still drops it.
+- "discount code", "shop now", "our company", "founded in", and "we manufacture" no longer drop a channel. "use code" still does, when the description has no creator signal.
+- Recent stats still run on the top 10 after the market filter, before the video-count and brand checks. A tiny or brand channel in that ten uses a stats call (101 units) and can push a real creator onto the 5,000 fallback.
+- The fallback divides lifetime views by every video, so a long back catalog still looks smaller than recent uploads. The 5,000 floor is the allowance for that. Channels inside the top 10 use the 10,000 floor on the fetched stats.
+- A title that ends in the word Co is dropped. "Costco" is not, because Co is not its own word.
+- The method line counts channels that reached the views check, not every market survivor.
+- No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
+- Live confirmation waits on deploy. Rerun a 1-ring Ritual campaign within the hour. Target: at least 10 YouTube channels returned, no obvious brand channels, and YouTube rows in `conviction_scores`. Campaign `67cada7c` is the reference (3 returned: Healing Cave Lady, KenDBerryMD, Brandon Shepherd).

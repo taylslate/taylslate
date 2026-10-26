@@ -54,38 +54,82 @@ export interface DiscoveryResult {
 
 /** Minimum audience size for discovered shows */
 const MIN_PODCAST_AUDIENCE = 5000;
+/** Floor when average views come from a recent-video stats fetch. */
 const MIN_YOUTUBE_AVG_VIEWS = 10000;
-const MIN_YOUTUBE_VIDEO_COUNT = 20;
+/** Floor when average views fall back to total views / video count. */
+const MIN_YOUTUBE_AVG_VIEWS_FALLBACK = 5000;
+const MIN_YOUTUBE_VIDEO_COUNT = 10;
 
 /** search.list maxResults per ring. YouTube allows up to 50. */
 const YOUTUBE_SEARCH_MAX_RESULTS = 25;
 /** channels.list accepts at most 50 ids per call. */
 const YOUTUBE_CHANNEL_ID_BATCH = 50;
+/**
+ * Market survivors that get a recent-video stats fetch, highest
+ * subscriber count first. 10 x (search.list 100 + videos.list 1).
+ * A cap of 6 would be about 1k units (6 x 101 + 402). Default is 10.
+ */
+const YOUTUBE_RECENT_STATS_CHANNELS = 10;
 
 /**
  * YouTube Data API units for one discovery run.
  * Channel search: MAX_YOUTUBE_SEARCHES x 100 = 400.
  * Channel details: 1 unit per batch of 50 ids. Worst case is 4 x 25 = 100
- * channels, which is 2 calls.
- * Recent video stats stay on the top 3 channels that pass the market
- * filter. Each is one search.list (100) plus one videos.list (1) = 303.
- * Worst case: 400 + 2 + 303 = 705.
+ * channels, which is 2 calls. Together that is 402.
+ * Recent video stats run for the top 10 channels that pass the market
+ * filter. Each is one search.list (100) plus one videos.list (1) = 101.
+ * 10 x 101 = 1,010. Worst case: 1,010 + 402 = 1,412 (about 1.4k).
  */
 export const YOUTUBE_DISCOVERY_QUOTA = {
   channelSearch: MAX_YOUTUBE_SEARCHES * 100,
   channelDetailsWorstCase: Math.ceil(
     (MAX_YOUTUBE_SEARCHES * YOUTUBE_SEARCH_MAX_RESULTS) / YOUTUBE_CHANNEL_ID_BATCH
   ),
-  recentVideoStats: 3 * (100 + 1),
-  worstCase: 705,
+  recentVideoStats: YOUTUBE_RECENT_STATS_CHANNELS * (100 + 1),
+  worstCase:
+    MAX_YOUTUBE_SEARCHES * 100 +
+    Math.ceil((MAX_YOUTUBE_SEARCHES * YOUTUBE_SEARCH_MAX_RESULTS) / YOUTUBE_CHANNEL_ID_BATCH) +
+    YOUTUBE_RECENT_STATS_CHANNELS * (100 + 1),
 } as const;
 
-/** Keywords that indicate a YouTube channel is a brand/company, not a creator */
-const BRAND_CHANNEL_KEYWORDS = [
-  "shop", "store", "buy now", "official website", "our products",
-  "order now", "free shipping", "discount code", "use code",
-  "shop now", "our company", "founded in", "we manufacture",
-];
+/**
+ * Strong commercial phrases. Matched on word boundaries in the description.
+ * A hit is a brand channel only when the description has no creator signal.
+ * Bare "shop" and "store" are not in this list (creators write "shop my
+ * favorites" and "merch store"). "shop" and "store" still count when the
+ * title ends with them.
+ */
+const BRAND_COMMERCIAL_PHRASES = [
+  "official website",
+  "our products",
+  "buy now",
+  "free shipping",
+  "use code",
+  "customer service",
+  "order now",
+] as const;
+
+const BRAND_COMMERCIAL_PHRASE_RES = BRAND_COMMERCIAL_PHRASES.map((phrase) => ({
+  phrase,
+  re: new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"),
+}));
+
+/** Title suffixes that mark a company channel. Compared at a word boundary. */
+const BRAND_TITLE_MARKER_LABELS: Record<string, string> = {
+  inc: "Inc",
+  llc: "LLC",
+  official: "Official",
+  store: "Store",
+  shop: "Shop",
+  co: "Co",
+};
+
+/**
+ * First person or host language in the description. A commercial phrase
+ * does not mark a brand when one of these is present. Title markers still do.
+ */
+const CREATOR_SIGNAL =
+  /\b(?:i am|i'm|i’m|i|my|me|host|creator|podcast|youtuber|vlogs?|vlogger|merch|favorites?)\b/i;
 
 /**
  * Discover shows from Podscan and YouTube APIs based on a campaign brief.
@@ -230,7 +274,7 @@ async function discoverFromPodscan(
  * Search YouTube for the planned queries (capped at 4). searchChannels sends
  * regionCode=US and relevanceLanguage=en. Those bias ranking. The market
  * filter below is the hard keep/drop, using the channel-details response.
- * Recent video stats still run for the top 3 channels that survive it.
+ * Recent video stats still run for the top 10 channels that survive it.
  *
  * If every search returns 0 channels, run the interest fallback once when it
  * was not already searched and the 4-search cap still has room.
@@ -310,17 +354,17 @@ export async function discoverFromYoutube(
     if (inMarket.length === 0) return [];
 
     const ranked = [...inMarket].sort((a, b) => b.subscriberCount - a.subscriberCount);
-    const top3 = ranked.slice(0, 3);
+    const statsTargets = ranked.slice(0, YOUTUBE_RECENT_STATS_CHANNELS);
 
-    const statsPromises = top3.map((ch) =>
+    const statsPromises = statsTargets.map((ch) =>
       client.getRecentVideoStats(ch.channelId, 5).catch(() => null)
     );
     const statsResults = await Promise.all(statsPromises);
 
     const statsMap = new Map<string, NonNullable<(typeof statsResults)[0]>>();
-    for (let i = 0; i < top3.length; i++) {
+    for (let i = 0; i < statsTargets.length; i++) {
       if (statsResults[i]) {
-        statsMap.set(top3[i].channelId, statsResults[i]!);
+        statsMap.set(statsTargets[i].channelId, statsResults[i]!);
       }
     }
 
@@ -332,6 +376,10 @@ export async function discoverFromYoutube(
     let droppedBrandKeyword = 0;
     const brandKeywordMatches: string[] = [];
     let droppedAvgViews = 0;
+    let droppedRecentViews = 0;
+    let droppedFallbackViews = 0;
+    let recentMethod = 0;
+    let fallbackMethod = 0;
     const survivorAvgViews: number[] = [];
 
     for (const ch of ranked) {
@@ -340,8 +388,7 @@ export async function discoverFromYoutube(
         continue;
       }
 
-      const descLower = (ch.description ?? "").toLowerCase();
-      const matchedKeyword = BRAND_CHANNEL_KEYWORDS.find((kw) => descLower.includes(kw));
+      const matchedKeyword = youtubeBrandMatch(ch);
       if (matchedKeyword) {
         droppedBrandKeyword++;
         if (brandKeywordMatches.length < 5) {
@@ -351,10 +398,16 @@ export async function discoverFromYoutube(
       }
 
       const stats = statsMap.get(ch.channelId);
-      const avgViews =
-        stats?.averageViews ?? Math.round(ch.totalViewCount / Math.max(ch.videoCount, 1));
-      if (avgViews < MIN_YOUTUBE_AVG_VIEWS) {
+      const avgViews = stats
+        ? stats.averageViews
+        : Math.round(ch.totalViewCount / Math.max(ch.videoCount, 1));
+      const minViews = stats ? MIN_YOUTUBE_AVG_VIEWS : MIN_YOUTUBE_AVG_VIEWS_FALLBACK;
+      if (stats) recentMethod++;
+      else fallbackMethod++;
+      if (avgViews < minViews) {
         droppedAvgViews++;
+        if (stats) droppedRecentViews++;
+        else droppedFallbackViews++;
         continue;
       }
 
@@ -373,7 +426,10 @@ export async function discoverFromYoutube(
           : "")
     );
     console.log(
-      `[discovery] YouTube dropped avgViews < ${MIN_YOUTUBE_AVG_VIEWS}: ${droppedAvgViews}`
+      `[discovery] YouTube dropped avgViews: ${droppedAvgViews} (recent < ${MIN_YOUTUBE_AVG_VIEWS}: ${droppedRecentViews}, fallback < ${MIN_YOUTUBE_AVG_VIEWS_FALLBACK}: ${droppedFallbackViews})`
+    );
+    console.log(
+      `[discovery] YouTube avgViews method: recent=${recentMethod} fallback=${fallbackMethod}`
     );
     console.log(
       `[discovery] YouTube survivor median avgViews: ${medianAvgViews === null ? "n/a" : medianAvgViews}`
@@ -392,6 +448,32 @@ export async function discoverFromYoutube(
     errors.push(`YouTube discovery failed: ${message}`);
     return [];
   }
+}
+
+/**
+ * Brand-channel label for the D6 match log, or null when the channel is a
+ * creator. Description phrases match on word boundaries and only count when
+ * the description has no creator signal. A title that ends with Inc, LLC,
+ * Official, Store, Shop, or Co is a brand either way.
+ */
+export function youtubeBrandMatch(channel: {
+  title?: string | null;
+  description?: string | null;
+}): string | null {
+  const description = channel.description ?? "";
+  if (!CREATOR_SIGNAL.test(description)) {
+    for (const { phrase, re } of BRAND_COMMERCIAL_PHRASE_RES) {
+      if (re.test(description)) return phrase;
+    }
+  }
+  return titleCompanyMarker(channel.title ?? "");
+}
+
+function titleCompanyMarker(title: string): string | null {
+  const trimmed = title.trim().replace(/[\s.]+$/g, "");
+  const match = trimmed.match(/\b(inc|llc|official|store|shop|co)$/i);
+  if (!match) return null;
+  return BRAND_TITLE_MARKER_LABELS[match[1].toLowerCase()] ?? match[1];
 }
 
 /** Median of a numeric list. Even counts average the two middle values. */
