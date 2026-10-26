@@ -151,18 +151,18 @@ describe("passesYouTubeMarketFilter", () => {
 });
 
 describe("YouTube discovery quota", () => {
-  it("documents 4 x 100 channel searches, detail calls, and top-10 recent stats", () => {
-    expect(YOUTUBE_DISCOVERY_QUOTA.channelSearch).toBe(400);
-    expect(YOUTUBE_DISCOVERY_QUOTA.channelDetailsWorstCase).toBe(2);
+  it("documents 4 x 100 video searches, detail calls, and top-10 recent stats", () => {
+    expect(YOUTUBE_DISCOVERY_QUOTA.videoSearch).toBe(400);
+    expect(YOUTUBE_DISCOVERY_QUOTA.channelDetailsWorstCase).toBe(4);
     // Top 10 market survivors: 10 x (search.list 100 + videos.list 1) = 1,010.
-    // Channel search 400 + channel details 2 = 402. 1,010 + 402 = 1,412.
+    // Video search 400 + channel details 4 = 404. 1,010 + 404 = 1,414.
     expect(YOUTUBE_DISCOVERY_QUOTA.recentVideoStats).toBe(1010);
     expect(YOUTUBE_DISCOVERY_QUOTA.worstCase).toBe(
-      YOUTUBE_DISCOVERY_QUOTA.channelSearch +
+      YOUTUBE_DISCOVERY_QUOTA.videoSearch +
         YOUTUBE_DISCOVERY_QUOTA.channelDetailsWorstCase +
         YOUTUBE_DISCOVERY_QUOTA.recentVideoStats
     );
-    expect(YOUTUBE_DISCOVERY_QUOTA.worstCase).toBe(1412);
+    expect(YOUTUBE_DISCOVERY_QUOTA.worstCase).toBe(1414);
   });
 });
 
@@ -235,7 +235,7 @@ describe("discoverShows YouTube rings", () => {
       ],
     ]);
 
-    const searchChannels = vi.fn(async (query: string, _maxResults?: number) => {
+    const searchVideos = vi.fn(async (query: string, _maxResults?: number) => {
       if (query === "endurance athletes") {
         return [
           { channelId: "US1", title: "US One", description: "a" },
@@ -264,7 +264,7 @@ describe("discoverShows YouTube rings", () => {
       totalVideosAnalyzed: 5,
     }));
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels,
+      searchVideos,
       getMultipleChannelDetails,
       getRecentVideoStats,
     } as never);
@@ -282,13 +282,13 @@ describe("discoverShows YouTube rings", () => {
       ],
     });
 
-    expect(searchChannels.mock.calls.map((call) => call[0])).toEqual([
+    expect(searchVideos.mock.calls.map((call) => call[0])).toEqual([
       "endurance athletes",
       "busy parents",
       "strength training",
       "home cooking",
     ]);
-    expect(searchChannels.mock.calls.every((call) => call[1] === 25)).toBe(true);
+    expect(searchVideos.mock.calls.every((call) => call[1] === 50)).toBe(true);
     expect(getMultipleChannelDetails).toHaveBeenCalledTimes(1);
     expect(getMultipleChannelDetails.mock.calls[0][0]).toEqual([
       "US1",
@@ -307,14 +307,76 @@ describe("discoverShows YouTube rings", () => {
     ]);
   });
 
+  it("turns 4 queries of 50 videos into deduped channel ids and holds the 4-search cap", async () => {
+    const queries = ["endurance athletes", "busy parents", "strength training", "home cooking"];
+    const searchVideos = vi.fn(async (query: string, _maxResults?: number) => {
+      const queryIndex = queries.indexOf(query);
+      return Array.from({ length: 50 }, (_, i) => {
+        const channelId =
+          i === 0 || (queryIndex === 0 && i === 1) ? "SHARED" : `c-${queryIndex}-${i}`;
+        return {
+          channelId,
+          videoId: `${queryIndex}-${i}`,
+          title: "Video",
+          description: "",
+        };
+      });
+    });
+    const searchChannels = vi.fn();
+    const getMultipleChannelDetails = vi.fn(async (_ids: string[]) => [] as YouTubeChannelDetails[]);
+    vi.mocked(getYouTubeClientSafe).mockReturnValue({
+      searchVideos,
+      searchChannels,
+      getMultipleChannelDetails,
+      getRecentVideoStats: vi.fn(),
+    } as never);
+
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const result = await discoverShows({
+        target_interests: ["Health & Wellness"],
+        keywords: ["sauna"],
+        platforms: ["youtube"],
+        ring_terms: [...queries, "fifth ring dropped"],
+      });
+
+      expect(result.discovered).toEqual([]);
+      expect(searchChannels).not.toHaveBeenCalled();
+      expect(searchVideos).toHaveBeenCalledTimes(4);
+      expect(searchVideos.mock.calls.map((call) => call[0])).toEqual(queries);
+      expect(searchVideos.mock.calls.every((call) => call[1] === 50)).toBe(true);
+
+      const ids = getMultipleChannelDetails.mock.calls.flatMap((call) => call[0] as string[]);
+      const expected = ["SHARED"];
+      for (let i = 2; i <= 49; i++) expected.push(`c-0-${i}`);
+      for (let queryIndex = 1; queryIndex <= 3; queryIndex++) {
+        for (let i = 1; i <= 49; i++) expected.push(`c-${queryIndex}-${i}`);
+      }
+      expect(ids).toEqual(expected);
+      expect(new Set(ids).size).toBe(196);
+      expect(getMultipleChannelDetails).toHaveBeenCalledTimes(4);
+      expect(getMultipleChannelDetails.mock.calls[0][0]).toHaveLength(50);
+      expect(getMultipleChannelDetails.mock.calls[3][0]).toHaveLength(46);
+
+      const lines = log.mock.calls.map((call) => String(call[0]));
+      expect(lines).toContain(`[discovery] YouTube query 1 "endurance athletes" → 49 channels`);
+      expect(lines).toContain(`[discovery] YouTube query 2 "busy parents" → 50 channels`);
+      expect(lines).toContain(`[discovery] YouTube query 3 "strength training" → 50 channels`);
+      expect(lines).toContain(`[discovery] YouTube query 4 "home cooking" → 50 channels`);
+      expect(lines).toContain(`[discovery] YouTube unique channels: 196`);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("batches channel detail calls at 50 ids", async () => {
     const ids = Array.from({ length: 51 }, (_, i) => `ch-${i}`);
-    const searchChannels = vi.fn(async () =>
+    const searchVideos = vi.fn(async () =>
       ids.map((channelId) => ({ channelId, title: "T", description: "" }))
     );
     const getMultipleChannelDetails = vi.fn(async (_ids: string[]) => [] as YouTubeChannelDetails[]);
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels,
+      searchVideos,
       getMultipleChannelDetails,
       getRecentVideoStats: vi.fn(),
     } as never);
@@ -345,7 +407,7 @@ describe("discoverShows YouTube rings", () => {
   });
 
   it("keeps a failed ring search from dropping the other rings", async () => {
-    const searchChannels = vi.fn(async (query: string) => {
+    const searchVideos = vi.fn(async (query: string) => {
       if (query === "endurance athletes") throw new Error("quotaExceeded");
       return [{ channelId: "US1", title: "US One", description: "a" }];
     });
@@ -353,7 +415,7 @@ describe("discoverShows YouTube rings", () => {
       ids.map((id) => detail({ channelId: id }))
     );
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels,
+      searchVideos,
       getMultipleChannelDetails,
       getRecentVideoStats: vi.fn(async () => ({
         videos: [],
@@ -376,9 +438,9 @@ describe("discoverShows YouTube rings", () => {
   });
 
   it("searches the normalized label, the interest query, and the shorter tail for one ring", async () => {
-    const searchChannels = vi.fn(async (_query: string, _maxResults?: number) => []);
+    const searchVideos = vi.fn(async (_query: string, _maxResults?: number) => []);
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels,
+      searchVideos,
       getMultipleChannelDetails: vi.fn(),
       getRecentVideoStats: vi.fn(),
     } as never);
@@ -391,21 +453,21 @@ describe("discoverShows YouTube rings", () => {
     });
 
     expect(result.discovered).toEqual([]);
-    expect(searchChannels.mock.calls.map((call) => call[0])).toEqual([
+    expect(searchVideos.mock.calls.map((call) => call[0])).toEqual([
       "ingredient literate women wellness",
       "fitness workout",
       "literate womens wellness",
       "womens wellness",
     ]);
-    expect(searchChannels.mock.calls.filter((call) => call[0] === "fitness workout")).toHaveLength(
+    expect(searchVideos.mock.calls.filter((call) => call[0] === "fitness workout")).toHaveLength(
       1
     );
   });
 
   it("does not add a fifth search when 4 ring searches all return 0 channels", async () => {
-    const searchChannels = vi.fn(async (_query: string, _maxResults?: number) => []);
+    const searchVideos = vi.fn(async (_query: string, _maxResults?: number) => []);
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels,
+      searchVideos,
       getMultipleChannelDetails: vi.fn(),
       getRecentVideoStats: vi.fn(),
     } as never);
@@ -422,7 +484,7 @@ describe("discoverShows YouTube rings", () => {
       ],
     });
 
-    expect(searchChannels.mock.calls.map((call) => call[0])).toEqual([
+    expect(searchVideos.mock.calls.map((call) => call[0])).toEqual([
       "endurance athletes",
       "busy parents",
       "strength training",
@@ -442,10 +504,10 @@ describe("YouTube interest retry on empty", () => {
   });
 
   it("runs the interest fallback once when every search returns 0 and the cap has room", async () => {
-    const searchChannels = vi.fn(async (_query: string, _maxResults?: number) => []);
+    const searchVideos = vi.fn(async (_query: string, _maxResults?: number) => []);
     const getMultipleChannelDetails = vi.fn();
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels,
+      searchVideos,
       getMultipleChannelDetails,
       getRecentVideoStats: vi.fn(),
     } as never);
@@ -459,7 +521,7 @@ describe("YouTube interest retry on empty", () => {
 
     expect(result).toEqual([]);
     expect(errors).toEqual([]);
-    expect(searchChannels.mock.calls.map((call) => call[0])).toEqual([
+    expect(searchVideos.mock.calls.map((call) => call[0])).toEqual([
       "ingredient literate women wellness",
       "fitness workout",
     ]);
@@ -484,7 +546,7 @@ describe("YouTube interest retry on empty", () => {
   });
 
   it("keeps channels found by the empty retry and sends them through the market filter", async () => {
-    const searchChannels = vi.fn(async (query: string) => {
+    const searchVideos = vi.fn(async (query: string) => {
       if (query === "fitness workout") {
         return [{ channelId: "US1", title: "US One", description: "a" }];
       }
@@ -494,7 +556,7 @@ describe("YouTube interest retry on empty", () => {
       ids.map((id) => detail({ channelId: id }))
     );
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels,
+      searchVideos,
       getMultipleChannelDetails,
       getRecentVideoStats: vi.fn(async () => ({
         videos: [],
@@ -507,7 +569,7 @@ describe("YouTube interest retry on empty", () => {
 
     const result = await discoverFromYoutube(["narrow label"], [], "fitness workout");
 
-    expect(searchChannels.mock.calls.map((call) => call[0])).toEqual([
+    expect(searchVideos.mock.calls.map((call) => call[0])).toEqual([
       "narrow label",
       "fitness workout",
     ]);
@@ -516,11 +578,11 @@ describe("YouTube interest retry on empty", () => {
   });
 
   it("does not retry when a planned search already returned channels", async () => {
-    const searchChannels = vi.fn(async (_query: string, _maxResults?: number) => [
+    const searchVideos = vi.fn(async (_query: string, _maxResults?: number) => [
       { channelId: "US1", title: "US One", description: "a" },
     ]);
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels,
+      searchVideos,
       getMultipleChannelDetails: vi.fn(async (ids: string[]) =>
         ids.map((id) => detail({ channelId: id }))
       ),
@@ -534,7 +596,7 @@ describe("YouTube interest retry on empty", () => {
     } as never);
 
     const result = await discoverFromYoutube(["endurance athletes"], [], "fitness workout");
-    expect(searchChannels.mock.calls.map((call) => call[0])).toEqual(["endurance athletes"]);
+    expect(searchVideos.mock.calls.map((call) => call[0])).toEqual(["endurance athletes"]);
     expect(result.map((show) => show.youtube_channel_id)).toEqual(["US1"]);
   });
 });
@@ -781,7 +843,7 @@ describe("YouTube post-filter stage logs", () => {
     });
 
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels: vi.fn(async () =>
+      searchVideos: vi.fn(async () =>
         channels.map((channel) => ({
           channelId: channel.channelId,
           title: channel.title,
@@ -826,6 +888,7 @@ describe("YouTube post-filter stage logs", () => {
       expect(log.mock.calls.map((call) => call[0])).toEqual([
         `[discovery] Running 1 YouTube queries...`,
         `[discovery] YouTube query 1 "endurance athletes" → 13 channels`,
+        `[discovery] YouTube unique channels: 13`,
         `[discovery] YouTube after market filter: 12 of 13`,
         `[discovery] YouTube dropped videoCount < 10: 1`,
         `[discovery] YouTube dropped brand keyword: 2; first 2: "Supplement Brand" matched "official website"; "Maker Co" matched "Co"`,
@@ -865,7 +928,7 @@ describe("YouTube post-filter stage logs", () => {
     );
 
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels: vi.fn(async () =>
+      searchVideos: vi.fn(async () =>
         channels.map((channel) => ({
           channelId: channel.channelId,
           title: channel.title,
@@ -904,7 +967,7 @@ describe("YouTube post-filter stage logs", () => {
       "YouTube API error 400: https://www.googleapis.com/youtube/v3/channels?key=SECRETVALUE&part=snippet"
     );
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels: vi.fn(async () => [{ channelId: "US1", title: "US One", description: "a" }]),
+      searchVideos: vi.fn(async () => [{ channelId: "US1", title: "US One", description: "a" }]),
       getMultipleChannelDetails: vi.fn(async () => {
         throw boom;
       }),
@@ -934,7 +997,7 @@ describe("YouTube post-filter stage logs", () => {
 
   it("logs a non-Error throw as unknown error", async () => {
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
-      searchChannels: vi.fn(async () => [{ channelId: "US1", title: "US One", description: "a" }]),
+      searchVideos: vi.fn(async () => [{ channelId: "US1", title: "US One", description: "a" }]),
       getMultipleChannelDetails: vi.fn(async () => {
         throw "nope";
       }),

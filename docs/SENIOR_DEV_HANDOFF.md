@@ -1222,3 +1222,44 @@ No page or component was edited. Screenshots are not applicable.
 - The method line counts channels that reached the views check, not every market survivor.
 - No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
 - Live confirmation waits on deploy. Rerun a 1-ring Ritual campaign within the hour. Target: at least 10 YouTube channels returned, no obvious brand channels, and YouTube rows in `conviction_scores`. Campaign `67cada7c` is the reference (3 returned: Healing Cave Lady, KenDBerryMD, Brandon Shepherd).
+
+## D8
+
+### What was built
+
+YouTube discovery finds creators from popular videos. `search.list` with `type=channel` was matching channel names, so niche phrases returned small channels. `YouTubeClient.searchVideos` calls `search.list` with `part=snippet`, `type=video`, `order=viewCount`, `videoDuration=medium`, `publishedAfter` set to 12 months before the call, `regionCode=US`, `relevanceLanguage=en`, and `maxResults` 50. It costs 100 units, the same as a channel search. Each hit keeps `snippet.channelId` in the order YouTube returned. A video with no channel id is dropped. A channel that appears twice on one page is kept twice so the caller can take the first occurrence.
+
+`discoverFromYoutube` runs each planned query through `searchVideos` only. It does not also call `searchChannels`. The cap stays at 4 searches, including the empty-result interest retry. Unique channel ids are collected in rank order: query order, then view-count order inside that query, first occurrence wins. Each query logs how many distinct channels it found. After dedupe the run logs `YouTube unique channels: N`. Channel details still batch at 50. The market filter, the D7 brand check, the video-count floor, the two view floors, and recent stats for the top 10 are unchanged. `searchChannels` remains for the enrich routes.
+
+Quota, Data API units: video search 4 x 100 = 400; channel details worst case is 4 x 50 = 200 unique channels, which is 4 calls; recent stats 10 x (search.list 100 + videos.list 1) = 1,010. 400 + 4 + 1,010 = 1,414, about 1.4k per run. `YOUTUBE_DISCOVERY_QUOTA.videoSearch` replaces `channelSearch`. This path does not log the API key. `key=` redaction on the YouTube error path is unchanged.
+
+### Where
+
+- `lib/enrichment/youtube.ts` (`searchVideos`)
+- `lib/enrichment/youtube.test.ts`
+- `lib/discovery/discover-shows.ts` (the `discoverFromYoutube` search step and `YOUTUBE_DISCOVERY_QUOTA`)
+- `lib/discovery/discover-shows.test.ts`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run lib/enrichment/youtube.test.ts lib/discovery/discover-shows.test.ts` (2 files, 37 passed).
+
+`searchVideos` asserts `part=snippet`, `type=video`, `order=viewCount`, `videoDuration=medium`, `publishedAfter` of `2025-10-26T21:46:00.000Z` when the clock is `2026-10-26T21:46:00.000Z`, `regionCode=US`, `relevanceLanguage=en`, and `maxResults=50`. Duplicate channel ids stay in that rank order. A video with no channel id is dropped. The request sends the key. The test does not log it.
+
+Discovery turns 4 queries of 50 videos into 196 deduped channel ids in rank order. The shared channel is first. The second video of the first query repeats that channel and is dropped. Detail calls batch at 50 (50, 50, 50, 46). A fifth ring is not searched. `searchChannels` is not called. `maxResults` is 50 on every call. The log names 49 channels on the first query, 50 on each of the other three, and a unique total of 196. The 4-search cap, the empty retry, the market filter, the brand check, the floors, and the top-10 recent-stats fixture still pass. Quota worst case is 1,414.
+
+Full `npx vitest run`: 265 files, 2395 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 134 pages.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- `videoDuration=medium` is 4 to 20 minutes. A popular video longer than 20 minutes is not in this search.
+- `publishedAfter` uses calendar months. A February 29 call looks back to March 1 of the previous year.
+- The 1,414 worst case assumes 200 unique channels. Overlap spends fewer `channels.list` units.
+- `searchChannels` is still what `POST /api/shows/[id]/enrich` and the enrich-batch route call. Those lookups are unchanged.
+- `lib/discovery/category-mapping.ts` comments still say channel search. The cap constant was not edited. The search that runs is `searchVideos`.
+- Recent stats still run on the top 10 after the market filter, before the video-count and brand checks (D7). A tiny or brand channel in that ten can still use a stats call.
+- No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send.
+- Live confirmation waits on deploy. This PR does not merge and does not rerun a campaign. After deploy, rerun the 1-ring Ritual campaign within the hour. Target: at least 10 YouTube channels reach scoring. Read the funnel logs. Campaign `48925bc6` is the reference (4 channel searches, 3 returned, the views floors dropped 47).
