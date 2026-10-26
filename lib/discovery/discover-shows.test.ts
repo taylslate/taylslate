@@ -23,10 +23,12 @@ vi.mock("@/lib/enrichment/podscan", async () => {
 import { getYouTubeClientSafe, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
 import {
   YOUTUBE_DISCOVERY_QUOTA,
+  discoverFromYoutube,
   discoverShows,
   excludeDeadYouTube,
   isDeadYouTube,
   passesYouTubeMarketFilter,
+  youtubeInterestRetry,
 } from "./discover-shows";
 import {
   podscanPodcastToShow,
@@ -368,5 +370,168 @@ describe("discoverShows YouTube rings", () => {
 
     expect(result.errors.some((line) => line.includes("quotaExceeded"))).toBe(true);
     expect(result.discovered.map((show) => show.youtube_channel_id)).toEqual(["US1"]);
+  });
+
+  it("searches the normalized label, the interest query, and the shorter tail for one ring", async () => {
+    const searchChannels = vi.fn(async () => []);
+    vi.mocked(getYouTubeClientSafe).mockReturnValue({
+      searchChannels,
+      getMultipleChannelDetails: vi.fn(),
+      getRecentVideoStats: vi.fn(),
+    } as never);
+
+    const result = await discoverShows({
+      target_interests: ["Health & Wellness"],
+      keywords: [],
+      platforms: ["youtube"],
+      ring_terms: ["ingredient-literate women's wellness"],
+    });
+
+    expect(result.discovered).toEqual([]);
+    expect(searchChannels.mock.calls.map((call) => call[0])).toEqual([
+      "ingredient literate women wellness",
+      "fitness workout",
+      "literate womens wellness",
+      "womens wellness",
+    ]);
+    expect(searchChannels.mock.calls.filter((call) => call[0] === "fitness workout")).toHaveLength(
+      1
+    );
+  });
+
+  it("does not add a fifth search when 4 ring searches all return 0 channels", async () => {
+    const searchChannels = vi.fn(async () => []);
+    vi.mocked(getYouTubeClientSafe).mockReturnValue({
+      searchChannels,
+      getMultipleChannelDetails: vi.fn(),
+      getRecentVideoStats: vi.fn(),
+    } as never);
+
+    await discoverShows({
+      target_interests: ["Health & Wellness"],
+      keywords: ["sauna"],
+      platforms: ["youtube"],
+      ring_terms: [
+        "endurance athletes",
+        "busy parents",
+        "strength training",
+        "home cooking",
+      ],
+    });
+
+    expect(searchChannels.mock.calls.map((call) => call[0])).toEqual([
+      "endurance athletes",
+      "busy parents",
+      "strength training",
+      "home cooking",
+    ]);
+    expect(youtubeInterestRetry(
+      ["endurance athletes", "busy parents", "strength training", "home cooking"],
+      [0, 0, 0, 0],
+      "fitness workout sauna"
+    )).toBeNull();
+  });
+});
+
+describe("YouTube interest retry on empty", () => {
+  beforeEach(() => {
+    vi.mocked(getYouTubeClientSafe).mockReset();
+  });
+
+  it("runs the interest fallback once when every search returns 0 and the cap has room", async () => {
+    const searchChannels = vi.fn(async () => []);
+    const getMultipleChannelDetails = vi.fn();
+    vi.mocked(getYouTubeClientSafe).mockReturnValue({
+      searchChannels,
+      getMultipleChannelDetails,
+      getRecentVideoStats: vi.fn(),
+    } as never);
+
+    const errors: string[] = [];
+    const result = await discoverFromYoutube(
+      ["ingredient literate women wellness"],
+      errors,
+      "fitness workout"
+    );
+
+    expect(result).toEqual([]);
+    expect(errors).toEqual([]);
+    expect(searchChannels.mock.calls.map((call) => call[0])).toEqual([
+      "ingredient literate women wellness",
+      "fitness workout",
+    ]);
+    expect(getMultipleChannelDetails).not.toHaveBeenCalled();
+  });
+
+  it("does not run the interest fallback twice, past the cap, or after a hit", () => {
+    expect(youtubeInterestRetry(["endurance athletes"], [0], "fitness workout")).toBe(
+      "fitness workout"
+    );
+    expect(youtubeInterestRetry(["fitness workout"], [0], "fitness workout")).toBeNull();
+    expect(youtubeInterestRetry(["Fitness Workout"], [0], "fitness workout")).toBeNull();
+    expect(
+      youtubeInterestRetry(
+        ["one", "two", "three", "four"],
+        [0, 0, 0, 0],
+        "fitness workout"
+      )
+    ).toBeNull();
+    expect(youtubeInterestRetry(["endurance athletes"], [3], "fitness workout")).toBeNull();
+    expect(youtubeInterestRetry(["endurance athletes"], [0], "  ")).toBeNull();
+  });
+
+  it("keeps channels found by the empty retry and sends them through the market filter", async () => {
+    const searchChannels = vi.fn(async (query: string) => {
+      if (query === "fitness workout") {
+        return [{ channelId: "US1", title: "US One", description: "a" }];
+      }
+      return [];
+    });
+    const getMultipleChannelDetails = vi.fn(async (ids: string[]) =>
+      ids.map((id) => detail({ channelId: id }))
+    );
+    vi.mocked(getYouTubeClientSafe).mockReturnValue({
+      searchChannels,
+      getMultipleChannelDetails,
+      getRecentVideoStats: vi.fn(async () => ({
+        videos: [],
+        averageViews: 50000,
+        averageLikes: 0,
+        averageComments: 0,
+        totalVideosAnalyzed: 5,
+      })),
+    } as never);
+
+    const result = await discoverFromYoutube(["narrow label"], [], "fitness workout");
+
+    expect(searchChannels.mock.calls.map((call) => call[0])).toEqual([
+      "narrow label",
+      "fitness workout",
+    ]);
+    expect(getMultipleChannelDetails).toHaveBeenCalledTimes(1);
+    expect(result.map((show) => show.youtube_channel_id)).toEqual(["US1"]);
+  });
+
+  it("does not retry when a planned search already returned channels", async () => {
+    const searchChannels = vi.fn(async () => [
+      { channelId: "US1", title: "US One", description: "a" },
+    ]);
+    vi.mocked(getYouTubeClientSafe).mockReturnValue({
+      searchChannels,
+      getMultipleChannelDetails: vi.fn(async (ids: string[]) =>
+        ids.map((id) => detail({ channelId: id }))
+      ),
+      getRecentVideoStats: vi.fn(async () => ({
+        videos: [],
+        averageViews: 50000,
+        averageLikes: 0,
+        averageComments: 0,
+        totalVideosAnalyzed: 5,
+      })),
+    } as never);
+
+    const result = await discoverFromYoutube(["endurance athletes"], [], "fitness workout");
+    expect(searchChannels.mock.calls.map((call) => call[0])).toEqual(["endurance athletes"]);
+    expect(result.map((show) => show.youtube_channel_id)).toEqual(["US1"]);
   });
 });

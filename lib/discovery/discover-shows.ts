@@ -7,7 +7,8 @@
 // STRATEGY:
 // 1. Search Podscan via /episodes/search with 5-6 diverse text queries,
 //    each filtered by category IDs. Extract unique podcasts from results.
-// 2. Search YouTube once per confirmed ring (capped). US/English is a hard filter.
+// 2. Search YouTube once per confirmed ring (capped at 4), topping up with
+//    the interest query and shorter ring tails when the ring list is short.
 // 3. Deduplicate across all queries by podcast_id
 // 4. Claude scores the final fit using brand context + keywords
 // ============================================================
@@ -17,6 +18,7 @@ import { getPodscanClientSafe, type PodscanPodcast } from "@/lib/enrichment/pods
 import { getYouTubeClientSafe, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
 import {
   buildYouTubeQueries,
+  buildYouTubeQuery,
   buildDiscoveryQueries,
   MAX_YOUTUBE_SEARCHES,
 } from "./category-mapping";
@@ -35,9 +37,10 @@ export interface DiscoveryBrief {
   campaign_goals?: string;
   platforms: string[];
   /**
-   * Confirmed ring labels in slot order. YouTube builds one search per
-   * label, capped at MAX_YOUTUBE_SEARCHES. Briefs that are not a conviction
-   * run omit this and get one interest/keyword search.
+   * Confirmed ring labels in slot order. YouTube searches each label
+   * (normalized), capped at MAX_YOUTUBE_SEARCHES. Fewer than 4 ring queries
+   * are topped up with the interest/keyword query and shorter tails. Briefs
+   * with no labels get one interest/keyword search.
    */
   ring_terms?: string[];
 }
@@ -87,7 +90,8 @@ const BRAND_CHANNEL_KEYWORDS = [
  * Discover shows from Podscan and YouTube APIs based on a campaign brief.
  *
  * Podscan: 5-6 diverse queries via /episodes/search, extracting unique podcasts.
- * YouTube: one text query per confirmed ring (YouTube API requires text queries).
+ * YouTube: up to 4 text queries. Ring labels first, then the interest query
+ * and shorter tails when the ring list is short.
  *
  * API budget per call:
  * - Podscan: 5-6 requests (well within 10/min limit with staggering)
@@ -101,14 +105,18 @@ export async function discoverShows(brief: DiscoveryBrief): Promise<DiscoveryRes
   const wantsPodcast = brief.platforms.includes("podcast");
   const wantsYoutube = brief.platforms.includes("youtube");
 
-  // One YouTube query per confirmed ring. searchChannels keeps regionCode=US
-  // and relevanceLanguage=en.
+  // Ring queries, topped up to MAX_YOUTUBE_SEARCHES. searchChannels keeps
+  // regionCode=US and relevanceLanguage=en. The interest string is also
+  // passed through so an all-empty run can retry it once inside the cap.
   const youtubeQueries = buildYouTubeQueries(brief);
+  const youtubeInterestFallback = buildYouTubeQuery(brief);
 
   // Run Podscan + YouTube discovery in parallel
   const [podcastShows, youtubeShows] = await Promise.all([
     wantsPodcast ? discoverFromPodscan(brief, errors) : Promise.resolve([]),
-    wantsYoutube ? discoverFromYoutube(youtubeQueries, errors) : Promise.resolve([]),
+    wantsYoutube
+      ? discoverFromYoutube(youtubeQueries, errors, youtubeInterestFallback)
+      : Promise.resolve([]),
   ]);
 
   discovered.push(...podcastShows, ...youtubeShows);
@@ -218,14 +226,18 @@ async function discoverFromPodscan(
 }
 
 /**
- * Search YouTube once per confirmed ring (capped). searchChannels sends
+ * Search YouTube for the planned queries (capped at 4). searchChannels sends
  * regionCode=US and relevanceLanguage=en. Those bias ranking. The market
  * filter below is the hard keep/drop, using the channel-details response.
  * Recent video stats still run for the top 3 channels that survive it.
+ *
+ * If every search returns 0 channels, run the interest fallback once when it
+ * was not already searched and the 4-search cap still has room.
  */
-async function discoverFromYoutube(
+export async function discoverFromYoutube(
   queries: string[],
-  errors: string[]
+  errors: string[],
+  interestFallback = ""
 ): Promise<Show[]> {
   const client = getYouTubeClientSafe();
   if (!client) return [];
@@ -239,22 +251,31 @@ async function discoverFromYoutube(
   try {
     console.log(`[discovery] Running ${capped.length} YouTube queries...`);
 
-    const batches = await Promise.all(
-      capped.map(async (query, idx) => {
-        try {
-          const hits = await client.searchChannels(query, YOUTUBE_SEARCH_MAX_RESULTS);
-          console.log(
-            `[discovery] YouTube query ${idx + 1} "${query.slice(0, 40)}" → ${hits.length} channels`
-          );
-          return hits;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "unknown error";
-          console.warn(`[discovery] YouTube query ${idx + 1} failed: ${msg}`);
-          errors.push(`YouTube query "${query.slice(0, 40)}": ${msg}`);
-          return [];
-        }
-      })
+    const runQuery = async (query: string, idx: number) => {
+      try {
+        const hits = await client.searchChannels(query, YOUTUBE_SEARCH_MAX_RESULTS);
+        console.log(
+          `[discovery] YouTube query ${idx + 1} "${query.slice(0, 40)}" → ${hits.length} channels`
+        );
+        return hits;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "unknown error";
+        console.warn(`[discovery] YouTube query ${idx + 1} failed: ${msg}`);
+        errors.push(`YouTube query "${query.slice(0, 40)}": ${msg}`);
+        return [];
+      }
+    };
+
+    const batches = await Promise.all(capped.map((query, idx) => runQuery(query, idx)));
+
+    const retry = youtubeInterestRetry(
+      capped,
+      batches.map((hits) => hits.length),
+      interestFallback
     );
+    if (retry) {
+      batches.push(await runQuery(retry, capped.length));
+    }
 
     const orderedIds: string[] = [];
     const seen = new Set<string>();
@@ -323,6 +344,26 @@ async function discoverFromYoutube(
     errors.push(`YouTube discovery failed: ${err instanceof Error ? err.message : "unknown error"}`);
     return [];
   }
+}
+
+/**
+ * Interest query to run after a batch where every search returned 0 channels.
+ * Null when any search hit, the fallback already ran, the fallback is blank,
+ * or the 4-search cap is full.
+ */
+export function youtubeInterestRetry(
+  searched: string[],
+  hitCounts: number[],
+  interestFallback: string
+): string | null {
+  if (searched.length === 0 || searched.length >= MAX_YOUTUBE_SEARCHES) return null;
+  if (hitCounts.length !== searched.length) return null;
+  if (hitCounts.some((count) => count > 0)) return null;
+  const fallback = interestFallback.trim();
+  if (!fallback) return null;
+  const seen = new Set(searched.map((query) => query.toLowerCase()));
+  if (seen.has(fallback.toLowerCase())) return null;
+  return fallback;
 }
 
 const ENGLISH_FUNCTION_WORDS = new Set([
