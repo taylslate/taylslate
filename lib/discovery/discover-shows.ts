@@ -7,8 +7,8 @@
 // STRATEGY:
 // 1. Search Podscan via /episodes/search with 5-6 diverse text queries,
 //    each filtered by category IDs. Extract unique podcasts from results.
-// 2. Search YouTube once per confirmed ring (capped at 4), topping up with
-//    the interest query and shorter ring tails when the ring list is short.
+// 2. Search YouTube videos once per planned query (capped at 4), topping up
+//    with the interest query and shorter ring tails when the ring list is short.
 // 3. Deduplicate across all queries by podcast_id
 // 4. Claude scores the final fit using brand context + keywords
 // ============================================================
@@ -60,28 +60,29 @@ const MIN_YOUTUBE_AVG_VIEWS = 10000;
 const MIN_YOUTUBE_AVG_VIEWS_FALLBACK = 5000;
 const MIN_YOUTUBE_VIDEO_COUNT = 10;
 
-/** search.list maxResults per ring. YouTube allows up to 50. */
-const YOUTUBE_SEARCH_MAX_RESULTS = 25;
+/** search.list maxResults per video search. YouTube allows up to 50. */
+const YOUTUBE_SEARCH_MAX_RESULTS = 50;
 /** channels.list accepts at most 50 ids per call. */
 const YOUTUBE_CHANNEL_ID_BATCH = 50;
 /**
  * Market survivors that get a recent-video stats fetch, highest
  * subscriber count first. 10 x (search.list 100 + videos.list 1).
- * A cap of 6 would be about 1k units (6 x 101 + 402). Default is 10.
+ * A cap of 6 would be about 1k units (6 x 101 + 404). Default is 10.
  */
 const YOUTUBE_RECENT_STATS_CHANNELS = 10;
 
 /**
  * YouTube Data API units for one discovery run.
- * Channel search: MAX_YOUTUBE_SEARCHES x 100 = 400.
- * Channel details: 1 unit per batch of 50 ids. Worst case is 4 x 25 = 100
- * channels, which is 2 calls. Together that is 402.
+ * Video search: MAX_YOUTUBE_SEARCHES x 100 = 400. search.list costs 100
+ * with type=video, the same as type=channel.
+ * Channel details: 1 unit per batch of 50 ids. Worst case is 4 x 50 = 200
+ * unique channels, which is 4 calls. Together that is 404.
  * Recent video stats run for the top 10 channels that pass the market
  * filter. Each is one search.list (100) plus one videos.list (1) = 101.
- * 10 x 101 = 1,010. Worst case: 1,010 + 402 = 1,412 (about 1.4k).
+ * 10 x 101 = 1,010. Worst case: 1,010 + 404 = 1,414 (about 1.4k).
  */
 export const YOUTUBE_DISCOVERY_QUOTA = {
-  channelSearch: MAX_YOUTUBE_SEARCHES * 100,
+  videoSearch: MAX_YOUTUBE_SEARCHES * 100,
   channelDetailsWorstCase: Math.ceil(
     (MAX_YOUTUBE_SEARCHES * YOUTUBE_SEARCH_MAX_RESULTS) / YOUTUBE_CHANNEL_ID_BATCH
   ),
@@ -150,7 +151,7 @@ export async function discoverShows(brief: DiscoveryBrief): Promise<DiscoveryRes
   const wantsPodcast = brief.platforms.includes("podcast");
   const wantsYoutube = brief.platforms.includes("youtube");
 
-  // Ring queries, topped up to MAX_YOUTUBE_SEARCHES. searchChannels keeps
+  // Ring queries, topped up to MAX_YOUTUBE_SEARCHES. searchVideos keeps
   // regionCode=US and relevanceLanguage=en. The interest string is also
   // passed through so an all-empty run can retry it once inside the cap.
   const youtubeQueries = buildYouTubeQueries(brief);
@@ -271,10 +272,13 @@ async function discoverFromPodscan(
 }
 
 /**
- * Search YouTube for the planned queries (capped at 4). searchChannels sends
- * regionCode=US and relevanceLanguage=en. Those bias ranking. The market
- * filter below is the hard keep/drop, using the channel-details response.
- * Recent video stats still run for the top 10 channels that survive it.
+ * Search YouTube videos for the planned queries (capped at 4). searchVideos
+ * orders by view count over the last 12 months and sends regionCode=US and
+ * relevanceLanguage=en. Channel ids come from snippet.channelId, first
+ * occurrence wins, in that rank order. Channel search is not also run.
+ * The market filter below is the hard keep/drop, using the channel-details
+ * response. Recent video stats still run for the top 10 channels that
+ * survive it.
  *
  * If every search returns 0 channels, run the interest fallback once when it
  * was not already searched and the 4-search cap still has room.
@@ -298,9 +302,10 @@ export async function discoverFromYoutube(
 
     const runQuery = async (query: string, idx: number) => {
       try {
-        const hits = await client.searchChannels(query, YOUTUBE_SEARCH_MAX_RESULTS);
+        const hits = await client.searchVideos(query, YOUTUBE_SEARCH_MAX_RESULTS);
+        const found = uniqueChannelIds(hits);
         console.log(
-          `[discovery] YouTube query ${idx + 1} "${query.slice(0, 40)}" → ${hits.length} channels`
+          `[discovery] YouTube query ${idx + 1} "${query.slice(0, 40)}" → ${found.length} channels`
         );
         return hits;
       } catch (err) {
@@ -315,7 +320,7 @@ export async function discoverFromYoutube(
 
     const retry = youtubeInterestRetry(
       capped,
-      batches.map((hits) => hits.length),
+      batches.map((hits) => uniqueChannelIds(hits).length),
       interestFallback
     );
     if (retry) {
@@ -325,12 +330,13 @@ export async function discoverFromYoutube(
     const orderedIds: string[] = [];
     const seen = new Set<string>();
     for (const hits of batches) {
-      for (const hit of hits) {
-        if (!hit.channelId || seen.has(hit.channelId)) continue;
-        seen.add(hit.channelId);
-        orderedIds.push(hit.channelId);
+      for (const channelId of uniqueChannelIds(hits)) {
+        if (seen.has(channelId)) continue;
+        seen.add(channelId);
+        orderedIds.push(channelId);
       }
     }
+    console.log(`[discovery] YouTube unique channels: ${orderedIds.length}`);
     if (orderedIds.length === 0) return [];
 
     const channelDetails: YouTubeChannelDetails[] = [];
@@ -474,6 +480,19 @@ function titleCompanyMarker(title: string): string | null {
   const match = trimmed.match(/\b(inc|llc|official|store|shop|co)$/i);
   if (!match) return null;
   return BRAND_TITLE_MARKER_LABELS[match[1].toLowerCase()] ?? match[1];
+}
+
+/** snippet.channelId values from one video-search page, first occurrence kept. */
+function uniqueChannelIds(hits: { channelId?: string | null }[]): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const hit of hits) {
+    const channelId = hit.channelId?.trim() ?? "";
+    if (!channelId || seen.has(channelId)) continue;
+    seen.add(channelId);
+    ids.push(channelId);
+  }
+  return ids;
 }
 
 /** Median of a numeric list. Even counts average the two middle values. */

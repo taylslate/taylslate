@@ -203,8 +203,54 @@ export class YouTubeClient {
   }
 
   /**
+   * Search popular videos in the last 12 months, then read each video's channel.
+   * search.list type=video matches titles people watch. type=channel matches
+   * channel names, which is how niche phrases return small channels.
+   * Costs 100 quota units, the same as searchChannels.
+   * publishedAfter is 12 months before this call. Rank order is viewCount.
+   */
+  async searchVideos(
+    query: string,
+    maxResults = 50
+  ): Promise<{ channelId: string; videoId: string; title: string; description: string }[]> {
+    const publishedAfter = new Date();
+    publishedAfter.setUTCMonth(publishedAfter.getUTCMonth() - 12);
+
+    const res = await this.request<{
+      items?: {
+        id?: { videoId?: string };
+        snippet?: { channelId?: string; title?: string; description?: string };
+      }[];
+    }>("/search", {
+      part: "snippet",
+      q: query,
+      type: "video",
+      order: "viewCount",
+      videoDuration: "medium",
+      publishedAfter: publishedAfter.toISOString(),
+      regionCode: "US",
+      relevanceLanguage: "en",
+      maxResults,
+    });
+
+    const hits: { channelId: string; videoId: string; title: string; description: string }[] = [];
+    for (const item of res.items ?? []) {
+      const channelId = item.snippet?.channelId?.trim() ?? "";
+      if (!channelId) continue;
+      hits.push({
+        channelId,
+        videoId: item.id?.videoId ?? "",
+        title: item.snippet?.title ?? "",
+        description: item.snippet?.description ?? "",
+      });
+    }
+    return hits;
+  }
+
+  /**
    * Search for YouTube channels by name.
    * Returns channel IDs and basic info.
+   * Enrichment still uses this. Discovery uses searchVideos.
    */
   async searchChannels(query: string, maxResults = 5): Promise<{ channelId: string; title: string; description: string }[]> {
     const res = await this.request<{
@@ -214,7 +260,7 @@ export class YouTubeClient {
       q: query,
       type: "channel",
       maxResults,
-      // Discovery is a US/English buy. These bias channel search to that market.
+      // Enrichment looks a channel up by name. These bias that search to the US/English market.
       regionCode: "US",
       relevanceLanguage: "en",
     });

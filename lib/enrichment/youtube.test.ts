@@ -29,6 +29,84 @@ afterEach(() => {
 });
 
 describe("YouTube search market filters", () => {
+  it("searches videos by view count for the last 12 months in the US English market", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-26T21:46:00.000Z"));
+    try {
+      const fetchMock = stubFetch({
+        items: [
+          {
+            id: { kind: "youtube#video", videoId: "vid-high" },
+            snippet: {
+              channelId: "UC-first",
+              title: "Most watched",
+              description: "A home workout",
+            },
+          },
+          {
+            id: { kind: "youtube#video", videoId: "vid-second" },
+            snippet: {
+              channelId: "UC-first",
+              title: "Also watched",
+              description: "Same channel",
+            },
+          },
+          {
+            id: { kind: "youtube#video", videoId: "vid-next" },
+            snippet: {
+              channelId: "UC-second",
+              title: "Next",
+              description: "Another creator",
+            },
+          },
+          {
+            id: { videoId: "vid-blank" },
+            snippet: { title: "No channel", description: "" },
+          },
+        ],
+      });
+      const client = new YouTubeClient("test-key");
+
+      const hits = await client.searchVideos("home fitness", 50);
+
+      const url = searchUrl(fetchMock);
+      expect(url.pathname).toBe("/youtube/v3/search");
+      expect(url.searchParams.get("part")).toBe("snippet");
+      expect(url.searchParams.get("type")).toBe("video");
+      expect(url.searchParams.get("order")).toBe("viewCount");
+      expect(url.searchParams.get("videoDuration")).toBe("medium");
+      expect(url.searchParams.get("publishedAfter")).toBe("2025-10-26T21:46:00.000Z");
+      expect(url.searchParams.get("regionCode")).toBe("US");
+      expect(url.searchParams.get("relevanceLanguage")).toBe("en");
+      expect(url.searchParams.get("maxResults")).toBe("50");
+      expect(url.searchParams.get("q")).toBe("home fitness");
+      expect(url.searchParams.get("key")).toBe("test-key");
+      expect(hits).toEqual([
+        {
+          channelId: "UC-first",
+          videoId: "vid-high",
+          title: "Most watched",
+          description: "A home workout",
+        },
+        {
+          channelId: "UC-first",
+          videoId: "vid-second",
+          title: "Also watched",
+          description: "Same channel",
+        },
+        {
+          channelId: "UC-second",
+          videoId: "vid-next",
+          title: "Next",
+          description: "Another creator",
+        },
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("sends regionCode=US and relevanceLanguage=en on channel search", async () => {
     const fetchMock = stubFetch({ items: [] });
     const client = new YouTubeClient("test-key");
