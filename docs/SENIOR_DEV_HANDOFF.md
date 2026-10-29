@@ -1451,3 +1451,45 @@ Review of `app/api/auth/login/otp/route.test.ts` (not edited): "emails a 6-digit
 - The footer "Don't have an account? Sign up" is unchanged.
 - The pitch page code form keeps the previous sentence. That screen can create a show from an outreach token.
 - No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or send. Screenshots intercepted the code request. This PR does not merge.
+
+## V2-test-agent-account
+
+### What was built
+
+The admin view switch can open Chris's test agent account. `ADMIN_TEST_AGENT_USER_ID` is `e0592378-1981-4f44-98a1-db67fee0ea79`. `ADMIN_VIEW_AGENT` keeps key `agent1` and label `Test Agent 1`, and its email is `chris+agent@taylslate.com`. That account was created Oct 29 2026. It is confirmed, and its profile role is agent.
+
+`configuredAdminViewAccount("agent")` returns that account. The view-mode route and sidebar already enable Agent when that lookup returns an account, so those files were not edited. The cookie value is `test:agent1`. The account is not on `TEST_ACCOUNTS`, so test-login impersonation is unchanged.
+
+The view guard source is unchanged. A configured `test:agent1` cookie now resolves, so the existing money block applies to an admin agent view the same way it applies to brand and show.
+
+### Where
+
+- `lib/admin/test-accounts.ts` (`ADMIN_TEST_AGENT_USER_ID`, `ADMIN_VIEW_AGENT.email`)
+- `lib/admin/test-accounts.test.ts`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+Three tests asserted the empty id and would have failed `npx vitest run`. They were updated. No production file outside `lib/admin/test-accounts.ts` changed:
+
+- `app/api/view-mode/route.test.ts` (admin agent view sets `test:agent1` and GET reports `agentConfigured: true`; a non-admin still gets `agentConfigured: false` and `POST` agent is still `Invalid mode`)
+- `lib/data/effective-role.test.ts` (admin `test:agent1` resolves to Test Agent 1)
+- `lib/admin/view-guard.test.ts` (admin `test:agent1` is blocked by the existing guard)
+
+`components/layout/Sidebar.test.tsx` was not edited. The disabled-agent case stubs `agentConfigured: false` from the view-mode response, so it does not depend on the empty id and still passes.
+
+### Tests
+
+`npx vitest run lib/admin/test-accounts.test.ts`
+
+Covers `configuredAdminViewAccount("agent")`, key `agent1`, label `Test Agent 1`, the user id and email above, cookie `test:agent1`, and that the test-login list stays `brand1` and `show1`.
+
+`npx vitest run app/api/view-mode/route.test.ts lib/data/effective-role.test.ts lib/admin/view-guard.test.ts components/layout/Sidebar.test.tsx` (48 passed).
+
+Full `npx vitest run`: 277 files, 2456 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 136 pages.
+
+### Known gaps
+
+- Reads and writes stay on the signed-in admin id. The view changes the dashboard role and the banner. Test Agent 1's rows are not loaded, and nothing is written as that user.
+- The guard, cookie format, sidebar styles, and payments and payouts code were not edited. Once the agent account is configured, the existing money block includes that view.
+- No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No charge. This PR does not merge.
+- Two sign-in codes were emailed so the preview check could open a session: one to chris@taylslate.com and one to chris+agent@taylslate.com. No product email was sent.
+- Local preview on this branch, signed in as chris@taylslate.com: Agent is enabled, the agent view shows "Viewing as Test Agent 1" with Import Shows, and Exit returns to the brand admin view. Signed in as chris+agent@taylslate.com, the switch is absent. `GET /api/view-mode` returns `agentConfigured: false`, and `POST` mode `agent` returns 400 `Invalid mode`. Production, before this branch, still shows "No test agent configured".

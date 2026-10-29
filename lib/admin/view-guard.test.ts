@@ -138,12 +138,13 @@ describe("rejectSwitchedViewMoneyAction", () => {
     expect(await res!.json()).toEqual({ error: BLOCKED });
   });
 
-  it("does not block an admin when no test agent is configured", async () => {
+  it("blocks an admin viewing as the test agent", async () => {
     getAuthenticatedUser.mockResolvedValue(ADMIN);
     const res = await rejectSwitchedViewMoneyAction(
       request("http://x", { cookie: "taylslate_view_as=test:agent1" }),
     );
-    expect(res).toBeNull();
+    expect(res?.status).toBe(403);
+    expect(await res!.json()).toEqual({ error: BLOCKED });
   });
 });
 

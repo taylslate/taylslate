@@ -288,7 +288,7 @@ describe("getEffectiveRole — integration with cookies + DB", () => {
     expect(isRouteAllowedForRole("/campaigns", r!.effectiveRole)).toBe(true);
   });
 
-  it("rejects an admin agent view while no test agent is configured", async () => {
+  it("lets an admin view point at Test Agent 1", async () => {
     process.env.INTERNAL_ADMIN_EMAILS = "admin@taylslate.com";
     getUser.mockResolvedValue({
       data: { user: { id: "u1", email: "admin@taylslate.com" } },
@@ -302,10 +302,11 @@ describe("getEffectiveRole — integration with cookies + DB", () => {
     });
     const r = await getEffectiveRole("u1");
 
-    expect(r!.effectiveRole).toBe("brand");
-    expect(r!.adminViewLabel).toBeNull();
-    expect(r!.staleViewAs).toBe(true);
-    expect(isRouteAllowedForRole("/shows", r!.effectiveRole)).toBe(false);
+    expect(r!.effectiveRole).toBe("agent");
+    expect(r!.adminViewLabel).toBe("Test Agent 1");
+    expect(r!.staleViewAs).toBe(false);
+    expect(isRouteAllowedForRole("/shows", r!.effectiveRole)).toBe(true);
+    expect(isRouteAllowedForRole("/campaigns", r!.effectiveRole)).toBe(false);
   });
 
   it("ignores an admin view cookie when the session user is someone else", async () => {
