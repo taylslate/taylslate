@@ -1,3 +1,4 @@
+import DocuSignUsageLine from "./docusign-usage-line";
 import ManagedBrandsClient from "./managed-brands-client";
 import { listManagedBrands } from "@/lib/accounts/managed";
 import { isInternalAdmin } from "@/lib/auth/admin";
@@ -16,5 +17,12 @@ export default async function ManagedBrandsPage() {
   }
 
   const brands = await listManagedBrands();
-  return <ManagedBrandsClient brands={brands} />;
+  return (
+    <>
+      <div>
+        <DocuSignUsageLine />
+      </div>
+      <ManagedBrandsClient brands={brands} />
+    </>
+  );
 }

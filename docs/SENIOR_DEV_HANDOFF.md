@@ -1493,3 +1493,44 @@ Full `npx vitest run`: 277 files, 2456 passed, 40 skipped. `npx tsc --noEmit` cl
 - No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No charge. This PR does not merge.
 - Two sign-in codes were emailed so the preview check could open a session: one to chris@taylslate.com and one to chris+agent@taylslate.com. No product email was sent.
 - Local preview on this branch, signed in as chris@taylslate.com: Agent is enabled, the agent view shows "Viewing as Test Agent 1" with Import Shows, and Exit returns to the brand admin view. Signed in as chris+agent@taylslate.com, the switch is absent. `GET /api/view-mode` returns `agentConfigured: false`, and `POST` mode `agent` returns 400 `Invalid mode`. Production, before this branch, still shows "No test agent configured".
+
+## D0 DocuSign envelope counter
+
+### What was built
+
+An admin-only read of how many DocuSign envelopes the app has sent in the current America/Denver calendar month, against the Starter allowance of 40. The line warns at 35 or more. Sends are not blocked, and nothing is emailed, posted, or pushed.
+
+`GET /api/admin/docusign-usage` checks the session with `getAuthenticatedUser` and `isInternalAdmin` before any database call. No session is 401. A signed-in brand, show, or agent is 403. An admin gets the usage object. A failed read is 500 with `{ error: "Could not read DocuSign usage" }`, never a zero count. The route is node, force-dynamic, and `Cache-Control: no-store`.
+
+The count is one head query on `domain_events`: `event_type` `io.sent_for_signature`, `created_at` from the Denver month start inclusive to the next month start exclusive. `DOCUSIGN_ENV` is read in `lib/docusign/usage.ts` and defaults to sandbox, same as the DocuSign client. Sandbox state is always `ok`. Production state is `ok` below 35, `warn` from 35 through 40, and `over` above 40.
+
+`/admin/brands` renders the line once, above `ManagedBrandsClient`, inside the admin branch only. The non-admin branch is unchanged. A 401 or 403 renders nothing. A 500 renders "DocuSign usage unavailable". One fetch on mount. No polling.
+
+### Where
+
+- `lib/docusign/usage.ts`
+- `lib/docusign/usage.test.ts`
+- `app/api/admin/docusign-usage/route.ts`
+- `app/api/admin/docusign-usage/route.test.ts`
+- `app/(dashboard)/admin/brands/docusign-usage-line.tsx`
+- `app/(dashboard)/admin/brands/docusign-usage-line.test.tsx`
+- `app/(dashboard)/admin/brands/page.tsx` (the one admin line only)
+- `app/(dashboard)/admin/brands/page.test.tsx`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run` : 280 files, 2480 passed, 40 skipped. `rm -rf .next && npx tsc --noEmit` clean. `npx next build` compiled and generated 136 pages.
+
+The usage tests assert one head count on `domain_events` for `io.sent_for_signature` and the Denver bounds, with a mocked `supabaseAdmin`. They cover 2026-11-01 05:59:59 UTC (still October) versus 2026-11-01 06:00:00 UTC (November 1 00:00 MDT), November 2026 (`2026-11-01T06:00:00.000Z` to `2026-12-01T07:00:00.000Z`), March 2027 (`2027-03-01T07:00:00.000Z` to `2027-04-01T06:00:00.000Z`), states at 34, 35, 40, and 41, sandbox staying `ok`, and a thrown read error. The route test proves 401 and 403 make no database call, and a failed read returns 500 rather than `used: 0`. The page test renders a signed-in non-admin and finds only "This page is for Taylslate admins."
+
+Read-only live count of `io.sent_for_signature` on `ldtmhafewfifdizgfrnn`: 0. No live write, charge, or send. This PR does not merge.
+
+### Known gaps
+
+- The count comes from `io.sent_for_signature` rows only, so an envelope created while `logEvent` failed (it never throws) would be missed.
+- The window is the America/Denver calendar month. DocuSign bills on its own plan period, which may not start on the 1st.
+- `domain_events` has no `event_type` index. The table is small today, so the count query is fine. Do not add an index in this job.
+- Sandbox rows are not separable in past months because the payload does not record the environment. The current `DOCUSIGN_ENV` decides whether this month's count warns.
+- No allowance error exists in the code to surface at 40. Sends stay unblocked.
+- Embedded signing stays parked.
