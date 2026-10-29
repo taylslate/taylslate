@@ -1317,9 +1317,52 @@ No page or component was edited. Screenshots are not applicable.
 - A category query that spends its search (100) and then runs out of budget before `channels.list` stays pending and is searched again the next day.
 - Refresh treats every id omitted from a `channels.list` response as gone and deletes it. A 404 on the batch deletes that batch.
 - Deterministic tags that match the current taxonomy version are kept. The LLM runs only for untagged rows and rows below `niche_tags_version`.
-- Library reads page at most 50,000 eligible rows. Ranking still returns at most 60.
+- Library reads page at most 50,000 eligible rows. C1 replaced the top-60 rank cap with a 500 safety cap.
 - `custom_url` is used in memory for the show-link check. It is not a column. The database link uses `shows.youtube_channel_id` and stored surface links.
 - No live write, charge, or send. This PR does not merge. After 074 is applied, the day-1 check is row count, units logged, and category spread. Do not rerun a campaign to prove the library until that apply.
+
+## C1
+
+### What was built
+
+Confirmed rings now map onto broad YouTube library categories, plus a fixed set of neighbors. A ring is matched, with no LLM call, against each category's pull phrases, the niche-tag taxonomy, and a synonym table. Health includes wellness and supplements. Fitness includes workout and gym. Lifestyle includes daily routine and women's lifestyle. Health's neighbors are fitness, nutrition, lifestyle, women's health, and mental health. Finance's neighbors are business and investing. A ring that matches nothing falls back to the brief's top-level category.
+
+Discovery selects eligible library channels for every confirmed ring: passed the market filter, no brand flag, stats under 30 days, and the same video-count and view floors as live YouTube discovery. A channel matches when its niche tags or its source category (the pull phrase, or the discovery query stored on the row) sit in that ring's primary or adjacent categories. Results are combined and deduped by channel id. Each channel records the rings it matched and whether each ring was primary or adjacent. Primary sorts ahead of adjacent. Within a level, higher views sort first, then subscriber count, then channel id. The old top-60 keyword cap is gone. A named safety cap, `YOUTUBE_LIBRARY_CAP`, stops the list at 500. The live video search still runs only when the combined total is under 10.
+
+A library channel that matched at either level gets the same topical input: the matched ring's terms, added to `audience_interests`. The channel's own topic labels stay on `categories`, so purchase power still reads those. Scoring weights, bands, thresholds, and the topical formula are unchanged. Podcast discovery is unchanged.
+
+### Where
+
+- `lib/youtube-library/ring-categories.ts`
+- `lib/youtube-library/ring-categories.test.ts`
+- `lib/youtube-library/read.ts`
+- `lib/youtube-library/read.test.ts`
+- `lib/discovery/discover-shows.ts` (YouTube library topical input only)
+- `lib/discovery/discover-shows.test.ts`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run lib/youtube-library/ring-categories.test.ts lib/youtube-library/read.test.ts lib/discovery/discover-shows.test.ts` (3 files, 50 passed).
+
+Full `npx vitest run`: 276 files, 2443 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 136 pages.
+
+Ring map: protein gummies; "women's daily-wellness routine buyers"; a personal-finance ring; a ring that matches nothing and falls back to "Business & Finance". Channel categories from niche tags and source phrases.
+
+Read: protein gummies returns health, wellness, fitness, and lifestyle channels and drops music. Rings combine. A duplicate channel id is one row and keeps both ring hits. Primary sorts ahead of a higher-view adjacent channel. The cap is 500. Live top-up runs at 9 matches and does not run at 10. A category match with a keyword score of 0 is kept.
+
+Topical input: primary and adjacent both receive `["protein gummies"]`. Their topical scores are both 85. Weights equal `convictionWeights("mid")`. The fitness channel's categories stay `["Gym workout"]`. Without the shared input that channel scores 20. A podcast fixture snapshot is byte-identical for the stable show fields (`discovered-podscan-pd_fixture`, Health Cast, audience 20,000, CPM 22/15/10).
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- Lifestyle is not one of the 20 pull categories. A channel counts as lifestyle when its niche tag is Self-Improvement or Fashion & Beauty, or when its source query hits a lifestyle phrase (daily routine, wellness routine, vlog, lifestyle). An entertainment-tagged vlog with none of those signals is not included.
+- Niche tags still collapse fitness, nutrition, and wellness into "Health & Wellness". Source category is what separates a gym channel from a health channel. A discovery row whose `source_query` is a long joined query can pick up every category phrase inside that string.
+- The video-count and view floors still drop a category match that would not survive live discovery. The 500 cap is a safety stop, not a rank of the best 500.
+- Keyword overlap (`libraryMatchScore`) is no longer the selection or the sort. It remains in the module and is not called on the read path.
+- Adjacent and primary matches share ring terms on `audience_interests`. They do not share the full `topicalRelevanceInputs` list, because categories stay the channel's own topics. The direct-match rule then scores both at 85 for that ring.
+- No migration. Nothing was applied to `ldtmhafewfifdizgfrnn`. No live write, charge, or send. This PR does not merge. After the library has rows, rerun the c0be25d4-style brief and report the YouTube count. Do not rerun it from this PR.
 
 ## C2 Cheaper recent-views stats from the uploads playlist
 

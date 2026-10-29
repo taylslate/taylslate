@@ -16,13 +16,18 @@ vi.mock("@/lib/enrichment/podscan", async () => {
   );
   return {
     ...actual,
-    getPodscanClientSafe: () => null,
+    getPodscanClientSafe: vi.fn(() => null),
   };
 });
 
 import { getYouTubeClientSafe, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
+import { getPodscanClientSafe } from "@/lib/enrichment/podscan";
+import { convictionWeights, scoreShowConviction, topicalRelevanceInputs } from "@/lib/scoring/conviction";
+import type { CampaignPatternRow, RingHypothesisRow } from "@/lib/data/types";
+import { createMemoryYoutubeStore, type YoutubeChannelRecord } from "@/lib/youtube-library/store";
 import {
   YOUTUBE_DISCOVERY_QUOTA,
+  applyYoutubeLibraryTopicalInput,
   discoverFromYoutube,
   discoverShows,
   excludeDeadYouTube,
@@ -30,6 +35,7 @@ import {
   passesYouTubeMarketFilter,
   youtubeBrandMatch,
   youtubeInterestRetry,
+  youtubeLibraryTopicalInput,
 } from "./discover-shows";
 import {
   podscanPodcastToShow,
@@ -1029,6 +1035,245 @@ describe("YouTube post-filter stage logs", () => {
       );
     } finally {
       errorSpy.mockRestore();
+    }
+  });
+});
+
+describe("YouTube library topical input", () => {
+  const ringTerms = ["protein gummies"];
+  const primaryCategories = ["health"];
+
+  function libraryRecord(
+    overrides: Partial<YoutubeChannelRecord> & { channel_id: string }
+  ): YoutubeChannelRecord {
+    return {
+      title: overrides.channel_id,
+      description: "Training and health",
+      thumbnail_url: null,
+      country: "US",
+      default_language: "en",
+      subscriber_count: 1000,
+      video_count: 40,
+      total_view_count: 2_000_000,
+      avg_recent_views: 50000,
+      avg_views_method: "estimated",
+      topic_categories: ["Fitness"],
+      keywords: [],
+      niche_tags: [],
+      niche_tags_version: 1,
+      tagged_at: "2026-10-01T00:00:00.000Z",
+      passed_market_filter: true,
+      brand_flag: null,
+      show_id: null,
+      source: "category",
+      source_query: "health tips",
+      first_seen_at: "2026-01-01T00:00:00.000Z",
+      stats_refreshed_at: "2026-10-20T00:00:00.000Z",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-10-20T00:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  function pattern(): CampaignPatternRow {
+    return {
+      id: "cp-1",
+      campaign_id: "camp-1",
+      customer_id: "cust-1",
+      created_at: "2026-01-01T00:00:00.000Z",
+      product_attributes: { category: "protein gummies", key_attributes: ["protein gummies"] },
+      customer_description: null,
+      aov_bucket: "mid",
+      scoring_weights: null,
+    };
+  }
+
+  function ring(): RingHypothesisRow {
+    return {
+      id: "ring-1",
+      campaign_pattern_id: "cp-1",
+      created_at: "2026-01-01T00:00:00.000Z",
+      kind: "primary",
+      label: "protein gummies",
+      reasoning: "easy daily protein",
+      confidence: "high",
+      confidence_score: 80,
+      brand_confirmed: true,
+      brand_decision: "confirmed",
+      slot_position: 0,
+    };
+  }
+
+  it("gives primary and adjacent matches the same topical input", async () => {
+    expect(
+      youtubeLibraryTopicalInput({ matchLevel: "primary", ringTerms, primaryCategories })
+    ).toEqual(
+      youtubeLibraryTopicalInput({ matchLevel: "adjacent", ringTerms, primaryCategories })
+    );
+    expect(
+      youtubeLibraryTopicalInput({ matchLevel: "adjacent", ringTerms, primaryCategories })
+    ).toEqual(["protein gummies"]);
+
+    const store = createMemoryYoutubeStore();
+    await store.saveChannel(
+      libraryRecord({
+        channel_id: "health",
+        niche_tags: ["Health & Wellness"],
+        source_query: "health tips",
+        topic_categories: ["protein"],
+        avg_recent_views: 20000,
+        subscriber_count: 10,
+      })
+    );
+    await store.saveChannel(
+      libraryRecord({
+        channel_id: "fitness",
+        niche_tags: [],
+        source_query: "gym workout",
+        topic_categories: ["Gym workout"],
+        avg_recent_views: 90000,
+        subscriber_count: 90,
+      })
+    );
+    vi.mocked(getYouTubeClientSafe).mockReturnValue({
+      searchVideos: vi.fn(async () => []),
+      getMultipleChannelDetails: vi.fn(async () => []),
+      getRecentVideoStats: vi.fn(),
+    } as never);
+
+    const shows = await discoverFromYoutube(["protein gummies"], [], "", [], {
+      store,
+      now: new Date("2026-10-26T00:00:00.000Z"),
+      rings: [{ id: "protein gummies", terms: ["protein gummies"] }],
+    });
+    const health = shows.find((show) => show.youtube_channel_id === "health");
+    const fitness = shows.find((show) => show.youtube_channel_id === "fitness");
+    expect(health).toBeTruthy();
+    expect(fitness).toBeTruthy();
+    expect(health?.categories).toEqual(["protein"]);
+    expect(fitness?.categories).toEqual(["Gym workout"]);
+    expect(health?.audience_interests).toEqual(["protein", "protein gummies"]);
+    expect(fitness?.audience_interests).toEqual(["Gym workout", "protein gummies"]);
+
+    const added = youtubeLibraryTopicalInput({
+      matchLevel: "primary",
+      ringTerms,
+      primaryCategories,
+    });
+    expect(health?.audience_interests?.slice(-added.length)).toEqual(added);
+    expect(fitness?.audience_interests?.slice(-added.length)).toEqual(added);
+
+    const scoredPrimary = scoreShowConviction(health!, ring(), pattern());
+    const scoredAdjacent = scoreShowConviction(fitness!, ring(), pattern());
+    expect(scoredAdjacent.topicalRelevance).toBe(scoredPrimary.topicalRelevance);
+    expect(scoredAdjacent.topicalRelevance).toBe(85);
+    expect(scoredAdjacent.weights).toEqual(scoredPrimary.weights);
+    expect(scoredPrimary.weights).toEqual(convictionWeights("mid"));
+
+    const unstamped = applyYoutubeLibraryTopicalInput(
+      { ...fitness!, audience_interests: ["Gym workout"] },
+      { matchLevel: "adjacent", ringTerms: [], primaryCategories: [] }
+    );
+    expect(topicalRelevanceInputs(unstamped)).toEqual(
+      topicalRelevanceInputs({ ...fitness!, audience_interests: ["Gym workout"] })
+    );
+    expect(scoreShowConviction(unstamped, ring(), pattern()).topicalRelevance).toBe(20);
+  });
+});
+
+describe("podcast discovery regression", () => {
+  const episode = {
+    episode_id: "ep_fixture",
+    episode_title: "Morning health",
+    podcast_id: "pd_fixture",
+    podcast: {
+      podcast_id: "pd_fixture",
+      podcast_name: "Health Cast",
+      podcast_description: "A health show",
+      podcast_categories: ["Health"],
+      publisher_name: "Health House",
+      reach: { audience_size: 20000, email: "host@example.com" },
+      rss_url: "https://example.com/feed.xml",
+    },
+  };
+
+  function slim(show: {
+    id: string;
+    name: string;
+    platform: string;
+    description: string;
+    categories: string[];
+    audience_interests: string[];
+    audience_size: number;
+    network?: string;
+    price_type: string;
+    podscan_id?: string;
+    rss_url?: string;
+    contact: { email: string };
+    rate_card: unknown;
+  }) {
+    return {
+      id: show.id,
+      name: show.name,
+      platform: show.platform,
+      description: show.description,
+      categories: show.categories,
+      audience_interests: show.audience_interests,
+      audience_size: show.audience_size,
+      network: show.network ?? null,
+      price_type: show.price_type,
+      podscan_id: show.podscan_id ?? null,
+      rss_url: show.rss_url ?? null,
+      contact_email: show.contact.email,
+      rate_card: show.rate_card,
+    };
+  }
+
+  it("keeps podcast results byte-identical on the fixture", async () => {
+    vi.mocked(getPodscanClientSafe).mockReturnValue({
+      searchEpisodes: async () => ({
+        data: [episode],
+        pagination: { total: 1, per_page: 25, current_page: 1, last_page: 1 },
+      }),
+    } as never);
+    try {
+      const result = await discoverShows({
+        target_interests: ["Health & Wellness"],
+        keywords: ["protein"],
+        platforms: ["podcast"],
+        ring_terms: ["protein gummies"],
+      });
+      expect(result.sources).toEqual({ podscan: 1, youtube: 0 });
+      expect(result.errors).toEqual([]);
+      expect(result.discovered.map((show) => slim(show))).toMatchInlineSnapshot(`
+        [
+          {
+            "audience_interests": [
+              "Health",
+            ],
+            "audience_size": 20000,
+            "categories": [
+              "Health",
+            ],
+            "contact_email": "host@example.com",
+            "description": "A health show",
+            "id": "discovered-podscan-pd_fixture",
+            "name": "Health Cast",
+            "network": "Health House",
+            "platform": "podcast",
+            "podscan_id": "pd_fixture",
+            "price_type": "cpm",
+            "rate_card": {
+              "midroll_cpm": 22,
+              "postroll_cpm": 10,
+              "preroll_cpm": 15,
+            },
+            "rss_url": "https://example.com/feed.xml",
+          },
+        ]
+      `);
+    } finally {
+      vi.mocked(getPodscanClientSafe).mockReturnValue(null);
     }
   });
 });
