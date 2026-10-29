@@ -72,6 +72,26 @@ describe("library floors", () => {
         record({ channel_id: "recent-ok", avg_recent_views: 10000, avg_views_method: "recent" })
       )
     ).toBe(true);
+    expect(
+      channelPassesLibraryFloors(
+        record({ channel_id: "uploads-under", avg_recent_views: 9999, avg_views_method: "uploads" })
+      )
+    ).toBe(false);
+    expect(
+      channelPassesLibraryFloors(
+        record({ channel_id: "uploads-ok", avg_recent_views: 10000, avg_views_method: "uploads" })
+      )
+    ).toBe(true);
+    expect(
+      channelPassesLibraryFloors(
+        record({ channel_id: "estimate-ok", avg_recent_views: 5000, avg_views_method: "estimate" })
+      )
+    ).toBe(true);
+    expect(
+      channelPassesLibraryFloors(
+        record({ channel_id: "estimate-under", avg_recent_views: 4999, avg_views_method: "estimate" })
+      )
+    ).toBe(false);
   });
 });
 

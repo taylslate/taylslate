@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { YouTubeChannelDetails } from "@/lib/enrichment/youtube";
-import { createMemoryYoutubeStore, draftToRecord, pickUniqueShowId, type ChannelDraft } from "./store";
+import {
+  createMemoryYoutubeStore,
+  draftToRecord,
+  pickUniqueShowId,
+  uploadsStatsAffordable,
+  UPLOADS_STATS_UNITS,
+  YOUTUBE_LIBRARY_PULL_BUDGET,
+  type ChannelDraft,
+} from "./store";
 
 const CHANNEL = "UCabcdefghijklmnopqrstuv";
 
@@ -90,6 +98,27 @@ describe("unique show linking", () => {
     expect(store.shows).toHaveLength(1);
     expect(store.channels.get(CHANNEL)?.niche_tags).toEqual(["Health & Wellness"]);
     expect(store.channels.get(CHANNEL)?.passed_market_filter).toBe(true);
+  });
+});
+
+describe("avg views method", () => {
+  it("records uploads for a measured average and estimate for the catalog fallback", () => {
+    expect(UPLOADS_STATS_UNITS).toBe(2);
+    expect(YOUTUBE_LIBRARY_PULL_BUDGET).toBe(8000);
+    expect(uploadsStatsAffordable(7998, 8000)).toBe(true);
+    expect(uploadsStatsAffordable(7999, 8000)).toBe(false);
+
+    const measured = draftToRecord(null, draft({ averageViews: 12000, viewsMethod: "uploads" }), null);
+    expect(measured.avg_views_method).toBe("uploads");
+    expect(measured.avg_recent_views).toBe(12000);
+
+    const fallback = draftToRecord(null, draft({ viewsMethod: "estimate" }), null);
+    expect(fallback.avg_views_method).toBe("estimate");
+    expect(fallback.avg_recent_views).toBe(50000);
+
+    const untouched = draftToRecord(null, draft(), null);
+    expect(untouched.avg_views_method).toBe("estimated");
+    expect(untouched.avg_recent_views).toBe(50000);
   });
 });
 

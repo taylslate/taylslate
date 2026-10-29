@@ -1320,3 +1320,59 @@ No page or component was edited. Screenshots are not applicable.
 - Library reads page at most 50,000 eligible rows. Ranking still returns at most 60.
 - `custom_url` is used in memory for the show-link check. It is not a column. The database link uses `shows.youtube_channel_id` and stored surface links.
 - No live write, charge, or send. This PR does not merge. After 074 is applied, the day-1 check is row count, units logged, and category spread. Do not rerun a campaign to prove the library until that apply.
+
+## C2 Cheaper recent-views stats from the uploads playlist
+
+### What was built
+
+Recent average views now come from the channel uploads playlist instead of a `search.list` (100 units). `YouTubeClient.recentUploadsStats` derives the playlist id by replacing the channel id's `UC` prefix with `UU`, or uses `contentDetails.relatedPlaylists.uploads` when the caller already has it. It calls `playlistItems.list` with `maxResults` 15, then one `videos.list` for `statistics` and `contentDetails`. That is 2 units.
+
+The mean and the median are taken from long-form videos published in the last 90 days. A video of 60 seconds or less is a Short and is left out. A video with no duration is left out. `uploadCount` is how many of those long-form videos were in the window, on that page of 15. `avg_recent_views` stores the mean. `averageViews` is the same mean, so the existing floors still compare one number.
+
+On an API error the call returns method `estimate` and the catalog average (total views divided by video count). The warning goes through `redactSecretParams`. A successful call with no qualifying long-form video returns method `uploads` and a mean of 0, so the 10,000 floor applies.
+
+Call sites:
+
+- Discovery asks for every channel that passes the market filter. The top-10 cap is gone. Floors stay 10,000 on an uploads measurement and 5,000 on the estimate. Worst case is 200 channels x 2 = 400, plus video search 400 and channel details 4. 804, down from 1,414.
+- The daily pull charges 2 units per channel at upsert, and only when those 2 units still fit in the 8,000 budget. The constants stay 8,000 and 1,000.
+- The daily refresh does the same inside the 1,000 budget. A channel it cannot afford is left unstamped so the next run still sees it as oldest.
+
+`avg_views_method` is `uploads` when the playlist measurement is stored, and `estimate` when that call fell back. Rows that never attempted the call stay `estimated`. Library reads treat `uploads` the same as `recent` for the 10,000 floor. `estimate` and `estimated` stay on the 5,000 floor.
+
+### Where
+
+- `lib/enrichment/youtube.ts` (`recentUploadsStats`, playlist id, Shorts and 90-day summary)
+- `lib/enrichment/youtube.test.ts`
+- `lib/youtube-library/store.ts` (method on the upsert record, 2-unit budget check)
+- `lib/youtube-library/store.test.ts`
+- `lib/youtube-library/pull.ts` (charge 2 units per upsert inside the 8,000 budget)
+- `lib/youtube-library/pull.test.ts`
+- `lib/youtube-library/refresh.ts`
+- `lib/youtube-library/refresh.test.ts`
+- `lib/youtube-library/read.ts` (10,000 floor for `uploads`)
+- `lib/youtube-library/read.test.ts`
+- `lib/discovery/discover-shows.ts` (the recent-stats call and the quota constant)
+- `lib/discovery/discover-shows.test.ts`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+`pull.ts` and `read.ts` are outside the original owns list. The pull loop is what holds the 8,000 budget, and the library floor only treated `recent` as a real measurement. Both had to change for the new method to be counted and floored.
+
+### Tests
+
+`npx vitest run lib/enrichment/youtube.test.ts lib/youtube-library/store.test.ts lib/youtube-library/pull.test.ts lib/youtube-library/refresh.test.ts lib/youtube-library/read.test.ts lib/discovery/discover-shows.test.ts` (6 files, 63 passed).
+
+UU id derivation, a known uploads playlist id, Shorts at 60 seconds, the 90-day window, median and mean, the error fallback, `key=` redaction, pull and refresh budget accounting, and discovery calling recent stats for every market survivor (not the top 10, and not the search.list stats call). Quota worst case is 804.
+
+Full `npx vitest run`: 275 files, 2438 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 136 pages.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- Migration 074's check allows only `recent` and `estimated`. This job does not ship a migration. A hosted upsert of `uploads` or `estimate` fails that check until it is widened. Apply nothing on `ldtmhafewfifdizgfrnn` from this PR. After a follow-up migration and a refresh run, the read-only check is `avg_views_method` counts on `youtube_channels`, plus the units logged per pull and per discovery run.
+- The caller reserves 2 units even when the playlist is empty (1 unit) or the first call fails before `videos.list` (1 unit).
+- Only the newest 15 uploads are read. A long-form video older than that page, inside 90 days, is not in the mean.
+- A successful read with zero qualifying videos stores mean 0 and method `uploads`. The 10,000 floor drops that channel. An API error uses the 5,000 catalog floor instead.
+- Discovery still fetches stats before the video-count and brand checks, now for every market survivor. A brand channel still spends 2 units.
+- `getRecentVideoStats` (the 100-unit search) remains for the enrich routes. Discovery, pull, and refresh do not call it.
+- No live write, charge, or send. This PR does not merge.

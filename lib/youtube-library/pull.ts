@@ -9,6 +9,7 @@ import {
   type YouTubeClient,
 } from "@/lib/enrichment/youtube";
 import { passesYouTubeMarketFilter, youtubeBrandMatch } from "@/lib/discovery/discover-shows";
+import { redactSecretParams } from "@/lib/discovery/redact-secrets";
 import { categoryQueueValues } from "./categories";
 import { parseChannelRef, parseYoutubeSeedCsv, YOUTUBE_SEEDS_PATH } from "./seeds";
 import {
@@ -17,6 +18,8 @@ import {
   getYoutubeLibraryStore,
   isMissingLibraryTable,
   SEARCH_UNITS,
+  UPLOADS_STATS_UNITS,
+  uploadsStatsAffordable,
   YoutubeLibraryTableMissing,
   YOUTUBE_LIBRARY_PULL_BUDGET,
   type ChannelDraft,
@@ -29,11 +32,18 @@ export { SEARCH_UNITS, CHANNELS_LIST_UNITS, YOUTUBE_LIBRARY_PULL_BUDGET };
 const MAX_ATTEMPTS = 3;
 const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 
+export type UploadsStatsFetch =
+  | { kind: "skip" }
+  | { kind: "uploads"; averageViews: number }
+  | { kind: "estimate" };
+
 export interface LibraryYoutubeApi {
   search(query: string): Promise<string[]>;
   list(ids: string[]): Promise<{ found: YouTubeChannelDetails[]; missing: string[] }>;
   seedLookupCost(value: string): number;
   lookupSeed(value: string): Promise<{ channelId: string | null; notFound: boolean }>;
+  /** Uploads-playlist recent views. 2 units when it does not return skip. */
+  recentUploads?(channelId: string): Promise<UploadsStatsFetch>;
 }
 
 export interface YoutubePullReport {
@@ -137,6 +147,21 @@ export function createLibraryYoutubeApi(client?: YouTubeClient | null): LibraryY
       if (!parsed) return 0;
       return parsed.kind === "id" ? 0 : CHANNELS_LIST_UNITS;
     },
+    async recentUploads(channelId: string) {
+      if (!youtube || typeof youtube.recentUploadsStats !== "function") {
+        return { kind: "skip" as const };
+      }
+      try {
+        const stats = await youtube.recentUploadsStats(channelId);
+        if (stats.method === "uploads") {
+          return { kind: "uploads" as const, averageViews: stats.meanViews };
+        }
+        return { kind: "estimate" as const };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        throw new Error(redactSecretParams(message));
+      }
+    },
     async lookupSeed(value: string) {
       const parsed = parseChannelRef(value);
       if (!parsed) return { channelId: null, notFound: true };
@@ -180,8 +205,11 @@ async function upsertFound(
   details: YouTubeChannelDetails,
   source: ChannelDraft["source"],
   sourceQuery: string,
-  now: string
-): Promise<number> {
+  now: string,
+  api: LibraryYoutubeApi,
+  unitsLeft: number,
+  log: (line: string) => void
+): Promise<{ count: number; units: number }> {
   let showId: string | null = null;
   try {
     showId = await store.uniqueShowId(details.channelId, details.customUrl);
@@ -198,9 +226,28 @@ async function upsertFound(
     sourceQuery,
     now,
   };
+  let units = 0;
+  if (typeof api.recentUploads === "function" && uploadsStatsAffordable(0, unitsLeft)) {
+    units += UPLOADS_STATS_UNITS;
+    try {
+      const result = await api.recentUploads(details.channelId);
+      if (result.kind === "skip") {
+        units = 0;
+      } else if (result.kind === "uploads") {
+        draft.averageViews = result.averageViews;
+        draft.viewsMethod = "uploads";
+      } else {
+        draft.viewsMethod = "estimate";
+      }
+    } catch (err) {
+      draft.viewsMethod = "estimate";
+      const message = err instanceof Error ? err.message : "unknown error";
+      log(`[youtube-library] uploads stats failed: ${redactSecretParams(message)}`);
+    }
+  }
   const record = draftToRecord(existing, draft, showId);
   await store.saveChannel(record);
-  return 1;
+  return { count: 1, units };
 }
 
 async function failItem(store: YoutubeLibraryStore, item: QueueItem, message: string): Promise<void> {
@@ -272,7 +319,18 @@ export async function runPullQueue(input: {
           const listed = await input.api.list(slice);
           units += CHANNELS_LIST_UNITS;
           for (const details of listed.found) {
-            upserted += await upsertFound(input.store, details, "category", item.value, now);
+            const saved = await upsertFound(
+              input.store,
+              details,
+              "category",
+              item.value,
+              now,
+              input.api,
+              left(),
+              log
+            );
+            upserted += saved.count;
+            units += saved.units;
           }
         } catch (err) {
           units += CHANNELS_LIST_UNITS;
@@ -341,7 +399,18 @@ export async function runPullQueue(input: {
         continue;
       }
       for (const details of listed.found) {
-        upserted += await upsertFound(input.store, details, "seed", item.value, now);
+        const saved = await upsertFound(
+          input.store,
+          details,
+          "seed",
+          item.value,
+          now,
+          input.api,
+          left(),
+          log
+        );
+        upserted += saved.count;
+        units += saved.units;
       }
       await input.store.markQueueDone(item.id, now);
       done += 1;

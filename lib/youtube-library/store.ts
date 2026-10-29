@@ -2,7 +2,7 @@
 // A missing table is YoutubeLibraryTableMissing. Callers no-op.
 // This module never inserts a shows row.
 
-import type { YouTubeChannelDetails } from "@/lib/enrichment/youtube";
+import { UPLOADS_STATS_UNITS, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { linkResolvesToChannel } from "./seeds";
 import { deterministicNicheTags, filterNicheTags, NICHE_TAGS_VERSION } from "./tags";
@@ -11,6 +11,16 @@ export const YOUTUBE_STATS_MAX_AGE_DAYS = 30;
 export const YOUTUBE_LIBRARY_PULL_BUDGET = 8000;
 export const SEARCH_UNITS = 100;
 export const CHANNELS_LIST_UNITS = 1;
+export { UPLOADS_STATS_UNITS };
+
+export type AvgViewsMethod = "uploads" | "estimate" | "recent" | "estimated";
+
+const AVG_VIEWS_METHODS = new Set<string>(["uploads", "estimate", "recent", "estimated"]);
+
+/** True when one uploads-playlist read (2 units) still fits in the budget. */
+export function uploadsStatsAffordable(unitsSpent: number, budget: number): boolean {
+  return unitsSpent + UPLOADS_STATS_UNITS <= budget;
+}
 
 const MISSING_RELATION = /does not exist|schema cache|42P01|PGRST205|could not find the table/i;
 
@@ -51,7 +61,7 @@ export interface YoutubeChannelRecord {
   video_count: number | null;
   total_view_count: number | null;
   avg_recent_views: number | null;
-  avg_views_method: "recent" | "estimated" | null;
+  avg_views_method: AvgViewsMethod | null;
   topic_categories: string[];
   keywords: string[];
   niche_tags: string[];
@@ -76,6 +86,8 @@ export interface ChannelDraft {
   source: YoutubeChannelSource;
   sourceQuery: string | null;
   averageViews?: number | null;
+  /** "uploads" when the playlist measurement is real. "estimate" on fallback. */
+  viewsMethod?: "uploads" | "estimate" | null;
   now: string;
 }
 
@@ -191,10 +203,28 @@ export function draftToRecord(
 ): YoutubeChannelRecord {
   const details = draft.details;
   const videos = details.videoCount;
-  const hasRecent = typeof draft.averageViews === "number" && Number.isFinite(draft.averageViews);
+  const hasMeasured = typeof draft.averageViews === "number" && Number.isFinite(draft.averageViews);
   const estimated = videos > 0 ? Math.round(details.totalViewCount / videos) : null;
-  const avg = hasRecent ? Math.round(draft.averageViews as number) : estimated;
-  const method = hasRecent ? "recent" : estimated == null ? null : "estimated";
+  const measured = hasMeasured ? Math.round(draft.averageViews as number) : null;
+  // uploads: playlist measurement. estimate: this call fell back.
+  // estimated: no uploads call (older rows, or the 2 units did not fit).
+  // Migration 074's check allows only recent and estimated. uploads and
+  // estimate need that check widened before a hosted write can succeed.
+  let avg: number | null;
+  let method: AvgViewsMethod | null;
+  if (draft.viewsMethod === "uploads" && measured != null) {
+    avg = measured;
+    method = "uploads";
+  } else if (draft.viewsMethod === "estimate" || (draft.viewsMethod === "uploads" && measured == null)) {
+    avg = estimated;
+    method = estimated == null ? null : "estimate";
+  } else if (measured != null) {
+    avg = measured;
+    method = "uploads";
+  } else {
+    avg = estimated;
+    method = estimated == null ? null : "estimated";
+  }
   const deterministic = deterministicNicheTags({
     topicCategories: details.topicCategories,
     keywords: details.keywords,
@@ -380,7 +410,8 @@ function asRecord(row: Record<string, unknown>): YoutubeChannelRecord {
     video_count: row.video_count == null ? null : Number(row.video_count),
     total_view_count: row.total_view_count == null ? null : Number(row.total_view_count),
     avg_recent_views: row.avg_recent_views == null ? null : Number(row.avg_recent_views),
-    avg_views_method: method === "recent" || method === "estimated" ? method : null,
+    avg_views_method:
+      typeof method === "string" && AVG_VIEWS_METHODS.has(method) ? (method as AvgViewsMethod) : null,
     topic_categories: Array.isArray(row.topic_categories) ? (row.topic_categories as string[]) : [],
     keywords: Array.isArray(row.keywords) ? (row.keywords as string[]) : [],
     niche_tags: Array.isArray(row.niche_tags) ? (row.niche_tags as string[]) : [],

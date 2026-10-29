@@ -15,7 +15,12 @@
 
 import type { Show, ShowSurface } from "@/lib/data/types";
 import { getPodscanClientSafe, type PodscanPodcast } from "@/lib/enrichment/podscan";
-import { getYouTubeClientSafe, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
+import {
+  getYouTubeClientSafe,
+  UPLOADS_STATS_UNITS,
+  type YouTubeChannelDetails,
+  type YouTubeUploadsStats,
+} from "@/lib/enrichment/youtube";
 import {
   buildYouTubeQueries,
   buildYouTubeQuery,
@@ -65,12 +70,8 @@ export const MIN_YOUTUBE_VIDEO_COUNT = 10;
 const YOUTUBE_SEARCH_MAX_RESULTS = 50;
 /** channels.list accepts at most 50 ids per call. */
 const YOUTUBE_CHANNEL_ID_BATCH = 50;
-/**
- * Market survivors that get a recent-video stats fetch, highest
- * subscriber count first. 10 x (search.list 100 + videos.list 1).
- * A cap of 6 would be about 1k units (6 x 101 + 404). Default is 10.
- */
-const YOUTUBE_RECENT_STATS_CHANNELS = 10;
+/** Worst case unique channels from the capped video searches. */
+const YOUTUBE_DISCOVERY_CHANNEL_CAP = MAX_YOUTUBE_SEARCHES * YOUTUBE_SEARCH_MAX_RESULTS;
 
 /**
  * YouTube Data API units for one discovery run.
@@ -78,20 +79,18 @@ const YOUTUBE_RECENT_STATS_CHANNELS = 10;
  * with type=video, the same as type=channel.
  * Channel details: 1 unit per batch of 50 ids. Worst case is 4 x 50 = 200
  * unique channels, which is 4 calls. Together that is 404.
- * Recent video stats run for the top 10 channels that pass the market
- * filter. Each is one search.list (100) plus one videos.list (1) = 101.
- * 10 x 101 = 1,010. Worst case: 1,010 + 404 = 1,414 (about 1.4k).
+ * Recent views come from the uploads playlist for every channel that passes
+ * the market filter. playlistItems.list plus videos.list is 2 units.
+ * 200 x 2 = 400. Worst case: 400 + 404 = 804.
  */
 export const YOUTUBE_DISCOVERY_QUOTA = {
   videoSearch: MAX_YOUTUBE_SEARCHES * 100,
-  channelDetailsWorstCase: Math.ceil(
-    (MAX_YOUTUBE_SEARCHES * YOUTUBE_SEARCH_MAX_RESULTS) / YOUTUBE_CHANNEL_ID_BATCH
-  ),
-  recentVideoStats: YOUTUBE_RECENT_STATS_CHANNELS * (100 + 1),
+  channelDetailsWorstCase: Math.ceil(YOUTUBE_DISCOVERY_CHANNEL_CAP / YOUTUBE_CHANNEL_ID_BATCH),
+  recentVideoStats: YOUTUBE_DISCOVERY_CHANNEL_CAP * UPLOADS_STATS_UNITS,
   worstCase:
     MAX_YOUTUBE_SEARCHES * 100 +
-    Math.ceil((MAX_YOUTUBE_SEARCHES * YOUTUBE_SEARCH_MAX_RESULTS) / YOUTUBE_CHANNEL_ID_BATCH) +
-    YOUTUBE_RECENT_STATS_CHANNELS * (100 + 1),
+    Math.ceil(YOUTUBE_DISCOVERY_CHANNEL_CAP / YOUTUBE_CHANNEL_ID_BATCH) +
+    YOUTUBE_DISCOVERY_CHANNEL_CAP * UPLOADS_STATS_UNITS,
 } as const;
 
 /**
@@ -284,12 +283,34 @@ async function discoverFromPodscan(
  * snippet.channelId, first occurrence wins, in that rank order. Channel
  * search is not also run.
  * The market filter below is the hard keep/drop, using the channel-details
- * response. Recent video stats still run for the top 10 channels that
- * survive it.
+ * response. Recent views then come from the uploads playlist for every
+ * channel that survives it.
  *
  * If every search returns 0 channels, run the interest fallback once when it
  * was not already searched and the 4-search cap still has room.
  */
+async function loadRecentUploads(
+  client: {
+    recentUploadsStats?: (
+      channelId: string,
+      options?: { fallbackAverage?: number | null }
+    ) => Promise<YouTubeUploadsStats>;
+  },
+  channel: YouTubeChannelDetails
+): Promise<YouTubeUploadsStats | null> {
+  if (typeof client.recentUploadsStats !== "function") return null;
+  const fallbackAverage = channel.videoCount > 0 ? channel.totalViewCount / channel.videoCount : null;
+  try {
+    const stats = await client.recentUploadsStats(channel.channelId, { fallbackAverage });
+    if (!stats || stats.method !== "uploads") return null;
+    return stats;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    console.warn(`[discovery] recent uploads stats failed: ${redactSecretParams(message)}`);
+    return null;
+  }
+}
+
 export async function discoverFromYoutube(
   queries: string[],
   errors: string[],
@@ -380,18 +401,17 @@ async function discoverFromYoutubeLive(
     if (inMarket.length === 0) return [];
 
     const ranked = [...inMarket].sort((a, b) => b.subscriberCount - a.subscriberCount);
-    const statsTargets = ranked.slice(0, YOUTUBE_RECENT_STATS_CHANNELS);
 
-    const statsPromises = statsTargets.map((ch) =>
-      client.getRecentVideoStats(ch.channelId, 5).catch(() => null)
+    const statsResults = await Promise.all(
+      ranked.map(async (ch) => {
+        const stats = await loadRecentUploads(client, ch);
+        return { channelId: ch.channelId, stats };
+      })
     );
-    const statsResults = await Promise.all(statsPromises);
 
-    const statsMap = new Map<string, NonNullable<(typeof statsResults)[0]>>();
-    for (let i = 0; i < statsTargets.length; i++) {
-      if (statsResults[i]) {
-        statsMap.set(statsTargets[i].channelId, statsResults[i]!);
-      }
+    const statsMap = new Map<string, YouTubeUploadsStats>();
+    for (const row of statsResults) {
+      if (row.stats) statsMap.set(row.channelId, row.stats);
     }
 
     // Same three checks, same order, as the previous single filter.
@@ -474,6 +494,7 @@ async function discoverFromYoutubeLive(
           source: "discovery" as const,
           sourceQuery,
           averageViews: statsMap.get(ch.channelId)?.averageViews,
+          viewsMethod: statsMap.has(ch.channelId) ? "uploads" : "estimate",
           now: seenAt,
         }))
       );

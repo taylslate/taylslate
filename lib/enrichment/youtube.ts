@@ -4,7 +4,16 @@
 // Docs: https://developers.google.com/youtube/v3
 // ============================================================
 
+import { redactSecretParams } from "@/lib/discovery/redact-secrets";
+
 const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
+
+/** playlistItems.list (1) plus videos.list (1). */
+export const UPLOADS_STATS_UNITS = 2;
+export const UPLOADS_STATS_MAX_RESULTS = 15;
+export const UPLOADS_STATS_WINDOW_DAYS = 90;
+/** Videos of this many seconds or less are Shorts and stay out of the average. */
+export const SHORTS_MAX_DURATION_SECONDS = 60;
 
 // ---- Types ----
 
@@ -100,6 +109,26 @@ export interface YouTubeRecentStats {
   totalVideosAnalyzed: number;
 }
 
+/** Recent long-form views from the channel uploads playlist. */
+export interface YouTubeUploadsStats extends YouTubeRecentStats {
+  /** Mean of the qualifying view counts. Same number as averageViews. */
+  meanViews: number;
+  medianViews: number;
+  /** Long-form videos in the window, among the playlist page that was read. */
+  uploadCount: number;
+  method: "uploads" | "estimate";
+}
+
+export interface UploadedVideoSample {
+  videoId: string;
+  publishedAt: string;
+  durationSeconds: number | null;
+  viewCount: number;
+  likeCount?: number;
+  commentCount?: number;
+  title?: string;
+}
+
 // snippet + topicDetails + brandingSettings, plus statistics for the
 // existing video-count and view filters.
 const CHANNEL_DETAIL_PARTS = "snippet,statistics,topicDetails,brandingSettings";
@@ -144,6 +173,116 @@ export function parseYouTubeChannelKeywords(raw: string | undefined | null): str
     out.push(term);
   }
   return out;
+}
+
+/**
+ * Uploads playlist id. A known contentDetails.relatedPlaylists.uploads
+ * value wins. Otherwise the channel id with its UC prefix replaced by UU.
+ */
+export function uploadsPlaylistId(channelId: string, knownUploadsId?: string | null): string {
+  const provided = knownUploadsId?.trim();
+  if (provided) return provided;
+  if (channelId.startsWith("UC")) return `UU${channelId.slice(2)}`;
+  return channelId;
+}
+
+/** ISO-8601 duration (PT#H#M#S) to seconds. Null when the value is missing or not a duration. */
+export function parseIso8601DurationSeconds(iso: string | undefined | null): number | null {
+  if (!iso) return null;
+  const match = iso
+    .trim()
+    .match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/);
+  if (!match) return null;
+  if (!match[1] && !iso.includes("T")) return null;
+  const days = Number(match[1] ?? 0);
+  const hours = Number(match[2] ?? 0);
+  const minutes = Number(match[3] ?? 0);
+  const seconds = Number(match[4] ?? 0);
+  if (![days, hours, minutes, seconds].every((value) => Number.isFinite(value))) return null;
+  return Math.round(days * 86400 + hours * 3600 + minutes * 60 + seconds);
+}
+
+export function isShortFormDuration(durationSeconds: number | null): boolean {
+  return durationSeconds != null && durationSeconds <= SHORTS_MAX_DURATION_SECONDS;
+}
+
+/** Median. An even count averages the two middle values. */
+export function medianNumber(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid];
+  return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Long-form videos published in the last `windowDays` days.
+ * Shorts (duration of 60 seconds or less) and rows with no duration are left out.
+ */
+export function summarizeLongFormUploads(
+  samples: UploadedVideoSample[],
+  now: Date,
+  windowDays = UPLOADS_STATS_WINDOW_DAYS
+): {
+  videos: YouTubeVideoStats[];
+  meanViews: number;
+  medianViews: number;
+  uploadCount: number;
+} {
+  const windowStart = now.getTime() - windowDays * 24 * 60 * 60 * 1000;
+  const videos: YouTubeVideoStats[] = [];
+  for (const sample of samples) {
+    const published = Date.parse(sample.publishedAt);
+    if (!Number.isFinite(published) || published < windowStart) continue;
+    if (sample.durationSeconds == null || isShortFormDuration(sample.durationSeconds)) continue;
+    videos.push({
+      videoId: sample.videoId,
+      title: sample.title ?? "",
+      publishedAt: sample.publishedAt,
+      viewCount: sample.viewCount,
+      likeCount: sample.likeCount ?? 0,
+      commentCount: sample.commentCount ?? 0,
+    });
+  }
+  const counts = videos.map((video) => video.viewCount);
+  const uploadCount = videos.length;
+  const meanViews =
+    uploadCount === 0 ? 0 : Math.round(counts.reduce((sum, value) => sum + value, 0) / uploadCount);
+  return {
+    videos,
+    meanViews,
+    medianViews: uploadCount === 0 ? 0 : medianNumber(counts),
+    uploadCount,
+  };
+}
+
+function uploadsStatsFromSummary(
+  summary: ReturnType<typeof summarizeLongFormUploads>,
+  method: "uploads" | "estimate",
+  fallbackAverage?: number | null
+): YouTubeUploadsStats {
+  const fallback =
+    fallbackAverage != null && Number.isFinite(fallbackAverage) ? Math.round(fallbackAverage) : 0;
+  const measured = method === "uploads";
+  const meanViews = measured ? summary.meanViews : fallback;
+  const medianViews = measured ? summary.medianViews : fallback;
+  const videos = measured ? summary.videos : [];
+  const count = videos.length;
+  const averageLikes =
+    count === 0 ? 0 : Math.round(videos.reduce((sum, video) => sum + video.likeCount, 0) / count);
+  const averageComments =
+    count === 0 ? 0 : Math.round(videos.reduce((sum, video) => sum + video.commentCount, 0) / count);
+  return {
+    videos,
+    averageViews: meanViews,
+    meanViews,
+    medianViews,
+    averageLikes,
+    averageComments,
+    totalVideosAnalyzed: measured ? summary.uploadCount : 0,
+    uploadCount: measured ? summary.uploadCount : 0,
+    method,
+  };
 }
 
 function mapYouTubeChannel(channel: YouTubeChannel): YouTubeChannelDetails {
@@ -354,6 +493,78 @@ export class YouTubeClient {
       averageComments: Math.round(totalComments / count),
       totalVideosAnalyzed: videos.length,
     };
+  }
+
+  /**
+   * Recent long-form views from the uploads playlist.
+   * playlistItems.list (max 15) then one videos.list for statistics and contentDetails.
+   * About 2 quota units. On error, returns the catalog fallback with method "estimate".
+   */
+  async recentUploadsStats(
+    channelId: string,
+    options?: {
+      uploadsPlaylistId?: string | null;
+      fallbackAverage?: number | null;
+      now?: Date;
+    }
+  ): Promise<YouTubeUploadsStats> {
+    const now = options?.now ?? new Date();
+    const playlistId = uploadsPlaylistId(channelId, options?.uploadsPlaylistId);
+    try {
+      const playlist = await this.request<{
+        items?: {
+          contentDetails?: { videoId?: string; videoPublishedAt?: string };
+        }[];
+      }>("/playlistItems", {
+        part: "contentDetails",
+        playlistId,
+        maxResults: UPLOADS_STATS_MAX_RESULTS,
+      });
+
+      const listed = (playlist.items ?? [])
+        .map((item) => ({
+          videoId: item.contentDetails?.videoId?.trim() ?? "",
+          publishedAt: item.contentDetails?.videoPublishedAt ?? "",
+        }))
+        .filter((item) => item.videoId);
+
+      if (listed.length === 0) {
+        return uploadsStatsFromSummary(summarizeLongFormUploads([], now), "uploads");
+      }
+
+      const statsRes = await this.request<{
+        items?: {
+          id?: string;
+          contentDetails?: { duration?: string };
+          statistics?: { viewCount?: string; likeCount?: string; commentCount?: string };
+        }[];
+      }>("/videos", {
+        part: "statistics,contentDetails",
+        id: listed.map((item) => item.videoId).join(","),
+      });
+
+      const byId = new Map((statsRes.items ?? []).map((item) => [item.id ?? "", item]));
+      const samples: UploadedVideoSample[] = listed.map((item) => {
+        const video = byId.get(item.videoId);
+        return {
+          videoId: item.videoId,
+          publishedAt: item.publishedAt,
+          durationSeconds: parseIso8601DurationSeconds(video?.contentDetails?.duration),
+          viewCount: parseInt(video?.statistics?.viewCount ?? "0", 10) || 0,
+          likeCount: parseInt(video?.statistics?.likeCount ?? "0", 10) || 0,
+          commentCount: parseInt(video?.statistics?.commentCount ?? "0", 10) || 0,
+        };
+      });
+      return uploadsStatsFromSummary(summarizeLongFormUploads(samples, now), "uploads");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "unknown error";
+      console.warn(`[youtube] recent uploads stats failed: ${redactSecretParams(message)}`);
+      return uploadsStatsFromSummary(
+        summarizeLongFormUploads([], now),
+        "estimate",
+        options?.fallbackAverage
+      );
+    }
   }
 }
 
