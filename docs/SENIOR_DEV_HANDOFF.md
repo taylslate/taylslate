@@ -1329,7 +1329,7 @@ Recent average views now come from the channel uploads playlist instead of a `se
 
 The mean and the median are taken from long-form videos published in the last 90 days. A video of 60 seconds or less is a Short and is left out. A video with no duration is left out. `uploadCount` is how many of those long-form videos were in the window, on that page of 15. `avg_recent_views` stores the mean. `averageViews` is the same mean, so the existing floors still compare one number.
 
-On an API error the call returns method `estimate` and the catalog average (total views divided by video count). The warning goes through `redactSecretParams`. A successful call with no qualifying long-form video returns method `uploads` and a mean of 0, so the 10,000 floor applies.
+On an API error the call returns method `estimate` on the stats object and the catalog average (total views divided by video count). The row stores `avg_views_method` `estimated`. The warning goes through `redactSecretParams`. A successful call with no qualifying long-form video returns method `uploads` on the stats object and a mean of 0, and the row stores `recent`, so the 10,000 floor applies.
 
 Call sites:
 
@@ -1337,7 +1337,7 @@ Call sites:
 - The daily pull charges 2 units per channel at upsert, and only when those 2 units still fit in the 8,000 budget. The constants stay 8,000 and 1,000.
 - The daily refresh does the same inside the 1,000 budget. A channel it cannot afford is left unstamped so the next run still sees it as oldest.
 
-`avg_views_method` is `uploads` when the playlist measurement is stored, and `estimate` when that call fell back. Rows that never attempted the call stay `estimated`. Library reads treat `uploads` the same as `recent` for the 10,000 floor. `estimate` and `estimated` stay on the 5,000 floor.
+`avg_views_method` is `recent` when the playlist measurement is stored, and `estimated` when that call fell back or never ran. Those are the only values migration 074 allows. The 10,000 floor applies to `recent`. The 5,000 floor applies to `estimated`. The stats object's own `method` stays `uploads` or `estimate` so callers can tell a playlist read from the catalog fallback before they write the row.
 
 ### Where
 
@@ -1349,7 +1349,7 @@ Call sites:
 - `lib/youtube-library/pull.test.ts`
 - `lib/youtube-library/refresh.ts`
 - `lib/youtube-library/refresh.test.ts`
-- `lib/youtube-library/read.ts` (10,000 floor for `uploads`)
+- `lib/youtube-library/read.ts` (10,000 floor stays on `recent`)
 - `lib/youtube-library/read.test.ts`
 - `lib/discovery/discover-shows.ts` (the recent-stats call and the quota constant)
 - `lib/discovery/discover-shows.test.ts`
@@ -1369,10 +1369,10 @@ No page or component was edited. Screenshots are not applicable.
 
 ### Known gaps
 
-- Migration 074's check allows only `recent` and `estimated`. This job does not ship a migration. A hosted upsert of `uploads` or `estimate` fails that check until it is widened. Apply nothing on `ldtmhafewfifdizgfrnn` from this PR. After a follow-up migration and a refresh run, the read-only check is `avg_views_method` counts on `youtube_channels`, plus the units logged per pull and per discovery run.
+- No migration. `avg_views_method` is only `recent` or `estimated`, which is what migration 074 already allows. Nothing was applied on `ldtmhafewfifdizgfrnn`. After a refresh run, the read-only check is `avg_views_method` counts on `youtube_channels`, plus the units logged per pull and per discovery run.
 - The caller reserves 2 units even when the playlist is empty (1 unit) or the first call fails before `videos.list` (1 unit).
 - Only the newest 15 uploads are read. A long-form video older than that page, inside 90 days, is not in the mean.
-- A successful read with zero qualifying videos stores mean 0 and method `uploads`. The 10,000 floor drops that channel. An API error uses the 5,000 catalog floor instead.
+- A successful read with zero qualifying videos stores mean 0 and `avg_views_method` `recent`. The 10,000 floor drops that channel. An API error stores `estimated` and uses the 5,000 catalog floor.
 - Discovery still fetches stats before the video-count and brand checks, now for every market survivor. A brand channel still spends 2 units.
 - `getRecentVideoStats` (the 100-unit search) remains for the enrich routes. Discovery, pull, and refresh do not call it.
 - No live write, charge, or send. This PR does not merge.

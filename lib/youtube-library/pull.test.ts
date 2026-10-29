@@ -144,7 +144,7 @@ describe("uploads stats budget", () => {
     expect(report.units).toBeLessThanOrEqual(103);
     expect(recentUploads).toHaveBeenCalledTimes(1);
     expect(recentUploads.mock.calls[0][0]).toBe("a");
-    expect(store.channels.get("a")?.avg_views_method).toBe("uploads");
+    expect(store.channels.get("a")?.avg_views_method).toBe("recent");
     expect(store.channels.get("a")?.avg_recent_views).toBe(12000);
     expect(store.channels.get("b")?.avg_views_method).toBe("estimated");
     expect(store.channels.has("b")).toBe(true);
@@ -174,7 +174,7 @@ describe("uploads stats budget", () => {
     });
     expect(report.upserted).toBe(1);
     expect(report.units).toBe(103);
-    expect(store.channels.get("a")?.avg_views_method).toBe("estimate");
+    expect(store.channels.get("a")?.avg_views_method).toBe("estimated");
     expect(store.channels.get("a")?.avg_recent_views).toBe(50000);
     const logged = lines.join("\n");
     expect(logged).toContain("key=[redacted]");

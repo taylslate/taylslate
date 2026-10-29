@@ -102,18 +102,18 @@ describe("unique show linking", () => {
 });
 
 describe("avg views method", () => {
-  it("records uploads for a measured average and estimate for the catalog fallback", () => {
+  it("records recent for a playlist measurement and estimated for the fallback", () => {
     expect(UPLOADS_STATS_UNITS).toBe(2);
     expect(YOUTUBE_LIBRARY_PULL_BUDGET).toBe(8000);
     expect(uploadsStatsAffordable(7998, 8000)).toBe(true);
     expect(uploadsStatsAffordable(7999, 8000)).toBe(false);
 
-    const measured = draftToRecord(null, draft({ averageViews: 12000, viewsMethod: "uploads" }), null);
-    expect(measured.avg_views_method).toBe("uploads");
+    const measured = draftToRecord(null, draft({ averageViews: 12000, viewsMethod: "recent" }), null);
+    expect(measured.avg_views_method).toBe("recent");
     expect(measured.avg_recent_views).toBe(12000);
 
-    const fallback = draftToRecord(null, draft({ viewsMethod: "estimate" }), null);
-    expect(fallback.avg_views_method).toBe("estimate");
+    const fallback = draftToRecord(null, draft({ viewsMethod: "estimated" }), null);
+    expect(fallback.avg_views_method).toBe("estimated");
     expect(fallback.avg_recent_views).toBe(50000);
 
     const untouched = draftToRecord(null, draft(), null);

@@ -193,9 +193,9 @@ describe("refresh", () => {
     expect(report.refreshed).toBe(2);
     expect(report.stopped).toBe("budget");
     expect(recentUploads.mock.calls.map((call) => call[0])).toEqual(["oldest", "middle"]);
-    expect(store.channels.get("oldest")?.avg_views_method).toBe("uploads");
+    expect(store.channels.get("oldest")?.avg_views_method).toBe("recent");
     expect(store.channels.get("oldest")?.avg_recent_views).toBe(12000);
-    expect(store.channels.get("middle")?.avg_views_method).toBe("estimate");
+    expect(store.channels.get("middle")?.avg_views_method).toBe("estimated");
     expect(store.channels.get("middle")?.avg_recent_views).toBe(20000);
     expect(store.channels.get("newest")?.stats_refreshed_at).toBe("2026-10-20T00:00:00.000Z");
     const logged = lines.join("\n");

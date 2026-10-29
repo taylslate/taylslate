@@ -235,12 +235,12 @@ async function upsertFound(
         units = 0;
       } else if (result.kind === "uploads") {
         draft.averageViews = result.averageViews;
-        draft.viewsMethod = "uploads";
+        draft.viewsMethod = "recent";
       } else {
-        draft.viewsMethod = "estimate";
+        draft.viewsMethod = "estimated";
       }
     } catch (err) {
-      draft.viewsMethod = "estimate";
+      draft.viewsMethod = "estimated";
       const message = err instanceof Error ? err.message : "unknown error";
       log(`[youtube-library] uploads stats failed: ${redactSecretParams(message)}`);
     }

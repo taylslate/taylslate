@@ -41,17 +41,13 @@ export function channelPassesLibraryFloors(row: {
 }): boolean {
   const videos = row.video_count ?? 0;
   if (videos < LIBRARY_FLOOR.videoCount) return false;
-  const recent = usesMeasuredViews(row.avg_views_method, row.avg_recent_views);
+  const recent = row.avg_views_method === "recent" && row.avg_recent_views != null;
   const avg = recent
     ? (row.avg_recent_views as number)
     : row.avg_recent_views ??
       Math.round((row.total_view_count ?? 0) / Math.max(videos, 1));
   const min = recent ? LIBRARY_FLOOR.recentViews : LIBRARY_FLOOR.fallbackViews;
   return avg >= min;
-}
-
-function usesMeasuredViews(method: string | null, avg: number | null): boolean {
-  return (method === "recent" || method === "uploads") && avg != null;
 }
 
 export function libraryMatchScore(
@@ -98,9 +94,7 @@ function recordToDetails(row: YoutubeChannelRecord): YouTubeChannelDetails {
 }
 
 function recentStats(row: YoutubeChannelRecord): YouTubeRecentStats | undefined {
-  if (!usesMeasuredViews(row.avg_views_method, row.avg_recent_views) || row.avg_recent_views == null) {
-    return undefined;
-  }
+  if (row.avg_views_method !== "recent" || row.avg_recent_views == null) return undefined;
   return {
     videos: [],
     averageViews: row.avg_recent_views,

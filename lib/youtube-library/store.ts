@@ -13,9 +13,8 @@ export const SEARCH_UNITS = 100;
 export const CHANNELS_LIST_UNITS = 1;
 export { UPLOADS_STATS_UNITS };
 
-export type AvgViewsMethod = "uploads" | "estimate" | "recent" | "estimated";
-
-const AVG_VIEWS_METHODS = new Set<string>(["uploads", "estimate", "recent", "estimated"]);
+/** Values allowed by youtube_channels_avg_views_method_check in migration 074. */
+export type AvgViewsMethod = "recent" | "estimated";
 
 /** True when one uploads-playlist read (2 units) still fits in the budget. */
 export function uploadsStatsAffordable(unitsSpent: number, budget: number): boolean {
@@ -86,8 +85,11 @@ export interface ChannelDraft {
   source: YoutubeChannelSource;
   sourceQuery: string | null;
   averageViews?: number | null;
-  /** "uploads" when the playlist measurement is real. "estimate" on fallback. */
-  viewsMethod?: "uploads" | "estimate" | null;
+  /**
+   * recent: the uploads playlist measurement.
+   * estimated: that call fell back to total views / video count.
+   */
+  viewsMethod?: AvgViewsMethod | null;
   now: string;
 }
 
@@ -206,21 +208,19 @@ export function draftToRecord(
   const hasMeasured = typeof draft.averageViews === "number" && Number.isFinite(draft.averageViews);
   const estimated = videos > 0 ? Math.round(details.totalViewCount / videos) : null;
   const measured = hasMeasured ? Math.round(draft.averageViews as number) : null;
-  // uploads: playlist measurement. estimate: this call fell back.
-  // estimated: no uploads call (older rows, or the 2 units did not fit).
-  // Migration 074's check allows only recent and estimated. uploads and
-  // estimate need that check widened before a hosted write can succeed.
+  // recent is the uploads-playlist measurement. estimated is the catalog
+  // fallback. Both match migration 074's check.
   let avg: number | null;
   let method: AvgViewsMethod | null;
-  if (draft.viewsMethod === "uploads" && measured != null) {
+  if (draft.viewsMethod === "recent" && measured != null) {
     avg = measured;
-    method = "uploads";
-  } else if (draft.viewsMethod === "estimate" || (draft.viewsMethod === "uploads" && measured == null)) {
+    method = "recent";
+  } else if (draft.viewsMethod === "estimated" || (draft.viewsMethod === "recent" && measured == null)) {
     avg = estimated;
-    method = estimated == null ? null : "estimate";
+    method = estimated == null ? null : "estimated";
   } else if (measured != null) {
     avg = measured;
-    method = "uploads";
+    method = "recent";
   } else {
     avg = estimated;
     method = estimated == null ? null : "estimated";
@@ -410,8 +410,7 @@ function asRecord(row: Record<string, unknown>): YoutubeChannelRecord {
     video_count: row.video_count == null ? null : Number(row.video_count),
     total_view_count: row.total_view_count == null ? null : Number(row.total_view_count),
     avg_recent_views: row.avg_recent_views == null ? null : Number(row.avg_recent_views),
-    avg_views_method:
-      typeof method === "string" && AVG_VIEWS_METHODS.has(method) ? (method as AvgViewsMethod) : null,
+    avg_views_method: method === "recent" || method === "estimated" ? method : null,
     topic_categories: Array.isArray(row.topic_categories) ? (row.topic_categories as string[]) : [],
     keywords: Array.isArray(row.keywords) ? (row.keywords as string[]) : [],
     niche_tags: Array.isArray(row.niche_tags) ? (row.niche_tags as string[]) : [],

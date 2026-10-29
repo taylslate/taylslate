@@ -494,7 +494,7 @@ async function discoverFromYoutubeLive(
           source: "discovery" as const,
           sourceQuery,
           averageViews: statsMap.get(ch.channelId)?.averageViews,
-          viewsMethod: statsMap.has(ch.channelId) ? "uploads" : "estimate",
+          viewsMethod: statsMap.has(ch.channelId) ? "recent" : "estimated",
           now: seenAt,
         }))
       );

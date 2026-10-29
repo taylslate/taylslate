@@ -39,7 +39,7 @@ async function refreshOne(
   store: YoutubeLibraryStore,
   details: YouTubeChannelDetails,
   now: string,
-  measured?: { averageViews?: number; viewsMethod?: "uploads" | "estimate" }
+  measured?: { averageViews?: number; viewsMethod?: "recent" | "estimated" }
 ): Promise<void> {
   const existing = await store.getChannel(details.channelId);
   if (!existing) return;
@@ -106,7 +106,7 @@ export async function runRefreshQueue(input: {
         const details = byId.get(id);
         if (!details) continue;
         let averageViews: number | undefined;
-        let viewsMethod: "uploads" | "estimate" | undefined;
+        let viewsMethod: "recent" | "estimated" | undefined;
         if (chargeUploads) {
           if (!uploadsStatsAffordable(units, budget)) {
             stopped = "budget";
@@ -119,12 +119,12 @@ export async function runRefreshQueue(input: {
               units -= UPLOADS_STATS_UNITS;
             } else if (result.kind === "uploads") {
               averageViews = result.averageViews;
-              viewsMethod = "uploads";
+              viewsMethod = "recent";
             } else {
-              viewsMethod = "estimate";
+              viewsMethod = "estimated";
             }
           } catch (err) {
-            viewsMethod = "estimate";
+            viewsMethod = "estimated";
             const message = err instanceof Error ? err.message : "unknown error";
             log(`[youtube-library] uploads stats failed: ${redactSecretParams(message)}`);
           }
