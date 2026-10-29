@@ -16,8 +16,8 @@ export type TestAccountKey = typeof TEST_ACCOUNTS[number]["key"];
 // from the client. An empty user id is not a configured target.
 export const ADMIN_VIEW_COOKIE_PREFIX = "test:";
 
-/** Left empty. No admin-owned agent test profile exists yet. Do not create one. */
-export const ADMIN_TEST_AGENT_USER_ID = "";
+/** Chris's own test agent account, created Oct 29 2026. */
+export const ADMIN_TEST_AGENT_USER_ID = "e0592378-1981-4f44-98a1-db67fee0ea79";
 
 export type AdminViewRole = "brand" | "show" | "agent";
 
@@ -33,7 +33,7 @@ export const ADMIN_VIEW_AGENT: AdminViewAccount = {
   key: "agent1",
   label: "Test Agent 1",
   userId: ADMIN_TEST_AGENT_USER_ID,
-  email: "",
+  email: "chris+agent@taylslate.com",
   role: "agent",
 };
 

@@ -137,12 +137,20 @@ describe("POST /api/view-mode", () => {
     );
   });
 
-  it("rejects agent for an admin while no test agent is configured", async () => {
+  it("points an admin agent view at Test Agent 1", async () => {
     asAdmin();
     const res = await POST(post({ mode: "agent" }) as never);
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "No test agent configured" });
-    expect(cookieStore.set).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      viewAs: "agent",
+      label: "Test Agent 1",
+    });
+    expect(cookieStore.set).toHaveBeenCalledWith(
+      "taylslate_view_as",
+      "test:agent1",
+      expect.objectContaining({ httpOnly: true, path: "/" }),
+    );
   });
 
   it("returns the admin view only after the session admin check", async () => {
@@ -165,7 +173,7 @@ describe("POST /api/view-mode", () => {
     expect(await admin.json()).toEqual({
       viewAs: "show",
       label: "Test Show 1",
-      agentConfigured: false,
+      agentConfigured: true,
     });
   });
 });
