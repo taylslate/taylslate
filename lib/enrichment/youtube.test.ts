@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   YouTubeClient,
   UPLOADS_STATS_UNITS,
+  YOUTUBE_IDS_PER_CALL,
+  chunk,
   isShortFormDuration,
   parseIso8601DurationSeconds,
   parseYouTubeChannelKeywords,
@@ -407,6 +409,192 @@ describe("recentUploadsStats", () => {
       const logged = warn.mock.calls.map((call) => call.map((part) => String(part)).join(" ")).join("\n");
       expect(logged).toContain("key=[redacted]");
       expect(logged).not.toContain("super-secret-key");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe("batched id calls", () => {
+  const now = new Date("2026-10-29T00:00:00.000Z");
+
+  function daysAgo(days: number): string {
+    return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  it("uses one channels.list call for 50 ids and two for 51", async () => {
+    expect(chunk(Array.from({ length: 50 }, (_, index) => index), YOUTUBE_IDS_PER_CALL)).toHaveLength(1);
+    expect(chunk(Array.from({ length: 51 }, (_, index) => index), YOUTUBE_IDS_PER_CALL)).toHaveLength(2);
+    const fetchMock = vi.fn(async (_input: string | URL | Request) => {
+      return new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new YouTubeClient("TESTKEY");
+    const fifty = Array.from({ length: 50 }, (_, index) => `UC${String(index).padStart(22, "0")}`);
+    await client.getMultipleChannelDetails(fifty);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(new URL(String(fetchMock.mock.calls[0][0])).searchParams.get("id")!.split(",")).toHaveLength(50);
+
+    fetchMock.mockClear();
+    await client.getMultipleChannelDetails([...fifty, "UCextra"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const sizes = fetchMock.mock.calls.map(
+      (call) => new URL(String(call[0])).searchParams.get("id")!.split(",").length
+    );
+    expect(sizes).toEqual([50, 1]);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(50);
+  });
+
+  it("packs videos.list at 50 ids and limits playlist fetches to 4", async () => {
+    let inFlight = 0;
+    let max = 0;
+    const channels = Array.from({ length: 4 }, (_, index) => `UC${String(index).padStart(22, "b")}`);
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/playlistItems")) {
+        inFlight += 1;
+        max = Math.max(max, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        inFlight -= 1;
+        const playlistId = url.searchParams.get("playlistId") ?? "";
+        const items = Array.from({ length: 15 }, (_, video) => ({
+          contentDetails: {
+            videoId: `${playlistId}-v${video}`,
+            videoPublishedAt: daysAgo(5),
+          },
+        }));
+        return new Response(JSON.stringify({ items }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const ids = (url.searchParams.get("id") ?? "").split(",").filter(Boolean);
+      expect(ids.length).toBeLessThanOrEqual(50);
+      return new Response(
+        JSON.stringify({
+          items: ids.map((id) => ({
+            id,
+            contentDetails: { duration: "PT5M" },
+            statistics: { viewCount: "80", likeCount: "1", commentCount: "1" },
+          })),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new YouTubeClient("TESTKEY");
+    const batch = await client.recentUploadsStatsBatch(channels, { now });
+    const videoCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes("/videos"));
+    expect(videoCalls).toHaveLength(2);
+    const videoSizes = videoCalls.map(
+      (call) => new URL(String(call[0])).searchParams.get("id")!.split(",").length
+    );
+    expect(videoSizes).toEqual([50, 10]);
+    expect(batch.playlistCalls).toBe(4);
+    expect(batch.videoListCalls).toBe(2);
+    expect(max).toBeLessThanOrEqual(4);
+    expect(max).toBe(4);
+    expect(batch.results).toHaveLength(4);
+    expect(batch.results.every((row) => row.method === "uploads")).toBe(true);
+  });
+
+  it("estimates a channel whose playlist call times out and still measures the rest", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(String(input));
+        if (url.pathname.endsWith("/playlistItems") && url.searchParams.get("playlistId") === "UUslow") {
+          return new Promise((_resolve, reject) => {
+            const onAbort = () => reject(new Error("YouTube call timed out"));
+            if (init?.signal?.aborted) onAbort();
+            else init?.signal?.addEventListener("abort", onAbort);
+          });
+        }
+        if (url.pathname.endsWith("/playlistItems")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                items: [{ contentDetails: { videoId: "long-ok", videoPublishedAt: daysAgo(4) } }],
+              }),
+              { status: 200, headers: { "content-type": "application/json" } }
+            )
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [
+                {
+                  id: "long-ok",
+                  contentDetails: { duration: "PT5M" },
+                  statistics: { viewCount: "100", likeCount: "2", commentCount: "1" },
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          )
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const client = new YouTubeClient("TESTKEY");
+      const pending = client.recentUploadsStatsBatch(["UCslow", "UCok"], { now, timeoutMs: 20 });
+      await vi.advanceTimersByTimeAsync(20);
+      const batch = await pending;
+      expect(batch.results[0].method).toBe("estimate");
+      expect(batch.results[1].method).toBe("uploads");
+      expect(batch.results[1].meanViews).toBe(100);
+      expect(batch.playlistCalls).toBe(2);
+      const logged = warn.mock.calls.map((call) => call.map((part) => String(part)).join(" ")).join("\n");
+      expect(logged).not.toContain("TESTKEY");
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("redacts key=TESTKEY when a playlist call fails and keeps the other channel", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL | Request) => {
+          const url = new URL(String(input));
+          if (url.pathname.endsWith("/playlistItems") && url.searchParams.get("playlistId") === "UUbad") {
+            return new Response("key=TESTKEY", { status: 403, headers: { "content-type": "text/plain" } });
+          }
+          if (url.pathname.endsWith("/playlistItems")) {
+            return new Response(
+              JSON.stringify({
+                items: [{ contentDetails: { videoId: "long-ok", videoPublishedAt: daysAgo(4) } }],
+              }),
+              { status: 200, headers: { "content-type": "application/json" } }
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              items: [
+                {
+                  id: "long-ok",
+                  contentDetails: { duration: "PT5M" },
+                  statistics: { viewCount: "40", likeCount: "1", commentCount: "0" },
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          );
+        })
+      );
+      const client = new YouTubeClient("TESTKEY");
+      const batch = await client.recentUploadsStatsBatch(["UCbad", "UCok"], { now });
+      expect(batch.results[0].method).toBe("estimate");
+      expect(batch.results[1].method).toBe("uploads");
+      const logged = warn.mock.calls.map((call) => call.map((part) => String(part)).join(" ")).join("\n");
+      expect(logged).toContain("key=[redacted]");
+      expect(logged).not.toContain("TESTKEY");
     } finally {
       warn.mockRestore();
     }

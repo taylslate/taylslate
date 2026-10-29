@@ -12,6 +12,11 @@ const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 export const UPLOADS_STATS_UNITS = 2;
 export const UPLOADS_STATS_MAX_RESULTS = 15;
 export const UPLOADS_STATS_WINDOW_DAYS = 90;
+/** channels.list and videos.list accept at most this many ids. */
+export const YOUTUBE_IDS_PER_CALL = 50;
+/** Bound one YouTube HTTP call so a stuck request cannot hold the pull. */
+export const YOUTUBE_CALL_TIMEOUT_MS = 20_000;
+const PLAYLIST_FETCH_CONCURRENCY = 4;
 /** Videos of this many seconds or less are Shorts and stay out of the average. */
 export const SHORTS_MAX_DURATION_SECONDS = 60;
 
@@ -256,6 +261,37 @@ export function summarizeLongFormUploads(
   };
 }
 
+/** Split a list into groups of `size`. The last group is shorter when the length does not divide. */
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+  const width = Math.max(1, Math.floor(size));
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += width) {
+    out.push(items.slice(i, i + width));
+  }
+  return out;
+}
+
+async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  if (items.length === 0) return results;
+  let cursor = 0;
+  const runners = Math.min(Math.max(1, limit), items.length);
+  async function run(): Promise<void> {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: runners }, () => run()));
+  return results;
+}
+
 function uploadsStatsFromSummary(
   summary: ReturnType<typeof summarizeLongFormUploads>,
   method: "uploads" | "estimate",
@@ -320,7 +356,11 @@ export class YouTubeClient {
     this.apiKey = key;
   }
 
-  private async request<T>(path: string, params: Record<string, string | number | boolean>): Promise<T> {
+  private async request<T>(
+    path: string,
+    params: Record<string, string | number | boolean>,
+    timeoutMs?: number
+  ): Promise<T> {
     const url = new URL(`${YOUTUBE_API_BASE}${path}`);
     url.searchParams.set("key", this.apiKey);
     for (const [key, value] of Object.entries(params)) {
@@ -329,16 +369,39 @@ export class YouTubeClient {
       }
     }
 
-    const res = await fetch(url.toString(), {
-      next: { revalidate: 3600 },
-    });
+    const controller = timeoutMs != null ? new AbortController() : null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout =
+      timeoutMs != null
+        ? new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              controller?.abort();
+              reject(new Error("YouTube call timed out"));
+            }, timeoutMs);
+          })
+        : null;
 
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`YouTube API error ${res.status}: ${body}`);
+    try {
+      const work = (async () => {
+        const res = await fetch(url.toString(), {
+          next: { revalidate: 3600 },
+          signal: controller?.signal,
+        });
+
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`YouTube API error ${res.status}: ${body}`);
+        }
+
+        return (await res.json()) as T;
+      })();
+      if (!timeout) return await work;
+      // The race can settle on the timer while fetch is still running.
+      work.catch(() => undefined);
+      return await Promise.race([work, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
-
-    return res.json() as Promise<T>;
   }
 
   /**
@@ -435,12 +498,15 @@ export class YouTubeClient {
   async getMultipleChannelDetails(channelIds: string[]): Promise<YouTubeChannelDetails[]> {
     if (channelIds.length === 0) return [];
 
-    const res = await this.request<{ items?: YouTubeChannel[] }>("/channels", {
-      part: CHANNEL_DETAIL_PARTS,
-      id: channelIds.join(","),
-    });
-
-    return (res.items ?? []).map((channel) => mapYouTubeChannel(channel));
+    const found: YouTubeChannelDetails[] = [];
+    for (const ids of chunk(channelIds, YOUTUBE_IDS_PER_CALL)) {
+      const res = await this.request<{ items?: YouTubeChannel[] }>("/channels", {
+        part: CHANNEL_DETAIL_PARTS,
+        id: ids.join(","),
+      });
+      for (const channel of res.items ?? []) found.push(mapYouTubeChannel(channel));
+    }
+    return found;
   }
 
   /**
@@ -565,6 +631,144 @@ export class YouTubeClient {
         options?.fallbackAverage
       );
     }
+  }
+
+  /**
+   * Recent long-form views for many channels.
+   * playlistItems.list runs per channel at a concurrency of 4.
+   * videos.list then batches the collected video ids in groups of 50.
+   * A playlist failure becomes method "estimate" for that channel only.
+   * Each HTTP call is bounded by timeoutMs (default 20 seconds).
+   */
+  async recentUploadsStatsBatch(
+    channelIds: string[],
+    options?: {
+      now?: Date;
+      timeoutMs?: number;
+      fallbackAverageByChannel?: Record<string, number | null | undefined>;
+      uploadsPlaylistIdByChannel?: Record<string, string | null | undefined>;
+    }
+  ): Promise<{
+    results: YouTubeUploadsStats[];
+    playlistCalls: number;
+    videoListCalls: number;
+  }> {
+    const now = options?.now ?? new Date();
+    const timeoutMs = options?.timeoutMs ?? YOUTUBE_CALL_TIMEOUT_MS;
+    if (channelIds.length === 0) {
+      return { results: [], playlistCalls: 0, videoListCalls: 0 };
+    }
+
+    let playlistCalls = 0;
+    const playlists = await mapLimit(channelIds, PLAYLIST_FETCH_CONCURRENCY, async (channelId) => {
+      playlistCalls += 1;
+      const playlistId = uploadsPlaylistId(channelId, options?.uploadsPlaylistIdByChannel?.[channelId]);
+      try {
+        const playlist = await this.request<{
+          items?: {
+            contentDetails?: { videoId?: string; videoPublishedAt?: string };
+          }[];
+        }>(
+          "/playlistItems",
+          {
+            part: "contentDetails",
+            playlistId,
+            maxResults: UPLOADS_STATS_MAX_RESULTS,
+          },
+          timeoutMs
+        );
+        const videos = (playlist.items ?? [])
+          .map((item) => ({
+            videoId: item.contentDetails?.videoId?.trim() ?? "",
+            publishedAt: item.contentDetails?.videoPublishedAt ?? "",
+          }))
+          .filter((item) => item.videoId);
+        return { channelId, failed: false, videos };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        console.warn(`[youtube] uploads playlist failed: ${redactSecretParams(message)}`);
+        return {
+          channelId,
+          failed: true,
+          videos: [] as { videoId: string; publishedAt: string }[],
+        };
+      }
+    });
+
+    const collected: { videoId: string; publishedAt: string; channelId: string }[] = [];
+    for (const playlist of playlists) {
+      if (playlist.failed) continue;
+      for (const video of playlist.videos) {
+        collected.push({ ...video, channelId: playlist.channelId });
+      }
+    }
+
+    const byVideoId = new Map<
+      string,
+      {
+        duration?: string;
+        viewCount?: string;
+        likeCount?: string;
+        commentCount?: string;
+      }
+    >();
+    const failedVideoIds = new Set<string>();
+    let videoListCalls = 0;
+    for (const group of chunk(collected, YOUTUBE_IDS_PER_CALL)) {
+      videoListCalls += 1;
+      const ids = group.map((video) => video.videoId);
+      try {
+        const statsRes = await this.request<{
+          items?: {
+            id?: string;
+            contentDetails?: { duration?: string };
+            statistics?: { viewCount?: string; likeCount?: string; commentCount?: string };
+          }[];
+        }>(
+          "/videos",
+          {
+            part: "statistics,contentDetails",
+            id: ids.join(","),
+          },
+          timeoutMs
+        );
+        for (const item of statsRes.items ?? []) {
+          const id = item.id ?? "";
+          if (!id) continue;
+          byVideoId.set(id, {
+            duration: item.contentDetails?.duration,
+            viewCount: item.statistics?.viewCount,
+            likeCount: item.statistics?.likeCount,
+            commentCount: item.statistics?.commentCount,
+          });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        console.warn(`[youtube] uploads videos.list failed: ${redactSecretParams(message)}`);
+        for (const video of group) failedVideoIds.add(video.videoId);
+      }
+    }
+
+    const results = playlists.map((playlist) => {
+      const fallback = options?.fallbackAverageByChannel?.[playlist.channelId];
+      if (playlist.failed || playlist.videos.some((video) => failedVideoIds.has(video.videoId))) {
+        return uploadsStatsFromSummary(summarizeLongFormUploads([], now), "estimate", fallback);
+      }
+      const samples: UploadedVideoSample[] = playlist.videos.map((video) => {
+        const stats = byVideoId.get(video.videoId);
+        return {
+          videoId: video.videoId,
+          publishedAt: video.publishedAt,
+          durationSeconds: parseIso8601DurationSeconds(stats?.duration),
+          viewCount: parseInt(stats?.viewCount ?? "0", 10) || 0,
+          likeCount: parseInt(stats?.likeCount ?? "0", 10) || 0,
+          commentCount: parseInt(stats?.commentCount ?? "0", 10) || 0,
+        };
+      });
+      return uploadsStatsFromSummary(summarizeLongFormUploads(samples, now), "uploads");
+    });
+
+    return { results, playlistCalls, videoListCalls };
   }
 }
 

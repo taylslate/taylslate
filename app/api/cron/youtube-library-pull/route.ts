@@ -11,6 +11,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { redactSecretParams } from "@/lib/discovery/redact-secrets";
 import { runYoutubeLibraryPull } from "@/lib/youtube-library/pull";
 
+// Hobby plan Fluid Compute stops the function at 300 seconds. A production
+// pull on Oct 29 2026 was killed at that limit. Do not raise this.
 export const maxDuration = 300;
 
 function authorized(req: NextRequest): boolean {
