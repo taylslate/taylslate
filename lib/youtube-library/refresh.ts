@@ -6,6 +6,7 @@
 
 import type { YouTubeChannelDetails } from "@/lib/enrichment/youtube";
 import { passesYouTubeMarketFilter, youtubeBrandMatch } from "@/lib/discovery/discover-shows";
+import { redactSecretParams } from "@/lib/discovery/redact-secrets";
 import { createLibraryYoutubeApi, isNotFoundError, isQuotaError, scrubYoutubeError, type LibraryYoutubeApi } from "./pull";
 import {
   CHANNELS_LIST_UNITS,
@@ -14,6 +15,8 @@ import {
   getYoutubeLibraryStore,
   isMissingLibraryTable,
   statsFreshCutoff,
+  UPLOADS_STATS_UNITS,
+  uploadsStatsAffordable,
   type YoutubeChannelRecord,
   type YoutubeLibraryStore,
 } from "./store";
@@ -35,7 +38,8 @@ export interface YoutubeRefreshReport {
 async function refreshOne(
   store: YoutubeLibraryStore,
   details: YouTubeChannelDetails,
-  now: string
+  now: string,
+  measured?: { averageViews?: number; viewsMethod?: "recent" | "estimated" }
 ): Promise<void> {
   const existing = await store.getChannel(details.channelId);
   if (!existing) return;
@@ -53,6 +57,8 @@ async function refreshOne(
       brandFlag: youtubeBrandMatch(details),
       source: existing.source,
       sourceQuery: existing.source_query,
+      averageViews: measured?.averageViews,
+      viewsMethod: measured?.viewsMethod,
       now,
     },
     showId
@@ -80,8 +86,10 @@ export async function runRefreshQueue(input: {
   let deleted = 0;
   let stopped: YoutubeRefreshReport["stopped"] = null;
   const seen = new Set<string>();
+  const chargeUploads = typeof input.api.recentUploads === "function";
+  const statsReserve = chargeUploads ? UPLOADS_STATS_UNITS : 0;
 
-  while (units + CHANNELS_LIST_UNITS <= budget) {
+  while (units + CHANNELS_LIST_UNITS + statsReserve <= budget) {
     const oldest = (await input.store.oldestChannels(50)).filter((row) => !seen.has(row.channel_id));
     if (oldest.length === 0) break;
     const ids = oldest.map((row) => row.channel_id);
@@ -89,13 +97,40 @@ export async function runRefreshQueue(input: {
     try {
       const listed = await input.api.list(ids);
       units += CHANNELS_LIST_UNITS;
-      for (const details of listed.found) {
-        await refreshOne(input.store, details, now);
-        refreshed += 1;
-      }
       if (listed.missing.length > 0) {
         await input.store.deleteChannels(listed.missing);
         deleted += listed.missing.length;
+      }
+      const byId = new Map(listed.found.map((row) => [row.channelId, row]));
+      for (const id of ids) {
+        const details = byId.get(id);
+        if (!details) continue;
+        let averageViews: number | undefined;
+        let viewsMethod: "recent" | "estimated" | undefined;
+        if (chargeUploads) {
+          if (!uploadsStatsAffordable(units, budget)) {
+            stopped = "budget";
+            break;
+          }
+          units += UPLOADS_STATS_UNITS;
+          try {
+            const result = await input.api.recentUploads!(details.channelId);
+            if (result.kind === "skip") {
+              units -= UPLOADS_STATS_UNITS;
+            } else if (result.kind === "uploads") {
+              averageViews = result.averageViews;
+              viewsMethod = "recent";
+            } else {
+              viewsMethod = "estimated";
+            }
+          } catch (err) {
+            viewsMethod = "estimated";
+            const message = err instanceof Error ? err.message : "unknown error";
+            log(`[youtube-library] uploads stats failed: ${redactSecretParams(message)}`);
+          }
+        }
+        await refreshOne(input.store, details, now, { averageViews, viewsMethod });
+        refreshed += 1;
       }
     } catch (err) {
       units += CHANNELS_LIST_UNITS;
@@ -106,13 +141,14 @@ export async function runRefreshQueue(input: {
       }
       stopped = isQuotaError(err) ? "quota" : "error";
       if (stopped === "error") {
-        log(`[youtube-library] refresh stopped: ${scrubYoutubeError(err).message}`);
+        log(`[youtube-library] refresh stopped: ${redactSecretParams(scrubYoutubeError(err).message)}`);
       }
       break;
     }
+    if (stopped) break;
     if (ids.length < 50) break;
   }
-  if (!stopped && units + CHANNELS_LIST_UNITS > budget) {
+  if (!stopped && units + CHANNELS_LIST_UNITS + statsReserve > budget) {
     const more = (await input.store.oldestChannels(1)).some((row) => row.stats_refreshed_at < now);
     if (more) stopped = "budget";
   }

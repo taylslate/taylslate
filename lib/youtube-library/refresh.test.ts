@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { YouTubeChannelDetails } from "@/lib/enrichment/youtube";
 import { createMemoryYoutubeStore, type YoutubeChannelRecord } from "./store";
+import { UPLOADS_STATS_UNITS } from "./store";
 import { runRefreshQueue, runYoutubeLibraryRefresh, YOUTUBE_LIBRARY_REFRESH_BUDGET } from "./refresh";
 
 function record(channelId: string, statsRefreshedAt: string, showId: string | null = null): YoutubeChannelRecord {
@@ -156,6 +157,50 @@ describe("refresh", () => {
     });
     expect(store.channels.has("kept")).toBe(true);
     expect(store.channels.has("missing")).toBe(false);
+  });
+
+  it("counts 2 units per uploads read and leaves the rest on the estimate", async () => {
+    expect(YOUTUBE_LIBRARY_REFRESH_BUDGET).toBe(1000);
+    expect(UPLOADS_STATS_UNITS).toBe(2);
+    const store = createMemoryYoutubeStore();
+    await store.saveChannel(record("newest", "2026-10-20T00:00:00.000Z"));
+    await store.saveChannel(record("oldest", "2026-08-01T00:00:00.000Z"));
+    await store.saveChannel(record("middle", "2026-09-01T00:00:00.000Z"));
+    const recentUploads = vi.fn(async (channelId: string) => {
+      if (channelId === "middle") {
+        throw new Error("YouTube API error 403: key=super-secret-key");
+      }
+      return { kind: "uploads" as const, averageViews: 12000 };
+    });
+    const lines: string[] = [];
+    const report = await runRefreshQueue({
+      store,
+      api: {
+        search: async () => [],
+        list: async (ids: string[]) => ({
+          found: ids.map((id) => details(id)),
+          missing: [],
+        }),
+        seedLookupCost: () => 0,
+        lookupSeed: async () => ({ channelId: null, notFound: true }),
+        recentUploads,
+      },
+      budget: 1 + UPLOADS_STATS_UNITS * 2,
+      now: new Date("2026-10-26T00:00:00.000Z"),
+      log: (line) => lines.push(line),
+    });
+    expect(report.units).toBe(5);
+    expect(report.refreshed).toBe(2);
+    expect(report.stopped).toBe("budget");
+    expect(recentUploads.mock.calls.map((call) => call[0])).toEqual(["oldest", "middle"]);
+    expect(store.channels.get("oldest")?.avg_views_method).toBe("recent");
+    expect(store.channels.get("oldest")?.avg_recent_views).toBe(12000);
+    expect(store.channels.get("middle")?.avg_views_method).toBe("estimated");
+    expect(store.channels.get("middle")?.avg_recent_views).toBe(20000);
+    expect(store.channels.get("newest")?.stats_refreshed_at).toBe("2026-10-20T00:00:00.000Z");
+    const logged = lines.join("\n");
+    expect(logged).toContain("key=[redacted]");
+    expect(logged).not.toContain("super-secret-key");
   });
 
   it("runs batch tagging under the cap after refresh", async () => {

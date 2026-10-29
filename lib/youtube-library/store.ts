@@ -2,7 +2,7 @@
 // A missing table is YoutubeLibraryTableMissing. Callers no-op.
 // This module never inserts a shows row.
 
-import type { YouTubeChannelDetails } from "@/lib/enrichment/youtube";
+import { UPLOADS_STATS_UNITS, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { linkResolvesToChannel } from "./seeds";
 import { deterministicNicheTags, filterNicheTags, NICHE_TAGS_VERSION } from "./tags";
@@ -11,6 +11,15 @@ export const YOUTUBE_STATS_MAX_AGE_DAYS = 30;
 export const YOUTUBE_LIBRARY_PULL_BUDGET = 8000;
 export const SEARCH_UNITS = 100;
 export const CHANNELS_LIST_UNITS = 1;
+export { UPLOADS_STATS_UNITS };
+
+/** Values allowed by youtube_channels_avg_views_method_check in migration 074. */
+export type AvgViewsMethod = "recent" | "estimated";
+
+/** True when one uploads-playlist read (2 units) still fits in the budget. */
+export function uploadsStatsAffordable(unitsSpent: number, budget: number): boolean {
+  return unitsSpent + UPLOADS_STATS_UNITS <= budget;
+}
 
 const MISSING_RELATION = /does not exist|schema cache|42P01|PGRST205|could not find the table/i;
 
@@ -51,7 +60,7 @@ export interface YoutubeChannelRecord {
   video_count: number | null;
   total_view_count: number | null;
   avg_recent_views: number | null;
-  avg_views_method: "recent" | "estimated" | null;
+  avg_views_method: AvgViewsMethod | null;
   topic_categories: string[];
   keywords: string[];
   niche_tags: string[];
@@ -76,6 +85,11 @@ export interface ChannelDraft {
   source: YoutubeChannelSource;
   sourceQuery: string | null;
   averageViews?: number | null;
+  /**
+   * recent: the uploads playlist measurement.
+   * estimated: that call fell back to total views / video count.
+   */
+  viewsMethod?: AvgViewsMethod | null;
   now: string;
 }
 
@@ -191,10 +205,26 @@ export function draftToRecord(
 ): YoutubeChannelRecord {
   const details = draft.details;
   const videos = details.videoCount;
-  const hasRecent = typeof draft.averageViews === "number" && Number.isFinite(draft.averageViews);
+  const hasMeasured = typeof draft.averageViews === "number" && Number.isFinite(draft.averageViews);
   const estimated = videos > 0 ? Math.round(details.totalViewCount / videos) : null;
-  const avg = hasRecent ? Math.round(draft.averageViews as number) : estimated;
-  const method = hasRecent ? "recent" : estimated == null ? null : "estimated";
+  const measured = hasMeasured ? Math.round(draft.averageViews as number) : null;
+  // recent is the uploads-playlist measurement. estimated is the catalog
+  // fallback. Both match migration 074's check.
+  let avg: number | null;
+  let method: AvgViewsMethod | null;
+  if (draft.viewsMethod === "recent" && measured != null) {
+    avg = measured;
+    method = "recent";
+  } else if (draft.viewsMethod === "estimated" || (draft.viewsMethod === "recent" && measured == null)) {
+    avg = estimated;
+    method = estimated == null ? null : "estimated";
+  } else if (measured != null) {
+    avg = measured;
+    method = "recent";
+  } else {
+    avg = estimated;
+    method = estimated == null ? null : "estimated";
+  }
   const deterministic = deterministicNicheTags({
     topicCategories: details.topicCategories,
     keywords: details.keywords,

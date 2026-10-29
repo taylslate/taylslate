@@ -115,6 +115,74 @@ describe("pull budget", () => {
   });
 });
 
+describe("uploads stats budget", () => {
+  it("charges 2 units per channel and does not pass the budget", async () => {
+    expect(YOUTUBE_LIBRARY_PULL_BUDGET).toBe(8000);
+    const store = createMemoryYoutubeStore();
+    await store.enqueue([{ kind: "category_query", value: "one" }]);
+    const recentUploads = vi.fn(async (channelId: string) => ({
+      kind: "uploads" as const,
+      averageViews: channelId === "a" ? 12000 : 8000,
+    }));
+    const report = await runPullQueue({
+      store,
+      api: {
+        search: async () => ["a", "b"],
+        list: async (ids: string[]) => ({
+          found: ids.map((id) => details(id)),
+          missing: [],
+        }),
+        seedLookupCost: () => 0,
+        lookupSeed: async () => ({ channelId: null, notFound: true }),
+        recentUploads,
+      },
+      budget: 103,
+      seed: false,
+      log: () => {},
+    });
+    expect(report.units).toBe(103);
+    expect(report.units).toBeLessThanOrEqual(103);
+    expect(recentUploads).toHaveBeenCalledTimes(1);
+    expect(recentUploads.mock.calls[0][0]).toBe("a");
+    expect(store.channels.get("a")?.avg_views_method).toBe("recent");
+    expect(store.channels.get("a")?.avg_recent_views).toBe(12000);
+    expect(store.channels.get("b")?.avg_views_method).toBe("estimated");
+    expect(store.channels.has("b")).toBe(true);
+  });
+
+  it("keeps the channel on the estimate and redacts a stats error", async () => {
+    const store = createMemoryYoutubeStore();
+    await store.enqueue([{ kind: "category_query", value: "one" }]);
+    const lines: string[] = [];
+    const report = await runPullQueue({
+      store,
+      api: {
+        search: async () => ["a"],
+        list: async (ids: string[]) => ({
+          found: ids.map((id) => details(id)),
+          missing: [],
+        }),
+        seedLookupCost: () => 0,
+        lookupSeed: async () => ({ channelId: null, notFound: true }),
+        recentUploads: async () => {
+          throw new Error("YouTube API error 403: key=super-secret-key");
+        },
+      },
+      budget: 8000,
+      seed: false,
+      log: (line) => lines.push(line),
+    });
+    expect(report.upserted).toBe(1);
+    expect(report.units).toBe(103);
+    expect(store.channels.get("a")?.avg_views_method).toBe("estimated");
+    expect(store.channels.get("a")?.avg_recent_views).toBe(50000);
+    const logged = lines.join("\n");
+    expect(logged).toContain("key=[redacted]");
+    expect(logged).not.toContain("super-secret-key");
+    expect(JSON.stringify(report)).not.toContain("super-secret-key");
+  });
+});
+
 describe("seed resolution", () => {
   it("resolves a handle without putting the API key in the error", async () => {
     vi.stubEnv("YOUTUBE_API_KEY", "super-secret-key");

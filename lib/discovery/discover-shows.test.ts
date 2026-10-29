@@ -157,18 +157,19 @@ describe("passesYouTubeMarketFilter", () => {
 });
 
 describe("YouTube discovery quota", () => {
-  it("documents 4 x 100 video searches, detail calls, and top-10 recent stats", () => {
+  it("documents 4 x 100 video searches, detail calls, and uploads stats for every candidate", () => {
     expect(YOUTUBE_DISCOVERY_QUOTA.videoSearch).toBe(400);
     expect(YOUTUBE_DISCOVERY_QUOTA.channelDetailsWorstCase).toBe(4);
-    // Top 10 market survivors: 10 x (search.list 100 + videos.list 1) = 1,010.
-    // Video search 400 + channel details 4 = 404. 1,010 + 404 = 1,414.
-    expect(YOUTUBE_DISCOVERY_QUOTA.recentVideoStats).toBe(1010);
+    // Worst case 200 market survivors x (playlistItems.list 1 + videos.list 1) = 400.
+    // Video search 400 + channel details 4 = 404. 400 + 404 = 804.
+    expect(YOUTUBE_DISCOVERY_QUOTA.recentVideoStats).toBe(400);
     expect(YOUTUBE_DISCOVERY_QUOTA.worstCase).toBe(
       YOUTUBE_DISCOVERY_QUOTA.videoSearch +
         YOUTUBE_DISCOVERY_QUOTA.channelDetailsWorstCase +
         YOUTUBE_DISCOVERY_QUOTA.recentVideoStats
     );
-    expect(YOUTUBE_DISCOVERY_QUOTA.worstCase).toBe(1414);
+    expect(YOUTUBE_DISCOVERY_QUOTA.worstCase).toBe(804);
+    expect(YOUTUBE_DISCOVERY_QUOTA.worstCase).toBeLessThan(1414);
   });
 });
 
@@ -612,9 +613,13 @@ function recentStats(averageViews: number) {
   return {
     videos: [],
     averageViews,
+    meanViews: averageViews,
+    medianViews: averageViews,
     averageLikes: 0,
     averageComments: 0,
     totalVideosAnalyzed: 5,
+    uploadCount: 5,
+    method: "uploads" as const,
   };
 }
 
@@ -842,12 +847,13 @@ describe("YouTube post-filter stage logs", () => {
       RECENT_LOW: recentStats(9_999),
       FALLBACK_MID: null,
     };
-    const getRecentVideoStats = vi.fn(async (channelId: string) => {
+    const recentUploadsStats = vi.fn(async (channelId: string) => {
       if (!(channelId in statsById)) {
         throw new Error(`unexpected stats fetch ${channelId}`);
       }
       return statsById[channelId];
     });
+    const getRecentVideoStats = vi.fn();
 
     vi.mocked(getYouTubeClientSafe).mockReturnValue({
       searchVideos: vi.fn(async () =>
@@ -860,6 +866,7 @@ describe("YouTube post-filter stage logs", () => {
       getMultipleChannelDetails: vi.fn(async (ids: string[]) =>
         ids.map((id) => byId.get(id)).filter((row): row is YouTubeChannelDetails => !!row)
       ),
+      recentUploadsStats,
       getRecentVideoStats,
     } as never);
 
@@ -880,7 +887,8 @@ describe("YouTube post-filter stage logs", () => {
 
       expect(result).toEqual(expected);
       expect(errors).toEqual([]);
-      expect(getRecentVideoStats.mock.calls.map((call) => call[0])).toEqual([
+      expect(getRecentVideoStats).not.toHaveBeenCalled();
+      expect(recentUploadsStats.mock.calls.map((call) => call[0])).toEqual([
         "FEW",
         "TEN",
         "SHOP_MY",
@@ -891,7 +899,10 @@ describe("YouTube post-filter stage logs", () => {
         "RECENT_EDGE",
         "RECENT_LOW",
         "FALLBACK_MID",
+        "FALLBACK_EDGE",
+        "FALLBACK_LOW",
       ]);
+      expect(recentUploadsStats.mock.calls.map((call) => call[0])).not.toContain("IN1");
       expect(log.mock.calls.map((call) => call[0])).toEqual([
         `[discovery] Running 1 YouTube queries...`,
         `[discovery] YouTube query 1 "endurance athletes" → 13 channels`,
