@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { YouTubeChannelDetails } from "@/lib/enrichment/youtube";
 import {
   createMemoryYoutubeStore,
   draftToRecord,
+  orderChannelRows,
+  persistChannel,
   pickUniqueShowId,
   uploadsStatsAffordable,
   UPLOADS_STATS_UNITS,
@@ -119,6 +121,51 @@ describe("avg views method", () => {
     const untouched = draftToRecord(null, draft(), null);
     expect(untouched.avg_views_method).toBe("estimated");
     expect(untouched.avg_recent_views).toBe(50000);
+
+    const emptyRead = draftToRecord(null, draft({ averageViews: 0, viewsMethod: "recent" }), null);
+    expect(emptyRead.avg_views_method).toBe("estimated");
+    expect(emptyRead.avg_recent_views).toBe(50000);
+    expect(emptyRead.avg_recent_views).not.toBe(0);
+
+    const aboveTotal = draftToRecord(null, draft({ averageViews: 9_000_000, viewsMethod: "recent" }), null);
+    expect(aboveTotal.avg_views_method).toBe("estimated");
+    expect(aboveTotal.avg_recent_views).toBe(50000);
+    expect(aboveTotal.avg_recent_views).not.toBe(9_000_000);
+  });
+});
+
+describe("bulk channel reads", () => {
+  it("returns existing rows in input order and skips the extra read when the row is passed", async () => {
+    const store = createMemoryYoutubeStore();
+    const first = draftToRecord(null, draft({ details: details({ channelId: "UC11111111111111111111" }) }), null);
+    const second = draftToRecord(
+      null,
+      draft({ details: details({ channelId: "UC22222222222222222222" }), now: "2026-10-27T00:00:00.000Z" }),
+      null
+    );
+    await store.saveChannel(first);
+    await store.saveChannel(second);
+
+    const rows = await store.getChannels([
+      "UC22222222222222222222",
+      "missing",
+      "UC11111111111111111111",
+      "UC22222222222222222222",
+    ]);
+    expect(rows.map((row) => row.channel_id)).toEqual(["UC22222222222222222222", "UC11111111111111111111"]);
+
+    const load = vi.fn(async () => first);
+    const write = vi.fn(async () => {});
+    await persistChannel(second, first, load, write);
+    expect(load).not.toHaveBeenCalled();
+    expect(write).toHaveBeenCalledOnce();
+
+    await persistChannel(second, undefined, load, write);
+    expect(load).toHaveBeenCalledOnce();
+
+    await store.saveChannel({ ...second, title: "Updated" }, second);
+    expect(store.channels.get(second.channel_id)?.title).toBe("Updated");
+    expect(orderChannelRows(["missing"], [])).toEqual([]);
   });
 });
 

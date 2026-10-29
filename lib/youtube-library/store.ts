@@ -122,7 +122,16 @@ export interface YoutubeLibraryStore {
   markQueueDone(id: string, at: string): Promise<void>;
   markQueueAttempt(id: string, attempts: number, error: string, status: "pending" | "error"): Promise<void>;
   getChannel(channelId: string): Promise<YoutubeChannelRecord | null>;
-  saveChannel(record: YoutubeChannelRecord): Promise<"inserted" | "updated">;
+  /** One read for the ids in a pull chunk. Missing ids are omitted. */
+  getChannels(channelIds: string[]): Promise<YoutubeChannelRecord[]>;
+  /**
+   * Upsert one row. Pass `existing` when the caller already loaded it
+   * (including null when the row is known to be new) so this skips a second read.
+   */
+  saveChannel(
+    record: YoutubeChannelRecord,
+    existing?: YoutubeChannelRecord | null
+  ): Promise<"inserted" | "updated">;
   uniqueShowId(channelId: string, customUrl?: string | null): Promise<string | null>;
   oldestChannels(limit: number): Promise<YoutubeChannelRecord[]>;
   deleteChannels(ids: string[]): Promise<void>;
@@ -208,17 +217,17 @@ export function draftToRecord(
   const hasMeasured = typeof draft.averageViews === "number" && Number.isFinite(draft.averageViews);
   const estimated = videos > 0 ? Math.round(details.totalViewCount / videos) : null;
   const measured = hasMeasured ? Math.round(draft.averageViews as number) : null;
+  const totalViews = asCount(details.totalViewCount);
+  // A 0 mean is an empty or failed uploads read, not a measurement.
+  // A mean above the channel's lifetime views is not a measurement either.
+  // Both are stored as the catalog estimate, never as recent 0.
+  const recentOk =
+    measured != null && measured > 0 && (totalViews == null || measured <= totalViews);
   // recent is the uploads-playlist measurement. estimated is the catalog
   // fallback. Both match migration 074's check.
   let avg: number | null;
   let method: AvgViewsMethod | null;
-  if (draft.viewsMethod === "recent" && measured != null) {
-    avg = measured;
-    method = "recent";
-  } else if (draft.viewsMethod === "estimated" || (draft.viewsMethod === "recent" && measured == null)) {
-    avg = estimated;
-    method = estimated == null ? null : "estimated";
-  } else if (measured != null) {
+  if (recentOk && draft.viewsMethod !== "estimated") {
     avg = measured;
     method = "recent";
   } else {
@@ -281,6 +290,34 @@ function pendingInEnqueueOrder(items: QueueItem[]): QueueItem[] {
   return items.filter((row) => row.status === "pending");
 }
 
+/**
+ * Write one channel. When `existing` is passed, `load` is not called.
+ * Both the memory store and the Supabase store use this so the skip is shared.
+ */
+export async function persistChannel(
+  record: YoutubeChannelRecord,
+  existing: YoutubeChannelRecord | null | undefined,
+  load: (channelId: string) => Promise<YoutubeChannelRecord | null>,
+  write: (record: YoutubeChannelRecord) => Promise<void>
+): Promise<"inserted" | "updated"> {
+  const prior = existing !== undefined ? existing : await load(record.channel_id);
+  await write(record);
+  return prior ? "updated" : "inserted";
+}
+
+export function orderChannelRows(ids: string[], rows: YoutubeChannelRecord[]): YoutubeChannelRecord[] {
+  const byId = new Map(rows.map((row) => [row.channel_id, row]));
+  const out: YoutubeChannelRecord[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const row = byId.get(id);
+    if (row) out.push(row);
+  }
+  return out;
+}
+
 export function createMemoryYoutubeStore(shows: ShowLinkCandidate[] = []): YoutubeLibraryStore & {
   channels: Map<string, YoutubeChannelRecord>;
   queue: QueueItem[];
@@ -335,10 +372,24 @@ export function createMemoryYoutubeStore(shows: ShowLinkCandidate[] = []): Youtu
     async getChannel(channelId) {
       return channels.get(channelId) ?? null;
     },
-    async saveChannel(record) {
-      const inserted = !channels.has(record.channel_id);
-      channels.set(record.channel_id, { ...record });
-      return inserted ? "inserted" : "updated";
+    async getChannels(channelIds) {
+      return orderChannelRows(
+        channelIds,
+        channelIds.flatMap((id) => {
+          const row = channels.get(id);
+          return row ? [row] : [];
+        })
+      );
+    },
+    async saveChannel(record, existing) {
+      return persistChannel(
+        record,
+        existing,
+        async (channelId) => channels.get(channelId) ?? null,
+        async (row) => {
+          channels.set(row.channel_id, { ...row });
+        }
+      );
     },
     async uniqueShowId(channelId, customUrl) {
       return pickUniqueShowId(channelId, customUrl, shows);
@@ -522,13 +573,34 @@ export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
       throwIfMissing(error);
       return data ? asRecord(data as Record<string, unknown>) : null;
     },
-    async saveChannel(record) {
-      const existing = await this.getChannel(record.channel_id);
-      const { error } = await supabaseAdmin
-        .from("youtube_channels")
-        .upsert(toDbRow(record), { onConflict: "channel_id" });
-      throwIfMissing(error);
-      return existing ? "updated" : "inserted";
+    async getChannels(channelIds) {
+      const ids = channelIds.map((id) => id.trim()).filter(Boolean);
+      if (ids.length === 0) return [];
+      const rows: YoutubeChannelRecord[] = [];
+      const page = 100;
+      for (let i = 0; i < ids.length; i += page) {
+        const slice = ids.slice(i, i + page);
+        const { data, error } = await supabaseAdmin
+          .from("youtube_channels")
+          .select(CHANNEL_COLUMNS)
+          .in("channel_id", slice);
+        throwIfMissing(error);
+        rows.push(...(data ?? []).map((row) => asRecord(row as Record<string, unknown>)));
+      }
+      return orderChannelRows(ids, rows);
+    },
+    async saveChannel(record, existing) {
+      return persistChannel(
+        record,
+        existing,
+        (channelId) => this.getChannel(channelId),
+        async (row) => {
+          const { error } = await supabaseAdmin
+            .from("youtube_channels")
+            .upsert(toDbRow(row), { onConflict: "channel_id" });
+          throwIfMissing(error);
+        }
+      );
     },
     async uniqueShowId(channelId, customUrl) {
       const shows = await loadShowLinkCandidates(channelId, customUrl);

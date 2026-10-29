@@ -1534,3 +1534,45 @@ Read-only live count of `io.sent_for_signature` on `ldtmhafewfifdizgfrnn`: 0. No
 - Sandbox rows are not separable in past months because the payload does not record the environment. The current `DOCUSIGN_ENV` decides whether this month's count warns.
 - No allowance error exists in the code to surface at 40. Sends stay unblocked.
 - Embedded signing stays parked.
+
+## P1 YouTube library pull: stop the 300 second timeout
+
+### What was built
+
+`GET /api/cron/youtube-library-pull` still has `maxDuration` 300. That is the Hobby plan Fluid Compute cap. A production run on Oct 29 2026 was killed at 300 seconds. The route now stops on a 240 second wall clock (`YOUTUBE_LIBRARY_PULL_TIME_BUDGET_MS`) before that kill. A time stop is a normal HTTP 200. `stopped` is `"time"`, `"budget"`, `"quota"`, or null.
+
+The pull no longer awaits one channel at a time. After `channels.list`, found channels are taken in chunks of 10. Show linking and saves run at a concurrency of 4. Uploads stats for the channels in a chunk that are not already fresh go through `recentUploadsStatsBatch`: one `playlistItems.list` per channel, four at a time, then `videos.list` in groups of 50 across those videos. `channels.list` and `videos.list` never send more than 50 ids. Each YouTube call from the library client is bounded at 20 seconds. A timed out stats call stores `avg_views_method` `estimated`. A timed out search or `channels.list` leaves that queue row pending, adds one attempt, and the run continues.
+
+A stats chunk also gets its own deadline: the lesser of the time still left and 40 seconds (`YOUTUBE_LIBRARY_PULL_CHUNK_STATS_MS`). `recentUploadsStatsBatch` receives that absolute time. Once it passes, remaining playlist and `videos.list` calls are not started. Channels that did not get a finished read are `estimated`, including through the existing `failedVideoIds` path when the playlist was already read. The pull also wraps the batch in `withTimeout` of at most 45 seconds, so a client that ignores the deadline still cannot add the ~120 seconds a fully stalled chunk would take. A chunk that starts at 239 seconds therefore ends well under the 300 second function limit. The clock is also checked before search and before `channels.list`, and either of those stops the run with `stopped: "time"`.
+
+An empty uploads page, or a page with no qualifying long-form video, used to come back as method `uploads` with mean 0. `draftToRecord` then stored `avg_views_method` `recent` and `avg_recent_views` 0, including for channels that have videos. That 0 is not a measurement. It is now stored as `estimated` (the catalog average, total views divided by video count) or left null when that average cannot be computed. A recent mean above the channel's lifetime `total_view_count` is stored as `estimated` as well, not capped and labeled recent. A positive mean that does not exceed the lifetime total is still `recent`.
+
+Units are the calls that actually ran: 100 per search, 1 per `channels.list`, 1 per `playlistItems.list`, 1 per `videos.list`. Before a chunk, the worst case (one playlist per channel that needs stats, plus the `videos.list` calls for 15 uploads each) has to fit in the remaining 8,000. Otherwise the run stops with `stopped: "budget"`. The 8,000 and 1,000 budgets are unchanged. `UPLOADS_STATS_UNITS` stays exported for refresh.
+
+A channel whose `stats_refreshed_at` is within 24 hours and whose `avg_views_method` is set does not spend uploads stats units again. The row is still upserted, so `first_seen_at`, `created_at`, and `source` stay as saved. `saveChannel` skips its extra read when the caller passes the existing row. There is no new table or column. A query stays pending until every channel from that search is saved. The next run continues from `youtube_pull_queue`. The JSON report and the `[youtube-library] pull` log line include `elapsedMs`, `searched`, and `chunks`. Errors go through `redactSecretParams` or `scrubYoutubeError`. The API key is not logged, returned, or stored on `last_error`.
+
+### Where
+
+- `app/api/cron/youtube-library-pull/route.ts` and `route.test.ts`
+- `lib/youtube-library/pull.ts` and `pull.test.ts`
+- `lib/youtube-library/store.ts` and `store.test.ts` (`getChannels`, `saveChannel` skips the extra read when the row is passed)
+- `lib/enrichment/youtube.ts` and `youtube.test.ts` (`chunk`, `recentUploadsStatsBatch`; `recentUploadsStats` is unchanged)
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+`vercel.json`, refresh, discovery callers, scoring, categories, seeds, and the UI were not edited.
+
+### Tests
+
+`npx vitest run lib/enrichment/youtube.test.ts lib/youtube-library/pull.test.ts lib/youtube-library/store.test.ts app/api/cron/youtube-library-pull/route.test.ts lib/youtube-library/refresh.test.ts` (5 files, 51 passed).
+
+Clock stop leaves the current queue row pending and earlier rows done. A second `runPullQueue` on the same memory store continues from the pending rows and does not insert a duplicate channel. A time stop before search does not call search. A time stop during search does not call `channels.list`. A channel refreshed in the last 24 hours spends no stats units. `chunk` makes 1 `channels.list` call for 50 ids and 2 for 51. Batched `videos.list` never receives more than 50 ids. The concurrency helper never has more than 4 in flight and keeps order. A timed out playlist call is `estimated` for that channel and the other channel is still measured. A stalled YouTube client finishes the run in under 300 seconds, and a stats batch that ignores its deadline is cut when the chunk starts near 240 seconds. Ten stalled playlist calls stop at the 40 second chunk deadline (8 calls, the rest skipped, all `estimated`). An empty uploads page is `estimate`, not a recent mean of 0. A mean of 0 or a mean above lifetime total views is stored as `estimated`. Real calls are what the unit total counts, and the total does not pass 8,000. A quota error stops cleanly. A thrown message containing `key=TESTKEY` is redacted in the log, the report, and `last_error`. The route returns 200 for a time stop and 401 without the bearer token.
+
+Full `npx vitest run`: 276 files, 2474 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 136 pages.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- Refresh (`lib/youtube-library/refresh.ts`, `GET /api/cron/youtube-library-refresh`, 18:00 UTC) still walks channels one at a time inside a 1,000 unit budget, about 450 channels. It can time out the same way. A separate job, P2, should give it the same deadline and batch. This job did not change `refresh.ts`. Calls that refresh makes through `createLibraryYoutubeApi` are now bounded at 20 seconds, because that factory is shared. A stats timeout there still falls through to the existing estimate path. A `channels.list` timeout stops that refresh run with `stopped: "error"`.
+- The 8,000 pull budget and the 1,000 refresh budget are per run, not per day. YouTube's free daily quota is 10,000 units. A manual pull plus the 17:00 cron plus the 18:00 refresh can pass it. This job does not add a daily quota tracker and does not raise either budget.
+- No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or send. This PR does not merge. After merge and Chris's OK, Chris runs the two pulls from his own shell (the agent does not read `CRON_SECRET`): `time curl -s -o /tmp/pull1.json -w "%{http_code} %{time_total}\n" -H "Authorization: Bearer $CRON_SECRET" https://www.taylslate.com/api/cron/youtube-library-pull`, then the same for `/tmp/pull2.json`. Expect HTTP 200 and under 300 seconds on both, with `elapsedMs` at or under about 255000. Read-only counts before and after each run: `youtube_channels` count, `youtube_pull_queue` by status, channels updated in the last 10 minutes, and `avg_views_method` counts. Rows should grow or pending should shrink. Baseline on Oct 29 2026 before this fix: 403 channels, 100 queue rows (11 done, 89 pending), `avg_views_method` recent 403. Vercel runtime logs for those two runs should not contain "Task timed out".

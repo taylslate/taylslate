@@ -51,5 +51,41 @@ describe("GET /api/cron/youtube-library-pull", () => {
     const vercel = JSON.parse(readFileSync(join(process.cwd(), "vercel.json"), "utf8"));
     expect(vercel.regions).toEqual(["pdx1"]);
     expect(vercel.crons).toContainEqual({ path: "/api/cron/youtube-library-pull", schedule: "0 17 * * *" });
+    expect(src).toContain("export const maxDuration = 300");
+  });
+
+  it("returns 200 when the pull stops for time and 200 when nothing is pending", async () => {
+    process.env.CRON_SECRET = "cron-secret";
+    runYoutubeLibraryPull.mockResolvedValue({
+      skipped: false,
+      seeded: 0,
+      units: 101,
+      upserted: 1,
+      done: 0,
+      pending: 1,
+      stopped: "time",
+      elapsedMs: 240000,
+      searched: 1,
+      chunks: 1,
+    });
+    const timed = await GET(request("Bearer cron-secret") as never);
+    expect(timed.status).toBe(200);
+    await expect(timed.json()).resolves.toMatchObject({ stopped: "time", elapsedMs: 240000 });
+
+    runYoutubeLibraryPull.mockResolvedValue({
+      skipped: false,
+      seeded: 0,
+      units: 0,
+      upserted: 0,
+      done: 0,
+      pending: 0,
+      stopped: null,
+      elapsedMs: 4,
+      searched: 0,
+      chunks: 0,
+    });
+    const idle = await GET(request("Bearer cron-secret") as never);
+    expect(idle.status).toBe(200);
+    await expect(idle.json()).resolves.toMatchObject({ done: 0, stopped: null });
   });
 });
