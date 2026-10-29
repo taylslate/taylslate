@@ -121,6 +121,16 @@ describe("avg views method", () => {
     const untouched = draftToRecord(null, draft(), null);
     expect(untouched.avg_views_method).toBe("estimated");
     expect(untouched.avg_recent_views).toBe(50000);
+
+    const emptyRead = draftToRecord(null, draft({ averageViews: 0, viewsMethod: "recent" }), null);
+    expect(emptyRead.avg_views_method).toBe("estimated");
+    expect(emptyRead.avg_recent_views).toBe(50000);
+    expect(emptyRead.avg_recent_views).not.toBe(0);
+
+    const aboveTotal = draftToRecord(null, draft({ averageViews: 9_000_000, viewsMethod: "recent" }), null);
+    expect(aboveTotal.avg_views_method).toBe("estimated");
+    expect(aboveTotal.avg_recent_views).toBe(50000);
+    expect(aboveTotal.avg_recent_views).not.toBe(9_000_000);
   });
 });
 

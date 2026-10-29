@@ -645,6 +645,9 @@ export class YouTubeClient {
     options?: {
       now?: Date;
       timeoutMs?: number;
+      /** Absolute time on `clock`. Calls that would start after this are skipped. */
+      deadlineMs?: number;
+      clock?: () => number;
       fallbackAverageByChannel?: Record<string, number | null | undefined>;
       uploadsPlaylistIdByChannel?: Record<string, string | null | undefined>;
     }
@@ -655,12 +658,22 @@ export class YouTubeClient {
   }> {
     const now = options?.now ?? new Date();
     const timeoutMs = options?.timeoutMs ?? YOUTUBE_CALL_TIMEOUT_MS;
+    const clock = options?.clock ?? Date.now;
+    const timeLeft = () => (options?.deadlineMs == null ? timeoutMs : options.deadlineMs - clock());
     if (channelIds.length === 0) {
       return { results: [], playlistCalls: 0, videoListCalls: 0 };
     }
 
     let playlistCalls = 0;
     const playlists = await mapLimit(channelIds, PLAYLIST_FETCH_CONCURRENCY, async (channelId) => {
+      const left = timeLeft();
+      if (left <= 0) {
+        return {
+          channelId,
+          failed: true,
+          videos: [] as { videoId: string; publishedAt: string }[],
+        };
+      }
       playlistCalls += 1;
       const playlistId = uploadsPlaylistId(channelId, options?.uploadsPlaylistIdByChannel?.[channelId]);
       try {
@@ -675,7 +688,7 @@ export class YouTubeClient {
             playlistId,
             maxResults: UPLOADS_STATS_MAX_RESULTS,
           },
-          timeoutMs
+          Math.min(timeoutMs, left)
         );
         const videos = (playlist.items ?? [])
           .map((item) => ({
@@ -715,6 +728,11 @@ export class YouTubeClient {
     const failedVideoIds = new Set<string>();
     let videoListCalls = 0;
     for (const group of chunk(collected, YOUTUBE_IDS_PER_CALL)) {
+      const left = timeLeft();
+      if (left <= 0) {
+        for (const video of group) failedVideoIds.add(video.videoId);
+        continue;
+      }
       videoListCalls += 1;
       const ids = group.map((video) => video.videoId);
       try {
@@ -730,7 +748,7 @@ export class YouTubeClient {
             part: "statistics,contentDetails",
             id: ids.join(","),
           },
-          timeoutMs
+          Math.min(timeoutMs, left)
         );
         for (const item of statsRes.items ?? []) {
           const id = item.id ?? "";
@@ -765,7 +783,12 @@ export class YouTubeClient {
           commentCount: parseInt(stats?.commentCount ?? "0", 10) || 0,
         };
       });
-      return uploadsStatsFromSummary(summarizeLongFormUploads(samples, now), "uploads");
+      const summary = summarizeLongFormUploads(samples, now);
+      // An empty page, or a page with no qualifying long-form video, is not a measured 0.
+      if (summary.uploadCount === 0) {
+        return uploadsStatsFromSummary(summary, "estimate", fallback);
+      }
+      return uploadsStatsFromSummary(summary, "uploads");
     });
 
     return { results, playlistCalls, videoListCalls };

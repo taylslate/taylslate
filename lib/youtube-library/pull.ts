@@ -39,6 +39,14 @@ const MAX_ATTEMPTS = 3;
 const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 /** Stop starting new work at 240 seconds so the 300 second function limit is not hit. */
 export const YOUTUBE_LIBRARY_PULL_TIME_BUDGET_MS = 240_000;
+/**
+ * One stats chunk may not run longer than this, and never longer than the
+ * time still left before the pull deadline. A chunk that starts near 240s
+ * cannot add the ~120s a stalled batch would otherwise take.
+ */
+export const YOUTUBE_LIBRARY_PULL_CHUNK_STATS_MS = 40_000;
+/** Backstop around the stats batch if the client ignores its deadline. */
+const CHUNK_STATS_BACKSTOP_MS = 45_000;
 const CHANNEL_CHUNK_SIZE = 10;
 const READ_CONCURRENCY = 4;
 const STATS_FRESH_MS = 24 * 60 * 60 * 1000;
@@ -62,7 +70,10 @@ export interface LibraryYoutubeApi {
   /** Uploads-playlist recent views. 2 units when it does not return skip. Refresh still uses this. */
   recentUploads?(channelId: string): Promise<UploadsStatsFetch>;
   /** Pull path. One playlist call per channel, then videos.list in groups of 50. */
-  recentUploadsBatch?(channelIds: string[]): Promise<UploadsBatchFetch>;
+  recentUploadsBatch?(
+    channelIds: string[],
+    options?: { deadlineMs?: number; clock?: () => number }
+  ): Promise<UploadsBatchFetch>;
 }
 
 export interface YoutubePullReport {
@@ -219,7 +230,7 @@ async function youtubeGet(
 }
 
 function toUploadsFetch(method: string, meanViews: number): UploadsStatsFetch {
-  if (method === "uploads") return { kind: "uploads", averageViews: meanViews };
+  if (method === "uploads" && meanViews > 0) return { kind: "uploads", averageViews: meanViews };
   return { kind: "estimate" };
 }
 
@@ -267,7 +278,7 @@ export function createLibraryYoutubeApi(client?: YouTubeClient | null): LibraryY
         throw new Error(redactSecretParams(message));
       }
     },
-    async recentUploadsBatch(channelIds: string[]) {
+    async recentUploadsBatch(channelIds: string[], options?: { deadlineMs?: number; clock?: () => number }) {
       if (!youtube || typeof youtube.recentUploadsStatsBatch !== "function" || channelIds.length === 0) {
         return {
           results: channelIds.map(() => ({ kind: "skip" as const })),
@@ -276,7 +287,10 @@ export function createLibraryYoutubeApi(client?: YouTubeClient | null): LibraryY
         };
       }
       try {
-        const batch = await youtube.recentUploadsStatsBatch(channelIds);
+        const batch = await youtube.recentUploadsStatsBatch(channelIds, {
+          deadlineMs: options?.deadlineMs,
+          clock: options?.clock,
+        });
         return {
           results: batch.results.map((stats) => toUploadsFetch(stats.method, stats.meanViews)),
           playlistCalls: batch.playlistCalls,
@@ -356,6 +370,7 @@ async function processChunk(input: {
   clock: () => number;
   unitsLeft: number;
   log: (line: string) => void;
+  deadlineMs: number;
 }): Promise<{ upserted: number; units: number; stopped: "budget" | null }> {
   if (input.found.length === 0) return { upserted: 0, units: 0, stopped: null };
 
@@ -382,18 +397,34 @@ async function processChunk(input: {
   const statsById = new Map<string, UploadsStatsFetch>();
   let units = 0;
   if (needsStats.length > 0 && canStats) {
-    try {
-      const batch = await input.api.recentUploadsBatch!(needsStats.map((details) => details.channelId));
-      units += batch.playlistCalls + batch.videoListCalls;
-      needsStats.forEach((details, index) => {
-        statsById.set(details.channelId, batch.results[index] ?? { kind: "estimate" });
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "unknown error";
-      const safe = queueErrorText(message);
-      input.log(`[youtube-library] uploads stats failed: ${safe}`);
-      units += worst;
+    const chunkStart = input.clock();
+    const chunkBudgetMs = Math.min(
+      Math.max(0, input.deadlineMs - chunkStart),
+      YOUTUBE_LIBRARY_PULL_CHUNK_STATS_MS
+    );
+    const chunkDeadline = chunkStart + chunkBudgetMs;
+    if (chunkBudgetMs <= 0) {
       for (const details of needsStats) statsById.set(details.channelId, { kind: "estimate" });
+    } else {
+      try {
+        const batch = await withTimeout(
+          input.api.recentUploadsBatch!(needsStats.map((details) => details.channelId), {
+            deadlineMs: chunkDeadline,
+            clock: input.clock,
+          }),
+          Math.min(CHUNK_STATS_BACKSTOP_MS, chunkBudgetMs + 5_000)
+        );
+        units += batch.playlistCalls + batch.videoListCalls;
+        needsStats.forEach((details, index) => {
+          statsById.set(details.channelId, batch.results[index] ?? { kind: "estimate" });
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        const safe = queueErrorText(message);
+        input.log(`[youtube-library] uploads stats failed: ${safe}`);
+        units += worst;
+        for (const details of needsStats) statsById.set(details.channelId, { kind: "estimate" });
+      }
     }
   }
 
@@ -537,6 +568,7 @@ export async function runPullQueue(input: {
               clock,
               unitsLeft: left(),
               log,
+              deadlineMs,
             });
             if (saved.stopped) {
               incomplete = true;
@@ -639,6 +671,7 @@ export async function runPullQueue(input: {
           clock,
           unitsLeft: left(),
           log,
+          deadlineMs,
         });
         if (saved.stopped) {
           seedIncomplete = true;

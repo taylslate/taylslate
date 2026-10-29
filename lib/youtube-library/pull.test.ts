@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { YouTubeChannelDetails } from "@/lib/enrichment/youtube";
+import { YouTubeClient, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
 import { createMemoryYoutubeStore, draftToRecord } from "./store";
 import { categoryQueueValues } from "./categories";
 import {
@@ -10,6 +10,7 @@ import {
   seedQueueItems,
   uploadsBatchWorstCaseUnits,
   YOUTUBE_LIBRARY_PULL_BUDGET,
+  YOUTUBE_LIBRARY_PULL_CHUNK_STATS_MS,
   YOUTUBE_LIBRARY_PULL_TIME_BUDGET_MS,
 } from "./pull";
 
@@ -432,6 +433,201 @@ describe("time budget", () => {
     expect(report.upserted).toBe(0);
     expect(report.searched).toBe(0);
     expect(report.chunks).toBe(0);
+  });
+});
+
+describe("time stop at search and list", () => {
+  it("stops before search when the deadline has already passed", async () => {
+    const store = createMemoryYoutubeStore();
+    await store.enqueue([{ kind: "category_query", value: "late" }]);
+    const search = vi.fn(async () => ["a"]);
+    const report = await runPullQueue({
+      store,
+      api: apiWith({ search }),
+      seed: false,
+      clock: () => 0,
+      deadlineMs: 0,
+      log: () => {},
+    });
+    expect(report.stopped).toBe("time");
+    expect(report.searched).toBe(0);
+    expect(search).not.toHaveBeenCalled();
+    expect(store.queue[0]?.status).toBe("pending");
+    expect(store.channels.size).toBe(0);
+  });
+
+  it("stops before channels.list when the deadline passes during search", async () => {
+    const store = createMemoryYoutubeStore();
+    await store.enqueue([{ kind: "category_query", value: "late" }]);
+    let now = 0;
+    const list = vi.fn(async (ids: string[]) => ({
+      found: ids.map((id) => details(id)),
+      missing: [] as string[],
+    }));
+    const report = await runPullQueue({
+      store,
+      api: apiWith({
+        search: async () => {
+          now = 1_000;
+          return ["a", "b"];
+        },
+        list,
+      }),
+      seed: false,
+      clock: () => now,
+      deadlineMs: 1_000,
+      log: () => {},
+    });
+    expect(report.stopped).toBe("time");
+    expect(report.searched).toBe(1);
+    expect(list).not.toHaveBeenCalled();
+    expect(store.queue[0]?.status).toBe("pending");
+    expect(store.channels.size).toBe(0);
+  });
+});
+
+describe("stalled stats cannot pass 300 seconds", () => {
+  it("finishes a stalled YouTube client in under 300 seconds", async () => {
+    expect(YOUTUBE_LIBRARY_PULL_CHUNK_STATS_MS).toBe(40_000);
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const start = Date.now();
+      const store = createMemoryYoutubeStore();
+      await store.enqueue([{ kind: "category_query", value: "stalled" }]);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: string | URL | Request) => {
+          const url = new URL(String(input));
+          if (url.pathname.endsWith("/search")) {
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  items: Array.from({ length: 10 }, (_, index) => ({
+                    id: { videoId: `v${index}` },
+                    snippet: {
+                      channelId: `UCstall${String(index).padStart(4, "0")}`,
+                      title: "t",
+                      description: "d",
+                    },
+                  })),
+                }),
+                { status: 200, headers: { "content-type": "application/json" } }
+              )
+            );
+          }
+          if (url.pathname.endsWith("/channels")) {
+            const ids = (url.searchParams.get("id") ?? "").split(",").filter(Boolean);
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  items: ids.map((id) => ({
+                    id,
+                    snippet: {
+                      title: id,
+                      description: "The channel for your training and your health",
+                      publishedAt: "2020-01-01T00:00:00.000Z",
+                      country: "US",
+                      defaultLanguage: "en",
+                      thumbnails: {},
+                    },
+                    statistics: {
+                      viewCount: "2000000",
+                      subscriberCount: "100000",
+                      hiddenSubscriberCount: false,
+                      videoCount: "40",
+                    },
+                  })),
+                }),
+                { status: 200, headers: { "content-type": "application/json" } }
+              )
+            );
+          }
+          return new Promise(() => {});
+        })
+      );
+      const pending = runPullQueue({
+        store,
+        api: createLibraryYoutubeApi(new YouTubeClient("TESTKEY")),
+        seed: false,
+        deadlineMs: start + YOUTUBE_LIBRARY_PULL_TIME_BUDGET_MS,
+        log: () => {},
+      });
+      await vi.advanceTimersByTimeAsync(50_000);
+      const report = await pending;
+      expect(report.elapsedMs).toBeLessThan(300_000);
+      expect(report.elapsedMs).toBeLessThanOrEqual(50_000);
+      expect(Date.now() - start).toBeLessThan(300_000);
+      expect(store.channels.size).toBe(10);
+      for (const row of store.channels.values()) {
+        expect(row.avg_views_method).toBe("estimated");
+        expect(row.avg_recent_views).not.toBe(0);
+      }
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("cuts a stats batch that ignores its deadline when the chunk starts near 240 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const start = Date.now();
+      vi.setSystemTime(start + 239_000);
+      const store = createMemoryYoutubeStore();
+      await store.enqueue([{ kind: "category_query", value: "late-chunk" }]);
+      const recentUploadsBatch = vi.fn(() => new Promise<never>(() => {}));
+      const pending = runPullQueue({
+        store,
+        api: apiWith({
+          search: async () => ["a"],
+          recentUploadsBatch,
+        }),
+        seed: false,
+        deadlineMs: start + YOUTUBE_LIBRARY_PULL_TIME_BUDGET_MS,
+        log: () => {},
+      });
+      await vi.advanceTimersByTimeAsync(10_000);
+      const report = await pending;
+      expect(report.elapsedMs).toBeLessThan(300_000);
+      expect(report.elapsedMs).toBeLessThanOrEqual(10_000);
+      expect(store.channels.get("a")?.avg_views_method).toBe("estimated");
+      expect(recentUploadsBatch).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("empty and impossible recent views", () => {
+  it("does not store a 0 or an over-total mean as recent", async () => {
+    const store = createMemoryYoutubeStore();
+    await store.enqueue([{ kind: "category_query", value: "views" }]);
+    const report = await runPullQueue({
+      store,
+      api: apiWith({
+        search: async () => ["zero", "high", "ok"],
+        recentUploadsBatch: async () => ({
+          results: [
+            { kind: "uploads" as const, averageViews: 0 },
+            { kind: "uploads" as const, averageViews: 9_000_000 },
+            { kind: "uploads" as const, averageViews: 12_000 },
+          ],
+          playlistCalls: 3,
+          videoListCalls: 1,
+        }),
+      }),
+      seed: false,
+      log: () => {},
+    });
+    expect(report.upserted).toBe(3);
+    expect(store.channels.get("zero")?.avg_views_method).toBe("estimated");
+    expect(store.channels.get("zero")?.avg_recent_views).toBe(50_000);
+    expect(store.channels.get("high")?.avg_views_method).toBe("estimated");
+    expect(store.channels.get("high")?.avg_recent_views).toBe(50_000);
+    expect(store.channels.get("ok")?.avg_views_method).toBe("recent");
+    expect(store.channels.get("ok")?.avg_recent_views).toBe(12_000);
+    expect(store.channels.get("zero")?.video_count).toBe(40);
   });
 });
 

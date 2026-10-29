@@ -599,4 +599,100 @@ describe("batched id calls", () => {
       warn.mockRestore();
     }
   });
+
+  it("stores an empty uploads page as estimate, not a recent mean of 0", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        if (url.pathname.endsWith("/playlistItems")) {
+          return new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        throw new Error("videos.list should not run for an empty playlist");
+      })
+    );
+    const client = new YouTubeClient("TESTKEY");
+    const batch = await client.recentUploadsStatsBatch(["UCempty"], { now });
+    expect(batch.playlistCalls).toBe(1);
+    expect(batch.videoListCalls).toBe(0);
+    expect(batch.results[0].method).toBe("estimate");
+    expect(batch.results[0].uploadCount).toBe(0);
+  });
+
+  it("skips videos.list after the chunk deadline and marks those channels estimated", async () => {
+    let nowMs = Date.parse("2026-10-29T00:00:00.000Z");
+    const deadlineMs = nowMs + 50;
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/playlistItems")) {
+        nowMs = deadlineMs;
+        return new Response(
+          JSON.stringify({
+            items: [
+              {
+                contentDetails: {
+                  videoId: `vid-${url.searchParams.get("playlistId")}`,
+                  videoPublishedAt: daysAgo(4),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      throw new Error("videos.list should not run after the deadline");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new YouTubeClient("TESTKEY");
+    const batch = await client.recentUploadsStatsBatch(["UCaaa"], {
+      now,
+      deadlineMs,
+      clock: () => nowMs,
+    });
+    expect(batch.playlistCalls).toBe(1);
+    expect(batch.videoListCalls).toBe(0);
+    expect(batch.results[0].method).toBe("estimate");
+    expect(fetchMock.mock.calls.every((call) => !String(call[0]).includes("/videos"))).toBe(true);
+  });
+
+  it("stops a stalled playlist batch at the chunk deadline", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const start = Date.now();
+      let playlistFetches = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: string | URL | Request) => {
+          const url = new URL(String(input));
+          if (url.pathname.endsWith("/playlistItems")) {
+            playlistFetches += 1;
+            return new Promise(() => {});
+          }
+          return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+        })
+      );
+      const client = new YouTubeClient("TESTKEY");
+      const ids = Array.from({ length: 10 }, (_, index) => `UC${String(index).padStart(22, "c")}`);
+      const pending = client.recentUploadsStatsBatch(ids, {
+        now,
+        deadlineMs: start + 40_000,
+        clock: () => Date.now(),
+      });
+      await vi.advanceTimersByTimeAsync(45_000);
+      const batch = await pending;
+      expect(Date.now() - start).toBeLessThan(300_000);
+      expect(batch.playlistCalls).toBe(8);
+      expect(playlistFetches).toBe(8);
+      expect(batch.videoListCalls).toBe(0);
+      expect(batch.results).toHaveLength(10);
+      expect(batch.results.every((row) => row.method === "estimate")).toBe(true);
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });

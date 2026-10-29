@@ -217,17 +217,17 @@ export function draftToRecord(
   const hasMeasured = typeof draft.averageViews === "number" && Number.isFinite(draft.averageViews);
   const estimated = videos > 0 ? Math.round(details.totalViewCount / videos) : null;
   const measured = hasMeasured ? Math.round(draft.averageViews as number) : null;
+  const totalViews = asCount(details.totalViewCount);
+  // A 0 mean is an empty or failed uploads read, not a measurement.
+  // A mean above the channel's lifetime views is not a measurement either.
+  // Both are stored as the catalog estimate, never as recent 0.
+  const recentOk =
+    measured != null && measured > 0 && (totalViews == null || measured <= totalViews);
   // recent is the uploads-playlist measurement. estimated is the catalog
   // fallback. Both match migration 074's check.
   let avg: number | null;
   let method: AvgViewsMethod | null;
-  if (draft.viewsMethod === "recent" && measured != null) {
-    avg = measured;
-    method = "recent";
-  } else if (draft.viewsMethod === "estimated" || (draft.viewsMethod === "recent" && measured == null)) {
-    avg = estimated;
-    method = estimated == null ? null : "estimated";
-  } else if (measured != null) {
+  if (recentOk && draft.viewsMethod !== "estimated") {
     avg = measured;
     method = "recent";
   } else {
