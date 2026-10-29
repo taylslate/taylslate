@@ -7,6 +7,7 @@ import {
   cleanup,
   fireEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
@@ -74,6 +75,27 @@ function fillEmail(value = "jane@example.com") {
   fireEvent.change(screen.getByLabelText("Email"), {
     target: { value },
   });
+}
+
+const SENT_NOTICE =
+  "If an account exists for this email, we sent a 6-digit code. New here? Sign up.";
+
+async function expectSameSentNotice() {
+  const lead = await screen.findByText(
+    /If an account exists for this email, we sent a 6-digit code\. New here\?/,
+  );
+  const notice = lead.closest("p");
+  if (!notice) throw new Error("missing sent notice");
+  expect(notice.textContent?.replace(/\s+/g, " ").trim()).toBe(SENT_NOTICE);
+  expect(within(notice).getByRole("link", { name: "Sign up" })).toHaveAttribute(
+    "href",
+    "/signup",
+  );
+  expect(
+    screen.queryByText("If there's an account for that email, we sent a 6-digit code."),
+  ).toBeNull();
+  expect(screen.queryByText(/No account for that email/i)).toBeNull();
+  expect(screen.queryByRole("link", { name: /sign up instead/i })).toBeNull();
 }
 
 function expandPassword() {
@@ -152,24 +174,22 @@ describe("LoginPage", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.email).toBe("jane@example.com");
     expect(await screen.findByLabelText("Code")).toBeInTheDocument();
-    expect(
-      screen.getByText("If there's an account for that email, we sent a 6-digit code."),
-    ).toBeInTheDocument();
+    await expectSameSentNotice();
     expect(screen.getByRole("heading", { level: 1, name: "Log in" })).toBeInTheDocument();
     expect(signInWithPassword).not.toHaveBeenCalled();
   });
 
-  it("does not say whether that email has an account", async () => {
+  it("shows the same notice for an unknown email", async () => {
     render(<LoginPage />);
     fillEmail("nobody@example.com");
     fireEvent.click(screen.getByRole("button", { name: "Send code" }));
-    expect(
-      await screen.findByText("If there's an account for that email, we sent a 6-digit code."),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/No account for that email/i)).toBeNull();
-    expect(screen.queryByRole("link", { name: /sign up instead/i })).toBeNull();
+    await expectSameSentNotice();
     expect(screen.getByRole("heading", { level: 1, name: "Log in" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/signup");
+    const signUpLinks = screen.getAllByRole("link", { name: "Sign up" });
+    expect(signUpLinks.length).toBeGreaterThan(1);
+    for (const link of signUpLinks) {
+      expect(link).toHaveAttribute("href", "/signup");
+    }
   });
 
   it("rejects an empty email without requesting a code", async () => {

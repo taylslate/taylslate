@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { tokens } from "@/lib/brand/tokens";
 import { inputClass, labelClass, primaryBtnClass } from "@/components/auth/auth-shell";
 import { isValidLoginEmail, normalizeLoginEmail } from "@/lib/auth/login-magic";
@@ -21,6 +21,11 @@ interface ShowEmailCodeProps {
   outreachToken?: string;
   nextPath?: string | null;
   onVerified: (nextPath: string) => void;
+  /**
+   * Replaces the sentence shown after a code request. /login passes its own
+   * sentence and sign-up link. The pitch page leaves this unset.
+   */
+  sentNotice?: ReactNode;
 }
 
 export function ShowEmailCode({
@@ -30,6 +35,7 @@ export function ShowEmailCode({
   outreachToken,
   nextPath,
   onVerified,
+  sentNotice,
 }: ShowEmailCodeProps) {
   const [uncontrolledEmail, setUncontrolledEmail] = useState(defaultEmail);
   const email = emailValue ?? uncontrolledEmail;
@@ -181,9 +187,11 @@ export function ShowEmailCode({
         </form>
       ) : (
         <form onSubmit={verifyCode} className="space-y-4">
-          <p className="text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
-            If there&apos;s an account for that email, we sent a 6-digit code.
-          </p>
+          {sentNotice ?? (
+            <p className="text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
+              If there&apos;s an account for that email, we sent a 6-digit code.
+            </p>
+          )}
           <div>
             <label htmlFor="show-otp-code" className={labelClass}>
               Code

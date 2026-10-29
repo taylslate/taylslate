@@ -1419,3 +1419,35 @@ No page or component was edited. Screenshots are not applicable.
 - Discovery still fetches stats before the video-count and brand checks, now for every market survivor. A brand channel still spends 2 units.
 - `getRecentVideoStats` (the 100-unit search) remains for the enrich routes. Discovery, pull, and refresh do not call it.
 - No live write, charge, or send. This PR does not merge.
+
+## L3
+
+### What was built
+
+After Send code, `/login` shows: "If an account exists for this email, we sent a 6-digit code. New here? Sign up." Sign up links to `/signup`. The same sentence shows for every email. The page does not say whether that address has an account.
+
+`POST /api/auth/login/otp` is unchanged. A known email and an unknown email both get `{ ok: true }`. An unknown email still sends nothing.
+
+### Where
+
+- `app/(auth)/login/page.tsx` (the sentence and the link)
+- `app/(auth)/login/page.test.tsx`
+- `components/auth/show-email-code.tsx`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+`show-email-code.tsx` is outside the owns list. That component renders the sentence, and the pitch page uses it too. `/login` passes `sentNotice`. The pitch page leaves it unset and keeps "If there's an account for that email, we sent a 6-digit code."
+
+### Tests
+
+`npx vitest run`: 276 files, 2452 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 136 pages.
+
+The login page test checks the sentence and the `/signup` link after submit for `jane@example.com` and `nobody@example.com`.
+
+Review of `app/api/auth/login/otp/route.test.ts` (not edited): "emails a 6-digit code for an existing show", "emails a 6-digit code for an existing brand", and "returns ok for an unknown email and does not create a user or send mail" all expect status 200 and `{ ok: true }`. The route file is not in the diff.
+
+### Known gaps
+
+- The line above the form still says "We'll email a 6-digit code." This job only changes the sentence after submit.
+- The footer "Don't have an account? Sign up" is unchanged.
+- The pitch page code form keeps the previous sentence. That screen can create a show from an outreach token.
+- No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or send. Screenshots intercepted the code request. This PR does not merge.
