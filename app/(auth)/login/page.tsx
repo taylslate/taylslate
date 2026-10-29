@@ -17,6 +17,13 @@ import {
   CAPTCHA_RETRY_MESSAGE,
 } from "@/lib/auth/turnstile";
 
+const loginSentNotice = (
+  <p className="text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
+    If an account exists for this email, we sent a 6-digit code. New here?{" "}
+    <Link href="/signup" className="text-[var(--ts-accent-text)] hover:underline">Sign up</Link>.
+  </p>
+);
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -70,6 +77,7 @@ function LoginForm() {
         emailValue={email}
         onEmailChange={setEmail}
         nextPath={searchParams.get("next")}
+        sentNotice={loginSentNotice}
         onVerified={(nextPath) => {
           router.push(nextPath);
           router.refresh();
