@@ -23,7 +23,12 @@ import {
   MAX_YOUTUBE_SEARCHES,
 } from "./category-mapping";
 import { podscanPodcastToShow, youtubeChannelToShow } from "./format-discovered-show";
-import { absorbDiscoveredChannels, takeLibraryThenLive } from "@/lib/youtube-library/read";
+import {
+  absorbDiscoveredChannels,
+  takeLibraryThenLive,
+  type LibraryRingInput,
+  type RankedLibraryMatch,
+} from "@/lib/youtube-library/read";
 import { redactSecretParams } from "./redact-secrets";
 import {
   mediumPriorsForShow,
@@ -166,7 +171,14 @@ export async function discoverShows(brief: DiscoveryBrief): Promise<DiscoveryRes
           youtubeQueries,
           errors,
           youtubeInterestFallback,
-          brief.target_interests
+          brief.target_interests,
+          {
+            rings: (brief.ring_terms ?? [])
+              .map((term) => term.trim())
+              .filter(Boolean)
+              .map((term) => ({ id: term, terms: [term] })),
+            category: brief.keywords.filter((keyword) => keyword.trim()).join(" "),
+          }
         )
       : Promise.resolve([]),
   ]);
@@ -277,6 +289,77 @@ async function discoverFromPodscan(
   return filtered.map((p) => podscanPodcastToShow(p));
 }
 
+export interface YoutubeLibraryRing {
+  id: string;
+  terms: string[];
+}
+
+export interface DiscoverYoutubeOptions {
+  store?: Parameters<typeof takeLibraryThenLive>[0]["store"];
+  now?: Date;
+  /** Raw confirmed ring labels. Live search still uses `queries`. */
+  rings?: YoutubeLibraryRing[];
+  /** Brief product category, used when a ring matches no library category. */
+  category?: string;
+}
+
+/**
+ * Topical labels for a library channel that matched a ring at primary or
+ * adjacent level. Both levels receive the same list: the matched ring
+ * terms, or the ring's primary categories when the ring has no terms.
+ * Scoring weights, bands, and the topical formula are unchanged. This is
+ * only the input those formulas already read.
+ */
+export function youtubeLibraryTopicalInput(input: {
+  matchLevel: "primary" | "adjacent";
+  ringTerms: string[];
+  primaryCategories: readonly string[];
+}): string[] {
+  if (input.matchLevel !== "primary" && input.matchLevel !== "adjacent") return [];
+  const terms = dedupeLabels(input.ringTerms);
+  if (terms.length > 0) return terms;
+  return dedupeLabels(input.primaryCategories);
+}
+
+function dedupeLabels(values: readonly string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/** Add the shared primary-match topical labels. Categories stay as stored. */
+export function applyYoutubeLibraryTopicalInput(
+  show: Show,
+  input: {
+    matchLevel: "primary" | "adjacent";
+    ringTerms: string[];
+    primaryCategories: readonly string[];
+  }
+): Show {
+  const labels = youtubeLibraryTopicalInput(input);
+  if (labels.length === 0) return show;
+  return {
+    ...show,
+    audience_interests: dedupeLabels([...(show.audience_interests ?? []), ...labels]),
+  };
+}
+
+function stampLibraryTopical(match: RankedLibraryMatch): Show {
+  return applyYoutubeLibraryTopicalInput(match.show, {
+    matchLevel: match.matchLevel,
+    ringTerms: match.rings.flatMap((ring) => ring.terms),
+    primaryCategories: match.primaryCategories,
+  });
+}
+
 /**
  * Search YouTube videos for the planned queries (capped at 4). The live
  * top-up calls searchVideos with order relevance, over the last 12 months,
@@ -287,20 +370,50 @@ async function discoverFromPodscan(
  * response. Recent video stats still run for the top 10 channels that
  * survive it.
  *
- * If every search returns 0 channels, run the interest fallback once when it
- * was not already searched and the 4-search cap still has room.
+ * Library rows are read first, one combined list across confirmed rings.
+ * A channel that matched at primary or adjacent level gets the same
+ * topical input. If every search returns 0 channels, run the interest
+ * fallback once when it was not already searched and the 4-search cap
+ * still has room.
  */
 export async function discoverFromYoutube(
   queries: string[],
   errors: string[],
   interestFallback = "",
-  interests: string[] = []
+  interests: string[] = [],
+  options?: DiscoverYoutubeOptions
 ): Promise<Show[]> {
+  const rings: LibraryRingInput[] = libraryRingsForDiscovery(queries, interests, options);
   return takeLibraryThenLive({
-    ringTerms: queries,
+    rings,
     interests,
+    category: options?.category ?? "",
+    store: options?.store,
+    now: options?.now,
+    mapShow: stampLibraryTopical,
     live: () => discoverFromYoutubeLive(queries, errors, interestFallback),
   });
+}
+
+function libraryRingsForDiscovery(
+  queries: string[],
+  interests: string[],
+  options?: DiscoverYoutubeOptions
+): LibraryRingInput[] {
+  const category = options?.category ?? "";
+  const provided = (options?.rings ?? []).filter((ring) => ring.id.trim() || ring.terms.some((term) => term.trim()));
+  if (provided.length > 0) {
+    return provided.map((ring) => ({
+      id: ring.id.trim() || ring.terms.find((term) => term.trim()) || "ring",
+      terms: ring.terms.map((term) => term.trim()).filter(Boolean),
+      interests,
+      category,
+    }));
+  }
+  return queries
+    .map((query) => query.trim())
+    .filter(Boolean)
+    .map((query) => ({ id: query, terms: [query], interests, category }));
 }
 
 async function discoverFromYoutubeLive(
