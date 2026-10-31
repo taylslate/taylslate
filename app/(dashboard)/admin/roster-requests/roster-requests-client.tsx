@@ -166,6 +166,9 @@ export function RosterRequestsClient({ links }: { links: PendingRosterRequest[] 
         <h1 className="mt-2 font-[family-name:var(--font-app-display)] text-2xl font-semibold tracking-tight">
           Roster requests
         </h1>
+        <p className={`mt-2 ${mutedClass}`} data-testid="roster-pending-count">
+          {rows.length} pending
+        </p>
         <p className={`mt-2 ${mutedClass}`}>
           An imported or claimed link waits here. Approve makes it a live roster link. Reject
           keeps the row. A reject needs a note and does not change the show.
@@ -204,6 +207,11 @@ export function RosterRequestsClient({ links }: { links: PendingRosterRequest[] 
                     </p>
                     <p className="mt-2 flex flex-wrap items-center gap-2">
                       <StatusPill>Pending</StatusPill>
+                      {row.disputedByOwner ? (
+                        <span data-testid="disputed-by-owner">
+                          <StatusPill>Disputed by owner</StatusPill>
+                        </span>
+                      ) : null}
                       <ExclusiveMark on={row.isExclusive} />
                       <StatusPill>{row.discoverable ? "Discoverable" : "Not discoverable"}</StatusPill>
                     </p>

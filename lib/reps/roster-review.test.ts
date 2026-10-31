@@ -9,6 +9,8 @@ const { adminFrom, isShowsAdmin, tables } = vi.hoisted(() => ({
   isShowsAdmin: vi.fn(),
   tables: {
     links: [] as Row[],
+    disputes: [] as Row[],
+    disputeError: null as { code?: string; message?: string } | null,
     calls: [] as string[],
   },
 }));
@@ -20,7 +22,12 @@ vi.mock("@/lib/shows/can-edit-show", () => ({
   isShowsAdmin: (...args: unknown[]) => isShowsAdmin(...args),
 }));
 
-import { listPendingRosterLinks, rejectRosterLink, rosterReviewNote } from "./roster-review";
+import {
+  listPendingRosterLinks,
+  loadReviewedRosterLink,
+  rejectRosterLink,
+  rosterReviewNote,
+} from "./roster-review";
 
 function matches(row: Row, filters: { column: string; value: unknown }[], ins: { column: string; values: unknown[] }[]) {
   for (const filter of filters) {
@@ -55,18 +62,26 @@ function installAdmin() {
       return builder;
     });
     builder.maybeSingle = vi.fn(async () => {
-      if (table !== "agent_show_relationships" || !patch) {
+      if (table !== "agent_show_relationships") {
         return { data: null, error: null };
       }
       const current = tables.links.find((row) => matches(row, filters, ins));
       if (!current) return { data: null, error: null };
+      if (!patch) return { data: current, error: null };
       Object.assign(current, patch);
       return { data: { id: current.id, status: current.status }, error: null };
     });
     builder.then = (
-      resolve: (value: { data: Row[] | null; error: null }) => unknown,
+      resolve: (value: { data: Row[] | null; error: { code?: string; message?: string } | null }) => unknown,
       reject?: (reason: unknown) => unknown
     ) => {
+      if (table === "roster_link_disputes") {
+        if (tables.disputeError) {
+          return Promise.resolve({ data: null, error: tables.disputeError }).then(resolve, reject);
+        }
+        const data = tables.disputes.filter((row) => matches(row, filters, ins));
+        return Promise.resolve({ data, error: null }).then(resolve, reject);
+      }
       const data =
         table === "agent_show_relationships"
           ? tables.links.filter((row) => matches(row, filters, ins))
@@ -81,6 +96,8 @@ beforeEach(() => {
   adminFrom.mockReset();
   isShowsAdmin.mockReset();
   tables.links = [];
+  tables.disputes = [];
+  tables.disputeError = null;
   tables.calls = [];
   installAdmin();
 });
@@ -180,6 +197,8 @@ describe("listPendingRosterLinks", () => {
       showAgentDiffers: true,
     });
     expect(rows[2].otherLinks.map((link) => link.id)).toEqual(["held", "newer"]);
+    expect(rows.every((row) => row.disputedByOwner === false)).toBe(true);
+    expect(tables.calls).toContain("roster_link_disputes");
     expect(rows[1].otherLinks).toEqual([
       {
         id: "held",
@@ -205,6 +224,102 @@ describe("listPendingRosterLinks", () => {
     const source = readFileSync(join(__dirname, "roster-review.ts"), "utf8");
     expect(source).not.toMatch(/from\s+["']@\/lib\/ownership/);
     expect(source).not.toMatch(/import\s*\(\s*["']@\/lib\/ownership/);
+  });
+
+  it("flags an open dispute and ignores a resolved one", async () => {
+    tables.links = [
+      {
+        id: "open-link",
+        agent_id: "agent-1",
+        show_id: "show-1",
+        status: "pending",
+        source: "import",
+        is_exclusive: false,
+        created_at: "2026-03-01T00:00:00Z",
+        shows: { name: "Odd Lots", is_discoverable: false, agent_id: "agent-1" },
+        profiles: { email: "ada@example.com" },
+      },
+      {
+        id: "quiet-link",
+        agent_id: "agent-1",
+        show_id: "show-2",
+        status: "pending",
+        source: "import",
+        is_exclusive: false,
+        created_at: "2026-03-02T00:00:00Z",
+        shows: { name: "Acquired", is_discoverable: true, agent_id: "agent-1" },
+        profiles: { email: "ada@example.com" },
+      },
+    ];
+    tables.disputes = [
+      { link_id: "open-link", status: "open" },
+      { link_id: "quiet-link", status: "resolved" },
+    ];
+    const rows = await listPendingRosterLinks();
+    expect(rows.find((row) => row.id === "open-link")?.disputedByOwner).toBe(true);
+    expect(rows.find((row) => row.id === "quiet-link")?.disputedByOwner).toBe(false);
+  });
+
+  it("leaves the flag false when the dispute table is missing and does not log the message", async () => {
+    const errors: unknown[][] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args);
+    });
+    tables.links = [
+      {
+        id: "open-link",
+        agent_id: "agent-1",
+        show_id: "show-1",
+        status: "pending",
+        source: "import",
+        is_exclusive: false,
+        created_at: "2026-03-01T00:00:00Z",
+        shows: { name: "Odd Lots", is_discoverable: false, agent_id: "agent-1" },
+        profiles: { email: "ada@example.com" },
+      },
+    ];
+    tables.disputeError = {
+      code: "42P01",
+      message: "relation missing owner@secret.example SECRET-NOTE",
+    };
+    const rows = await listPendingRosterLinks();
+    expect(rows[0]?.disputedByOwner).toBe(false);
+    const logged = errors.flat().map(String).join(" ");
+    expect(logged).toContain("42P01");
+    expect(logged).not.toContain("owner@secret.example");
+    expect(logged).not.toContain("SECRET-NOTE");
+    spy.mockRestore();
+  });
+
+  it("returns the rep and the show for the decision email", async () => {
+    tables.links = [
+      {
+        id: "rel-1",
+        agent_id: "agent-1",
+        show_id: "show-1",
+        status: "rejected",
+        review_note: "Host already exclusive.",
+        shows: { name: "Odd Lots" },
+        profiles: {
+          email: "ada@example.com",
+          company_name: "Northwind",
+          full_name: "Ada Lovelace",
+        },
+      },
+    ];
+    const row = await loadReviewedRosterLink("rel-1");
+    expect(row).toEqual({
+      id: "rel-1",
+      agentId: "agent-1",
+      showId: "show-1",
+      showName: "Odd Lots",
+      status: "rejected",
+      reviewNote: "Host already exclusive.",
+      repEmail: "ada@example.com",
+      repCompanyName: "Northwind",
+      repFullName: "Ada Lovelace",
+    });
+    expect(await loadReviewedRosterLink("missing")).toBeNull();
   });
 });
 

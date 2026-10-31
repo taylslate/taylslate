@@ -46,6 +46,7 @@ const clean: PendingRosterRequest = {
   showAgentDiffers: false,
   otherLinks: [],
   exclusiveConflict: false,
+  disputedByOwner: false,
   status: "pending",
 };
 
@@ -72,6 +73,7 @@ const conflict: PendingRosterRequest = {
     },
   ],
   exclusiveConflict: true,
+  disputedByOwner: true,
   status: "pending",
 };
 
@@ -122,6 +124,7 @@ describe("roster requests page", () => {
 describe("RosterRequestsClient", () => {
   it("shows an empty pending list", () => {
     const view = render(<RosterRequestsClient links={[]} />);
+    expect(screen.getByTestId("roster-pending-count")).toHaveTextContent("0 pending");
     expect(screen.getByTestId("roster-requests-empty")).toHaveTextContent(
       "No pending roster requests."
     );
@@ -217,5 +220,22 @@ describe("RosterRequestsClient", () => {
       body: JSON.stringify({ action: "approve" }),
     });
     expect(await screen.findByRole("status")).toHaveTextContent("Approved The Rewatchables.");
+  });
+
+  it("shows the pending count and a disputed badge from the loaded rows", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "rel-clean", status: "approved" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<RosterRequestsClient links={[clean, conflict]} />);
+    expect(screen.getByTestId("roster-pending-count")).toHaveTextContent("2 pending");
+    const rows = screen.getAllByTestId("roster-request");
+    expect(within(rows[0]).queryByTestId("disputed-by-owner")).not.toBeInTheDocument();
+    expect(within(rows[1]).getByTestId("disputed-by-owner")).toHaveTextContent("Disputed by owner");
+    await user.click(screen.getByRole("button", { name: "Approve Odd Lots" }));
+    expect(await screen.findByTestId("roster-pending-count")).toHaveTextContent("1 pending");
+    expect(screen.getByTestId("disputed-by-owner")).toBeInTheDocument();
   });
 });

@@ -33,8 +33,15 @@ vi.mock("@/lib/security/rate-limit", () => ({
   enforceRosterImport: vi.fn(async () => null),
 }));
 
+vi.mock("@/lib/reps/roster-notify", () => ({
+  notifyRosterImportCommit: vi.fn(async () => undefined),
+}));
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { NextResponse } from "next/server";
 import { enforceRosterImport } from "@/lib/security/rate-limit";
+import { notifyRosterImportCommit } from "@/lib/reps/roster-notify";
 import { ROSTER_IMPORT_MAX_BYTES } from "@/lib/reps/roster-import";
 import { POST } from "./route";
 
@@ -109,6 +116,8 @@ beforeEach(() => {
   });
   vi.mocked(enforceRosterImport).mockReset();
   vi.mocked(enforceRosterImport).mockResolvedValue(null);
+  vi.mocked(notifyRosterImportCommit).mockReset();
+  vi.mocked(notifyRosterImportCommit).mockResolvedValue(undefined);
 });
 
 function scriptedBody(onRead: (readNumber: number) => Uint8Array | null) {
@@ -393,5 +402,44 @@ describe("POST /api/reps/roster/import", () => {
     expect(res.status).toBe(413);
     expect(script.reads()).toBe(2);
     expect(bridge.ops).toEqual([]);
+  });
+
+  it("notifies only after a commit and still returns the rows if notify throws", async () => {
+    bridge.getUser.mockResolvedValue({ data: { user: { id: AGENT } } });
+    bridge.getUserProfile.mockResolvedValue({ id: AGENT, role: "agent" });
+    const payload = JSON.stringify({
+      rows: [{ name: "Desk", platform: "podcast", rss_url: "https://feeds.example.com/desk" }],
+    });
+
+    const preview = await call("http://x/api/reps/roster/import", payload);
+    expect(preview.status).toBe(200);
+    expect(notifyRosterImportCommit).not.toHaveBeenCalled();
+
+    vi.mocked(notifyRosterImportCommit).mockRejectedValueOnce(
+      new Error("send failed owner@secret.example SECRET-NOTE")
+    );
+    const errors: unknown[][] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args);
+    });
+    const commit = await call("http://x/api/reps/roster/import?mode=commit", payload);
+    expect(commit.status).toBe(200);
+    const body = await commit.json();
+    expect(body.mode).toBe("commit");
+    expect(body.rows[0]).toMatchObject({ committed: true, link_id: "link-new" });
+    expect(notifyRosterImportCommit).toHaveBeenCalledTimes(1);
+    expect(notifyRosterImportCommit).toHaveBeenCalledWith({
+      agentId: AGENT,
+      rows: body.rows,
+    });
+    const logged = errors.flat().map(String).join(" ");
+    expect(logged).not.toContain("owner@secret.example");
+    expect(logged).not.toContain("SECRET-NOTE");
+    spy.mockRestore();
+  });
+
+  it("exports maxDuration 60", () => {
+    const source = readFileSync(join(process.cwd(), "app/api/reps/roster/import/route.ts"), "utf8");
+    expect(source).toMatch(/export const maxDuration = 60/);
   });
 });

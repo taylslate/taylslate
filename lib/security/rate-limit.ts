@@ -27,6 +27,8 @@ export const UPLOAD_USER_HOUR_WINDOW_SEC = 60 * 60;
 // an hour is 5,000 rows, enough for preview, commit, and a retry.
 export const ROSTER_IMPORT_USER_HOUR_MAX = 10;
 export const ROSTER_IMPORT_USER_HOUR_WINDOW_SEC = 60 * 60;
+export const ROSTER_DISPUTE_USER_HOUR_MAX = 10;
+export const ROSTER_DISPUTE_USER_HOUR_WINDOW_SEC = 60 * 60;
 
 export const RATE_LIMIT_MESSAGE = "Too many requests. Try again later.";
 
@@ -38,6 +40,7 @@ const OUTREACH_SEND_HOUR_BUCKET = "outreach_send_user_hour";
 const OUTREACH_SEND_DAY_BUCKET = "outreach_send_user_day";
 const UPLOAD_USER_HOUR_BUCKET = "upload_user_hour";
 const ROSTER_IMPORT_HOUR_BUCKET = "roster_import_user_hour";
+const ROSTER_DISPUTE_HOUR_BUCKET = "roster_dispute_user_hour";
 
 export type RateLimitFailureMode = "closed" | "open";
 
@@ -221,9 +224,8 @@ export function enforceUpload(
 }
 
 /**
- * POST /api/reps/roster/import (B1, PR 48) is not on this branch.
- * Call this after requireAgent and before parse. Keep the 500-row
- * and 1 MB caps in that route.
+ * POST /api/reps/roster/import calls this after requireAgent and
+ * before the body is read. That route keeps the 500-row and 1 MB caps.
  */
 export function enforceRosterImport(userId: string): Promise<NextResponse | null> {
   return enforceRules({
@@ -234,6 +236,21 @@ export function enforceRosterImport(userId: string): Promise<NextResponse | null
         key: userId.trim(),
         max: ROSTER_IMPORT_USER_HOUR_MAX,
         windowSeconds: ROSTER_IMPORT_USER_HOUR_WINDOW_SEC,
+      },
+    ],
+  });
+}
+
+/** POST /api/roster-links/[id]/dispute. 10 per hour per signed-in user. Closed on failure. */
+export function enforceRosterDispute(userId: string): Promise<NextResponse | null> {
+  return enforceRules({
+    failureMode: "closed",
+    rules: [
+      {
+        bucket: ROSTER_DISPUTE_HOUR_BUCKET,
+        key: userId.trim(),
+        max: ROSTER_DISPUTE_USER_HOUR_MAX,
+        windowSeconds: ROSTER_DISPUTE_USER_HOUR_WINDOW_SEC,
       },
     ],
   });

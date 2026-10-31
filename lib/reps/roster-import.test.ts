@@ -952,6 +952,71 @@ describe("importRoster commit", () => {
   });
 });
 
+describe("parseRecord length and scheme caps", () => {
+  it("rejects a name, feed, or email that is past the cap and does not write", async () => {
+    const longName = await run("commit", {
+      rows: [{ name: "a".repeat(301), platform: "podcast" }],
+    });
+    expect(longName[0].class).toBe("invalid");
+    expect(longName[0].reasons).toContain("Name is too long.");
+    expect(longName[0].committed).toBe(false);
+
+    const prefix = "https://feeds.example.com/";
+    const longFeed = await run("commit", {
+      rows: [
+        {
+          name: "Long Feed",
+          platform: "podcast",
+          rss_url: prefix + "a".repeat(2001 - prefix.length),
+        },
+      ],
+    });
+    expect(longFeed[0].class).toBe("invalid");
+    expect(longFeed[0].reasons).toContain("RSS URL is too long.");
+
+    const local = "a".repeat(321 - "@b.co".length);
+    const longEmail = await run("commit", {
+      rows: [{ name: "Long Email", platform: "podcast", contact_email: `${local}@b.co` }],
+    });
+    expect(longEmail[0].class).toBe("invalid");
+    expect(longEmail[0].reasons).toContain("Contact email is too long.");
+    expect(writes()).toEqual([]);
+  });
+
+  it("keeps a 300 character name, a 2000 character http(s) feed, and a 320 character email", async () => {
+    const prefix = "https://feeds.example.com/";
+    const feed = prefix + "b".repeat(2000 - prefix.length);
+    const local = "c".repeat(320 - "@b.co".length);
+    const rows = await run("preview", {
+      rows: [
+        { name: "n".repeat(300), platform: "podcast" },
+        { name: "Feed Ok", platform: "podcast", rss_url: feed },
+        { name: "Mail Ok", platform: "podcast", contact_email: `${local}@b.co` },
+      ],
+    });
+    expect(feed.length).toBe(2000);
+    expect(`${local}@b.co`.length).toBe(320);
+    expect(rows.map((row) => row.class)).toEqual(["new_show", "new_show", "new_show"]);
+    expect(rows.every((row) => row.reasons.length === 0)).toBe(true);
+  });
+
+  it("rejects ftp and javascript feeds", async () => {
+    const ftp = await run("commit", {
+      rows: [{ name: "Ftp", platform: "podcast", rss_url: "ftp://files.example.com/show" }],
+    });
+    const javascript = await run("commit", {
+      rows: [{ name: "Js", platform: "podcast", rss_url: "javascript:alert(1)" }],
+    });
+    expect(ftp[0].reasons).toContain("RSS URL must start with http or https.");
+    expect(javascript[0].reasons).toContain("RSS URL must start with http or https.");
+    expect(ftp[0].class).toBe("invalid");
+    expect(javascript[0].class).toBe("invalid");
+    expect(ftp[0].committed).toBe(false);
+    expect(javascript[0].committed).toBe(false);
+    expect(writes()).toEqual([]);
+  });
+});
+
 describe("parseRosterMode", () => {
   it("defaults to preview and accepts commit", () => {
     expect(parseRosterMode(null)).toBe("preview");

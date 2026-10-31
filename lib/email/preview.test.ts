@@ -6,8 +6,16 @@ describe("email previews", () => {
   const previews = renderEmailPreviews();
 
   it("renders each message on the shared layout", () => {
-    expect(previews.length).toBeGreaterThanOrEqual(20);
+    expect(previews.length).toBeGreaterThanOrEqual(24);
     const ids = previews.map((preview) => preview.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "roster-admin-alert",
+        "roster-rep-decision",
+        "roster-owner-notice",
+        "roster-dispute-alert",
+      ])
+    );
     expect(new Set(ids).size).toBe(ids.length);
 
     for (const preview of previews) {

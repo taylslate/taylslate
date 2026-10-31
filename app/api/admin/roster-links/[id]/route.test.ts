@@ -39,7 +39,11 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: { from: (...args: unknown[]) => adminFrom(...args) },
 }));
+vi.mock("@/lib/reps/roster-notify", () => ({
+  notifyRosterLinkDecision: vi.fn(async () => undefined),
+}));
 
+import { notifyRosterLinkDecision } from "@/lib/reps/roster-notify";
 import { POST } from "./route";
 
 function matches(
@@ -151,6 +155,8 @@ beforeEach(() => {
   installAdmin();
   getAuthenticatedUser.mockResolvedValue({ id: "admin-1", email: "ops@taylslate.com" });
   isShowsAdmin.mockResolvedValue(true);
+  vi.mocked(notifyRosterLinkDecision).mockReset();
+  vi.mocked(notifyRosterLinkDecision).mockResolvedValue(undefined);
 });
 
 describe("POST /api/admin/roster-links/[id]", () => {
@@ -219,6 +225,7 @@ describe("POST /api/admin/roster-links/[id]", () => {
     expect(state.links.find((row) => row.id === "match")?.status).toBe("pending");
     expect(state.tables).not.toContain("shows");
     expect(adminFrom).not.toHaveBeenCalled();
+    expect(notifyRosterLinkDecision).not.toHaveBeenCalled();
   });
 
   it("rejects a pending link and does not write shows", async () => {
@@ -232,5 +239,50 @@ describe("POST /api/admin/roster-links/[id]", () => {
     });
     expect(state.shows.find((row) => row.id === "show-m")?.is_discoverable).toBe(false);
     expect(state.tables).toEqual(["agent_show_relationships"]);
+    expect(notifyRosterLinkDecision).toHaveBeenCalledTimes(1);
+    expect(notifyRosterLinkDecision).toHaveBeenCalledWith({
+      relationshipId: "match",
+      decision: "declined",
+    });
+  });
+
+  it("emails the rep once on approve and not again on 409", async () => {
+    const first = await post("match", { action: "approve" });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({
+      id: "match",
+      show_id: "show-m",
+      status: "approved",
+    });
+    expect(notifyRosterLinkDecision).toHaveBeenCalledTimes(1);
+    expect(notifyRosterLinkDecision).toHaveBeenCalledWith({
+      relationshipId: "match",
+      decision: "approved",
+    });
+    const second = await post("match", { action: "approve" });
+    expect(second.status).toBe(409);
+    expect(await second.json()).toEqual({ error: "Not pending" });
+    expect(notifyRosterLinkDecision).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the approve body when notify throws and does not log the message", async () => {
+    vi.mocked(notifyRosterLinkDecision).mockRejectedValueOnce(
+      new Error("send failed owner@secret.example SECRET-NOTE")
+    );
+    const errors: unknown[][] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args);
+    });
+    const response = await post("match", { action: "approve" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      id: "match",
+      show_id: "show-m",
+      status: "approved",
+    });
+    const logged = errors.flat().map(String).join(" ");
+    expect(logged).not.toContain("owner@secret.example");
+    expect(logged).not.toContain("SECRET-NOTE");
+    spy.mockRestore();
   });
 });

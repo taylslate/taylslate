@@ -52,6 +52,22 @@ Invoice send, legacy campaign outreach, and IO PDF send call `resolveManagedDeli
 | invoice | `POST /api/invoices/send` | `invoice.bill_to_email` | `lib/email/templates/invoice-notice.ts` | {Name} via Taylslate \<invoices@\> | Yes, via `resolveManagedDelivery`. Profile id is the agency when the bill-to address is the agency, otherwise the brand |
 | io-pdf | `POST /api/deals/[id]/io/send` | Agency email, otherwise the advertiser | `lib/email/templates/io-attachment.ts` | {Name} via Taylslate \<io@\> | Yes, via `resolveManagedDelivery` |
 | conversion-alert | `GET /api/cron/conversion-alerts` | `INTERNAL_ALERT_EMAIL`, or chris@taylslate.com | `lib/alerts/conversion.ts` | notifications@ | Not applied. The cron skips managed customers before send |
+| roster-admin-alert | `POST /api/reps/roster/import?mode=commit` when at least one row is newly committed | `INTERNAL_ALERT_EMAIL`, or chris@taylslate.com | `lib/email/templates/roster-links.ts` | notifications@ (default sender, not auth@) | Not applied. No `recipientProfileId`. One email per commit. Preview and a retry send nothing |
+| roster-rep-decision | Admin approve or reject in `POST /api/admin/roster-links/[id]`, only the call that flips `pending` | The rep | `lib/email/templates/roster-links.ts` | notifications@ | Yes, `recipientProfileId` is the rep. A decline includes the stored note. An approval has no note |
+| roster-owner-notice | Same commit, for each verified owner of a show that already existed | That owner | `lib/email/templates/roster-links.ts` | notifications@ | Yes, `recipientProfileId` is the owner. One email per owner per commit |
+| roster-dispute-alert | First `POST /api/roster-links/[id]/dispute` insert | `INTERNAL_ALERT_EMAIL`, or chris@taylslate.com | `lib/email/templates/roster-links.ts` | notifications@ | Not applied. A repeat flag sends nothing |
+
+## Roster link mail
+
+These four messages use the default sender, `notifications@taylslate.com`. `auth@taylslate.com` is sign-in mail only. Callers do not pass `from`.
+
+The admin alert goes out once after a commit that created at least one pending link. It names the rep's company, or full name, the count, how many rows are new shows, and how many link to shows already in the catalog. It names at most five shows. The button goes to `https://www.taylslate.com/admin/roster-requests`. A preview and a retry send nothing, because those rows are not committed.
+
+The rep decision mail goes out only after approve or reject changes a pending link. A second call is 409 and sends nothing. The decline includes the stored review note, HTML escaped, at most 500 characters. The approval has no note.
+
+The owner notice goes out on creation, while the link is pending, not again on approval. The recipient is a verified owner: `shows.ownership_status` is `verified` and a `show_ownership_proofs` row for that show has status `verified`. The address is `profiles.email` for that proof's `user_id`. Deal ties and show contact-email ties are not mailed. An unclaimed show gets no email and no proof lookup. A new show the rep just created is not mailed. The rep is not mailed when `user_id` is the rep. One owner with several shows gets one email listing those shows. The cap is 50 owner emails per commit. The mail says the rep (company, else full name, else "A Taylslate sales agent") listed the show, Taylslate is reviewing it, and nothing is live yet. The button "This is not right" goes to `https://www.taylslate.com/shows/roster-links/<link id>`. It does not include another rep, a rep email, commission, exclusivity, any other show, or an admin note.
+
+The dispute alert goes to the same admin address after the first flag. It includes the show name, the rep's company or name, the owner's email, the note, and the review link. The dispute does not change the link. The rep cannot read the dispute row.
 
 Payments and payouts do not send a Taylslate email. Stripe may send its own receipt if that is turned on in Stripe. DocuSign sends the countersign envelope from dse@docusign.net. The show-countersign message tells the host to expect that.
 

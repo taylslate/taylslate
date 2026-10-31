@@ -4,6 +4,7 @@
 // Writes go through supabaseAdmin inside importRoster.
 
 import { NextResponse } from "next/server";
+import { notifyRosterImportCommit } from "@/lib/reps/roster-notify";
 import { requireAgent } from "@/lib/reps/session";
 import { enforceRosterImport } from "@/lib/security/rate-limit";
 import {
@@ -13,6 +14,8 @@ import {
   parseRosterImport,
   parseRosterMode,
 } from "@/lib/reps/roster-import";
+
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
@@ -34,6 +37,13 @@ export async function POST(request: Request) {
     const text = new TextDecoder("utf-8").decode(bytes);
     const rows = parseRosterImport(text, contentTypeForParse(contentType, text));
     const result = await importRoster({ agentId: gate.agentId, mode, rows });
+    if (mode === "commit") {
+      try {
+        await notifyRosterImportCommit({ agentId: gate.agentId, rows: result });
+      } catch (err) {
+        console.error("[roster-import] notify", err instanceof Error ? err.name : "error");
+      }
+    }
     return NextResponse.json({ mode, rows: result });
   } catch (error) {
     if (error instanceof RosterImportError) {
