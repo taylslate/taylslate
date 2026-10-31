@@ -5,10 +5,16 @@
 
 import { redactSecretParams } from "@/lib/discovery/redact-secrets";
 import { callLLMWithFallback } from "@/lib/llm/client";
+import { mapLimit, withTimeout } from "./pull";
 
 export const NICHE_TAGS_VERSION = 1;
 export const TAG_BATCH_SIZE = 50;
 export const TAG_DAILY_CAP = 400;
+/** One tag call may not run longer than this, and never longer than the time still left. */
+const TAG_CALL_MS = 40_000;
+/** Do not start a call that cannot finish. */
+const TAG_MIN_REMAINING_MS = 15_000;
+const TAG_SAVE_CONCURRENCY = 4;
 
 /** Selectable interests plus the removed buckets discovery still searches. */
 export const NICHE_TAXONOMY = [
@@ -249,7 +255,7 @@ export async function defaultTagComplete(channels: TagChannelInput[]): Promise<s
 export interface TagBatchResult {
   channels: number;
   calls: number;
-  stopped: "cap" | "empty" | "llm_error" | null;
+  stopped: "cap" | "empty" | "llm_error" | "time" | null;
 }
 
 /**
@@ -263,34 +269,49 @@ export async function runNicheTagBatches(input: {
   cap?: number;
   batchSize?: number;
   log?: (line: string) => void;
+  /** Stop before a call that would run past this epoch ms. Omit for no clock. */
+  deadlineMs?: number;
+  clock?: () => number;
 }): Promise<TagBatchResult> {
   const cap = input.cap ?? TAG_DAILY_CAP;
   const batchSize = input.batchSize ?? TAG_BATCH_SIZE;
   const complete = input.complete ?? defaultTagComplete;
   const log = input.log ?? ((line: string) => console.log(line));
+  const clock = input.clock ?? Date.now;
+  const remaining = () => (input.deadlineMs == null ? Number.POSITIVE_INFINITY : input.deadlineMs - clock());
   let tagged = 0;
   let calls = 0;
 
   while (tagged < cap) {
+    if (remaining() < TAG_MIN_REMAINING_MS) {
+      return { channels: tagged, calls, stopped: "time" };
+    }
     const take = Math.min(batchSize, cap - tagged);
     const rows = await input.load(take);
     if (rows.length === 0) {
       return { channels: tagged, calls, stopped: tagged > 0 ? null : "empty" };
     }
+    const left = remaining();
+    if (left < TAG_MIN_REMAINING_MS) {
+      return { channels: tagged, calls, stopped: "time" };
+    }
     calls++;
     let parsed: Map<string, NicheTag[]>;
     try {
-      const text = await complete(rows);
+      const budgetMs = Math.min(left, TAG_CALL_MS);
+      const text =
+        input.deadlineMs == null ? await complete(rows) : await withTimeout(complete(rows), budgetMs);
       parsed = parseTagResponse(text, new Set(rows.map((row) => row.channel_id)));
     } catch (err) {
       const message = err instanceof Error ? err.message : "llm error";
       log(`[youtube-library] tag call failed: ${redactSecretParams(message).slice(0, 200)}`);
-      return { channels: tagged, calls, stopped: "llm_error" };
+      const timedOut = /timed out/i.test(message);
+      return { channels: tagged, calls, stopped: timedOut ? "time" : "llm_error" };
     }
-    for (const row of rows) {
+    await mapLimit(rows, TAG_SAVE_CONCURRENCY, async (row) => {
       const tags = parsed.get(row.channel_id) ?? [];
       await input.save(row.channel_id, tags);
-    }
+    });
     tagged += rows.length;
     log(`[youtube-library] tag call=${calls} channels=${rows.length}`);
     if (rows.length < take) break;
