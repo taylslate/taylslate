@@ -32,6 +32,8 @@ describe("proxy public-route allowlist (signed out)", () => {
     "/reset-password",
     "/",
     "/for-shows",
+    "/terms",
+    "/privacy",
     "/sitemap.xml",
     "/robots.txt",
     "/opengraph-image",
@@ -41,6 +43,24 @@ describe("proxy public-route allowlist (signed out)", () => {
       expect(redirectedToLogin(res)).toBe(false);
     });
   }
+
+  it("does not treat a longer /terms path as public", async () => {
+    const res = await run("/terms/extra");
+    expect(redirectedToLogin(res)).toBe(true);
+    expect(res.headers.get("location")).toContain("next=%2Fterms%2Fextra");
+  });
+
+  it("does not treat /privacy/x as public", async () => {
+    const res = await run("/privacy/x");
+    expect(redirectedToLogin(res)).toBe(true);
+    expect(res.headers.get("location")).toContain("next=%2Fprivacy%2Fx");
+  });
+
+  it("does not treat /terms-anything as public", async () => {
+    const res = await run("/terms-anything");
+    expect(redirectedToLogin(res)).toBe(true);
+    expect(res.headers.get("location")).toContain("next=%2Fterms-anything");
+  });
 
   it("still bounces a protected route to /login when signed out", async () => {
     const res = await run("/dashboard");

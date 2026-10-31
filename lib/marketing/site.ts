@@ -34,6 +34,22 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
     pageFile: "app/for-shows/page.tsx",
   },
   {
+    path: "/terms",
+    title: "Terms of Service | Taylslate",
+    description: "Draft terms of service for Taylslate.",
+    marketing: false,
+    metadataFile: "app/terms/page.tsx",
+    pageFile: "app/terms/page.tsx",
+  },
+  {
+    path: "/privacy",
+    title: "Privacy Policy | Taylslate",
+    description: "Draft privacy policy for Taylslate.",
+    marketing: false,
+    metadataFile: "app/privacy/page.tsx",
+    pageFile: "app/privacy/page.tsx",
+  },
+  {
     path: "/login",
     title: "Log in | Taylslate",
     description: "Log in to Taylslate.",

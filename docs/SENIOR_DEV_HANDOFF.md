@@ -1661,3 +1661,44 @@ No page or component was edited. Screenshots are not applicable.
 - The 1,000 refresh budget and the 8,000 pull budget are per run, not per day. YouTube's free daily quota is 10,000 units. A manual pull plus the 17:00 cron plus the 18:00 refresh can pass it. This job does not add a daily quota tracker and does not raise either budget.
 - A stats chunk that starts with 40 seconds of pass time left can still run about 45 seconds, because the backstop is `min(45 seconds, chunk budget + 5 seconds)`. The pass deadline is 200 seconds so that overshoot still lands inside the 240 second route budget.
 - No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or send. This PR does not merge. After merge and Chris's OK, Chris runs the two refreshes from his own shell (the agent does not read `CRON_SECRET`): `time curl -s -o /tmp/refresh1.json -w "%{http_code} %{time_total}\n" -H "Authorization: Bearer $CRON_SECRET" https://www.taylslate.com/api/cron/youtube-library-refresh`, then the same for `/tmp/refresh2.json`. Expect HTTP 200 and under 300 seconds both times, with `elapsedMs` at or under about 255000. Read-only SQL before and after each run: `select count(*) from youtube_channels`; `select count(*) from youtube_channels where stats_refreshed_at >= now() - interval '10 minutes'`; `select avg_views_method, count(*) from youtube_channels group by 1`; `select min(stats_refreshed_at) from youtube_channels`. The count must not drop after a time stop. The refreshed count must be above 0 on both runs. `min(stats_refreshed_at)` must move forward across the two runs. `avg_views_method` may only show null, recent, and estimated. Vercel runtime logs for those two runs should not contain "Task timed out".
+
+## LG1
+
+### What was built
+
+Public draft Terms of Service (`/terms`) and Privacy Policy (`/privacy`). A signed-out visit no longer redirects to `/login`. The marketing footer Terms and Privacy links go to those pages. The approved L2 consent line is `CONSENT_LINE` in `app/terms/page.tsx`. Privacy imports that constant. The visible banner lives in `components/marketing/legal-document.tsx` so the terms page file can stay free of the word "draft", which `lib/learning/pooled-deal-priors.test.ts` rejects. Both pages show a draft banner and square-bracket placeholders. Both are `noindex` and out of the sitemap while `marketing` is false.
+
+The sentences under "How the product applies that line" describe the pooled dataset, the import checkbox (off by default, terms version `pooling-v1`), and that an upload stays private unless the brand opted in. Those sentences are not the approved consent line.
+
+### Where
+
+- `app/terms/page.tsx`
+- `app/privacy/page.tsx`
+- `app/terms/page.test.tsx`
+- `app/privacy/page.test.tsx`
+- `components/marketing/legal-document.tsx`
+- `components/marketing/marketing-chrome.tsx` (the two footer hrefs only)
+- `proxy.ts` (`/terms` and `/privacy` exact matches)
+- `proxy.test.ts`
+- `lib/marketing/site.ts`
+- `lib/marketing/site.test.ts`
+- `docs/jobs/LG1.md`
+- `PRODUCT_BACKLOG.md` (item j)
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+Page tests assert the exact consent string, the draft banner, the placeholders, the footer hrefs, and no em dash in the rendered text. The terms test also asserts no percentage figure. The proxy test allows `/terms` and `/privacy` while signed out, still redirects `/dashboard`, and redirects `/terms/extra`. `lib/marketing/site.test.ts` expects the new paths with `marketing: false`, so they stay out of the sitemap. `lib/learning/pooled-deal-priors.test.ts` still requires the consent sentence inside `app/terms/page.tsx` and rejects the word "draft" in that file.
+
+`npx vitest run`: 283 files, 2512 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 137 pages.
+
+No migration. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited.
+
+### Known gaps
+
+- Every legal conclusion that is not already in the repo is marked [CONFIRM WITH COUNSEL]. The list is in `docs/jobs/LG1.md`.
+- Placeholders for the legal entity, address, governing law, venue, effective date, and contact emails are still empty. `ops@taylslate.com` was not used.
+- Fee percentages and plan prices are not on the page. The payments section says to see the pricing shown in the account, with [CONFIRM CURRENT PRICING].
+- The draft banner stays until Chris removes `LEGAL_DRAFT_BANNER` and sets `marketing: true` if these pages should be indexed.
+- No signup checkbox and no new consent capture. Login and signup behavior are unchanged apart from the shared footer hrefs.
+- This PR does not merge. A lawyer should review the draft before launch.
