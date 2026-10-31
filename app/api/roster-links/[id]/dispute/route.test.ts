@@ -198,6 +198,35 @@ describe("POST /api/roster-links/[id]/dispute", () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
+  it("returns 413 before parsing a body over 16 KB", async () => {
+    const over = await POST(
+      new Request(`http://x/api/roster-links/${LINK}/dispute`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "x".repeat(16 * 1024 + 1),
+      }),
+      { params: Promise.resolve({ id: LINK }) }
+    );
+    expect(over.status).toBe(413);
+    expect(await over.json()).toEqual({ error: "Request body is too large." });
+    expect(db.disputes).toEqual([]);
+    expect(sendEmail).not.toHaveBeenCalled();
+
+    const declared = await POST(
+      new Request(`http://x/api/roster-links/${LINK}/dispute`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": String(16 * 1024 + 1),
+        },
+        body: "{}",
+      }),
+      { params: Promise.resolve({ id: LINK }) }
+    );
+    expect(declared.status).toBe(413);
+    expect(db.disputes).toEqual([]);
+  });
+
   it("rejects a 501 character note before any insert or send", async () => {
     const response = await post(LINK, { note: "a".repeat(501) });
     expect(response.status).toBe(400);

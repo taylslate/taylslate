@@ -114,6 +114,37 @@ describe("roster link templates", () => {
     expect(text).not.toContain("\u2014");
   });
 
+  it("strips CR and LF from every subject", () => {
+    const declined = renderRosterRepDecision({
+      showName: "Odd\r\nLots",
+      decision: "declined",
+      note: "fine",
+    });
+    const owner = renderRosterOwnerNotice({
+      repLabel: "North\nwind",
+      shows: [{ name: "Acquired\r", linkId: LINK_A }],
+    });
+    const admin = renderRosterAdminAlert({
+      repLabel: "North\rwind",
+      count: 1,
+      newShowCount: 1,
+      existingShowCount: 0,
+      showNames: ["Odd\nLots"],
+      omittedShowCount: 0,
+    });
+    const dispute = renderRosterDisputeAlert({
+      showName: "Odd\nLots",
+      repLabel: "North\rwind",
+      ownerEmail: "host@dailybriefing.example",
+      note: "fine",
+    });
+    for (const rendered of [declined, owner, admin, dispute]) {
+      expect(rendered.subject).not.toMatch(/[\r\n]/);
+    }
+    expect(declined.subject).toBe("Roster link declined for OddLots");
+    expect(owner.subject).toBe("Northwind listed Acquired");
+  });
+
   it("uses the notifications sender in the preview registry only as data", () => {
     expect(EMAIL_FROM_NOTIFICATIONS).toContain("notifications@taylslate.com");
     expect(EMAIL_FROM_NOTIFICATIONS).not.toContain("auth@");

@@ -49,6 +49,11 @@ export interface RosterDisputeAlertInput {
   note?: string | null;
 }
 
+/** CR and LF would split a Subject header. */
+function emailSubject(value: string): string {
+  return value.replace(/\r|\n/g, "");
+}
+
 export function rosterDisputeUrl(linkId: string): string {
   return `https://www.taylslate.com/shows/roster-links/${encodeURIComponent(linkId)}`;
 }
@@ -86,7 +91,7 @@ export function renderRosterAdminAlert(input: RosterAdminAlertInput): RenderedRo
     cta: { href: ROSTER_REVIEW_URL, label: "Review roster requests" },
     text: `${body}\n\nReview roster requests: ${ROSTER_REVIEW_URL}`,
   });
-  return { subject, html: laid.html, text: laid.text };
+  return { subject: emailSubject(subject), html: laid.html, text: laid.text };
 }
 
 export function renderRosterRepDecision(input: RosterRepDecisionInput): RenderedRosterEmail {
@@ -107,7 +112,7 @@ export function renderRosterRepDecision(input: RosterRepDecisionInput): Rendered
     bodyHtml: `${emailParagraph(escapeHtml(lead))}${noteHtml}`,
     text: body,
   });
-  return { subject, html: laid.html, text: laid.text };
+  return { subject: emailSubject(subject), html: laid.html, text: laid.text };
 }
 
 export function renderRosterOwnerNotice(input: RosterOwnerNoticeInput): RenderedRosterEmail {
@@ -141,7 +146,7 @@ export function renderRosterOwnerNotice(input: RosterOwnerNoticeInput): Rendered
     cta: one ? { href: rosterDisputeUrl(one.linkId), label: "This is not right" } : undefined,
     text: extraText ? `${lead}\n\n${extraText}` : `${lead}\n\nThis is not right: ${rosterDisputeUrl(one?.linkId ?? "")}`,
   });
-  return { subject, html: laid.html, text: laid.text };
+  return { subject: emailSubject(subject), html: laid.html, text: laid.text };
 }
 
 export function renderRosterDisputeAlert(input: RosterDisputeAlertInput): RenderedRosterEmail {
@@ -158,5 +163,5 @@ export function renderRosterDisputeAlert(input: RosterDisputeAlertInput): Render
     cta: { href: ROSTER_REVIEW_URL, label: "Review roster requests" },
     text: `${body}\n\nReview roster requests: ${ROSTER_REVIEW_URL}`,
   });
-  return { subject, html: laid.html, text: laid.text };
+  return { subject: emailSubject(subject), html: laid.html, text: laid.text };
 }

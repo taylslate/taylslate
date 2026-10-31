@@ -121,6 +121,11 @@ async function recipientIsManaged(input: {
   }
 }
 
+/** CR and LF would split the Subject header. Strip them from every subject. */
+function subjectLine(subject: string): string {
+  return subject.replace(/\r|\n/g, "");
+}
+
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   const delivery = await resolveManagedDelivery(input);
   if (!delivery.ok) {
@@ -137,7 +142,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     const { data, error } = await client.emails.send({
       from: input.from ?? DEFAULT_FROM,
       to: delivery.to,
-      subject: delivery.subject,
+      subject: subjectLine(delivery.subject),
       html: input.html,
       text: input.text,
       replyTo: input.reply_to,

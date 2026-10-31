@@ -1759,7 +1759,7 @@ Screenshots of `/admin/roster-requests` before and after, and of the new owner p
 - When a show is later claimed or verified, the rep who already has a pending or approved link is not notified. O2 and O4 are not merged, and no code on main writes proofs, so live data has no verified owners today. Owner mail will not fire until a verified proof exists.
 - Unclaimed shows get no email, including no mail to `contact_email`. That is intentional.
 - At most once. A crash after the write and before the send drops that email. A digest was skipped on purpose.
-- `docs/security/RATE_LIMITS.md` does not list the dispute bucket. That file was outside this job's file list.
+- `docs/security/RATE_LIMITS.md` lists the dispute bucket: 10 per hour per user id, closed on failure.
 - The owner page is under the dashboard layout. A profile with no role, or a show profile that has not finished onboarding, is redirected by that layout before this page renders.
 
 ### Choices to confirm

@@ -3,6 +3,8 @@ import { getAuthenticatedUser } from "@/lib/data/queries";
 import { loadOwnerRosterLink } from "@/lib/reps/roster-notify";
 import { OwnerRosterLinkClient } from "./owner-roster-link-client";
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default async function OwnerRosterLinkPage({
   params,
 }: {
@@ -12,6 +14,8 @@ export default async function OwnerRosterLinkPage({
   if (!user) notFound();
 
   const { id } = await params;
+  if (!UUID.test(id)) notFound();
+
   const access = await loadOwnerRosterLink(id, user.id);
   if (!access.ok) notFound();
 

@@ -47,6 +47,15 @@ describe("owner roster link page", () => {
     expect(mocks.loadOwnerRosterLink).not.toHaveBeenCalled();
   });
 
+  it("404s a malformed id without loading the link", async () => {
+    mocks.getAuthenticatedUser.mockResolvedValue({ id: "owner-1" });
+    await expect(
+      OwnerRosterLinkPage({ params: Promise.resolve({ id: "not-a-uuid" }) })
+    ).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(mocks.notFound).toHaveBeenCalledOnce();
+    expect(mocks.loadOwnerRosterLink).not.toHaveBeenCalled();
+  });
+
   it("404s a non-owner the same way it 404s a missing link", async () => {
     mocks.getAuthenticatedUser.mockResolvedValue({ id: "owner-1" });
     mocks.loadOwnerRosterLink.mockResolvedValue({ ok: false });

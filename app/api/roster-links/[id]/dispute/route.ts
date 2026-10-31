@@ -14,6 +14,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 
 const NOT_FOUND = { error: "Not found" };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A note is at most 500 characters. 16 KB is enough for that JSON and nothing larger is parsed. */
+const DISPUTE_MAX_BODY_BYTES = 16 * 1024;
 
 function noteLength(value: string): number {
   return Array.from(value).length;
@@ -42,8 +44,16 @@ export async function POST(
   const limited = await enforceRosterDispute(user.id);
   if (limited) return limited;
 
+  const declared = request.headers.get("content-length");
+  if (declared !== null && /^\d+$/.test(declared.trim()) && Number(declared) > DISPUTE_MAX_BODY_BYTES) {
+    return NextResponse.json({ error: "Request body is too large." }, { status: 413 });
+  }
+
   let noteValue: unknown;
   const raw = await request.text();
+  if (Buffer.byteLength(raw, "utf8") > DISPUTE_MAX_BODY_BYTES) {
+    return NextResponse.json({ error: "Request body is too large." }, { status: 413 });
+  }
   if (raw.trim()) {
     try {
       const parsed = JSON.parse(raw) as { note?: unknown };
