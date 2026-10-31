@@ -46,6 +46,8 @@ export async function proxy(request: NextRequest) {
   // /outreach/[token]            — Wave 11 public pitch page (token-gated)
   // /auth/magic                  — magic link landing/error states
   // /for-shows                   — public shows marketing page
+  // /terms                       public terms of service draft (exact path)
+  // /privacy                     public privacy policy draft (exact path)
   // /sitemap.xml, /robots.txt, /opengraph-image: public crawler files
   // /api/webhooks/docusign       — Wave 12 DocuSign Connect webhook (HMAC-verified)
   // /api/cron/*                  — Vercel Cron jobs (CRON_SECRET-verified)
@@ -54,6 +56,8 @@ export async function proxy(request: NextRequest) {
   const isPublicRoute =
     pathname === "/" ||
     pathname === "/for-shows" ||
+    pathname === "/terms" ||
+    pathname === "/privacy" ||
     pathname === "/login" ||
     pathname === "/login/show" ||
     pathname === "/signup" ||

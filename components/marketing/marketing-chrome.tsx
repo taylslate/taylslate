@@ -67,13 +67,13 @@ export function MarketingChrome({
           </span>
           <div className="flex items-center gap-6">
             <Link
-              href="#"
+              href="/terms"
               className="text-sm text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
             >
               Terms
             </Link>
             <Link
-              href="#"
+              href="/privacy"
               className="text-sm text-[var(--ts-ink-muted-on-paper)] hover:text-[var(--ts-ink-on-paper)]"
             >
               Privacy

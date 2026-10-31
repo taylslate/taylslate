@@ -151,8 +151,7 @@ Surfaced July 7, 2026 during 2D browser verification (seeded deal `e0bf050b`). *
 
 ## Polish
 
-### j. Terms page and footer (logged Oct 26, 2026)
-Checked on main `4c5aa7b` while rebasing L2. `/terms` is not in `proxy.ts` `isPublicRoute`, so a signed-out visit still redirects to `/login`. The footer Terms link in `components/marketing/marketing-chrome.tsx` is still `href="#"`. Both files are outside the L2 job.
+### ~~j. Terms page and footer (logged Oct 26, 2026)~~. RESOLVED in LG1. Signed-out `/terms` and `/privacy` are public, and the footer links to them. The copy is a draft.
 
 ### Orphaned promote-to-test path (logged Sep 7, 2026)
 - Promote-to-test path orphaned by the Scale-selectable change — the `scale-watchlist` route's `promote` action and the `scale_show.promoted_to_test` event still exist, but the UI never calls them (Scale cards are now directly cart-selectable). Remove or repurpose in a later cleanup.
