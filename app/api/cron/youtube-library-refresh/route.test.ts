@@ -49,9 +49,27 @@ describe("GET /api/cron/youtube-library-refresh", () => {
     await expect(res.json()).resolves.toMatchObject({ skipped: true, reason: "missing_table" });
     expect(runYoutubeLibraryRefresh).toHaveBeenCalledOnce();
 
+    runYoutubeLibraryRefresh.mockResolvedValue({
+      skipped: false,
+      units: 1,
+      refreshed: 1,
+      deleted: 0,
+      nulled: 0,
+      stopped: "time",
+      tagging: { channels: 0, calls: 0, stopped: "time" },
+      elapsedMs: 200_000,
+      chunks: 1,
+    });
+    const timed = await GET(request("Bearer cron-secret") as never);
+    expect(timed.status).toBe(200);
+    await expect(timed.json()).resolves.toMatchObject({ stopped: "time", elapsedMs: 200_000, chunks: 1 });
+
     const src = readFileSync(join(process.cwd(), "app/api/cron/youtube-library-refresh/route.ts"), "utf8");
     expect(src).toContain("Bearer ${secret}");
+    expect(src).toContain("export const maxDuration = 300");
+    expect(src).toContain("Do not raise it");
     expect(src).not.toContain("\u2014");
+    expect(src).not.toContain("YOUTUBE_API_KEY");
 
     const vercel = JSON.parse(readFileSync(join(process.cwd(), "vercel.json"), "utf8"));
     expect(vercel.regions).toEqual(["pdx1"]);
@@ -59,5 +77,18 @@ describe("GET /api/cron/youtube-library-refresh", () => {
       path: "/api/cron/youtube-library-refresh",
       schedule: "0 18 * * *",
     });
+  });
+
+  it("redacts key=TESTKEY from a thrown refresh error", async () => {
+    process.env.CRON_SECRET = "cron-secret";
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    runYoutubeLibraryRefresh.mockRejectedValue(new Error("refresh failed key=TESTKEY"));
+    const res = await GET(request("Bearer cron-secret") as never);
+    expect(res.status).toBe(500);
+    const body = JSON.stringify(await res.json());
+    expect(body).not.toContain("TESTKEY");
+    expect(error.mock.calls.flat().join(" ")).toContain("key=[redacted]");
+    expect(error.mock.calls.flat().join(" ")).not.toContain("TESTKEY");
+    error.mockRestore();
   });
 });

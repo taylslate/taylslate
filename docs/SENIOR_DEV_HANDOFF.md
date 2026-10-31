@@ -1577,6 +1577,91 @@ No page or component was edited. Screenshots are not applicable.
 - The 8,000 pull budget and the 1,000 refresh budget are per run, not per day. YouTube's free daily quota is 10,000 units. A manual pull plus the 17:00 cron plus the 18:00 refresh can pass it. This job does not add a daily quota tracker and does not raise either budget.
 - No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or send. This PR does not merge. After merge and Chris's OK, Chris runs the two pulls from his own shell (the agent does not read `CRON_SECRET`): `time curl -s -o /tmp/pull1.json -w "%{http_code} %{time_total}\n" -H "Authorization: Bearer $CRON_SECRET" https://www.taylslate.com/api/cron/youtube-library-pull`, then the same for `/tmp/pull2.json`. Expect HTTP 200 and under 300 seconds on both, with `elapsedMs` at or under about 255000. Read-only counts before and after each run: `youtube_channels` count, `youtube_pull_queue` by status, channels updated in the last 10 minutes, and `avg_views_method` counts. Rows should grow or pending should shrink. Baseline on Oct 29 2026 before this fix: 403 channels, 100 queue rows (11 done, 89 pending), `avg_views_method` recent 403. Vercel runtime logs for those two runs should not contain "Task timed out".
 
+## B1: bulk roster import API for reps
+
+### What was built
+
+`POST /api/reps/roster/import` previews a rep's show list or commits it. Preview is the default and writes nothing. Commit creates pending `agent_show_relationships` rows with `source` `import` and `is_exclusive` true unless the row opts out. The agent id is the session from `requireAgent`. New shows go through `supabaseAdmin` with the caller's `agent_id`, `is_discoverable` false unless `isShowsAdmin`, and no `is_exclusive` on the show. `is_claimed` and `ownership_status` are not set. An existing show is not updated. A name match is a suggestion until `confirm` is set. Hidden shows owned by another agent match only on feed, YouTube `UC` id, or `shows.apple_id`, and the result returns their id and name only. `podscan_id` is ignored. Nothing is approved.
+
+`enforceRosterImport` runs after `requireAgent` and before the body is read. The limit is 10 requests per hour per session user id, closed on failure. A 429 (with `Retry-After`) or a 503 is returned as is, and the body is not read. A `Content-Length` above 1 MB is 413 before the body is read. The read counts bytes and returns 413 as soon as the running total passes 1 MB, so a missing or low `Content-Length` cannot buffer the rest. The 500-row cap stays.
+
+No migration. The next free number is 075. Grants on `shows` and `agent_show_relationships` were read and are unchanged: anon and public have nothing, authenticated has `SELECT` only on `shows`. Nothing was written to `ldtmhafewfifdizgfrnn`.
+
+Rebased onto main `08d9bc4`. The only rebase conflict was this file. Main's sections stay, and this section is last.
+
+### Where
+
+- `lib/reps/roster-import.ts`
+- `lib/reps/roster-import.test.ts`
+- `app/api/reps/roster/import/route.ts`
+- `app/api/reps/roster/import/route.test.ts`
+- `docs/jobs/B1.md`
+- `docs/security/RATE_LIMITS.md` (the roster import row and the paragraph under the table)
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run lib/reps/roster-import.test.ts app/api/reps/roster/import/route.test.ts`
+
+Covers each match tier and class, both caps, idempotent commit, `podscan_id` ignored, no `is_claimed` write, no show update on `link_existing`, caller `agent_id` and non-discoverable insert, `exclusive_conflict`, 401, 403, preview with no writes, and commit on a mocked `supabaseAdmin` with no authenticated-client use. The route test mocks `@/lib/security/rate-limit` and checks that the limiter is called with the session agent id after auth and before the body is read, that 429 and 503 pass through with no read and no write, that an oversized `Content-Length` is 413 before the body is read, and that a body without `Content-Length` (and one whose `Content-Length` is lower than the real size) returns 413 once the running count passes 1 MB.
+
+`npx vitest run`: 283 files, 2542 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 137 pages. No UI change. Screenshots are not applicable. No throwaway database. No live writes.
+
+### Known gaps
+
+- The docblock on `enforceRosterImport` in `lib/security/rate-limit.ts` still says `POST /api/reps/roster/import` is not on this branch. That file was not edited. The route does call it.
+- Migration 073 must be applied live before this route can pass the limiter. Until `rate_limit_hit` exists, `enforceRosterImport` fails closed with 503.
+- `exclusive_conflict` tells the importing rep that an approved exclusive link exists. It is a boolean and nothing more about the other link. That flag is the original B1 spec.
+- A name lookup that hits 50 rows is treated as ambiguous. A feed or Apple lookup that hits 1,000 rows fails the request.
+- An unconfirmed name match is not inserted as a new show.
+- YouTube handles are not resolved. Multipart upload is not accepted.
+- No domain event on the pending link.
+
+## P2 YouTube library refresh: stop the 300 second timeout
+
+### What was built
+
+`GET /api/cron/youtube-library-refresh` still has `maxDuration` 300. That is the Hobby plan Fluid Compute cap. Do not raise it. The route now stops on a wall clock before that kill. A time stop is a normal HTTP 200. `stopped` is `"time"`, `"budget"`, `"quota"`, `"error"`, or null.
+
+The refresh pass stops starting new work at 200 seconds (`YOUTUBE_LIBRARY_REFRESH_PASS_BUDGET_MS`). The 30-day sweep and niche tagging stop at 240 seconds (`YOUTUBE_LIBRARY_REFRESH_TIME_BUDGET_MS`), so they keep about 40 seconds after the pass. The unit budget stays 1,000. There is no new table or column. A channel this run does not save keeps its old `stats_refreshed_at`, so the next run starts at the oldest remaining rows. `oldestChannels(50)` is unchanged.
+
+After `channels.list` (at most 50 ids), found channels are taken in chunks of 10. Existing rows are read once with `getChannels`. Show linking and saves run at a concurrency of 4. `saveChannel` receives the existing row, so it does not read the channel again. Uploads stats for a chunk go through `recentUploadsBatch` (imported from the pull client, not copied). The chunk deadline is the lesser of the time still left before the pass deadline and 40 seconds. The batch is also wrapped in `withTimeout` of at most 45 seconds. A batch that throws or times out stores `avg_views_method` `estimated` for that chunk. A fake API with no `recentUploadsBatch` still uses per-channel `recentUploads`, with a clock check before each call, and still charges 2 units per read.
+
+Units are the calls that actually ran: 1 per `channels.list`, then `playlistCalls` + `videoListCalls` from the batch. Before a chunk, the worst case (`uploadsBatchWorstCaseUnits`) has to fit in the remaining 1,000, or the run stops with `stopped: "budget"`. Before a new group, 1 unit has to be left for `channels.list`. A quota error stops with `"quota"`. A 404 on `channels.list` still deletes that group's ids. Ids missing from `channels.list` are still deleted. Any other `channels.list` error, including a timeout, stops with `"error"`.
+
+`draftToRecord` is unchanged. A recent mean of 0, or a mean above the channel's lifetime `total_view_count`, is stored as `estimated` (the catalog average). A positive mean that does not exceed the lifetime total is `recent`. The only values written are null, `recent`, and `estimated`.
+
+The 30-day sweep runs only when the pass finishes with `stopped` null. A time, budget, quota, or error stop skips it and logs one line, because rows the run did not reach are not stale. When it does run, deletes go out as one `deleteChannels` call per 50 ids, and nulls run at a concurrency of 4. The clock is checked between those batches. The 30-day rule itself is unchanged: delete when there is no show, clear YouTube fields when there is a show.
+
+`runNicheTagBatches` takes an optional `deadlineMs` and `clock`. It does not start a call when under 15 seconds remain. Each call is wrapped in `withTimeout` of the lesser of the time left and 40 seconds. A timeout is `stopped: "time"`. Those rows stay untagged and are retried next run. Saves in a batch run at a concurrency of 4. `TAG_DAILY_CAP` stays 400. The taxonomy, prompt, parsing, and version are unchanged.
+
+The JSON report and the single `[youtube-library] refresh` log line include `elapsedMs` and `chunks`. Errors go through `redactSecretParams` or `queueErrorText` / `scrubYoutubeError`. The API key is not logged or returned. The bearer check is unchanged: a missing `CRON_SECRET`, or a missing or wrong bearer, is 401, and the refresh is not called.
+
+### Where
+
+- `app/api/cron/youtube-library-refresh/route.ts` and `route.test.ts`
+- `lib/youtube-library/refresh.ts` and `refresh.test.ts`
+- `lib/youtube-library/tags.ts` and `tags.test.ts` (deadline, clock, and the per-call timeout only)
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+`lib/youtube-library/pull.ts`, `lib/enrichment/youtube.ts`, the pull route, `vercel.json`, discovery, scoring, the tag taxonomy, and the UI were not edited. No migration.
+
+### Tests
+
+`npx vitest run lib/youtube-library/refresh.test.ts lib/youtube-library/tags.test.ts app/api/cron/youtube-library-refresh/route.test.ts` (3 files, 26 passed).
+
+The clock stops the loop with `stopped: "time"` before the next `channels.list` and leaves unreached rows on their old `stats_refreshed_at`. A second `runRefreshQueue` on the same memory store starts at those oldest rows and does not insert a duplicate channel. After a time stop or a budget stop the sweep does not run, and no unreached row is deleted or nulled. A finished pass still deletes a 404, deletes ids missing from `channels.list`, and deletes or nulls rows older than 30 days. A stalled stats batch is cut at `min(remaining, 40 seconds)` and those channels are `estimated`. A mean of 0 and a mean above `total_view_count` are stored as `estimated`. A good mean is `recent`. Show linking and saves never have more than 4 in flight, and each channel keeps the show id from its own lookup. `saveChannel` receives the existing row, and `getChannel` is not called per channel. Real batch calls are what the unit total counts, and the run stops at 1,000 with `stopped: "budget"`. `channels.list` is never given more than 50 ids, and a stats batch is never given more than 10 channels. A quota error stops cleanly. Tagging stops with `stopped: "time"` before an LLM call it cannot finish, and a stalled LLM call is cut and leaves rows untagged. A thrown message containing `key=TESTKEY` is redacted in the log and the report. The route returns 200 for a time stop, 401 without the bearer, and 401 when `CRON_SECRET` is missing. It calls nothing without auth.
+
+Full `npx vitest run`: 281 files, 2521 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 136 pages.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- The 1,000 refresh budget and the 8,000 pull budget are per run, not per day. YouTube's free daily quota is 10,000 units. A manual pull plus the 17:00 cron plus the 18:00 refresh can pass it. This job does not add a daily quota tracker and does not raise either budget.
+- A stats chunk that starts with 40 seconds of pass time left can still run about 45 seconds, because the backstop is `min(45 seconds, chunk budget + 5 seconds)`. The pass deadline is 200 seconds so that overshoot still lands inside the 240 second route budget.
+- No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or send. This PR does not merge. After merge and Chris's OK, Chris runs the two refreshes from his own shell (the agent does not read `CRON_SECRET`): `time curl -s -o /tmp/refresh1.json -w "%{http_code} %{time_total}\n" -H "Authorization: Bearer $CRON_SECRET" https://www.taylslate.com/api/cron/youtube-library-refresh`, then the same for `/tmp/refresh2.json`. Expect HTTP 200 and under 300 seconds both times, with `elapsedMs` at or under about 255000. Read-only SQL before and after each run: `select count(*) from youtube_channels`; `select count(*) from youtube_channels where stats_refreshed_at >= now() - interval '10 minutes'`; `select avg_views_method, count(*) from youtube_channels group by 1`; `select min(stats_refreshed_at) from youtube_channels`. The count must not drop after a time stop. The refreshed count must be above 0 on both runs. `min(stats_refreshed_at)` must move forward across the two runs. `avg_views_method` may only show null, recent, and estimated. Vercel runtime logs for those two runs should not contain "Task timed out".
+
 ## LG1
 
 ### What was built

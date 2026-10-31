@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { redactSecretParams } from "@/lib/discovery/redact-secrets";
 import { runYoutubeLibraryRefresh } from "@/lib/youtube-library/refresh";
 
+// Hobby plan with Fluid Compute stops the function at 300 seconds. Do not raise it.
 export const maxDuration = 300;
 
 function authorized(req: NextRequest): boolean {
