@@ -93,14 +93,59 @@ describe("batch tagging cap", () => {
       ],
       save,
       complete: async () => {
-        throw new Error("key=super-secret-key boom");
+        throw new Error("key=TESTKEY boom");
       },
       log: (line) => lines.push(line),
     });
     expect(lines.join("\n")).toContain("key=[redacted]");
-    expect(lines.join("\n")).not.toContain("super-secret-key");
+    expect(lines.join("\n")).not.toContain("TESTKEY");
     expect(result.stopped).toBe("llm_error");
     expect(result.channels).toBe(0);
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it("stops before an LLM call it cannot finish", async () => {
+    const save = vi.fn();
+    const complete = vi.fn();
+    const start = 1_000;
+    const result = await runNicheTagBatches({
+      load: async () => [
+        { channel_id: "c1", title: "t", description: "d", topic_categories: [], keywords: [] },
+      ],
+      save,
+      complete,
+      clock: () => start,
+      deadlineMs: start + 10_000,
+      log: () => {},
+    });
+    expect(result.stopped).toBe("time");
+    expect(result.calls).toBe(0);
+    expect(complete).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("cuts a stalled LLM call and leaves those rows unsaved", async () => {
+    vi.useFakeTimers();
+    try {
+      const start = Date.now();
+      const save = vi.fn();
+      const pending = runNicheTagBatches({
+        load: async () => [
+          { channel_id: "c1", title: "t", description: "d", topic_categories: [], keywords: [] },
+        ],
+        save,
+        complete: () => new Promise(() => ""),
+        clock: () => Date.now(),
+        deadlineMs: start + 30_000,
+        log: () => {},
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      const result = await pending;
+      expect(result.stopped).toBe("time");
+      expect(result.channels).toBe(0);
+      expect(save).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
