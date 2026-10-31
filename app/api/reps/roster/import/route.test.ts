@@ -29,6 +29,13 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }));
 
+vi.mock("@/lib/security/rate-limit", () => ({
+  enforceRosterImport: vi.fn(async () => null),
+}));
+
+import { NextResponse } from "next/server";
+import { enforceRosterImport } from "@/lib/security/rate-limit";
+import { ROSTER_IMPORT_MAX_BYTES } from "@/lib/reps/roster-import";
 import { POST } from "./route";
 
 const AGENT = "agent-session";
@@ -100,7 +107,42 @@ beforeEach(() => {
   bridge.userFrom.mockImplementation(() => {
     throw new Error("authenticated client should not be used");
   });
+  vi.mocked(enforceRosterImport).mockReset();
+  vi.mocked(enforceRosterImport).mockResolvedValue(null);
 });
+
+function scriptedBody(onRead: (readNumber: number) => Uint8Array | null) {
+  let reads = 0;
+  const body = {
+    getReader() {
+      return {
+        async read() {
+          reads += 1;
+          const value = onRead(reads);
+          if (!value) return { done: true as const, value: undefined };
+          return { done: false as const, value };
+        },
+        async cancel() {},
+      };
+    },
+  };
+  return {
+    body: body as unknown as ReadableStream<Uint8Array>,
+    reads: () => reads,
+  };
+}
+
+function streamCall(
+  url: string,
+  body: ReadableStream<Uint8Array>,
+  headers: Record<string, string>
+) {
+  return POST({
+    url,
+    headers: new Headers(headers),
+    body,
+  } as Request);
+}
 
 describe("POST /api/reps/roster/import", () => {
   it("returns 401 when nobody is signed in", async () => {
@@ -112,6 +154,7 @@ describe("POST /api/reps/roster/import", () => {
     expect(res.status).toBe(401);
     expect(bridge.ops).toEqual([]);
     expect(bridge.userFrom).not.toHaveBeenCalled();
+    expect(enforceRosterImport).not.toHaveBeenCalled();
   });
 
   it("returns 403 when the signed-in user is not an agent", async () => {
@@ -124,6 +167,7 @@ describe("POST /api/reps/roster/import", () => {
     expect(res.status).toBe(403);
     expect(bridge.ops).toEqual([]);
     expect(bridge.userFrom).not.toHaveBeenCalled();
+    expect(enforceRosterImport).not.toHaveBeenCalled();
   });
 
   it("previews with no writes and ignores a caller-supplied agent id", async () => {
@@ -211,5 +255,143 @@ describe("POST /api/reps/roster/import", () => {
     expect(big.status).toBe(413);
     expect(bridge.ops).toEqual([]);
     expect(bridge.userFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns the limiter response before anything is read or written", async () => {
+    bridge.getUser.mockResolvedValue({ data: { user: { id: AGENT } } });
+    bridge.getUserProfile.mockResolvedValue({ id: AGENT, role: "agent" });
+
+    const blocked = scriptedBody(() => {
+      throw new Error("body was read");
+    });
+    vi.mocked(enforceRosterImport).mockResolvedValue(
+      NextResponse.json(
+        { error: "Too many requests. Try again later." },
+        { status: 429, headers: { "Retry-After": "3600" } }
+      )
+    );
+    const limited = await streamCall(
+      "http://x/api/reps/roster/import?mode=commit",
+      blocked.body,
+      { "content-type": "application/json", "content-length": "12" }
+    );
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Retry-After")).toBe("3600");
+    expect(await limited.json()).toEqual({ error: "Too many requests. Try again later." });
+    expect(enforceRosterImport).toHaveBeenCalledTimes(1);
+    expect(enforceRosterImport).toHaveBeenCalledWith(AGENT);
+    expect(blocked.reads()).toBe(0);
+    expect(bridge.ops).toEqual([]);
+    expect(bridge.userFrom).not.toHaveBeenCalled();
+    expect(bridge.isShowsAdmin).not.toHaveBeenCalled();
+
+    const closedBody = scriptedBody(() => {
+      throw new Error("body was read");
+    });
+    vi.mocked(enforceRosterImport).mockResolvedValue(
+      NextResponse.json({ error: "unavailable" }, { status: 503 })
+    );
+    const closed = await streamCall(
+      "http://x/api/reps/roster/import",
+      closedBody.body,
+      { "content-type": "application/json" }
+    );
+    expect(closed.status).toBe(503);
+    expect(await closed.json()).toEqual({ error: "unavailable" });
+    expect(closedBody.reads()).toBe(0);
+    expect(bridge.ops).toEqual([]);
+    expect(bridge.userFrom).not.toHaveBeenCalled();
+  });
+
+  it("calls the limiter with the session agent id, then reads, then parses", async () => {
+    const order: string[] = [];
+    bridge.getUser.mockImplementation(async () => {
+      order.push("requireAgent");
+      return { data: { user: { id: AGENT } } };
+    });
+    bridge.getUserProfile.mockResolvedValue({ id: AGENT, role: "agent" });
+    vi.mocked(enforceRosterImport).mockImplementation(async (userId) => {
+      order.push(`limiter:${userId}`);
+      return null;
+    });
+
+    const payload = JSON.stringify({
+      rows: [{ name: "Desk", platform: "podcast", agent_id: "agent-from-body" }],
+    });
+    const script = scriptedBody((readNumber) => {
+      expect(bridge.ops).toEqual([]);
+      order.push(readNumber === 1 ? "read" : "read-end");
+      if (readNumber === 1) return new TextEncoder().encode(payload);
+      return null;
+    });
+
+    const res = await streamCall("http://x/api/reps/roster/import", script.body, {
+      "content-type": "application/json",
+    });
+    expect(res.status).toBe(200);
+    expect(order).toEqual(["requireAgent", `limiter:${AGENT}`, "read", "read-end"]);
+    expect(script.reads()).toBe(2);
+    expect(enforceRosterImport).toHaveBeenCalledTimes(1);
+    expect(enforceRosterImport).toHaveBeenCalledWith(AGENT);
+    expect(enforceRosterImport).not.toHaveBeenCalledWith("agent-from-body");
+    const body = await res.json();
+    expect(body.rows[0].class).toBe("new_show");
+    expect(bridge.ops.length).toBeGreaterThan(0);
+    expect(bridge.ops.some((op) => op.op !== "select")).toBe(false);
+  });
+
+  it("rejects an oversized Content-Length before the body is read", async () => {
+    bridge.getUser.mockResolvedValue({ data: { user: { id: AGENT } } });
+    bridge.getUserProfile.mockResolvedValue({ id: AGENT, role: "agent" });
+
+    const script = scriptedBody(() => {
+      throw new Error("body was read");
+    });
+    const res = await streamCall("http://x/api/reps/roster/import", script.body, {
+      "content-type": "application/json",
+      "content-length": String(ROSTER_IMPORT_MAX_BYTES + 1),
+    });
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "This file is larger than 1 MB." });
+    expect(script.reads()).toBe(0);
+    expect(bridge.ops).toEqual([]);
+    expect(enforceRosterImport).toHaveBeenCalledWith(AGENT);
+  });
+
+  it("stops a body with no Content-Length once it passes 1 MB", async () => {
+    bridge.getUser.mockResolvedValue({ data: { user: { id: AGENT } } });
+    bridge.getUserProfile.mockResolvedValue({ id: AGENT, role: "agent" });
+
+    const script = scriptedBody((readNumber) => {
+      if (readNumber === 1) return new Uint8Array(ROSTER_IMPORT_MAX_BYTES);
+      if (readNumber === 2) return new Uint8Array(1);
+      throw new Error("body read continued past the cap");
+    });
+    const res = await streamCall("http://x/api/reps/roster/import", script.body, {
+      "content-type": "application/json",
+    });
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "This file is larger than 1 MB." });
+    expect(script.reads()).toBe(2);
+    expect(bridge.ops).toEqual([]);
+    expect(bridge.userFrom).not.toHaveBeenCalled();
+  });
+
+  it("still caps a body whose Content-Length is under the real size", async () => {
+    bridge.getUser.mockResolvedValue({ data: { user: { id: AGENT } } });
+    bridge.getUserProfile.mockResolvedValue({ id: AGENT, role: "agent" });
+
+    const script = scriptedBody((readNumber) => {
+      if (readNumber === 1) return new Uint8Array(ROSTER_IMPORT_MAX_BYTES);
+      if (readNumber === 2) return new Uint8Array(1);
+      throw new Error("body read continued past the cap");
+    });
+    const res = await streamCall("http://x/api/reps/roster/import", script.body, {
+      "content-type": "application/json",
+      "content-length": "10",
+    });
+    expect(res.status).toBe(413);
+    expect(script.reads()).toBe(2);
+    expect(bridge.ops).toEqual([]);
   });
 });

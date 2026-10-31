@@ -2,13 +2,10 @@
 //
 // Preview is the default. The agent id is the session from requireAgent.
 // Writes go through supabaseAdmin inside importRoster.
-//
-// lib/api/rate-limit.ts counts api_keys.id. api_rate_windows.key_id
-// references that table, so a session agent id is not a valid key.
-// This route does not call it and does not add another limiter.
 
 import { NextResponse } from "next/server";
 import { requireAgent } from "@/lib/reps/session";
+import { enforceRosterImport } from "@/lib/security/rate-limit";
 import {
   RosterImportError,
   assertRosterImportBytes,
@@ -24,14 +21,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: gate.error }, { status: gate.status });
     }
 
+    const limited = await enforceRosterImport(gate.agentId);
+    if (limited) return limited;
+
     const mode = parseRosterMode(new URL(request.url).searchParams.get("mode"));
     if (!mode) {
       return NextResponse.json({ error: "Mode must be preview or commit." }, { status: 400 });
     }
 
-    const bytes = new Uint8Array(await request.arrayBuffer());
-    assertRosterImportBytes(bytes.byteLength);
-
+    const bytes = await readCappedRosterBody(request);
     const contentType = request.headers.get("content-type") ?? "";
     const text = new TextDecoder("utf-8").decode(bytes);
     const rows = parseRosterImport(text, contentTypeForParse(contentType, text));
@@ -47,6 +45,58 @@ export async function POST(request: Request) {
     );
     return NextResponse.json({ error: "Roster import failed." }, { status: 500 });
   }
+}
+
+/** Digits only. A missing or non-numeric Content-Length is not trusted. */
+function declaredContentLength(request: Request): number | null {
+  const raw = request.headers.get("content-length");
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  if (!Number.isSafeInteger(value)) return null;
+  return value;
+}
+
+/**
+ * Reject an oversized Content-Length before any read. Then count bytes
+ * as they arrive and stop once the running total passes the cap, so a
+ * missing or low Content-Length cannot buffer the rest of the upload.
+ */
+async function readCappedRosterBody(request: Request): Promise<Uint8Array> {
+  const declared = declaredContentLength(request);
+  if (declared !== null) assertRosterImportBytes(declared);
+
+  const stream = request.body;
+  if (!stream) {
+    assertRosterImportBytes(0);
+    return new Uint8Array();
+  }
+
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+      total += value.byteLength;
+      assertRosterImportBytes(total);
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  assertRosterImportBytes(bytes.byteLength);
+  return bytes;
 }
 
 function contentTypeForParse(contentType: string, text: string): string {

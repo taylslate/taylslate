@@ -1576,15 +1576,18 @@ No page or component was edited. Screenshots are not applicable.
 - Refresh (`lib/youtube-library/refresh.ts`, `GET /api/cron/youtube-library-refresh`, 18:00 UTC) still walks channels one at a time inside a 1,000 unit budget, about 450 channels. It can time out the same way. A separate job, P2, should give it the same deadline and batch. This job did not change `refresh.ts`. Calls that refresh makes through `createLibraryYoutubeApi` are now bounded at 20 seconds, because that factory is shared. A stats timeout there still falls through to the existing estimate path. A `channels.list` timeout stops that refresh run with `stopped: "error"`.
 - The 8,000 pull budget and the 1,000 refresh budget are per run, not per day. YouTube's free daily quota is 10,000 units. A manual pull plus the 17:00 cron plus the 18:00 refresh can pass it. This job does not add a daily quota tracker and does not raise either budget.
 - No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or send. This PR does not merge. After merge and Chris's OK, Chris runs the two pulls from his own shell (the agent does not read `CRON_SECRET`): `time curl -s -o /tmp/pull1.json -w "%{http_code} %{time_total}\n" -H "Authorization: Bearer $CRON_SECRET" https://www.taylslate.com/api/cron/youtube-library-pull`, then the same for `/tmp/pull2.json`. Expect HTTP 200 and under 300 seconds on both, with `elapsedMs` at or under about 255000. Read-only counts before and after each run: `youtube_channels` count, `youtube_pull_queue` by status, channels updated in the last 10 minutes, and `avg_views_method` counts. Rows should grow or pending should shrink. Baseline on Oct 29 2026 before this fix: 403 channels, 100 queue rows (11 done, 89 pending), `avg_views_method` recent 403. Vercel runtime logs for those two runs should not contain "Task timed out".
+
 ## B1: bulk roster import API for reps
 
 ### What was built
 
 `POST /api/reps/roster/import` previews a rep's show list or commits it. Preview is the default and writes nothing. Commit creates pending `agent_show_relationships` rows with `source` `import` and `is_exclusive` true unless the row opts out. The agent id is the session from `requireAgent`. New shows go through `supabaseAdmin` with the caller's `agent_id`, `is_discoverable` false unless `isShowsAdmin`, and no `is_exclusive` on the show. `is_claimed` and `ownership_status` are not set. An existing show is not updated. A name match is a suggestion until `confirm` is set. Hidden shows owned by another agent match only on feed, YouTube `UC` id, or `shows.apple_id`, and the result returns their id and name only. `podscan_id` is ignored. Nothing is approved.
 
-No migration. Grants on `shows` and `agent_show_relationships` were read and are unchanged: anon and public have nothing, authenticated has `SELECT` only on `shows`.
+`enforceRosterImport` runs after `requireAgent` and before the body is read. The limit is 10 requests per hour per session user id, closed on failure. A 429 (with `Retry-After`) or a 503 is returned as is, and the body is not read. A `Content-Length` above 1 MB is 413 before the body is read. The read counts bytes and returns 413 as soon as the running total passes 1 MB, so a missing or low `Content-Length` cannot buffer the rest. The 500-row cap stays.
 
-`lib/api/rate-limit.ts` does not fit. Its counter references `api_keys.id`, and a session agent id is not an API key. No limiter was added. The route caps the body at 500 rows and 1 MB.
+No migration. The next free number is 075. Grants on `shows` and `agent_show_relationships` were read and are unchanged: anon and public have nothing, authenticated has `SELECT` only on `shows`. Nothing was written to `ldtmhafewfifdizgfrnn`.
+
+Rebased onto main `08d9bc4`. The only rebase conflict was this file. Main's sections stay, and this section is last.
 
 ### Where
 
@@ -1593,16 +1596,22 @@ No migration. Grants on `shows` and `agent_show_relationships` were read and are
 - `app/api/reps/roster/import/route.ts`
 - `app/api/reps/roster/import/route.test.ts`
 - `docs/jobs/B1.md`
+- `docs/security/RATE_LIMITS.md` (the roster import row and the paragraph under the table)
+- `docs/SENIOR_DEV_HANDOFF.md`
 
 ### Tests
 
 `npx vitest run lib/reps/roster-import.test.ts app/api/reps/roster/import/route.test.ts`
 
-Covers each match tier and class, both caps, idempotent commit, `podscan_id` ignored, no `is_claimed` write, no show update on `link_existing`, caller `agent_id` and non-discoverable insert, `exclusive_conflict`, 401, 403, preview with no writes, and commit on a mocked `supabaseAdmin` with no authenticated-client use. No UI change. Screenshots are not applicable. No throwaway database. No live writes.
+Covers each match tier and class, both caps, idempotent commit, `podscan_id` ignored, no `is_claimed` write, no show update on `link_existing`, caller `agent_id` and non-discoverable insert, `exclusive_conflict`, 401, 403, preview with no writes, and commit on a mocked `supabaseAdmin` with no authenticated-client use. The route test mocks `@/lib/security/rate-limit` and checks that the limiter is called with the session agent id after auth and before the body is read, that 429 and 503 pass through with no read and no write, that an oversized `Content-Length` is 413 before the body is read, and that a body without `Content-Length` (and one whose `Content-Length` is lower than the real size) returns 413 once the running count passes 1 MB.
+
+`npx vitest run`: 283 files, 2542 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 137 pages. No UI change. Screenshots are not applicable. No throwaway database. No live writes.
 
 ### Known gaps
 
-- No per-agent rate limit, because the API-key counter cannot take a session user id.
+- The docblock on `enforceRosterImport` in `lib/security/rate-limit.ts` still says `POST /api/reps/roster/import` is not on this branch. That file was not edited. The route does call it.
+- Migration 073 must be applied live before this route can pass the limiter. Until `rate_limit_hit` exists, `enforceRosterImport` fails closed with 503.
+- `exclusive_conflict` tells the importing rep that an approved exclusive link exists. It is a boolean and nothing more about the other link. That flag is the original B1 spec.
 - A name lookup that hits 50 rows is treated as ambiguous. A feed or Apple lookup that hits 1,000 rows fails the request.
 - An unconfirmed name match is not inserted as a new show.
 - YouTube handles are not resolved. Multipart upload is not accepted.
