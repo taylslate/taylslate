@@ -24,6 +24,8 @@ describe("public page metadata", () => {
     expect(PUBLIC_PAGES.map((page) => page.path)).toEqual([
       "/",
       "/for-shows",
+      "/terms",
+      "/privacy",
       "/login",
       "/signup",
       "/forgot-password",
