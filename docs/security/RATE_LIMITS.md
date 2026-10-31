@@ -25,7 +25,7 @@ If the function errors, code send, verify, magic, outreach send, and uploads fai
 | `POST /api/show-profile/media-kit` | 20 per hour | user id | closed |
 | `POST /api/reps/roster/import` | 10 per hour | user id | closed |
 
-`POST /api/reps/roster/import` is B1 (open PR 48). It is not on this branch, so the check is not inserted. `enforceRosterImport` is the call to add after `requireAgent` and before the parse. That route keeps its own caps: 500 data rows and 1 MB (1,048,576 bytes). This job does not change those caps.
+`POST /api/reps/roster/import` calls `enforceRosterImport` after `requireAgent` and before the body is read. The route still caps the upload at 500 data rows and 1 MB (1,048,576 bytes). An oversized `Content-Length` is 413 before the body is read. A missing or low `Content-Length` is capped by the running byte count.
 
 `POST /api/deals/import` is keyed by IP. The IO PDF branch does not call `getAuthenticatedUser`, and this job does not add that lookup. The past-campaign branch on the same handler shares the IP bucket. Its 10 MB and file-type checks are unchanged.
 
