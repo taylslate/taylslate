@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/data/queries";
+import { notifyRosterLinkDecision } from "@/lib/reps/roster-notify";
 import { approveRosterLink } from "@/lib/reps/store";
 import { rejectRosterLink } from "@/lib/reps/roster-review";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
@@ -84,6 +85,14 @@ export async function POST(
   if (body.action === "approve") {
     try {
       const approved = await approveRosterLink(gate.userId, id);
+      try {
+        await notifyRosterLinkDecision({
+          relationshipId: approved.id,
+          decision: "approved",
+        });
+      } catch (err) {
+        console.error("[roster-links] notify", err instanceof Error ? err.name : "error");
+      }
       return NextResponse.json(approved);
     } catch (error) {
       return failureResponse(error, "Couldn't approve that link.");
@@ -93,6 +102,14 @@ export async function POST(
   if (body.action === "reject") {
     try {
       const rejected = await rejectRosterLink(gate.userId, id, body.note);
+      try {
+        await notifyRosterLinkDecision({
+          relationshipId: rejected.id,
+          decision: "declined",
+        });
+      } catch (err) {
+        console.error("[roster-links] notify", err instanceof Error ? err.name : "error");
+      }
       return NextResponse.json(rejected);
     } catch (error) {
       return failureResponse(error, "Couldn't reject that link.");

@@ -16,6 +16,12 @@ import { renderAuthTemplates } from "@/lib/email/templates/auth";
 import { renderBrandSignatureReminder } from "@/lib/email/templates/brand-signature-reminder";
 import { renderCampaignOutreachEmail } from "@/lib/email/templates/campaign-outreach";
 import { renderDealCancelledShow } from "@/lib/email/templates/deal-cancelled-show";
+import {
+  renderRosterAdminAlert,
+  renderRosterDisputeAlert,
+  renderRosterOwnerNotice,
+  renderRosterRepDecision,
+} from "@/lib/email/templates/roster-links";
 import { renderInvoiceNotice } from "@/lib/email/templates/invoice-notice";
 import { renderIoAttachmentEmail } from "@/lib/email/templates/io-attachment";
 import { renderIoReadyForSignature } from "@/lib/email/templates/io-ready-for-signature";
@@ -210,6 +216,49 @@ function appPreviews(): EmailPreview[] {
       ...ioMail,
     },
     { id: "conversion-alert", title: "Operator conversion alert", from: EMAIL_FROM_NOTIFICATIONS, ...conversion },
+    {
+      id: "roster-admin-alert",
+      title: "Roster links waiting for review",
+      from: EMAIL_FROM_NOTIFICATIONS,
+      ...renderRosterAdminAlert({
+        repLabel: "Northwind",
+        count: 3,
+        newShowCount: 1,
+        existingShowCount: 2,
+        showNames: ["Odd Lots", "Acquired", "The Daily Briefing"],
+        omittedShowCount: 0,
+      }),
+    },
+    {
+      id: "roster-rep-decision",
+      title: "Roster link declined",
+      from: EMAIL_FROM_NOTIFICATIONS,
+      ...renderRosterRepDecision({
+        showName: "Odd Lots",
+        decision: "declined",
+        note: "The host already has a sponsor in this category.",
+      }),
+    },
+    {
+      id: "roster-owner-notice",
+      title: "Show owner roster notice",
+      from: EMAIL_FROM_NOTIFICATIONS,
+      ...renderRosterOwnerNotice({
+        repLabel: "Northwind",
+        shows: [{ name: "Odd Lots", linkId: "11111111-1111-4111-8111-111111111111" }],
+      }),
+    },
+    {
+      id: "roster-dispute-alert",
+      title: "Owner flagged a roster link",
+      from: EMAIL_FROM_NOTIFICATIONS,
+      ...renderRosterDisputeAlert({
+        showName: "Odd Lots",
+        repLabel: "Northwind",
+        ownerEmail: "host@dailybriefing.example",
+        note: "I did not agree to this listing.",
+      }),
+    },
   ];
 }
 

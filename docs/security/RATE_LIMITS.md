@@ -10,7 +10,7 @@ Keys:
 - User: the session user id.
 - IP: the first hop of `x-forwarded-for`, otherwise `x-real-ip`, otherwise `unknown`.
 
-If the function errors, code send, verify, magic, outreach send, and uploads fail closed (503). `enforceRules({ failureMode: "open" })` lets the request through. No read route uses that mode in this job.
+If the function errors, code send, verify, magic, outreach send, uploads, and roster disputes fail closed (503). `enforceRules({ failureMode: "open" })` lets the request through. No read route uses that mode in this job.
 
 | Route | Limit | Key | On limiter failure |
 | --- | --- | --- | --- |
@@ -24,8 +24,11 @@ If the function errors, code send, verify, magic, outreach send, and uploads fai
 | `POST /api/shows/import` | 20 per hour | user id | closed |
 | `POST /api/show-profile/media-kit` | 20 per hour | user id | closed |
 | `POST /api/reps/roster/import` | 10 per hour | user id | closed |
+| `POST /api/roster-links/[id]/dispute` | 10 per hour | user id | closed |
 
 `POST /api/reps/roster/import` calls `enforceRosterImport` after `requireAgent` and before the body is read. The route still caps the upload at 500 data rows and 1 MB (1,048,576 bytes). An oversized `Content-Length` is 413 before the body is read. A missing or low `Content-Length` is capped by the running byte count.
+
+`POST /api/roster-links/[id]/dispute` calls `enforceRosterDispute` after the session check and before the body is read. The limit is 10 requests per hour per user id. Failure is closed. The body is capped at 16 KB before it is parsed.
 
 `POST /api/deals/import` is keyed by IP. The IO PDF branch does not call `getAuthenticatedUser`, and this job does not add that lookup. The past-campaign branch on the same handler shares the IP bucket. Its 10 MB and file-type checks are unchanged.
 

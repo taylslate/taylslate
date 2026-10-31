@@ -56,7 +56,21 @@ export interface PendingRosterRequest {
   showAgentDiffers: boolean;
   otherLinks: RosterLinkConflict[];
   exclusiveConflict: boolean;
+  /** Open roster_link_disputes row for this link. The note and owner id stay off this object. */
+  disputedByOwner: boolean;
   status: "pending";
+}
+
+export interface ReviewedRosterLink {
+  id: string;
+  agentId: string;
+  showId: string;
+  showName: string;
+  status: string;
+  reviewNote: string | null;
+  repEmail: string | null;
+  repCompanyName: string | null;
+  repFullName: string | null;
 }
 
 interface OtherLink extends RosterLinkConflict {
@@ -110,6 +124,7 @@ function parsePending(row: Record<string, unknown>): PendingRosterRequest | null
     showAgentDiffers: showAgentId !== agentId,
     otherLinks: [],
     exclusiveConflict: false,
+    disputedByOwner: false,
     status: "pending",
   };
 }
@@ -175,10 +190,91 @@ export async function listPendingRosterLinks(): Promise<PendingRosterRequest[]> 
     );
   }
 
+  const disputed = await openDisputeLinkIds(pending.map((row) => row.id));
+  for (const row of pending) row.disputedByOwner = disputed.has(row.id);
+
   pending.sort(
     (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)
   );
   return pending;
+}
+
+/**
+ * Open disputes for these links. A missing table (075 not applied yet)
+ * or any other read error leaves every flag false. The error log is a
+ * code or name only, never a note or an address.
+ */
+async function openDisputeLinkIds(linkIds: string[]): Promise<Set<string>> {
+  if (linkIds.length === 0) return new Set();
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("roster_link_disputes")
+      .select("link_id")
+      .in("link_id", linkIds)
+      .eq("status", "open");
+    if (error) {
+      console.error("[roster-review] dispute_read", error.code ?? "error");
+      return new Set();
+    }
+    const open = new Set<string>();
+    for (const row of data ?? []) {
+      const id = asText((row as { link_id?: unknown }).link_id);
+      if (id) open.add(id);
+    }
+    return open;
+  } catch (err) {
+    console.error("[roster-review] dispute_read", err instanceof Error ? err.name : "error");
+    return new Set();
+  }
+}
+
+const REVIEWED_SELECT = [
+  "id",
+  "agent_id",
+  "show_id",
+  "status",
+  "review_note",
+  "shows!agent_show_relationships_show_id_fkey(name)",
+  "profiles!agent_show_relationships_agent_id_fkey(email, company_name, full_name)",
+].join(",");
+
+/**
+ * The link after an approve or reject write, for the rep email.
+ * Returns null when the row is gone. A read error throws a named
+ * error whose message does not include the database text.
+ */
+export async function loadReviewedRosterLink(
+  relationshipId: string
+): Promise<ReviewedRosterLink | null> {
+  const { data, error } = await supabaseAdmin
+    .from("agent_show_relationships")
+    .select(REVIEWED_SELECT)
+    .eq("id", relationshipId)
+    .maybeSingle();
+  if (error) {
+    const failure = new Error("roster review read failed");
+    failure.name = error.code || "PostgrestError";
+    throw failure;
+  }
+  if (!data) return null;
+  const row = data as unknown as Record<string, unknown>;
+  const id = asText(row.id);
+  const agentId = asText(row.agent_id);
+  const showId = asText(row.show_id);
+  if (!id || !agentId || !showId) return null;
+  const show = embedded(row.shows);
+  const profile = embedded(row.profiles);
+  return {
+    id,
+    agentId,
+    showId,
+    showName: asText(show?.name) ?? "",
+    status: asText(row.status) ?? "",
+    reviewNote: asText(row.review_note),
+    repEmail: asText(profile?.email),
+    repCompanyName: asText(profile?.company_name),
+    repFullName: asText(profile?.full_name),
+  };
 }
 
 /**

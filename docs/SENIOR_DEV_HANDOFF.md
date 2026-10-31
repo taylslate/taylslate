@@ -1702,3 +1702,74 @@ No migration. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` we
 - The draft banner stays until Chris removes `LEGAL_DRAFT_BANNER` and sets `marketing: true` if these pages should be indexed.
 - No signup checkbox and no new consent capture. Login and signup behavior are unchanged apart from the shared footer hrefs.
 - This PR does not merge. A lawyer should review the draft before launch.
+
+## N1: Roster link notifications
+
+### What was built
+
+After a roster import commit that creates at least one pending link, Taylslate sends one admin email. It names the rep (company, else full name, else "A Taylslate sales agent"), the count, how many rows are new shows, and how many link to shows already in the catalog. It names at most five shows. The button goes to `https://www.taylslate.com/admin/roster-requests`. Preview sends nothing. A retry sends nothing, because those rows are not `committed`. A daily digest was considered and skipped: it would need a cron, a state table, and it can repeat. This job adds no cron.
+
+The same commit emails each verified owner of a show that already existed (`link_existing` or `exclusive_conflict`, not `new_show`). A verified owner is `shows.ownership_status = verified` and a `show_ownership_proofs` row for that show with `status = verified`. The address is `profiles.email` on `user_id`. This is the proof branch of `getVerifiedProfileTies` only. Deal ties and show-owner contact-email ties from that helper are not mailed. An unclaimed show gets no email and no proof lookup. The rep is skipped when `user_id` is the rep. One owner with several shows gets one email. The cap is 50 owner emails per commit; the overflow count is logged with no address. The mail says the rep listed the show, Taylslate is reviewing it, and nothing is live yet. "This is not right" goes to `https://www.taylslate.com/shows/roster-links/<link id>`. It does not include another rep, a rep email, commission, exclusivity, any other show, or an admin note. There is no second email on approval.
+
+`/admin/roster-requests` shows "N pending" from the rows already loaded, and a "Disputed by owner" badge when that link has an open dispute. The badge is not a block. Approve still works with an open dispute.
+
+After approve or reject flips a pending link, the rep gets one email. Approve has no note. Reject includes the stored trimmed note, HTML escaped, at most 500 characters. `recipientProfileId` is the rep. A second call is 409 and sends nothing. If the rep has no email, the send is skipped and the log has no address. A rejected link is still `already_on_roster` on re-import, with `committed` false and no insert. The existing test around the pending, approved, and rejected cases already asserts both. It was not duplicated.
+
+`POST /api/roster-links/[id]/dispute` is signed in. The limit is 10 per hour per user, closed on failure. An optional note is trimmed and must be 1 to 500 characters when set. The caller must be a verified owner of that link's show, same check as the owner email. A missing link and a non-owner both return 404 `{ error: "Not found" }`. A rejected link returns 200 `{ ok: true, result: "already declined" }` and writes nothing. The first insert returns 200 `{ ok: true, result: "flagged" }` and emails the admin (show name, rep company or name, owner email, note, review link). A unique violation returns 200 `{ ok: true, result: "already flagged" }` and sends nothing. The link status does not change. Resolving a dispute is not built. Rows stay `open`.
+
+`/shows/roster-links/[id]` is the page the owner email links to. Signed out and anyone who is not a verified owner get `notFound()`. The page shows the show name, the rep's company or name, a short explanation, and "Flag this to Taylslate" with an optional note. A rejected link shows "This link was already declined." and hides the form.
+
+Import `parseRecord` rejects a name over 300 characters, an `rss_url` over 2000, and a contact email over 320, and an `rss_url` that does not parse as http or https. `POST /api/reps/roster/import` exports `maxDuration = 60`. The stale docblock on `enforceRosterImport` now says the route exists and calls it.
+
+Every send runs after the database write succeeded. A send that returns not ok, or that throws, is logged as a name, a code, or a reason. The log does not include an address, a note, a token, or a row. The import, approve, reject, and dispute responses do not change. Mail uses the default sender, `notifications@taylslate.com`. `auth@taylslate.com` is sign-in only. No new env var. The admin address is `INTERNAL_ALERT_EMAIL`, or `chris@taylslate.com`.
+
+At most once is the design. The call that wins the write sends. A crash between the write and the send loses that email. There is no sent-mail log and no retry queue.
+
+### Where
+
+- `lib/reps/roster-notify.ts` and `lib/reps/roster-notify.test.ts`
+- `lib/email/templates/roster-links.ts` and `lib/email/templates/roster-links.test.ts`
+- `lib/email/preview.ts` and `lib/email/preview.test.ts` (four templates)
+- `docs/EMAILS.md`
+- `lib/reps/roster-import.ts` and `lib/reps/roster-import.test.ts` (caps and scheme only)
+- `app/api/reps/roster/import/route.ts` and `route.test.ts`
+- `app/api/admin/roster-links/[id]/route.ts` and `route.test.ts`
+- `lib/reps/roster-review.ts` and `lib/reps/roster-review.test.ts`
+- `app/(dashboard)/admin/roster-requests/page.tsx` is unchanged. `roster-requests-client.tsx` and `roster-requests.test.tsx` gained the count and the badge
+- `app/api/roster-links/[id]/dispute/route.ts` and `route.test.ts`
+- `app/(dashboard)/shows/roster-links/[id]/page.tsx`, `owner-roster-link-client.tsx`, and `page.test.tsx`
+- `lib/security/rate-limit.ts` and `lib/security/rate-limit.test.ts`
+- `supabase/migrations/075_roster_link_disputes.sql` and `075_roster_link_disputes.test.ts`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+`lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `lib/billing/plans.ts` were not edited. No Vercel env change. No live write, charge, or send.
+
+### Tests
+
+`npx vitest run`: 288 files, 2601 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 137 pages.
+
+Covers a commit of three pending links sending one admin email, a retry and a zero-commit sending none, five names and not a sixth, send failure and a thrown send leaving the HTTP body alone and logging no address or note, one rep email on approve and none on the 409, the stored note HTML escaped, a 501-character reject note before any send, `recipientProfileId` on the rep mail, owner mail only for a verified proof, not an unclaimed show, a pending proof, a contact email, or the rep who is also the owner, two shows for one owner in one email, no other rep, rep email, commission, or exclusivity in that mail, a cap of 50, dispute 401, identical 404 bodies, 429, one insert and one admin email, already flagged with no second email, already declined with no insert, the migration grants (authenticated cannot select), RLS, the unique key, and the note check, name 301, rss 2001, email 321, `ftp://` and `javascript:` feeds, and `maxDuration` on the import route. The sender is mocked. Nothing was applied on `ldtmhafewfifdizgfrnn`.
+
+Screenshots of `/admin/roster-requests` before and after, and of the new owner page, are the real components with the production CSS. The routes require a signed-in session. This run did not sign in and did not write a session.
+
+### Known gaps
+
+- Migration 075 is in the repo and is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, naming 075. Until then a dispute insert fails, and the admin list treats a missing `roster_link_disputes` table as no open disputes so the page still loads.
+- Dispute rows stay `open`. Nothing sets `resolved`. Approve and reject do not read the dispute. The badge is the only guard. Chris to confirm that an open dispute does not block approve.
+- When a show is later claimed or verified, the rep who already has a pending or approved link is not notified. O2 and O4 are not merged, and no code on main writes proofs, so live data has no verified owners today. Owner mail will not fire until a verified proof exists.
+- Unclaimed shows get no email, including no mail to `contact_email`. That is intentional.
+- At most once. A crash after the write and before the send drops that email. A digest was skipped on purpose.
+- `docs/security/RATE_LIMITS.md` lists the dispute bucket: 10 per hour per user id, closed on failure.
+- The owner page is under the dashboard layout. A profile with no role, or a show profile that has not finished onboarding, is redirected by that layout before this page renders.
+
+### Choices to confirm
+
+- (a) Owner email goes out on creation, while the link is pending, and not again on approval.
+- (b) The rep shown to the owner is company name, else full name, else "A Taylslate sales agent". No rep email.
+- (c) The admin alert goes to `INTERNAL_ALERT_EMAIL` (fallback `chris@taylslate.com`) from `notifications@taylslate.com`, not `auth@`.
+- (d) An open dispute does not block approve. The badge is the guard.
+- (e) Owner recipients are verified proofs only (`ownership_status` verified plus a verified proof, `user_id`). Not deal ties or contact-email ties from `getVerifiedProfileTies`.
+- (f) Cap of 50 owner emails per commit.
+- (g) A daily digest was skipped.
+- (h) Notice to a rep when an unclaimed show is later claimed or verified is a documented gap, not built.
+

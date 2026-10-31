@@ -835,9 +835,16 @@ function parseRecord(input: unknown, index: number): ParsedRow {
   const confirm = parseBool(record.confirm, false);
 
   if (!name) reasons.push("Name is required.");
+  else if (name.length > 300) reasons.push("Name is too long.");
   else if (!slugFromName(name)) reasons.push("Name needs a letter or number.");
   if (!platform) reasons.push("Platform must be podcast or youtube.");
-  if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+  if (rssUrl && rssUrl.length > 2000) reasons.push("RSS URL is too long.");
+  else if (rssUrl && !isHttpRssUrl(rssUrl)) {
+    reasons.push("RSS URL must start with http or https.");
+  }
+  if (contactEmail && contactEmail.length > 320) {
+    reasons.push("Contact email is too long.");
+  } else if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
     reasons.push("Contact email is not valid.");
   }
   if (exclusive === "invalid") reasons.push("Exclusive must be true or false.");
@@ -858,6 +865,16 @@ function parseRecord(input: unknown, index: number): ParsedRow {
     confirm: confirm === true,
     reasons,
   };
+}
+
+/** http and https only. ftp, javascript, and unparseable values are rejected. */
+function isHttpRssUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function parsePlatform(value: unknown): "podcast" | "youtube" | null {

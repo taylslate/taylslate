@@ -12,6 +12,8 @@ import {
   OUTREACH_SEND_USER_HOUR_MAX,
   OUTREACH_SEND_USER_HOUR_WINDOW_SEC,
   RATE_LIMIT_MESSAGE,
+  ROSTER_DISPUTE_USER_HOUR_MAX,
+  ROSTER_DISPUTE_USER_HOUR_WINDOW_SEC,
   ROSTER_IMPORT_USER_HOUR_MAX,
   ROSTER_IMPORT_USER_HOUR_WINDOW_SEC,
   UPLOAD_USER_HOUR_MAX,
@@ -20,6 +22,7 @@ import {
   enforceLoginCodeSend,
   enforceLoginCodeVerify,
   enforceOutreachSend,
+  enforceRosterDispute,
   enforceRosterImport,
   enforceRules,
   enforceUpload,
@@ -399,6 +402,23 @@ describe("each limit trips and resets", () => {
       ROSTER_IMPORT_USER_HOUR_MAX,
       ROSTER_IMPORT_USER_HOUR_WINDOW_SEC,
     );
+  });
+
+  it("limits roster disputes per user per hour and fails closed", async () => {
+    await trip(
+      () => enforceRosterDispute("owner-1"),
+      ROSTER_DISPUTE_USER_HOUR_MAX,
+      ROSTER_DISPUTE_USER_HOUR_WINDOW_SEC,
+    );
+    const hit = hits.find((row) => row.bucket === "roster_dispute_user_hour");
+    expect(hit?.key).toBe("owner-1");
+    expect(await enforceRosterDispute("owner-2")).toBeNull();
+
+    hits = [];
+    rpcError = { message: "database unavailable" };
+    const closed = await enforceRosterDispute("owner-1");
+    expect(closed?.status).toBe(503);
+    expect(await closed?.json()).toEqual({ error: "unavailable" });
   });
 });
 
