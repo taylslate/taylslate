@@ -79,6 +79,7 @@ Privacy:
 - Any security certification or extra security statement. The page does not claim SOC 2, GDPR compliance, insurance, or an uptime level.
 - Any privacy rights beyond access, correction, and deletion by email, and the response time.
 - Whether Vercel or Supabase sets extra cookies the app does not control.
+- What the Cloudflare Turnstile script stores in the browser on login, signup, and forgot-password, and how long it is kept.
 - Whether the "not directed to children under 18" line should be a different minimum age.
 - How a change to the privacy policy is announced, and when it takes effect.
 
@@ -88,7 +89,7 @@ These sit under the label "How the product applies that line". They are not the 
 
 - Anonymized patterns from deals booked and transacted through Taylslate feed a pooled dataset.
 - An uploaded past-campaign file joins that pool only if the brand opts in on the import screen. The checkbox is off by default. The terms version recorded is pooling-v1.
-- A brand's own uploaded data stays private to that brand, is not shown to other brands or shows, and is never part of any aggregate unless that brand opted in.
+- A brand's own uploaded past-campaign file stays private to that brand, is not shown to other brands or shows, and that file is never part of any aggregate unless that brand opted in. An imported insertion-order PDF becomes an ordinary deal and is pooled once it is signed. This narrowing still needs Chris's approval.
 
 ## Factual sources
 
@@ -119,7 +120,7 @@ These sit under the label "How the product applies that line". They are not the 
 | Onboarding return cookie `tslate_onboarding_return` | `lib/auth/onboarding-return.ts` |
 | Admin view cookie `taylslate_view_as` | `lib/data/queries.ts` |
 | Admin return cookie `tslate_return_token` | `lib/admin/return-token.ts` |
-| No advertising pixel or third-party analytics script in this app | `package.json` has no analytics package. `app/layout.tsx` loads no tag manager, pixel, or analytics script. `rg` for gtag, PostHog, Plausible, and Vercel Analytics in app code found none. `pixel_required` on an insertion order is an IO field, not a site pixel. |
+| No advertising pixel and no analytics script. A Cloudflare Turnstile script does load. | `package.json` has no analytics package. `app/layout.tsx` loads no tag manager, pixel, or analytics script. `rg` for gtag, PostHog, Plausible, and Vercel Analytics in app code found none. Login, signup, and forgot-password mount `TurnstileWidget`, which loads `https://challenges.cloudflare.com/turnstile/v0/api.js` from `components/auth/turnstile-widget.tsx` when the site key is set. `pixel_required` on an insertion order is an IO field, not a site pixel. |
 
 Fee percentages and plan prices were read in `lib/billing/plans.ts` only to avoid copying them. They are not on the page.
 

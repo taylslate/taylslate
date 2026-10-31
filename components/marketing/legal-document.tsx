@@ -59,9 +59,11 @@ export function DataUseCopy({ consentLine }: { consentLine: string }) {
         version recorded is pooling-v1.
       </p>
       <p>
-        A brand&apos;s own uploaded data stays private to that brand. It is not
-        shown to other brands or shows. It is never part of any aggregate
-        unless that brand opted in.
+        A brand&apos;s own uploaded past-campaign file stays private to that
+        brand. It is not shown to other brands or shows. That file is never
+        part of any aggregate unless that brand opted in. An imported
+        insertion-order PDF becomes an ordinary deal and is pooled once it is
+        signed.
       </p>
     </>
   );

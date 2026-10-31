@@ -65,6 +65,10 @@ export default function PrivacyPage() {
           <li>Anthropic: AI drafting and scoring.</li>
           <li>Podscan: public podcast show data.</li>
           <li>YouTube Data API: public channel data.</li>
+          <li>
+            Cloudflare Turnstile: bot check on login, signup, and
+            forgot-password.
+          </li>
         </ul>
       </LegalSection>
 
@@ -106,9 +110,12 @@ export default function PrivacyPage() {
         </p>
         <p>
           Taylslate does not install an advertising pixel or a third-party
-          analytics script in this application. [CONFIRM WITH COUNSEL] Whether
-          a host such as Vercel or Supabase sets additional cookies we do not
-          control in the browser.
+          analytics script in this application. Login, signup, and
+          forgot-password load a Cloudflare Turnstile script for a bot check.
+          [CONFIRM WITH COUNSEL] What that script stores in the browser, and
+          how long it is kept. [CONFIRM WITH COUNSEL] Whether a host such as
+          Vercel or Supabase sets additional cookies we do not control in the
+          browser.
         </p>
       </LegalSection>
 

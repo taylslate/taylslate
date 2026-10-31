@@ -50,6 +50,18 @@ describe("proxy public-route allowlist (signed out)", () => {
     expect(res.headers.get("location")).toContain("next=%2Fterms%2Fextra");
   });
 
+  it("does not treat /privacy/x as public", async () => {
+    const res = await run("/privacy/x");
+    expect(redirectedToLogin(res)).toBe(true);
+    expect(res.headers.get("location")).toContain("next=%2Fprivacy%2Fx");
+  });
+
+  it("does not treat /terms-anything as public", async () => {
+    const res = await run("/terms-anything");
+    expect(redirectedToLogin(res)).toBe(true);
+    expect(res.headers.get("location")).toContain("next=%2Fterms-anything");
+  });
+
   it("still bounces a protected route to /login when signed out", async () => {
     const res = await run("/dashboard");
     expect(redirectedToLogin(res)).toBe(true);
