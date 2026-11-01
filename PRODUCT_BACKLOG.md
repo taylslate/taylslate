@@ -1,6 +1,6 @@
 # Taylslate Product Backlog
 
-*Last updated: July 23, 2026*
+*Last updated: November 1, 2026*
 
 This document captures everything that's been identified as worth building. Three parts:
 
@@ -209,6 +209,10 @@ Two small copy/UX items surfaced during the July 23 follow-up live-verify. Funct
 ### Auth unification
 - **Moved to Operational Unblock** (see "Auth hardening — brand email/password path" [LAUNCH-BLOCKER] and "Auth unification (deferred, post-launch acceptable)"). The launch bar is the hardening item; full magic-link+OTP unification is post-launch acceptable.
 
+### Restyle and design polish pass (approved Nov 1, 2026, last on the build list)
+- Ink & Gold palette (navy #1B2A4A, ink #141C2B, canvas #F6F5F2, gold #8C6E1F), HubSpot-style layout (crisp white cards, strong contrast, Fraunces headings), via theme tokens.
+- Runs after all feature lanes finish; one surface per job; no new features in a restyle job.
+
 ---
 
 ## Wave 14 Phase 2 — Discovery Agent UX (pre-launch)
@@ -311,7 +315,14 @@ From the read-only Podscan consumption audit (see STATUS.md → "Podscan data au
 - Transfer idempotency (`transfer:v2:{paymentId}` + UNIQUE(payment_id)) makes any retry path safe
 - **Effort:** half day (route) or 1 day (cron sweep + alerting)
 
-### Multi-medium creator inventory abstraction
+### Multi-channel creator profiles (approved Nov 1, 2026, launch foundation)
+- "Show" generalizes to "creator". One creator profile holds any number of channels: podcast, YouTube, newsletter, Rumble, Twitch, Kick, Instagram, TikTok, own site.
+- Each channel carries its own audience numbers and its own ad formats.
+- Content labels on the creator and channel, so each brand sets its own brand-safety line (Taylslate labels, the brand decides).
+- Launch scope is the foundation only: data model, profile, display, discovery reading channels. Platform connectors follow after launch, one at a time, newsletters first.
+- Supersedes and absorbs "Multi-medium creator inventory abstraction" and "Creator-attached sellable surfaces". Both are marked folded below. Their text is kept for reference.
+
+### ~~Multi-medium creator inventory abstraction~~. Folded into Multi-channel creator profiles (Nov 1, 2026)
 - `shows.platform` already has `'podcast' | 'youtube'` enum ✓
 - Add `surfaces` JSONB to capture simulcast (one show, podcast + YouTube)
 - Add `medium_priors` JSONB for medium-specific scoring (CPM range, engagement weight, frequency norms)
@@ -321,7 +332,7 @@ From the read-only Podscan consumption audit (see STATUS.md → "Podscan data au
 - **Effort:** 2-3 days
 - **Why:** Long-form YouTube is launch-day medium, not future expansion. Simulcasts are common (most podcasts upload to YouTube). Modeling now avoids re-migration later.
 
-### Creator-attached sellable surfaces
+### ~~Creator-attached sellable surfaces~~. Folded into Multi-channel creator profiles (Nov 1, 2026)
 - Expand show onboarding so creators can list optional surfaces they are willing to sell alongside the host read:
   - Podcast read
   - Long-form YouTube integration

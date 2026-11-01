@@ -1773,3 +1773,35 @@ Screenshots of `/admin/roster-requests` before and after, and of the new owner p
 - (g) A daily digest was skipped.
 - (h) Notice to a rep when an unclaimed show is later claimed or verified is a documented gap, not built.
 
+## DOC1: Multi-channel creator profiles and the restyle pass (Nov 1, 2026)
+
+### What was built
+
+Docs only. Recorded two launch-build additions Chris approved on Nov 1, 2026. No code, migrations, styles, or plan changes.
+
+**Multi-channel creator profiles (approved Nov 1, 2026, launch foundation)** sits under Foundational Architecture in `PRODUCT_BACKLOG.md`. "Show" generalizes to "creator". One creator profile holds any number of channels: podcast, YouTube, newsletter, Rumble, Twitch, Kick, Instagram, TikTok, own site. Each channel carries its own audience numbers and its own ad formats. Content labels sit on the creator and the channel, so each brand sets its own brand-safety line (Taylslate labels, the brand decides). Launch scope is the foundation only: data model, profile, display, discovery reading channels. Platform connectors follow after launch, one at a time, newsletters first.
+
+This entry supersedes and absorbs "Multi-medium creator inventory abstraction" and "Creator-attached sellable surfaces". Both are marked "Folded into Multi-channel creator profiles (Nov 1, 2026)". Their original text is kept for reference.
+
+**Restyle and design polish pass (approved Nov 1, 2026, last on the build list)** is the last item under Polish. Ink & Gold palette (navy #1B2A4A, ink #141C2B, canvas #F6F5F2, gold #8C6E1F), HubSpot-style layout (crisp white cards, strong contrast, Fraunces headings), via theme tokens. It runs after all feature lanes finish. One surface per job. No new features in a restyle job.
+
+### Where
+
+- `PRODUCT_BACKLOG.md`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+No application code changed. `git diff --stat` is these two docs only.
+
+`npx vitest run`: 290 files, 2613 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 138 pages.
+
+Screenshots are not applicable. No page or component was touched.
+
+### Known gaps
+
+- No schema, column names, or connector details were added. Those were not in the approved note.
+- The two folded entries keep their original text. They are not deleted.
+- The restyle pass is last on the build list. It is not started here.
+- This PR does not merge. Paul reviews.
+
