@@ -120,8 +120,8 @@ create policy "Shows readable by signed-in participants"
     or (
       'show_owner' = any (data_sources)
       and contact_email is not null
-      and public.auth_login_email() is not null
-      and lower(btrim(contact_email)) = public.auth_login_email()
+      and (select public.auth_login_email()) is not null
+      and lower(btrim(contact_email)) = (select public.auth_login_email())
       and exists (
         select 1
         from public.show_profiles owner_profile

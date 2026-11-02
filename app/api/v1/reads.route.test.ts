@@ -22,8 +22,18 @@ vi.mock("@/lib/supabase/admin", () => ({
       if (table === "api_keys") return bridge.keys!.from(table);
       return bridge.data!.from(table);
     },
-    rpc: (name: string, args: { p_key_id: string; p_window_start: string }) =>
-      bridge.keys!.rpc(name, args),
+    rpc: (name: string, args: { lookup?: string; p_key_id: string; p_window_start: string }) => {
+      if (name === "auth_user_ids_for_email") {
+        const lookup = String(args.lookup ?? "").toLowerCase();
+        return Promise.resolve({
+          data: bridge.authUsers
+            .filter((user) => user.email.toLowerCase() === lookup)
+            .map((user) => user.id),
+          error: null,
+        });
+      }
+      return bridge.keys!.rpc(name, args);
+    },
     auth: {
       admin: {
         listUsers: async () => ({ data: { users: bridge.authUsers }, error: null }),

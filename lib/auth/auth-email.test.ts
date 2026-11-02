@@ -21,15 +21,19 @@ vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
     auth: {
       admin: {
-        listUsers: async () => {
-          if (listError.current) return { data: { users: [] }, error: listError.current };
-          return { data: { users }, error: null };
-        },
         getUserById: async (id: string) => {
           const user = users.find((row) => row.id === id) ?? null;
           return { data: { user }, error: user ? null : { message: "missing" } };
         },
       },
+    },
+    rpc: async (_name: string, args: { lookup?: string }) => {
+      if (listError.current) return { data: null, error: listError.current };
+      const lookup = (args.lookup ?? "").toLowerCase();
+      return {
+        data: users.filter((row) => row.email.toLowerCase() === lookup).map((row) => row.id),
+        error: null,
+      };
     },
     from: () => {
       const filters: Record<string, string> = {};

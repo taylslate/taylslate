@@ -1,14 +1,11 @@
 // Server-verified login identity.
 //
-// profiles.email is a column the signed-in user can update. Authorization
-// reads auth.users through the GoTrue admin API, which is the same directory
-// supabase.auth.getUser() uses. A profile row is loaded by that user id
-// afterwards, never by the editable email.
+// profiles.email is a column the signed-in user can update. A known user id
+// is read with auth.admin.getUserById. An email is resolved with
+// public.auth_user_ids_for_email, which is service_role only (migration 077).
+// A profile row is loaded by that user id afterwards, never by the editable email.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
-
-const LIST_PAGE_SIZE = 200;
-const LIST_PAGE_CAP = 25;
 
 export function normalizeAuthEmail(email: string | null | undefined): string | null {
   const value = email?.trim().toLowerCase();
@@ -24,24 +21,16 @@ export async function listAuthUserIdsByEmail(email: string): Promise<AuthEmailDi
   const wanted = normalizeAuthEmail(email);
   if (!wanted) return { ok: true, ids: [] };
 
-  const ids: string[] = [];
-  for (let page = 1; page <= LIST_PAGE_CAP; page++) {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
-      page,
-      perPage: LIST_PAGE_SIZE,
-    });
-    if (error) {
-      console.error("[auth-email] listUsers failed:", error.message);
-      return { ok: false };
-    }
-    const users = data.users ?? [];
-    for (const user of users) {
-      if (normalizeAuthEmail(user.email) === wanted) ids.push(user.id);
-    }
-    if (users.length < LIST_PAGE_SIZE) return { ok: true, ids };
+  const { data, error } = await supabaseAdmin.rpc("auth_user_ids_for_email", {
+    lookup: wanted,
+  });
+  if (error) {
+    console.error("[auth-email] auth_user_ids_for_email failed:", error.message);
+    return { ok: false };
   }
-  console.error("[auth-email] listUsers page cap reached");
-  return { ok: false };
+  if (!Array.isArray(data)) return { ok: false };
+  const ids = data.filter((id): id is string => typeof id === "string" && id.length > 0);
+  return { ok: true, ids };
 }
 
 /** The one auth user with this login email, or null when there is not exactly one. */

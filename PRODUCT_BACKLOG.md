@@ -106,7 +106,7 @@ Things that must finish before GTM. The launch bar.
 
 ### SEC1: profiles.email must not grant access (Nov 2, 2026)
 - Shipped in code. A signed-in user can update `profiles.email`. Admin, show edit, roster import discoverability, show-owner ties, deal backfill, login and magic account lookup, outreach show resolution, and the DocuSign show signer now use the auth login.
-- Migration 077 is in the repo and is not applied. It keeps `profiles.email` equal to `auth.users.email`. Apply only after merge and Chris's OK.
+- Migration 077 is in the repo and is not applied. It must ship with the deploy. 071 is already applied, so until 077 runs, live `user_owns_show`, the outreach read, the shows participant policy, and the podscan guard still trust `profiles.email`. The 071 file edit in this PR only affects a fresh database. Apply 077 only after merge and Chris's OK.
 - Stripe customer email still reads `profiles.email` (`lib/stripe` and the setup-intent callers). That is a billing contact, not an access check, and was left unchanged. After 077 the stored value matches the login.
 
 ### Domain & email cutover

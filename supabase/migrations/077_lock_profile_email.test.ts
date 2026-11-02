@@ -146,10 +146,7 @@ describe("migration 077", () => {
       "authenticated",
       ATTACKER,
       `update public.profiles set email = 'victim@show.test' where id = '${ATTACKER}'`,
-    ).catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      expect(message).toMatch(/permission denied/i);
-    });
+    );
     const locked = await db.query<{ email: string }>(
       `select email from public.profiles where id = '${ATTACKER}'`,
     );
@@ -241,5 +238,64 @@ describe("migration 077", () => {
        returning podscan_id`,
     );
     expect(owned.rows[0]).toEqual({ podscan_id: "pd_owner" });
+  });
+
+  it("overwrites service_role, follows an auth email change, and rejects a profile with no login", async () => {
+    const moved = "55555555-5555-4555-8555-555555555555";
+    const blank = "66666666-6666-4666-8666-666666666666";
+    const orphan = "77777777-7777-4777-8777-777777777777";
+    await db.exec(`
+      insert into auth.users (id, email) values
+        ('${moved}', 'start@example.test'),
+        ('${blank}', null);
+    `);
+
+    await asRole(
+      "service_role",
+      moved,
+      `insert into public.profiles (id, email, full_name, role)
+       values ('${moved}', 'victim@show.test', 'Moved', 'show')`,
+    );
+    const inserted = await db.query<{ email: string }>(
+      `select email from public.profiles where id = '${moved}'`,
+    );
+    expect(inserted.rows[0]?.email).toBe("start@example.test");
+
+    await asRole(
+      "service_role",
+      moved,
+      `update public.profiles set email = 'victim@show.test' where id = '${moved}'`,
+    );
+    const rewritten = await db.query<{ email: string }>(
+      `select email from public.profiles where id = '${moved}'`,
+    );
+    expect(rewritten.rows[0]?.email).toBe("start@example.test");
+
+    await db.exec(`update auth.users set email = 'moved@example.test' where id = '${moved}'`);
+    const synced = await db.query<{ email: string }>(
+      `select email from public.profiles where id = '${moved}'`,
+    );
+    expect(synced.rows[0]?.email).toBe("moved@example.test");
+
+    await expect(
+      db.query(
+        `insert into public.profiles (id, email, full_name, role)
+         values ('${blank}', 'blank@example.test', 'Blank', 'show')`,
+      ),
+    ).rejects.toThrow(/42501|profile email must match the login email/i);
+
+    await expect(
+      db.query(
+        `insert into public.profiles (id, email, full_name, role)
+         values ('${orphan}', 'orphan@example.test', 'Orphan', 'show')`,
+      ),
+    ).rejects.toThrow(/42501|profile email must match the login email/i);
+
+    const execute = await db.query<{ authenticated: boolean; service_role: boolean }>(`
+      select
+        has_function_privilege('authenticated', 'public.sync_profiles_email_from_auth()', 'execute') as authenticated,
+        has_function_privilege('service_role', 'public.sync_profiles_email_from_auth()', 'execute') as service_role
+    `);
+    expect(execute.rows[0]).toEqual({ authenticated: false, service_role: false });
   });
 });

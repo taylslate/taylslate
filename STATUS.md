@@ -2,7 +2,7 @@
 
 ## SEC1: profiles.email is not an access check (Nov 2, 2026)
 
-Authorization that used `profiles.email` now uses the auth login (`auth.users` / `getUser().email`). `isShowsAdmin` no longer treats `profiles.role = admin` as a grant. Migration 077 forces `profiles.email` to the auth login and is not applied. Do not paste it until Chris says so. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. The audit list is in `docs/SENIOR_DEV_HANDOFF.md` under SEC1.
+Authorization that used `profiles.email` now uses the auth login (`getUser().email`, `getUserById`, or `auth_user_ids_for_email`). `isShowsAdmin` no longer treats `profiles.role = admin` as a grant. Migration 077 forces `profiles.email` to follow `auth.users.email`. 071 is already applied. 077 is not, and it must ship with the deploy. Until then, live `user_owns_show`, the outreach read, the shows participant policy, and the podscan guard still trust `profiles.email`. Do not paste 077 until Chris says so. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. The audit list is in `docs/SENIOR_DEV_HANDOFF.md` under SEC1.
 
 ## ADM1: internal operations dashboard (Nov 2, 2026)
 

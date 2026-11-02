@@ -42,6 +42,7 @@ const {
   getUserById,
   listUsers,
   generateLink,
+  rpc,
 } = vi.hoisted(() => {
   const state = {
     profiles: [] as ProfileRow[],
@@ -137,6 +138,16 @@ const {
     },
     error: null,
   }));
+  const rpc = vi.fn(async (name: string, args: { lookup?: string }) => {
+    if (name !== "auth_user_ids_for_email") {
+      return { data: null, error: { message: "unexpected rpc" } };
+    }
+    const lookup = (args.lookup ?? "").trim().toLowerCase();
+    if (!state.authEmail || state.authEmail.toLowerCase() !== lookup) {
+      return { data: [], error: null };
+    }
+    return { data: [state.profiles[0]?.id ?? "self"], error: null };
+  });
   const generateLink = vi.fn(async () => ({
     data: {
       properties: { hashed_token: "tok-1", verification_type: "magiclink" },
@@ -151,6 +162,7 @@ const {
     logEvent: vi.fn(async (..._args: unknown[]) => ({ id: "evt_1" })),
     supabaseAdmin: {
       from,
+      rpc,
       auth: { admin: { updateUserById, getUserById, listUsers, generateLink } },
     },
     state,
@@ -159,6 +171,7 @@ const {
     getUserById,
     listUsers,
     generateLink,
+    rpc,
   };
 });
 
@@ -263,13 +276,8 @@ describe("POST /api/admin/managed-brands/[id]/handoff", () => {
   });
 
   it("refuses when the email already belongs to another auth user", async () => {
-    listUsers.mockResolvedValueOnce({
-      data: {
-        users: [
-          { id: BRAND_ID, email: OLD_EMAIL },
-          { id: OTHER_ID, email: NEW_EMAIL },
-        ],
-      },
+    rpc.mockResolvedValueOnce({
+      data: [BRAND_ID, OTHER_ID],
       error: null,
     });
     const res = await POST(post(BRAND_ID, { email: `  ${NEW_EMAIL.toUpperCase()} ` }), {

@@ -1946,11 +1946,13 @@ No page or component was edited. Screenshots are not applicable.
 
 ### What was built
 
-`profiles.email` is updated by the signed-in user. Several checks treated that column as the login. A user who stored another person's address could pass them. Those checks now use the auth login from `auth.users` (`getUserById` / `listUsers`) or `supabase.auth.getUser().email`.
+`profiles.email` is updated by the signed-in user. Several checks treated that column as the login. A user who stored another person's address could pass them. A known user id is read with `getUserById`. An email is resolved with `public.auth_user_ids_for_email`, which is `service_role` only. Session checks use `supabase.auth.getUser().email`.
 
 `isShowsAdmin` no longer treats `profiles.role = admin` as a grant. That value is not in `profiles_role_check`. Admin is `INTERNAL_ADMIN_EMAILS` on the auth email only.
 
-Migration 077 copies `auth.users.email` onto `profiles.email` on insert and update, and revokes `UPDATE (email)` from `authenticated`. `user_owns_show`, the outreach read policy, the shows participant policy, and the podscan id guard compare the auth login. 077 is not applied. 071's show-owner branch was updated the same way before it is applied.
+Migration 077 copies `auth.users.email` onto `profiles.email` on profile insert and update, and again when `auth.users.email` changes. The trigger overwrite is the protection. A column `REVOKE UPDATE (email)` does nothing while `authenticated` still has table `UPDATE`, so 077 does not revoke the column and does not replace that table grant. The trigger function has no `EXECUTE` grant. 077 must ship with the deploy. It is not applied yet. Until it is applied, live `user_owns_show`, the outreach read policy, the shows participant policy, and the podscan guard still trust `profiles.email`.
+
+071 is already applied on `ldtmhafewfifdizgfrnn`. This PR also edits that file. Those edits only affect a fresh database that runs 071 again. Live policies change when 077 is applied.
 
 No screen, style, or animation change. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. No Vercel env change.
 
@@ -1975,7 +1977,7 @@ No screen, style, or animation change. `lib/stripe`, `lib/payouts`, `lib/billing
 | `lib/alerts/conversion.ts`, roster owner mail, IO contact fields, layout display name | Left. Delivery or document text, not access. |
 | `lib/stripe/customer.ts`, `app/api/stripe/*`, `app/api/deals/[id]/setup-intent`, DocuSign webhook SetupIntent | Not changed. `profiles.email` is the Stripe customer contact. Not an access check. Listed here instead of editing `lib/stripe`. After 077 the column matches the login. |
 | `lib/payouts`, `lib/billing`, `lib/airchecks` | No `profiles.email` access check found. Not edited. |
-| RLS `user_owns_show` (050), outreach policy (011), shows policy (071), podscan guard (046) | Fixed in 077 (and 071's unapplied policy). |
+| RLS `user_owns_show` (050), outreach policy (011), shows policy (071), podscan guard (046) | Fixed in 077, which must ship with the deploy. 071 is already applied. The 071 file edit only affects a fresh database. |
 
 ### Where
 
@@ -1998,10 +2000,10 @@ Regression: `profiles.email` set to the victim while the session or auth login d
 
 ### Known gaps
 
-- Migration 077 is not applied. Until it is, a user can still store another address on `profiles.email`. The app checks above no longer trust that column. Apply 077 on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
-- 071 is still not applied. Its show-owner branch now uses `auth_login_email()`. Applying an older copy of 071 after 077 would put the profiles.email comparison back. Apply this file's 071, or re-run 077 after it.
-- Stripe customer creation still passes `profiles.email` until 077 is applied.
-- `listUsers` walks the auth directory. A directory error fails closed (no tie, login returns 500).
+- Migration 077 is not applied. It must ship with the deploy. Until then, live `user_owns_show`, the outreach read policy, the shows participant policy, and the podscan guard still trust `profiles.email`. App code that calls `auth_user_ids_for_email` also fails closed until 077 exists. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
+- 071 is already applied. This PR edits that file. Re-running the edited 071 only changes a fresh database. Live rows change when 077 replaces those policies.
+- Stripe customer creation still passes `profiles.email` until 077 is applied. After that the column matches the login, including when the auth email changes.
+- A directory error fails closed (no tie, login returns 500).
 
 ### Choices to confirm
 

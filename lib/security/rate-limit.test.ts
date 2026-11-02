@@ -202,6 +202,17 @@ beforeEach(() => {
   rpc.mockImplementation(async (name: string, args: HitArgs) => {
     if (rpcError) return { data: null, error: rpcError };
     if (name === "rate_limit_hit") return { data: allowHit(args), error: null };
+    if (name === "auth_user_ids_for_email") {
+      const lookup = String((args as { lookup?: string }).lookup ?? "").toLowerCase();
+      const directory = [
+        { id: "show-1", email: "host@example.com" },
+        { id: "known-1", email: "known@example.com" },
+      ];
+      return {
+        data: directory.filter((user) => user.email === lookup).map((user) => user.id),
+        error: null,
+      };
+    }
     if (name === "login_otp_consume") {
       return {
         data: {

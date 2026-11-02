@@ -88,8 +88,17 @@ beforeEach(() => {
   listUsers.mockImplementation(async () => ({ data: { users: authUsers.current }, error: null }));
   lookupError = null;
   from.mockImplementation(() => profileChain());
-  rpc.mockImplementation(async (name: string, args: LoginOtpRpcArgs) => {
+  rpc.mockImplementation(async (name: string, args: LoginOtpRpcArgs & { lookup?: string }) => {
     if (name === "rate_limit_hit") return { data: true, error: null };
+    if (name === "auth_user_ids_for_email") {
+      const lookup = String(args.lookup ?? "").toLowerCase();
+      return {
+        data: authUsers.current
+          .filter((user) => user.email.toLowerCase() === lookup)
+          .map((user) => user.id),
+        error: null,
+      };
+    }
     return {
       data: applyLoginOtpRpc(store, args, Date.now()),
       error: null,
@@ -127,7 +136,7 @@ describe("POST /api/auth/login/otp", () => {
     expect(await res.json()).toEqual({ ok: true });
     expect(from).not.toHaveBeenCalled();
     expect(ilike).not.toHaveBeenCalled();
-    expect(listUsers).toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith("auth_user_ids_for_email", { lookup: "host@example.com" });
     expect(rpc).toHaveBeenCalledWith(
       "login_otp_consume",
       expect.objectContaining({

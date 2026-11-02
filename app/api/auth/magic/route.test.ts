@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { verifyMagicLinkToken, listUsers, createUser, generateLink, from, rpc, profiles } = vi.hoisted(
+const { verifyMagicLinkToken, createUser, generateLink, from, rpc, profiles, authDirectory } = vi.hoisted(
   () => ({
     verifyMagicLinkToken: vi.fn(),
-    listUsers: vi.fn(),
     createUser: vi.fn(),
     generateLink: vi.fn(),
     from: vi.fn(),
     rpc: vi.fn(),
     profiles: { current: [] as { id: string; email: string }[] },
+    authDirectory: { current: [] as { id: string; email: string }[] },
   }),
 );
 
@@ -21,7 +21,7 @@ vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
     rpc,
     from,
-    auth: { admin: { listUsers, createUser, generateLink } },
+    auth: { admin: { createUser, generateLink } },
   },
 }));
 
@@ -29,16 +29,24 @@ import { GET } from "./route";
 
 beforeEach(() => {
   verifyMagicLinkToken.mockReset();
-  listUsers.mockReset();
   createUser.mockReset();
   generateLink.mockReset();
   from.mockReset();
   rpc.mockReset();
   profiles.current = [{ id: "attacker-1", email: "victim@show.test" }];
-  rpc.mockResolvedValue({ data: true, error: null });
-  listUsers.mockResolvedValue({
-    data: { users: [{ id: "victim-1", email: "victim@show.test" }] },
-    error: null,
+  authDirectory.current = [{ id: "victim-1", email: "victim@show.test" }];
+  rpc.mockImplementation(async (name: string, args: { lookup?: string }) => {
+    if (name === "rate_limit_hit") return { data: true, error: null };
+    if (name === "auth_user_ids_for_email") {
+      const lookup = String(args.lookup ?? "").toLowerCase();
+      return {
+        data: authDirectory.current
+          .filter((user) => user.email.toLowerCase() === lookup)
+          .map((user) => user.id),
+        error: null,
+      };
+    }
+    return { data: null, error: { message: "unexpected rpc" } };
   });
   createUser.mockResolvedValue({ data: { user: { id: "created-1" } }, error: null });
   generateLink.mockResolvedValue({
@@ -85,7 +93,7 @@ describe("GET /api/auth/magic", () => {
   });
 
   it("creates the auth user when only a profile row has that email", async () => {
-    listUsers.mockResolvedValue({ data: { users: [] }, error: null });
+    authDirectory.current = [];
     verifyMagicLinkToken.mockReturnValue({
       email: "victim@show.test",
       return_url: "https://www.taylslate.com/outreach/tok",

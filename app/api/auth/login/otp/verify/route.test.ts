@@ -105,8 +105,17 @@ beforeEach(() => {
     };
     return chain;
   });
-  rpc.mockImplementation(async (name: string, args: LoginOtpRpcArgs) => {
+  rpc.mockImplementation(async (name: string, args: LoginOtpRpcArgs & { lookup?: string }) => {
     if (name === "rate_limit_hit") return { data: true, error: null };
+    if (name === "auth_user_ids_for_email") {
+      const lookup = String(args.lookup ?? "").toLowerCase();
+      return {
+        data: authUsers.current
+          .filter((user) => user.email.toLowerCase() === lookup)
+          .map((user) => user.id),
+        error: null,
+      };
+    }
     return {
       data: applyLoginOtpRpc(store, args, Date.now()),
       error: null,

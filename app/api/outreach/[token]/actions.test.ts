@@ -18,9 +18,9 @@ const { adminBuilder, supabaseAdmin } = vi.hoisted(() => {
     adminBuilder: builder,
     supabaseAdmin: {
       from: vi.fn(() => builder),
+      rpc: async () => ({ data: [], error: null }),
       auth: {
         admin: {
-          listUsers: vi.fn(async () => ({ data: { users: [] }, error: null })),
           getUserById: vi.fn(async () => ({ data: { user: null }, error: { message: "missing" } })),
         },
       },

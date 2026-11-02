@@ -13,12 +13,13 @@ const { adminBuilder, supabaseAdmin } = vi.hoisted(() => {
     adminBuilder: builder,
     supabaseAdmin: {
       from: vi.fn(() => builder),
+      rpc: async (_name: string, args: { lookup?: string }) => {
+        const lookup = (args.lookup ?? "").toLowerCase();
+        if (lookup === "host@daily.fm") return { data: ["u-show"], error: null };
+        return { data: [], error: null };
+      },
       auth: {
         admin: {
-          listUsers: vi.fn(async () => ({
-            data: { users: [{ id: "u-show", email: "host@daily.fm" }] },
-            error: null,
-          })),
           getUserById: vi.fn(async () => ({
             data: { user: { id: "u-show", email: "host@daily.fm" } },
             error: null,

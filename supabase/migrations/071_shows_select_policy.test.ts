@@ -87,7 +87,9 @@ describe("migration 071 sql", () => {
     );
     expect(statements).toMatch(/d\.show_profile_id = sp\.id/i);
     expect(statements).toMatch(/'show_owner' = any \(data_sources\)/i);
-    expect(statements).toMatch(/lower\(btrim\(contact_email\)\) = public\.auth_login_email\(\)/i);
+    expect(statements).toMatch(
+      /lower\(btrim\(contact_email\)\) = \(select public\.auth_login_email\(\)\)/i
+    );
     expect(statements).not.toMatch(/p\.email/i);
     expect(statements).not.toMatch(/auth\.uid\(\)(?!\))/);
     expect(statements).toMatch(
