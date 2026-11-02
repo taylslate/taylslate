@@ -119,6 +119,65 @@ describe("YouTube search market filters", () => {
     }
   });
 
+  it("sends a library page token and returns the next page token", async () => {
+    const fetchMock = stubFetch({
+      nextPageToken: "RAWTOKEN",
+      items: [
+        {
+          id: { videoId: "vid-1" },
+          snippet: { channelId: "UCpage", title: "Page", description: "desc" },
+        },
+      ],
+    });
+    const client = new YouTubeClient("test-key");
+    const page = await client.searchLibraryPage({
+      query: "home workout",
+      order: "date",
+      pageToken: "RAWTOKEN",
+    });
+    const url = searchUrl(fetchMock);
+    expect(url.searchParams.get("order")).toBe("date");
+    expect(url.searchParams.get("pageToken")).toBe("RAWTOKEN");
+    expect(url.searchParams.get("type")).toBe("video");
+    expect(url.searchParams.get("key")).toBe("test-key");
+    expect(page.nextPageToken).toBe("RAWTOKEN");
+    expect(page.hits).toEqual([
+      { channelId: "UCpage", videoId: "vid-1", title: "Page", description: "desc" },
+    ]);
+    expect(JSON.stringify(page)).not.toContain("test-key");
+  });
+
+  it("reads recent video descriptions from the uploads playlist", async () => {
+    const fetchMock = stubFetch({ items: [] });
+    fetchMock.mockImplementation(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/playlistItems")) {
+        return new Response(
+          JSON.stringify({
+            items: [{ contentDetails: { videoId: "vid-9" } }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          items: [{ snippet: { description: "  deals@creator.com  " } }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    });
+    const client = new YouTubeClient("test-key");
+    const listed = await client.listRecentVideoDescriptions("UCabcdefghijklmnopqrstuv");
+    expect(listed.descriptions).toEqual(["deals@creator.com"]);
+    expect(listed.playlistCalls).toBe(1);
+    expect(listed.videoListCalls).toBe(1);
+    const paths = fetchMock.mock.calls.map((call) => new URL(String(call[0])).pathname);
+    expect(paths).toEqual(["/youtube/v3/playlistItems", "/youtube/v3/videos"]);
+    const videoUrl = new URL(String(fetchMock.mock.calls[1][0]));
+    expect(videoUrl.searchParams.get("part")).toBe("snippet");
+    expect(videoUrl.searchParams.get("id")).toBe("vid-9");
+  });
+
   it("sends regionCode=US and relevanceLanguage=en on channel search", async () => {
     const fetchMock = stubFetch({ items: [] });
     const client = new YouTubeClient("test-key");

@@ -20,6 +20,10 @@
     {
       "path": "/api/cron/youtube-library-refresh",
       "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/cron/youtube-library-emails",
+      "schedule": "0 19 * * *"
     }
   ]
 }

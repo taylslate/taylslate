@@ -4,6 +4,8 @@
 
 import { UPLOADS_STATS_UNITS, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { normalizeContactEmail, type EmailSource } from "./emails";
+import { createMemoryQuotaLedger, type QuotaJob, type QuotaLedger } from "./quota";
 import { linkResolvesToChannel } from "./seeds";
 import { deterministicNicheTags, filterNicheTags, NICHE_TAGS_VERSION } from "./tags";
 
@@ -35,6 +37,17 @@ export function isMissingLibraryTable(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err ?? "");
   const code = (err as { code?: string } | null)?.code ?? "";
   return code === "42P01" || code === "PGRST205" || MISSING_RELATION.test(message);
+}
+
+const MISSING_YT2 =
+  /page_token|next_page_token|emails_checked_at|video_emails_checked_at|youtube_quota_days|youtube_quota_log|youtube_channel_emails|42703/i;
+
+/** True when migration 076's tables or columns are not in the database yet. */
+export function isMissingYt2(err: unknown): boolean {
+  if (isMissingLibraryTable(err)) return true;
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  const code = (err as { code?: string } | null)?.code ?? "";
+  return code === "42703" || code === "PGRST204" || MISSING_YT2.test(message);
 }
 
 export function statsFreshCutoff(now: Date): string {
@@ -101,6 +114,26 @@ export interface QueueItem {
   attempts: number;
   last_error: string | null;
   done_at: string | null;
+  /** Empty on the first relevance search. See migration 076. */
+  page_token: string;
+  next_page_token: string | null;
+}
+
+export interface StoredChannelEmail {
+  channel_id: string;
+  email: string;
+  source: EmailSource;
+  found_at: string;
+}
+
+export interface UncheckedDescription {
+  channel_id: string;
+  description: string | null;
+}
+
+export interface UncheckedVideo {
+  channel_id: string;
+  video_emails_attempts: number;
 }
 
 export interface ShowLinkCandidate {
@@ -117,9 +150,13 @@ export interface ShowLinkCandidate {
 
 export interface YoutubeLibraryStore {
   ensureReady(): Promise<void>;
-  enqueue(items: { kind: QueueKind; value: string }[]): Promise<number>;
+  /** True when migration 076's email and quota tables are present. */
+  yt2Ready(): Promise<boolean>;
+  quotaLedger(): QuotaLedger;
+  enqueue(items: { kind: QueueKind; value: string; page_token?: string }[]): Promise<number>;
   pendingQueue(): Promise<QueueItem[]>;
-  markQueueDone(id: string, at: string): Promise<void>;
+  listQueue(): Promise<QueueItem[]>;
+  markQueueDone(id: string, at: string, nextPageToken?: string | null): Promise<void>;
   markQueueAttempt(id: string, attempts: number, error: string, status: "pending" | "error"): Promise<void>;
   getChannel(channelId: string): Promise<YoutubeChannelRecord | null>;
   /** One read for the ids in a pull chunk. Missing ids are omitted. */
@@ -140,6 +177,18 @@ export interface YoutubeLibraryStore {
   listEligible(cutoffIso: string): Promise<YoutubeChannelRecord[]>;
   listNeedsTags(limit: number, version: number): Promise<YoutubeChannelRecord[]>;
   saveTags(channelId: string, tags: string[], version: number, taggedAt: string): Promise<void>;
+  countUncheckedVideos(): Promise<number>;
+  listUncheckedDescriptions(limit: number): Promise<UncheckedDescription[]>;
+  listUncheckedVideos(limit: number): Promise<UncheckedVideo[]>;
+  saveChannelEmails(
+    channelId: string,
+    found: { email: string; source: EmailSource }[],
+    foundAt: string
+  ): Promise<number>;
+  markDescriptionEmailsChecked(channelId: string, at: string): Promise<void>;
+  markVideoEmailsChecked(channelId: string, at: string): Promise<void>;
+  bumpVideoEmailAttempt(channelId: string): Promise<number>;
+  listHighScoringChannels(limit: number): Promise<YoutubeChannelRecord[]>;
 }
 
 export function emptyYoutubeFields(): Pick<
@@ -322,22 +371,46 @@ export function createMemoryYoutubeStore(shows: ShowLinkCandidate[] = []): Youtu
   channels: Map<string, YoutubeChannelRecord>;
   queue: QueueItem[];
   shows: ShowLinkCandidate[];
+  emails: StoredChannelEmail[];
+  quotaLog: { day: string; units: number; job: QuotaJob }[];
 } {
   const channels = new Map<string, YoutubeChannelRecord>();
   const queue: QueueItem[] = [];
+  const emails: StoredChannelEmail[] = [];
+  const descriptionChecked = new Set<string>();
+  const videoChecked = new Set<string>();
+  const videoAttempts = new Map<string, number>();
+  const ledger = createMemoryQuotaLedger();
   let queueSeq = 0;
+
+  function uncheckedVideos(): string[] {
+    return [...channels.keys()]
+      .filter((id) => !videoChecked.has(id))
+      .sort((a, b) => a.localeCompare(b));
+  }
 
   return {
     channels,
     queue,
     shows,
+    emails,
+    quotaLog: ledger.log,
     async ensureReady() {},
+    async yt2Ready() {
+      return true;
+    },
+    quotaLedger() {
+      return ledger;
+    },
     async enqueue(items) {
       let inserted = 0;
       for (const item of items) {
         const value = item.value.trim();
         if (!value) continue;
-        if (queue.some((row) => row.kind === item.kind && row.value === value)) continue;
+        const pageToken = (item.page_token ?? "").slice(0, 2000);
+        if (queue.some((row) => row.kind === item.kind && row.value === value && row.page_token === pageToken)) {
+          continue;
+        }
         queueSeq += 1;
         queue.push({
           id: `q-${queueSeq}`,
@@ -347,6 +420,8 @@ export function createMemoryYoutubeStore(shows: ShowLinkCandidate[] = []): Youtu
           attempts: 0,
           last_error: null,
           done_at: null,
+          page_token: pageToken,
+          next_page_token: null,
         });
         inserted += 1;
       }
@@ -355,12 +430,16 @@ export function createMemoryYoutubeStore(shows: ShowLinkCandidate[] = []): Youtu
     async pendingQueue() {
       return pendingInEnqueueOrder(queue);
     },
-    async markQueueDone(id, at) {
+    async listQueue() {
+      return [...queue];
+    },
+    async markQueueDone(id, at, nextPageToken) {
       const row = queue.find((item) => item.id === id);
       if (!row) return;
       row.status = "done";
       row.done_at = at;
       row.last_error = null;
+      if (nextPageToken !== undefined) row.next_page_token = nextPageToken;
     },
     async markQueueAttempt(id, attempts, error, status) {
       const row = queue.find((item) => item.id === id);
@@ -400,7 +479,15 @@ export function createMemoryYoutubeStore(shows: ShowLinkCandidate[] = []): Youtu
         .slice(0, limit);
     },
     async deleteChannels(ids) {
-      for (const id of ids) channels.delete(id);
+      for (const id of ids) {
+        channels.delete(id);
+        descriptionChecked.delete(id);
+        videoChecked.delete(id);
+        videoAttempts.delete(id);
+      }
+      for (let i = emails.length - 1; i >= 0; i -= 1) {
+        if (ids.includes(emails[i].channel_id)) emails.splice(i, 1);
+      }
     },
     async nullStaleYoutubeFields(channelId) {
       const row = channels.get(channelId);
@@ -436,6 +523,66 @@ export function createMemoryYoutubeStore(shows: ShowLinkCandidate[] = []): Youtu
         tagged_at: taggedAt,
         updated_at: taggedAt,
       });
+    },
+    async countUncheckedVideos() {
+      return uncheckedVideos().length;
+    },
+    async listUncheckedDescriptions(limit) {
+      return [...channels.values()]
+        .filter((row) => !descriptionChecked.has(row.channel_id))
+        .sort((a, b) => a.channel_id.localeCompare(b.channel_id))
+        .slice(0, limit)
+        .map((row) => ({ channel_id: row.channel_id, description: row.description }));
+    },
+    async listUncheckedVideos(limit) {
+      return uncheckedVideos()
+        .slice(0, limit)
+        .map((channelId) => ({
+          channel_id: channelId,
+          video_emails_attempts: videoAttempts.get(channelId) ?? 0,
+        }));
+    },
+    async saveChannelEmails(channelId, found, foundAt) {
+      if (!channels.has(channelId)) return 0;
+      let inserted = 0;
+      for (const row of found) {
+        const email = normalizeContactEmail(row.email);
+        if (!email) continue;
+        if (emails.some((item) => item.channel_id === channelId && item.email === email && item.source === row.source)) {
+          continue;
+        }
+        emails.push({ channel_id: channelId, email, source: row.source, found_at: foundAt });
+        inserted += 1;
+      }
+      return inserted;
+    },
+    async markDescriptionEmailsChecked(channelId, at) {
+      if (!channels.has(channelId) || !at) return;
+      descriptionChecked.add(channelId);
+    },
+    async markVideoEmailsChecked(channelId, at) {
+      if (!channels.has(channelId) || !at) return;
+      videoChecked.add(channelId);
+    },
+    async bumpVideoEmailAttempt(channelId) {
+      const next = (videoAttempts.get(channelId) ?? 0) + 1;
+      videoAttempts.set(channelId, next);
+      return next;
+    },
+    async listHighScoringChannels(limit) {
+      return [...channels.values()]
+        .filter(
+          (row) =>
+            row.passed_market_filter &&
+            !row.brand_flag &&
+            row.avg_recent_views != null &&
+            row.avg_recent_views > 0
+        )
+        .sort(
+          (a, b) =>
+            (b.avg_recent_views ?? 0) - (a.avg_recent_views ?? 0) || a.channel_id.localeCompare(b.channel_id)
+        )
+        .slice(0, limit);
     },
   };
 }
@@ -512,7 +659,87 @@ function toDbRow(record: YoutubeChannelRecord): Record<string, unknown> {
 const CHANNEL_COLUMNS =
   "channel_id, title, description, thumbnail_url, country, default_language, subscriber_count, video_count, total_view_count, avg_recent_views, avg_views_method, topic_categories, keywords, niche_tags, niche_tags_version, tagged_at, passed_market_filter, brand_flag, show_id, source, source_query, first_seen_at, stats_refreshed_at, created_at, updated_at";
 
+const QUEUE_COLUMNS =
+  "id, kind, value, status, attempts, last_error, done_at";
+const QUEUE_COLUMNS_YT2 =
+  "id, kind, value, status, attempts, last_error, done_at, page_token, next_page_token";
+
+function asQueueItem(row: Record<string, unknown>, yt2: boolean): QueueItem {
+  return {
+    id: String(row.id),
+    kind: row.kind as QueueKind,
+    value: String(row.value),
+    status: row.status as QueueStatus,
+    attempts: Number(row.attempts ?? 0),
+    last_error: (row.last_error as string | null) ?? null,
+    done_at: (row.done_at as string | null) ?? null,
+    page_token: yt2 ? String(row.page_token ?? "") : "",
+    next_page_token: yt2 ? ((row.next_page_token as string | null) ?? null) : null,
+  };
+}
+
+function supabaseQuotaLedger(): QuotaLedger {
+  return {
+    async used(day) {
+      const { data, error } = await supabaseAdmin
+        .from("youtube_quota_days")
+        .select("units")
+        .eq("pacific_day", day)
+        .maybeSingle();
+      if (error) {
+        if (isMissingYt2(error)) throw new YoutubeLibraryTableMissing();
+        throw new Error(error.message || "youtube quota read failed");
+      }
+      return data?.units == null ? 0 : Number(data.units);
+    },
+    async commit(day, units, job, cap) {
+      const { data, error } = await supabaseAdmin.rpc("youtube_quota_commit", {
+        p_day: day,
+        p_units: units,
+        p_job: job,
+        p_cap: cap,
+      });
+      if (error) {
+        if (isMissingYt2(error)) throw new YoutubeLibraryTableMissing();
+        throw new Error(error.message || "youtube quota commit failed");
+      }
+      const payload = (typeof data === "string" ? JSON.parse(data) : data) as {
+        accepted?: number;
+        total?: number;
+      } | null;
+      return {
+        accepted: Number(payload?.accepted ?? 0),
+        total: Number(payload?.total ?? 0),
+      };
+    },
+  };
+}
+
 export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
+  let yt2Cache: boolean | null = null;
+
+  async function probeYt2(): Promise<boolean> {
+    if (yt2Cache != null) return yt2Cache;
+    const checks = await Promise.all([
+      supabaseAdmin.from("youtube_quota_days").select("pacific_day").limit(1),
+      supabaseAdmin.from("youtube_channel_emails").select("id").limit(1),
+      supabaseAdmin.from("youtube_pull_queue").select("page_token").limit(1),
+      supabaseAdmin.from("youtube_channels").select("emails_checked_at, video_emails_checked_at").limit(1),
+    ]);
+    for (const result of checks) {
+      if (!result.error) continue;
+      if (isMissingYt2(result.error)) {
+        yt2Cache = false;
+        return false;
+      }
+      throw new Error(result.error.message || "youtube library query failed");
+    }
+    yt2Cache = true;
+    return true;
+  }
+
+  const ledger = supabaseQuotaLedger();
+
   return {
     async ensureReady() {
       const { error } = await supabaseAdmin.from("youtube_channels").select("channel_id").limit(1);
@@ -520,41 +747,99 @@ export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
       const queue = await supabaseAdmin.from("youtube_pull_queue").select("id").limit(1);
       throwIfMissing(queue.error);
     },
+    async yt2Ready() {
+      return probeYt2();
+    },
+    quotaLedger() {
+      return ledger;
+    },
     async enqueue(items) {
       if (items.length === 0) return 0;
+      const yt2 = await probeYt2();
       const base = Date.now();
       const rows = items
-        .map((item, index) => ({
-          kind: item.kind,
-          value: item.value.trim(),
-          status: "pending" as const,
-          attempts: 0,
-          created_at: new Date(base + index).toISOString(),
-        }))
+        .map((item, index) => {
+          const value = item.value.trim();
+          const row: {
+            kind: QueueKind;
+            value: string;
+            status: "pending";
+            attempts: number;
+            created_at: string;
+            page_token?: string;
+          } = {
+            kind: item.kind,
+            value,
+            status: "pending",
+            attempts: 0,
+            created_at: new Date(base + index).toISOString(),
+          };
+          if (yt2) row.page_token = (item.page_token ?? "").slice(0, 2000);
+          return row;
+        })
         .filter((item) => item.value);
       if (rows.length === 0) return 0;
       const { data, error } = await supabaseAdmin
         .from("youtube_pull_queue")
-        .upsert(rows, { onConflict: "kind,value", ignoreDuplicates: true })
+        .upsert(rows, {
+          onConflict: yt2 ? "kind,value,page_token" : "kind,value",
+          ignoreDuplicates: true,
+        })
         .select("id");
       throwIfMissing(error);
       return data?.length ?? 0;
     },
     async pendingQueue() {
+      const yt2 = await probeYt2();
+      if (yt2) {
+        const { data, error } = await supabaseAdmin
+          .from("youtube_pull_queue")
+          .select(QUEUE_COLUMNS_YT2)
+          .eq("status", "pending")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true });
+        throwIfMissing(error);
+        return (data ?? []).map((row) => asQueueItem(row as unknown as Record<string, unknown>, true));
+      }
       const { data, error } = await supabaseAdmin
         .from("youtube_pull_queue")
-        .select("id, kind, value, status, attempts, last_error, done_at")
+        .select(QUEUE_COLUMNS)
         .eq("status", "pending")
         .order("created_at", { ascending: true })
         .order("id", { ascending: true });
       throwIfMissing(error);
-      return (data ?? []) as QueueItem[];
+      return (data ?? []).map((row) => asQueueItem(row as unknown as Record<string, unknown>, false));
     },
-    async markQueueDone(id, at) {
-      const { error } = await supabaseAdmin
+    async listQueue() {
+      const yt2 = await probeYt2();
+      if (yt2) {
+        const { data, error } = await supabaseAdmin
+          .from("youtube_pull_queue")
+          .select(QUEUE_COLUMNS_YT2)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true });
+        throwIfMissing(error);
+        return (data ?? []).map((row) => asQueueItem(row as unknown as Record<string, unknown>, true));
+      }
+      const { data, error } = await supabaseAdmin
         .from("youtube_pull_queue")
-        .update({ status: "done", done_at: at, last_error: null })
-        .eq("id", id);
+        .select(QUEUE_COLUMNS)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true });
+      throwIfMissing(error);
+      return (data ?? []).map((row) => asQueueItem(row as unknown as Record<string, unknown>, false));
+    },
+    async markQueueDone(id, at, nextPageToken) {
+      const patch: {
+        status: "done";
+        done_at: string;
+        last_error: null;
+        next_page_token?: string | null;
+      } = { status: "done", done_at: at, last_error: null };
+      if (nextPageToken !== undefined && (await probeYt2())) {
+        patch.next_page_token = nextPageToken == null ? null : nextPageToken.slice(0, 2000);
+      }
+      const { error } = await supabaseAdmin.from("youtube_pull_queue").update(patch).eq("id", id);
       throwIfMissing(error);
     },
     async markQueueAttempt(id, attempts, errorMessage, status) {
@@ -691,6 +976,99 @@ export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
         })
         .eq("channel_id", channelId);
       throwIfMissing(error);
+    },
+    async countUncheckedVideos() {
+      const { count, error } = await supabaseAdmin
+        .from("youtube_channels")
+        .select("channel_id", { count: "exact", head: true })
+        .is("video_emails_checked_at", null);
+      throwIfMissing(error);
+      return count ?? 0;
+    },
+    async listUncheckedDescriptions(limit) {
+      const { data, error } = await supabaseAdmin
+        .from("youtube_channels")
+        .select("channel_id, description")
+        .is("emails_checked_at", null)
+        .order("channel_id", { ascending: true })
+        .limit(limit);
+      throwIfMissing(error);
+      return (data ?? []).map((row) => ({
+        channel_id: String(row.channel_id),
+        description: (row.description as string | null) ?? null,
+      }));
+    },
+    async listUncheckedVideos(limit) {
+      const { data, error } = await supabaseAdmin
+        .from("youtube_channels")
+        .select("channel_id, video_emails_attempts")
+        .is("video_emails_checked_at", null)
+        .order("channel_id", { ascending: true })
+        .limit(limit);
+      throwIfMissing(error);
+      return (data ?? []).map((row) => ({
+        channel_id: String(row.channel_id),
+        video_emails_attempts: Number(row.video_emails_attempts ?? 0),
+      }));
+    },
+    async saveChannelEmails(channelId, found, foundAt) {
+      const rows = [];
+      const seen = new Set<string>();
+      for (const row of found) {
+        const email = normalizeContactEmail(row.email);
+        if (!email || seen.has(`${row.source}\0${email}`)) continue;
+        seen.add(`${row.source}\0${email}`);
+        rows.push({ channel_id: channelId, email, source: row.source, found_at: foundAt });
+      }
+      if (rows.length === 0) return 0;
+      const { data, error } = await supabaseAdmin
+        .from("youtube_channel_emails")
+        .upsert(rows, { onConflict: "channel_id,email,source", ignoreDuplicates: true })
+        .select("id");
+      throwIfMissing(error);
+      return data?.length ?? 0;
+    },
+    async markDescriptionEmailsChecked(channelId, at) {
+      const { error } = await supabaseAdmin
+        .from("youtube_channels")
+        .update({ emails_checked_at: at })
+        .eq("channel_id", channelId);
+      throwIfMissing(error);
+    },
+    async markVideoEmailsChecked(channelId, at) {
+      const { error } = await supabaseAdmin
+        .from("youtube_channels")
+        .update({ video_emails_checked_at: at })
+        .eq("channel_id", channelId);
+      throwIfMissing(error);
+    },
+    async bumpVideoEmailAttempt(channelId) {
+      const current = await supabaseAdmin
+        .from("youtube_channels")
+        .select("video_emails_attempts")
+        .eq("channel_id", channelId)
+        .maybeSingle();
+      throwIfMissing(current.error);
+      const next = Number(current.data?.video_emails_attempts ?? 0) + 1;
+      const { error } = await supabaseAdmin
+        .from("youtube_channels")
+        .update({ video_emails_attempts: next })
+        .eq("channel_id", channelId);
+      throwIfMissing(error);
+      return next;
+    },
+    async listHighScoringChannels(limit) {
+      const { data, error } = await supabaseAdmin
+        .from("youtube_channels")
+        .select(CHANNEL_COLUMNS)
+        .eq("passed_market_filter", true)
+        .is("brand_flag", null)
+        .gt("avg_recent_views", 0)
+        .order("avg_recent_views", { ascending: false })
+        .order("channel_id", { ascending: true })
+        .limit(limit);
+      throwIfMissing(error);
+      return (data ?? []).map((row) => asRecord(row as Record<string, unknown>));
     },
   };
 }

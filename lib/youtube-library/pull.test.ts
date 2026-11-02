@@ -655,6 +655,54 @@ describe("mapLimit", () => {
   });
 });
 
+describe("daily quota cap", () => {
+  it("stops before the next search and resumes on the next Pacific day", async () => {
+    const store = createMemoryYoutubeStore();
+    await store.enqueue([
+      { kind: "category_query", value: "one" },
+      { kind: "category_query", value: "two" },
+    ]);
+    const search = vi.fn(async (query: string) => [`id-${query}`]);
+    const lines: string[] = [];
+    const quota = {
+      ledger: store.quotaLedger(),
+      day: "2026-11-02",
+      cap: 150,
+      spendCap: 150,
+      job: "pull" as const,
+      emailReserve: 0,
+      refreshReserve: 0,
+    };
+    const first = await runPullQueue({
+      store,
+      api: apiWith({ search }),
+      budget: 8000,
+      seed: false,
+      quota,
+      log: (line) => lines.push(line),
+    });
+    expect(first.stopped).toBe("cap");
+    expect(first.searched).toBe(1);
+    expect(first.done).toBe(1);
+    expect(store.quotaLog.reduce((sum, row) => sum + row.units, 0)).toBe(first.units);
+    expect(lines.join("\n")).toContain("quota day=2026-11-02 job=pull");
+    expect(lines.join("\n")).not.toMatch(/key=|@/);
+
+    const second = await runPullQueue({
+      store,
+      api: apiWith({ search }),
+      budget: 8000,
+      seed: false,
+      quota: { ...quota, day: "2026-11-03" },
+      log: () => {},
+    });
+    expect(second.stopped).toBeNull();
+    expect(second.done).toBe(1);
+    expect(search.mock.calls.map((call) => call[0])).toEqual(["one", "two"]);
+    expect(store.channels.has("id-two")).toBe(true);
+  });
+});
+
 describe("quota and list batches", () => {
   it("stops cleanly on quotaExceeded and keeps the row pending", async () => {
     const store = createMemoryYoutubeStore();

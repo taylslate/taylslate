@@ -276,6 +276,16 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 
 ## Foundational Architecture
 
+### YT2 YouTube library contact emails, daily quota, queue refill (written Nov 2, 2026, not applied)
+
+Built in the repo. Migration **076 is not applied** on `ldtmhafewfifdizgfrnn`. Apply only after merge and Chris's OK.
+
+- Contact emails from the channel description, About URLs in that text (`mailto:` and YouTube `/redirect` targets, no page fetch), and recent upload descriptions. Stored on `youtube_channel_emails` with `source` and `found_at`.
+- Description scan spends 0 units and covers the stored library (about 3,102 channels) on the first email cron after 076 is applied. Video descriptions spend 2 units per channel and resume the next Pacific day when the cap is hit.
+- Daily cap `YOUTUBE_DAILY_QUOTA_CAP`, default 8,000. Pacific reset. Pull, refresh, and the email cron share the ledger. The pull leaves room for refresh and, while video scans remain, for the email job.
+- When the pull queue has no pending rows, new searches are generated from saved page tokens, order variants, and phrases on high-view channels that passed the market filter. Dedupe is `(kind, value, page_token)`.
+- Cron `GET /api/cron/youtube-library-emails` at 19:00 UTC. No screen changes. Optional env var only. Not set in Vercel by this change.
+
 ### Podscan data-layer audit follow-ups (surfaced July 23, 2026)
 From the read-only Podscan consumption audit (see STATUS.md → "Podscan data audit"; verification script `378698a`). Four items, in rough priority:
 
