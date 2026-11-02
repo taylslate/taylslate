@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyMagicLinkToken } from "@/lib/io/tokens";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { listAuthUserIdsByEmail } from "@/lib/auth/auth-email";
 import {
   ONBOARDING_RETURN_COOKIE,
   ONBOARDING_RETURN_COOKIE_OPTIONS,
@@ -37,19 +38,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/auth/magic?error=invalid_or_expired`);
   }
 
-  // Find or create the auth user. eq on the lowercased address so % and _
-  // in a token cannot widen the lookup.
+  // Find or create the auth user. The token email is matched on auth.users.
+  // A profiles.email copy of that address is not an account.
   const email = payload.email.trim().toLowerCase();
-  let userId: string | null = null;
+  const directory = await listAuthUserIdsByEmail(email);
+  if (!directory.ok || directory.ids.length > 1) {
+    console.error("[magic] auth user lookup failed");
+    return NextResponse.redirect(`${origin}/auth/magic?error=signin_failed`);
+  }
+  let userId: string | null = directory.ids[0] ?? null;
 
-  const { data: existingByEmail } = await supabaseAdmin
-    .from("profiles")
-    .select("id")
-    .eq("email", email)
-    .maybeSingle();
-  if (existingByEmail?.id) {
-    userId = existingByEmail.id;
-  } else {
+  if (!userId) {
     const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email,
       email_confirm: true,

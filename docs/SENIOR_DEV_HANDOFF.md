@@ -1942,3 +1942,72 @@ No page or component was edited. Screenshots are not applicable.
 - (d) About links are parsed from API text. The YouTube website is not fetched.
 - (e) Paul Jones reviews. This PR does not merge.
 
+## SEC1: profiles.email is not an authorization source
+
+### What was built
+
+`profiles.email` is updated by the signed-in user. Several checks treated that column as the login. A user who stored another person's address could pass them. A known user id is read with `getUserById`. An email is resolved with `public.auth_user_ids_for_email`, which is `service_role` only. Session checks use `supabase.auth.getUser().email`.
+
+`isShowsAdmin` no longer treats `profiles.role = admin` as a grant. That value is not in `profiles_role_check`. Admin is `INTERNAL_ADMIN_EMAILS` on the auth email only.
+
+Migration 077 copies `auth.users.email` onto `profiles.email` on profile insert and update, and again when `auth.users.email` changes. The trigger overwrite is the protection. A column `REVOKE UPDATE (email)` does nothing while `authenticated` still has table `UPDATE`, so 077 does not revoke the column and does not replace that table grant. The trigger function has no `EXECUTE` grant. 077 must ship with the deploy. It is not applied yet. Until it is applied, live `user_owns_show`, the outreach read policy, the shows participant policy, and the podscan guard still trust `profiles.email`.
+
+071 is already applied on `ldtmhafewfifdizgfrnn`. This PR also edits that file. Those edits only affect a fresh database that runs 071 again. Live policies change when 077 is applied.
+
+No screen, style, or animation change. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. No Vercel env change.
+
+### Audit
+
+| Place | Result |
+| --- | --- |
+| `lib/shows/can-edit-show.ts` `isShowsAdmin` / `canEditShow` | Fixed. Auth email. Role admin branch removed. |
+| `lib/data/queries.ts` `importShows` | Fixed. `user.email` from `getUser()`. |
+| `lib/data/queries.ts` `backfillShowProfileOnAcceptedDeals` | Fixed. Auth email. Profile-email shareholder scan removed. |
+| `lib/shows/apply-geography.ts` show-owner ties and geography writes | Fixed. Auth email. |
+| `app/api/auth/login/otp/route.ts` and `verify/route.ts` | Fixed. Account exists when `auth.users` has the address. Profile is loaded by that user id. |
+| `app/api/auth/magic/route.ts` | Fixed. Same directory. A profile row does not skip creating the auth user. |
+| `app/outreach/[token]/page.tsx`, `app/api/outreach/[token]/_shared.ts`, `accept-counter/route.ts` | Fixed. Show party is `profileByLoginEmail`. |
+| `app/api/deals/[id]/send-to-docusign/route.ts` show signer | Fixed. Auth email, then the outreach address if the directory read fails. |
+| `lib/accounts/handoff.ts` | Before the login moves, the audit records the auth login. If the login already moved, the audit records the address still stored on the profile. The taken check reads both. Not an access grant. |
+| `app/(dashboard)/admin/page.tsx` | Already session email. Does not call `isShowsAdmin`. |
+| Admin API routes, `lib/admin/view-guard.ts`, `lib/learning/load.ts`, `getEffectiveRole` | Already `getUser().email` or `getUserById`. |
+| `profiles.role` on brand, agent, and show gates | Left. Migration 072 locks role (applied 2026-10-26). `is_managed` is locked by 041. |
+| `full_name`, `company_name` | Display and labels only. Not access. |
+| `lib/email/send.ts` managed lookup by email | Left. `is_managed` is trigger-locked, so a copied address does not flip the flag. |
+| `lib/alerts/conversion.ts`, roster owner mail, IO contact fields, layout display name | Left. Delivery or document text, not access. |
+| `lib/stripe/customer.ts`, `app/api/stripe/*`, `app/api/deals/[id]/setup-intent`, DocuSign webhook SetupIntent | Not changed. `profiles.email` is the Stripe customer contact. Not an access check. Listed here instead of editing `lib/stripe`. After 077 the column matches the login. |
+| `lib/payouts`, `lib/billing`, `lib/airchecks` | No `profiles.email` access check found. Not edited. |
+| RLS `user_owns_show` (050), outreach policy (011), shows policy (071), podscan guard (046) | Fixed in 077, which must ship with the deploy. 071 is already applied. The 071 file edit only affects a fresh database. |
+
+### Where
+
+- `lib/auth/auth-email.ts` and `auth-email.test.ts`
+- `lib/shows/can-edit-show.ts` and its test
+- `lib/shows/apply-geography.ts` and its test
+- `lib/data/queries.ts`, `lib/data/backfill-login.test.ts`, `lib/data/roster-links.test.ts`
+- `lib/accounts/handoff.ts`
+- login OTP routes and tests, magic route and test, rate-limit test mock
+- outreach pitch page, `_shared.ts`, accept-counter route and test
+- `app/api/deals/[id]/send-to-docusign/route.ts` and its test
+- `app/api/v1/reads.route.test.ts`
+- `supabase/migrations/071_shows_select_policy.sql` and its test
+- `supabase/migrations/077_lock_profile_email.sql` and its test
+- `STATUS.md`, `PRODUCT_BACKLOG.md`, `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+Regression: `profiles.email` set to the victim while the session or auth login differs is denied for show edit, roster discoverability, geography ties, deal backfill, login verify, magic account lookup, the API show row, and the DocuSign show signer. PGlite covers the email trigger, `user_owns_show`, outreach select, shows select, and the podscan guard.
+
+### Known gaps
+
+- Migration 077 is not applied. It must ship with the deploy. Until then, live `user_owns_show`, the outreach read policy, the shows participant policy, and the podscan guard still trust `profiles.email`. App code that calls `auth_user_ids_for_email` also fails closed until 077 exists. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
+- 071 is already applied. This PR edits that file. Re-running the edited 071 only changes a fresh database. Live rows change when 077 replaces those policies.
+- Stripe customer creation still passes `profiles.email` until 077 is applied. After that the column matches the login, including when the auth email changes.
+- A directory error fails closed (no tie, login returns 500).
+
+### Choices to confirm
+
+- (a) Paul Jones reviews. This PR does not merge.
+- (b) 077 is not applied from this run.
+- (c) Show signer falls back to the outreach address only when the auth read fails, not to `profiles.email`.
+

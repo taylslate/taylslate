@@ -1,13 +1,16 @@
 // Who may write a catalog show.
 //
-// True for an internal admin (INTERNAL_ADMIN_EMAILS, or a profile role
-// of admin), an agent whose roster link is approved, and a show user
+// True for an internal admin (INTERNAL_ADMIN_EMAILS on the auth login
+// email), an agent whose roster link is approved, and a show user
 // tied by getVerifiedProfileTies. shows.agent_id alone is not enough.
 // A pending or rejected link does not grant edit rights.
 // A podscan id on the profile is not a tie. Anyone else is false.
+// profiles.email and profiles.role are not an admin grant. Role admin
+// is not a profiles value.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isInternalAdmin } from "@/lib/auth/admin";
+import { getAuthEmail } from "@/lib/auth/auth-email";
 import { getVerifiedProfileTies } from "@/lib/shows/apply-geography";
 
 const ADMIN_WRITE_FIELDS = [
@@ -20,7 +23,6 @@ const ADMIN_WRITE_FIELDS = [
 
 interface ProfileRow {
   id?: string;
-  email?: string | null;
   role?: string | null;
 }
 
@@ -40,9 +42,8 @@ function textList(value: unknown): string[] | undefined {
 }
 
 export async function isShowsAdmin(userId: string): Promise<boolean> {
-  const profile = await loadProfile(userId);
-  if (!profile) return false;
-  return profile.role === "admin" || isInternalAdmin(profile.email);
+  if (!userId) return false;
+  return isInternalAdmin(await getAuthEmail(userId));
 }
 
 export async function canEditShow(userId: string, showId: string): Promise<boolean> {
@@ -108,7 +109,7 @@ export function showWritePatch(
 async function loadProfile(userId: string): Promise<ProfileRow | null> {
   const { data, error } = await supabaseAdmin
     .from("profiles")
-    .select("id, email, role")
+    .select("id, role")
     .eq("id", userId)
     .maybeSingle();
   if (error || !data) return null;

@@ -9,6 +9,7 @@ import { notFound } from "next/navigation";
 import { verifyOutreachToken } from "@/lib/io/tokens";
 import { getOutreachById } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { profileByLoginEmail } from "@/lib/auth/auth-email";
 import { brandNameFromProfile } from "@/lib/brand/display-name";
 import type { BrandProfile, Outreach } from "@/lib/data/types";
 import PitchClient from "./pitch-client";
@@ -51,12 +52,8 @@ async function loadBrandSummary(brandProfileId: string): Promise<BrandSummary> {
 }
 
 async function loadShowContext(outreach: Outreach): Promise<ShowContext> {
-  // Match by email — that's the contract: the show owns the inbox we sent to.
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("id, role")
-    .ilike("email", outreach.sent_to_email)
-    .maybeSingle();
+  // The show owns the inbox we sent to. That inbox is the auth login.
+  const profile = await profileByLoginEmail(outreach.sent_to_email);
 
   if (!profile || profile.role !== "show") {
     return { is_onboarded: false, show_standard_cpm: null };

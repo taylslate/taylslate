@@ -1,5 +1,9 @@
 # Taylslate — STATUS
 
+## SEC1: profiles.email is not an access check (Nov 2, 2026)
+
+Authorization that used `profiles.email` now uses the auth login (`getUser().email`, `getUserById`, or `auth_user_ids_for_email`). `isShowsAdmin` no longer treats `profiles.role = admin` as a grant. Migration 077 forces `profiles.email` to follow `auth.users.email`. 071 is already applied. 077 is not, and it must ship with the deploy. Until then, live `user_owns_show`, the outreach read, the shows participant policy, and the podscan guard still trust `profiles.email`. Do not paste 077 until Chris says so. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. The audit list is in `docs/SENIOR_DEV_HANDOFF.md` under SEC1.
+
 ## ADM1: internal operations dashboard (Nov 2, 2026)
 
 `/admin` is a read-only founder page. It is not in the sidebar and not public. Access is `INTERNAL_ADMIN_EMAILS` on the session email (this is where `chris@taylslate.com` belongs). `profiles.email` and `profiles.role` do not grant it. It lists accounts, active campaigns and deals, platform fee totals from `payments` rows, YouTube library counts when those tables exist, and recent error events and pull-queue errors. No Stripe call, no writes, no migration, no new env var. The Oct 21 current-truth block below still wins for pricing, sign-in, and migrations.

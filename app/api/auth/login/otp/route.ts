@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { listAuthUserIdsByEmail } from "@/lib/auth/auth-email";
 import { EMAIL_FROM_AUTH } from "@/lib/email/addresses";
 import { sendEmail } from "@/lib/email/send";
 import { renderLoginOtpEmail } from "@/lib/email/templates/login-otp";
@@ -38,11 +39,6 @@ interface OtpBody {
   email?: unknown;
   outreach_token?: unknown;
   next?: unknown;
-}
-
-interface ProfileHit {
-  id: string;
-  role: string;
 }
 
 function unavailable() {
@@ -92,23 +88,19 @@ export async function POST(request: NextRequest) {
   const rateLimited = await enforceLoginCodeSend(request, email);
   if (rateLimited) return rateLimited;
 
-  const { data: existing, error: lookupError } = await supabaseAdmin
-    .from("profiles")
-    .select("id, role")
-    .eq("email", email)
-    .maybeSingle();
-  if (lookupError) {
-    console.error("[login.otp] profile lookup:", lookupError.message);
+  const directory = await listAuthUserIdsByEmail(email);
+  if (!directory.ok || directory.ids.length > 1) {
+    console.error("[login.otp] auth user lookup failed");
     return NextResponse.json({ error: "send_failed" }, { status: 500 });
   }
-  const profile = existing as ProfileHit | null;
+  const authUserId = directory.ids[0] ?? null;
   const ip = loginOtpClientIp(request.headers);
 
   let localCode: string | null = null;
   let pendingHash: string | null = null;
   let pendingOutreach: string | null = null;
   let pendingExpires: string | null = null;
-  if (!profile && outreachId && outreachContactEmail === email) {
+  if (!authUserId && outreachId && outreachContactEmail === email) {
     localCode = mintLoginOtpCode();
     pendingHash = hashLoginOtpCode(email, localCode);
     pendingOutreach = outreachId;
@@ -122,7 +114,7 @@ export async function POST(request: NextRequest) {
     p_pending_hash: pendingHash,
     p_pending_outreach: pendingOutreach,
     p_pending_expires: pendingExpires,
-    p_clear_pending: Boolean(profile),
+    p_clear_pending: Boolean(authUserId),
   });
   if (!consumed.ok) return unavailable();
   if (!consumed.decision.ok) return limited(consumed.decision);
@@ -144,7 +136,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  if (!profile) {
+  if (!authUserId) {
     return NextResponse.json({ ok: true });
   }
 

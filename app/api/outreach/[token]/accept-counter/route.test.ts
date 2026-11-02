@@ -11,7 +11,22 @@ const { adminBuilder, supabaseAdmin } = vi.hoisted(() => {
   };
   return {
     adminBuilder: builder,
-    supabaseAdmin: { from: vi.fn(() => builder) },
+    supabaseAdmin: {
+      from: vi.fn(() => builder),
+      rpc: async (_name: string, args: { lookup?: string }) => {
+        const lookup = (args.lookup ?? "").toLowerCase();
+        if (lookup === "host@daily.fm") return { data: ["u-show"], error: null };
+        return { data: [], error: null };
+      },
+      auth: {
+        admin: {
+          getUserById: vi.fn(async () => ({
+            data: { user: { id: "u-show", email: "host@daily.fm" } },
+            error: null,
+          })),
+        },
+      },
+    },
   };
 });
 
@@ -141,6 +156,7 @@ describe("POST /api/outreach/[id]/accept-counter", () => {
     const types = logEvent.mock.calls.map((c) => c[0].eventType);
     expect(types).toContain("io.counter_accepted");
     expect(types).toContain("deal.created");
+    expect(adminBuilder.ilike).not.toHaveBeenCalled();
   });
 
   it("is idempotent — second call returns existing deal", async () => {

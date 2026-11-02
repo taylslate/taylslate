@@ -17,6 +17,7 @@
 // it was created with (lib/stripe/customer.ts sets email only on create).
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { listAuthUserIdsByEmail } from "@/lib/auth/auth-email";
 import { logEvent } from "@/lib/data/events";
 import { EMAIL_FROM_AUTH } from "@/lib/email/addresses";
 import { sendEmail } from "@/lib/email/send";
@@ -27,9 +28,6 @@ import {
   loginMagicOtpOptions,
   isLoginMagicSignupLink,
 } from "@/lib/auth/login-magic";
-
-const LIST_PAGE_SIZE = 200;
-const LIST_PAGE_CAP = 25;
 
 export const HANDOFF_ALREADY =
   "This account has already been handed off";
@@ -75,28 +73,6 @@ function isEmailTakenError(error: { message?: string; code?: string } | null): b
   );
 }
 
-/** Auth user ids whose email matches, or null if the lookup failed. */
-async function authUserIdsWithEmail(email: string): Promise<string[] | null> {
-  const ids: string[] = [];
-  for (let page = 1; page <= LIST_PAGE_CAP; page++) {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
-      page,
-      perPage: LIST_PAGE_SIZE,
-    });
-    if (error) {
-      console.error("[handoff] listUsers failed:", error.message);
-      return null;
-    }
-    const users = data.users ?? [];
-    for (const user of users) {
-      if ((user.email ?? "").toLowerCase() === email) ids.push(user.id);
-    }
-    if (users.length < LIST_PAGE_SIZE) return ids;
-  }
-  console.error("[handoff] listUsers page cap reached");
-  return null;
-}
-
 async function emailBelongsToAnotherAccount(
   email: string,
   selfId: string,
@@ -118,9 +94,9 @@ async function emailBelongsToAnotherAccount(
     return "taken";
   }
 
-  const authIds = await authUserIdsWithEmail(email);
-  if (authIds === null) return "error";
-  if (authIds.some((id) => id !== selfId)) return "taken";
+  const authIds = await listAuthUserIdsByEmail(email);
+  if (!authIds.ok) return "error";
+  if (authIds.ids.some((id) => id !== selfId)) return "taken";
   return "free";
 }
 
@@ -203,8 +179,15 @@ export async function handoffManagedBrand(input: {
   }
 
   const authEmail = (authData.user.email ?? "").toLowerCase();
-  const oldEmail = (profile.email ?? "").trim().toLowerCase() || authEmail;
+  if (!authEmail) {
+    return { ok: false, status: 500, error: "Couldn't load the login account" };
+  }
   const authAlreadyNew = authEmail === newEmail;
+  // Before the login moves, the audit records that login. If a previous
+  // call already moved the login and this call only finishes the profile
+  // row, the address still stored on the profile is the previous one.
+  const storedEmail = (profile.email ?? "").trim().toLowerCase();
+  const oldEmail = authAlreadyNew ? storedEmail || authEmail : authEmail;
 
   if (!authAlreadyNew) {
     const taken = await emailBelongsToAnotherAccount(newEmail, profile.id);

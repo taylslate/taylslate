@@ -16,6 +16,21 @@ const db = {
   show_ownership_proofs: [] as Row[],
 };
 
+const authEmails = vi.hoisted(() => ({
+  byId: new Map<string, string>(),
+}));
+
+vi.mock("@/lib/auth/auth-email", () => ({
+  getAuthEmail: async (userId: string) => authEmails.byId.get(userId) ?? null,
+  getAuthUserIdByEmail: async (email: string) => {
+    const wanted = email.trim().toLowerCase();
+    for (const [id, value] of authEmails.byId) {
+      if (value.toLowerCase() === wanted) return id;
+    }
+    return null;
+  },
+}));
+
 const filtersSeen: Array<{ table: string; filters: Filter[] }> = [];
 
 function matches(row: Row, filters: Filter[]): boolean {
@@ -129,6 +144,8 @@ function seedCatalog() {
     },
   ];
   db.profiles = [{ id: "user-imposter", email: "imposter@example.com" }];
+  authEmails.byId.clear();
+  authEmails.byId.set("user-imposter", "imposter@example.com");
   db.deals = [];
   db.show_ownership_proofs = [];
   filtersSeen.length = 0;
@@ -239,6 +256,20 @@ describe("audience geography ties", () => {
     expect(db.shows[0].demographics).toEqual({ male: 55, australia: 8 });
   });
 
+  it("does not write the show when profiles.email matches and the login does not", async () => {
+    db.shows[0].data_sources = ["show_owner"];
+    db.shows[0].contact_email = "host@smartless.com";
+    db.profiles[0].email = "host@smartless.com";
+    authEmails.byId.set("user-imposter", "attacker@example.test");
+    const ok = await applyAudienceGeographyToShow({
+      id: "prof-imposter",
+      user_id: "user-imposter",
+      audience_geography: { australia: 8 },
+    });
+    expect(ok).toBe(true);
+    expect(db.shows[0].demographics).toEqual({ us: 70, male: 55 });
+  });
+
   it("does not treat a matching contact email as ownership without show_owner", async () => {
     db.shows[0].contact_email = "imposter@example.com";
     const ok = await applyAudienceGeographyToShow({
@@ -335,6 +366,18 @@ describe("verified profile ties", () => {
     expect(await getVerifiedProfileTies([identity])).toEqual([
       { showId: CATALOG_ID, profileId: "prof-imposter" },
     ]);
+  });
+
+  it("does not tie a show_owner row when only profiles.email matches", async () => {
+    db.shows[0].data_sources = ["show_owner"];
+    db.shows[0].contact_email = "host@smartless.com";
+    db.profiles[0].email = "host@smartless.com";
+    authEmails.byId.set("user-imposter", "attacker@example.test");
+    expect(
+      await getVerifiedProfileTies([
+        { ...identity, contactEmail: "host@smartless.com", dataSources: ["show_owner"] },
+      ])
+    ).toEqual([]);
   });
 
   it("ties a show_owner row through the owner's contact email", async () => {

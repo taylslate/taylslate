@@ -418,7 +418,9 @@ describe("refresh stats chunks", () => {
       const start = Date.now();
       const store = createMemoryYoutubeStore();
       await store.saveChannel(record("stall", "2026-01-01T00:00:00.000Z"));
-      const recentUploadsBatch = vi.fn((): Promise<never> => new Promise(() => {}));
+      const recentUploadsBatch = vi.fn(
+        (_channelIds: string[], _options?: { deadlineMs?: number }): Promise<never> => new Promise(() => {}),
+      );
       const pending = runRefreshQueue({
         store,
         api: api(async (ids) => ({ found: ids.map((id) => details(id)), missing: [] }), { recentUploadsBatch }),
@@ -447,7 +449,9 @@ describe("refresh stats chunks", () => {
       vi.setSystemTime(near);
       const store = createMemoryYoutubeStore();
       await store.saveChannel(record("late", "2026-01-01T00:00:00.000Z"));
-      const recentUploadsBatch = vi.fn((): Promise<never> => new Promise(() => {}));
+      const recentUploadsBatch = vi.fn(
+        (_channelIds: string[], _options?: { deadlineMs?: number }): Promise<never> => new Promise(() => {}),
+      );
       const pending = runRefreshQueue({
         store,
         api: api(async (ids) => ({ found: ids.map((id) => details(id)), missing: [] }), { recentUploadsBatch }),

@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { listAuthUserIdsByEmail } from "@/lib/auth/auth-email";
 import { createClient } from "@/lib/supabase/server";
 import { verifyOutreachToken } from "@/lib/io/tokens";
 import { getOutreachById } from "@/lib/data/queries";
@@ -127,18 +128,14 @@ export async function POST(request: NextRequest) {
   if (!consumed.ok) return unavailable();
   if (!consumed.decision.ok) return limited(consumed.decision);
 
-  const { data: existing, error: lookupError } = await supabaseAdmin
-    .from("profiles")
-    .select("id, role")
-    .eq("email", email)
-    .maybeSingle();
-  if (lookupError) {
-    console.error("[login.otp.verify] profile lookup:", lookupError.message);
+  const directory = await listAuthUserIdsByEmail(email);
+  if (!directory.ok || directory.ids.length > 1) {
+    console.error("[login.otp.verify] auth user lookup failed");
     return NextResponse.json({ error: "verify_failed" }, { status: 500 });
   }
-  const profile = existing as ProfileHit | null;
+  const authUserId = directory.ids[0] ?? null;
 
-  if (profile) {
+  if (authUserId) {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.verifyOtp({
       email,
@@ -152,7 +149,22 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-    if (!profile.role || data.user.id !== profile.id) {
+    if (data.user.id !== authUserId) {
+      await supabase.auth.signOut();
+      return NextResponse.json({ error: "verify_failed" }, { status: 403 });
+    }
+    const { data: existing, error: lookupError } = await supabaseAdmin
+      .from("profiles")
+      .select("id, role")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    if (lookupError) {
+      console.error("[login.otp.verify] profile lookup:", lookupError.message);
+      await supabase.auth.signOut();
+      return NextResponse.json({ error: "verify_failed" }, { status: 500 });
+    }
+    const profile = existing as ProfileHit | null;
+    if (!profile?.role || profile.id !== data.user.id) {
       await supabase.auth.signOut();
       return NextResponse.json({ error: "verify_failed" }, { status: 403 });
     }
