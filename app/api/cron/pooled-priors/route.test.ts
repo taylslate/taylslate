@@ -63,6 +63,7 @@ describe("GET /api/cron/pooled-priors", () => {
       { path: "/api/cron/youtube-library-pull", schedule: "0 17 * * *" },
       { path: "/api/cron/youtube-library-refresh", schedule: "0 18 * * *" },
       { path: "/api/cron/youtube-library-emails", schedule: "0 19 * * *" },
+      { path: "/api/cron/airchecks", schedule: "0 20 * * *" },
     ]);
   });
 });

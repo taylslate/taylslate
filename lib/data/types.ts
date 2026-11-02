@@ -780,6 +780,10 @@ export type DomainEventType =
   // Aircheck review — human confirm (charge succeeded) or reject (no charge).
   | "aircheck.confirmed"
   | "aircheck.rejected"
+  // Automated aircheck. Transcript stored, then a match is ready for a person.
+  // Neither event charges or marks the line delivered.
+  | "aircheck.transcribed"
+  | "aircheck.ready_for_review"
   // Wave 13 — Stripe subscription webhook state
   | "subscription.updated"
   | "subscription.deleted"

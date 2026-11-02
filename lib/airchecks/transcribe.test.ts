@@ -234,6 +234,7 @@ describe("transcribeIoLine", () => {
     const row = await transcribeIoLine("li_1");
 
     expect(row.status).toBe("failed");
+    expect(row.ready_for_review).toBe(false);
     expect(row.transcript_text).toBeNull();
     expect(row.error).toMatch(/AIRCHECK_TRANSCRIPTION_PROVIDER is off/);
     expect(row.audio_url).toBe("https://cdn.example.com/ep42.mp3");

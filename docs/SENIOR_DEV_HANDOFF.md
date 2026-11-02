@@ -1,5 +1,69 @@
 # Senior dev handoff
 
+## Automated airchecks, parts 1 and 2
+
+### What was built
+
+A daily job pulls the episode for each booked IO spot whose air window is open, transcribes that episode, and stores a match that is ready for a person to review. Part 3, the review screen that marks delivery and charges, was left as it is. No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, and `lib/billing` were not edited.
+
+Booked means deal status `show_signed`, `delivering`, `signed`, `live`, or `completed`, and `cancelled_at` is empty. A cancelled IO is skipped. The air window starts on `io_line_items.post_date` and runs 7 days, through `post_date` plus 6 days. The job keeps looking for 7 days after the window closes. At most 25 spots run per cron. A show with no booked line is never fetched.
+
+Part 1. A podcast spot fetches that show's RSS and downloads the enclosure published inside the window, or the enclosure for the episode URL already on the line. A YouTube spot uses `YouTubeClient.recentUploadsStats` for that channel's recent long-form uploads, or `getVideo` when the line already names a video id. That is the same client the YouTube library uses. The library pull, the search catalog, and `youtube_pull_queue` are not called. The audio is written to a temp file and deleted when transcription finishes, including when transcription throws. The publisher URL is kept on `audio_url`. The file is not uploaded to storage.
+
+Transcription goes through `TranscriptProvider`. The first provider is OpenAI `whisper-1` (`lib/airchecks/openai-whisper.ts`). `OPENAI_API_KEY` is read from the environment. It is not set. The cron then returns 200 with `skipped: "missing_openai_api_key"` and writes nothing. An mp3 over 24MB is split on frame boundaries so each upload stays under Whisper's 25MB limit. A file that large that is not mp3 is stored as failed. Segments are `{ start_seconds, end_seconds, text }`.
+
+Cost. whisper-1 is priced at $0.006 per minute in `WHISPER_USD_PER_MINUTE`. A 30-minute episode is $0.18. A 45-minute episode is $0.27. A 60-minute episode is $0.36. `AIRCHECK_RUN_COST_CAP_USD` defaults to $1 when unset, about 166 minutes, about three 45-minute episodes. `0` stops the run before any download. The next episode is skipped when its estimate would pass the cap. The log line is `[aircheck] line=... minutes=... estimated_cost_usd=... provider=openai-whisper`. The key and the transcript are not logged. The stored cost uses the duration Whisper returns. A guess from file size, at 128 kbps, is used only to decide whether to start.
+
+Part 2. The read is located from the brand name, `deals.promo_code`, the brand URL, and bullet lines in the outreach pitch. The IO has no talking-points column. The judgment checks placement (pre-roll, mid-roll, post-roll, by where the read starts in the episode) and approximate length (about 30s pre-roll, 60s mid-roll, 30s post-roll, counted when the measured span is between half and double that). Confidence is 0 to 1: brand 0.40, code or URL 0.30, placement 0.15, length 0.10, talking points 0.05. `ready_for_review` is set for `matched` and `not_matched`. A skipped row stays false. `review_decision` is not set. `io_line_items.verified` is not set. No payment row is written. The make-good hook is not called from this cron.
+
+Migration 079 adds the columns and the checks. It is in the repo and is not applied. `service_role` is the only grant. `authenticated` and `anon` have no select and no policy, so `decided_by`, errors, `audio_url`, and the transcript are not on the Data API. Every reader uses the service role. RSS and enclosure fetches resolve the host once, connect to that address, stream the body, and abort at 5MB (RSS) or 200MB (audio). Whisper and YouTube calls use an AbortSignal. The cost cap is checked again before each Whisper chunk, the estimate is the larger of the feed duration and the file-size guess, and money already spent is counted when a later save fails. New spots stop at 200 seconds.
+
+Cron: `GET /api/cron/airchecks` at 20:00 UTC. Bearer `CRON_SECRET`. A missing secret is 401. `maxDuration` is 300. `vercel.json` regions stay `pdx1`. `/api/cron/*` was already public in `proxy.ts`.
+
+### Where
+
+- `supabase/migrations/079_airchecks_automated.sql` and its test
+- `lib/airchecks/cost.ts`, `window.ts`, `provider.ts`, `openai-whisper.ts`, `audio.ts`, `locate.ts`, `episode.ts`, `select.ts`, `persist.ts`, `run.ts`, and their tests
+- `lib/airchecks/rss.ts` (itunes duration on the parsed item)
+- `lib/airchecks/match.ts` (shared phrase helpers exported)
+- `lib/enrichment/youtube.ts` (`getVideo`, one videos.list call)
+- `app/api/cron/airchecks/route.ts` and `route.test.ts`
+- `vercel.json` (one cron entry)
+- `app/api/cron/pooled-priors/route.test.ts` (cron list)
+- `lib/data/types.ts` (`aircheck.transcribed`, `aircheck.ready_for_review`)
+- `STATUS.md`, `PRODUCT_BACKLOG.md`, `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run`: 315 files, 2752 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 140 pages.
+
+Covers private and NAT64 addresses, a pinned DNS answer, capped response bodies, the RSS item cap, the Whisper chunk cap, spend kept when a save fails, the 200 second stop, no authenticated select on airchecks, and the cron bearer comparison.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- Migration 079 is in the repo and is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, in the same release as this deploy. Until then the cron returns `skipped: "migration_079"`.
+- `OPENAI_API_KEY` is not set in Vercel by this PR. The cron skips until it is. `AIRCHECK_RUN_COST_CAP_USD` is optional.
+- YouTube's Data API does not return an audio file. A YouTube spot is identified and then stored as failed, with no Whisper call, unless `episode_url` is already a media file. No HTML scrape was added.
+- Recent uploads are the latest long-form page the existing client already reads (about 15 videos, inside 90 days). A named video id uses `videos.list` for that id only.
+- Talking points are bullet lines in `outreaches.pitch_body`. The IO table has no column for them. Approximate length is the placement default above. It is not a stored IO term.
+- The cron does not call the make-good hook. The existing admin aircheck route and the review confirm path still do.
+- This PR does not merge. Paul reviews.
+
+### Env
+
+`OPENAI_API_KEY` is required before any episode is transcribed. It is not set. `AIRCHECK_RUN_COST_CAP_USD` is optional. Unset uses 1. This PR does not change Vercel env vars.
+
+### Choices to confirm
+
+- (a) The air window is 7 days from `post_date`, plus 7 days of catch-up.
+- (b) Booked statuses are show_signed, delivering, signed, live, and completed.
+- (c) The default cap is $1 per run, at $0.006 per minute.
+- (d) A YouTube spot without a media file is stored as failed and is not transcribed.
+- (e) `ready_for_review` does not charge. The existing review screen still does, after a person confirms.
+- (f) Paul Jones reviews. This PR does not merge.
+
 ## ADM1: Internal operations dashboard
 
 ### What was built

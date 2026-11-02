@@ -104,6 +104,12 @@ Things that must finish before GTM. The launch bar.
 
 ## Operational Unblock
 
+### Automated airchecks, parts 1 and 2 (Nov 2, 2026)
+- Shipped in code. A daily cron pulls the episode for each booked IO spot in its air window, transcribes it with OpenAI Whisper, stores the text and timestamped segments, deletes the audio, and writes a match with confidence, timestamps, and reasons. `ready_for_review` is set. The line is not marked delivered and nothing is charged.
+- Migration 079 is written and not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. Until then the cron skips. authenticated has no select on `airchecks`.
+- `OPENAI_API_KEY` is not set. The cron skips until it is. Optional `AIRCHECK_RUN_COST_CAP_USD` defaults to $1 per run. whisper-1 is $0.006 per minute, so a 45-minute episode is about $0.27.
+- The review screen that confirms a line and charges was not part of this change. A YouTube spot with no media file is stored as failed and is not sent to Whisper, because the Data API does not return the audio.
+
 ### SEC1: profiles.email must not grant access (Nov 2, 2026)
 - Shipped in code. A signed-in user can update `profiles.email`. Admin, show edit, roster import discoverability, show-owner ties, deal backfill, login and magic account lookup, outreach show resolution, and the DocuSign show signer now use the auth login.
 - Migration 077 is applied. Migration 078 is written and not applied. A null auth email must not roll back the auth update. Apply 078 only after merge and Chris's OK.

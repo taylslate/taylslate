@@ -3,6 +3,7 @@
 // transcription failure is written onto the same row and returned.
 // This module does not mark the line delivered and does not charge.
 
+import { redactAircheckError } from "./redact";
 import { lookupPodscanTranscript } from "./podscan-transcript";
 import { resolveEpisode } from "./resolve-episode";
 import {
@@ -27,9 +28,19 @@ export class AircheckLineNotFound extends Error {
 }
 
 function clip(message: string): string {
-  const trimmed = message.trim();
+  const trimmed = redactAircheckError(message).trim();
   if (trimmed.length <= MAX_ERROR_CHARS) return trimmed;
   return trimmed.slice(0, MAX_ERROR_CHARS);
+}
+
+async function saveFailure(row: AircheckWrite): Promise<AircheckRow> {
+  try {
+    return await saveAircheck({ ...row, ready_for_review: false });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (/ready_for_review|42703|PGRST204/i.test(message)) return await saveAircheck(row);
+    throw err;
+  }
 }
 
 function httpUrl(value: string | null): string | null {
@@ -148,7 +159,7 @@ export async function transcribeIoLine(ioLineItemId: string): Promise<AircheckRo
   } catch (err) {
     const message = clip(err instanceof Error ? err.message : "Aircheck failed");
     try {
-      return await saveAircheck({
+      return await saveFailure({
         io_line_item_id: ioLineItemId,
         episode_identifier: episodeIdentifier,
         audio_url: audioUrl,

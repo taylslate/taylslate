@@ -1,5 +1,11 @@
 # Taylslate — STATUS
 
+## Automated airchecks, parts 1 and 2 (Nov 2, 2026)
+
+`GET /api/cron/airchecks` at 20:00 UTC pulls one episode for each booked IO spot whose air window is open, transcribes it, and stores a match that is ready for review. Booked means `show_signed`, `delivering`, `signed`, `live`, or `completed`, with `cancelled_at` empty. The window is the line's `post_date` through the next 6 days, plus 7 days of catch-up. A podcast spot uses that show's RSS enclosure. A YouTube spot uses the existing YouTube client on that channel, or the one video id already on the line. The library pull is not called. The audio file is deleted after transcription. `OPENAI_API_KEY` is unset: the cron returns 200 and skips. `AIRCHECK_RUN_COST_CAP_USD` defaults to $1, which is whisper-1 at $0.006 per minute (about 166 minutes, about three 45-minute episodes at $0.27 each). Each episode logs minutes and estimated cost. A match stores confidence, timestamps, and reasons, and sets `ready_for_review`. It does not mark the line delivered and does not charge. The review screen was not changed.
+
+Migration **079 is written and not applied**. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. `airchecks` stays service_role only, so transcripts, audio URLs, and errors are not on the Data API. RSS and enclosure fetches pin the resolved address, stream up to a byte cap, and time out. The run stops new spots at 200 seconds and re-checks the Whisper cap between chunks. `lib/stripe`, `lib/payouts`, and `lib/billing` were not edited.
+
 ## SEC1: profiles.email is not an access check (Nov 2, 2026)
 
 Authorization that used `profiles.email` now uses the auth login (`getUser().email`, `getUserById`, or `auth_user_ids_for_email`). `isShowsAdmin` no longer treats `profiles.role = admin` as a grant. Migration 077 is applied. It forces `profiles.email` to follow `auth.users.email`. Migration 078 is written and not applied. It stops a null auth email from rolling back that auth update. Do not paste 078 until Chris says so. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. The audit list is in `docs/SENIOR_DEV_HANDOFF.md` under SEC1.
