@@ -100,6 +100,70 @@ async function emailBelongsToAnotherAccount(
   return "free";
 }
 
+interface HandoffMark {
+  old_email?: string;
+  new_email?: string;
+  phase?: string;
+}
+
+/** Login address recorded before updateUserById. A retry reads this, because the auth trigger has already copied the new address onto profiles.email. */
+async function oldEmailForAudit(input: {
+  profileId: string;
+  actorId: string;
+  actorEmail: string;
+  authEmail: string;
+  storedEmail: string;
+  newEmail: string;
+  authAlreadyNew: boolean;
+}): Promise<string | null> {
+  if (!input.authAlreadyNew) {
+    const { error } = await supabaseAdmin.from("domain_events").insert({
+      event_type: "account.handoff",
+      entity_type: "profile",
+      entity_id: input.profileId,
+      actor_id: input.actorId,
+      schema_version: "v1",
+      payload: {
+        actor_email: input.actorEmail,
+        brand_user_id: input.profileId,
+        old_email: input.authEmail,
+        new_email: input.newEmail,
+        phase: "before_login_move",
+      },
+    });
+    if (error) {
+      console.error("[handoff] could not record the previous login:", error.message);
+      return null;
+    }
+    return input.authEmail;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("domain_events")
+    .select("payload")
+    .eq("entity_type", "profile")
+    .eq("entity_id", input.profileId)
+    .eq("event_type", "account.handoff");
+  if (error) {
+    console.error("[handoff] could not read the previous login:", error.message);
+    return null;
+  }
+  const marks = (data ?? []) as { payload?: HandoffMark }[];
+  for (let i = marks.length - 1; i >= 0; i--) {
+    const payload = marks[i]?.payload;
+    const oldEmail = (payload?.old_email ?? "").trim().toLowerCase();
+    if (
+      payload?.phase === "before_login_move" &&
+      (payload.new_email ?? "").trim().toLowerCase() === input.newEmail &&
+      oldEmail
+    ) {
+      return oldEmail;
+    }
+  }
+  if (input.storedEmail && input.storedEmail !== input.newEmail) return input.storedEmail;
+  return input.authEmail;
+}
+
 async function sendHandoffMagicLink(email: string, origin: string): Promise<boolean> {
   const nextPath = "/dashboard";
   const redirectTo = `${origin}/callback?next=${encodeURIComponent(nextPath)}`;
@@ -183,11 +247,19 @@ export async function handoffManagedBrand(input: {
     return { ok: false, status: 500, error: "Couldn't load the login account" };
   }
   const authAlreadyNew = authEmail === newEmail;
-  // Before the login moves, the audit records that login. If a previous
-  // call already moved the login and this call only finishes the profile
-  // row, the address still stored on the profile is the previous one.
   const storedEmail = (profile.email ?? "").trim().toLowerCase();
-  const oldEmail = authAlreadyNew ? storedEmail || authEmail : authEmail;
+  const oldEmail = await oldEmailForAudit({
+    profileId: profile.id,
+    actorId: input.actor.id,
+    actorEmail: input.actor.email,
+    authEmail,
+    storedEmail,
+    newEmail,
+    authAlreadyNew,
+  });
+  if (!oldEmail) {
+    return { ok: false, status: 500, error: "Couldn't record the previous login" };
+  }
 
   if (!authAlreadyNew) {
     const taken = await emailBelongsToAnotherAccount(newEmail, profile.id);

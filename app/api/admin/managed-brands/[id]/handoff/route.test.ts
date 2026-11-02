@@ -53,6 +53,7 @@ const {
     outreaches: [] as { id: string; campaign_id: string }[],
     invoices: [] as OwnedRow[],
     payments: [] as OwnedRow[],
+    domain_events: [] as Record<string, unknown>[],
     authEmail: "",
     failProfileUpdate: false,
     authUpdateError: null as { message: string; code: string } | null,
@@ -107,6 +108,10 @@ const {
       ilike: (col: string, val: unknown) => {
         filters.push({ op: "ilike", col, val });
         return builder;
+      },
+      insert: (row: Record<string, unknown>) => {
+        if (table === "domain_events") state.domain_events.push(row);
+        return Promise.resolve({ data: row, error: null });
       },
       single: () => Promise.resolve(execute(true)),
       then: (
@@ -207,6 +212,7 @@ function seedManagedBrand() {
   state.outreaches = [{ id: "out-1", campaign_id: "camp-1" }];
   state.invoices = [{ id: "inv-1", user_id: BRAND_ID }];
   state.payments = [{ id: "pay-1", user_id: BRAND_ID }];
+  state.domain_events = [];
   state.authEmail = OLD_EMAIL;
   state.failProfileUpdate = false;
   state.authUpdateError = null;
@@ -437,5 +443,29 @@ describe("POST /api/admin/managed-brands/[id]/handoff", () => {
     const resumeMail = sendEmail.mock.calls[0][0] as { to: string };
     expect(resumeAudit.payload.old_email).toBe(OLD_EMAIL);
     expect(resumeMail.to).toBe(NEW_EMAIL);
+  });
+
+  it("audits the login captured before the auth update when a retry sees the new email on both rows", async () => {
+    state.authEmail = NEW_EMAIL;
+    state.profiles[0].email = NEW_EMAIL;
+    state.domain_events = [
+      {
+        event_type: "account.handoff",
+        entity_type: "profile",
+        entity_id: BRAND_ID,
+        payload: {
+          phase: "before_login_move",
+          old_email: OLD_EMAIL,
+          new_email: NEW_EMAIL,
+        },
+      },
+    ];
+    const res = await POST(post(BRAND_ID, { email: NEW_EMAIL }), {
+      params: Promise.resolve({ id: BRAND_ID }),
+    });
+    expect(res.status).toBe(200);
+    expect(updateUserById).not.toHaveBeenCalled();
+    const audit = logEvent.mock.calls[0][0] as { payload: { old_email: string } };
+    expect(audit.payload.old_email).toBe(OLD_EMAIL);
   });
 });

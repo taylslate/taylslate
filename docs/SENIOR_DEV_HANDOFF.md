@@ -2000,7 +2000,7 @@ Regression: `profiles.email` set to the victim while the session or auth login d
 
 ### Known gaps
 
-- Migration 077 is not applied. It must ship with the deploy. Until then, live `user_owns_show`, the outreach read policy, the shows participant policy, and the podscan guard still trust `profiles.email`. App code that calls `auth_user_ids_for_email` also fails closed until 077 exists. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
+- Migration 077 is applied. Migration 078 is written and not applied. It stops a null `auth.users.email` from raising 42501 through the profile sync. Apply 078 on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
 - 071 is already applied. This PR edits that file. Re-running the edited 071 only changes a fresh database. Live rows change when 077 replaces those policies.
 - Stripe customer creation still passes `profiles.email` until 077 is applied. After that the column matches the login, including when the auth email changes.
 - A directory error fails closed (no tie, login returns 500).
@@ -2010,4 +2010,25 @@ Regression: `profiles.email` set to the victim while the session or auth login d
 - (a) Paul Jones reviews. This PR does not merge.
 - (b) 077 is not applied from this run.
 - (c) Show signer falls back to the outreach address only when the auth read fails, not to `profiles.email`.
+
+## SEC1 follow-up: null auth email and handoff audit
+
+### What was built
+
+Migration 078 replaces `private.sync_profile_email_from_auth_user`. A null or blank `auth.users.email` returns without updating `profiles` and without raising 42501. A real address is still copied. 078 is not applied.
+
+Handoff writes the previous login to `domain_events` before `updateUserById`. A retry, after the auth trigger has already copied the new address onto `profiles.email`, reads that row for `old_email`.
+
+`anon` and `authenticated` cannot execute `auth_user_ids_for_email`. That grant was already revoked in 077. The test now asserts it.
+
+### Where
+
+- `supabase/migrations/078_auth_email_null_guard.sql` and its test
+- `lib/accounts/handoff.ts` and `app/api/admin/managed-brands/[id]/handoff/route.test.ts`
+- `supabase/migrations/077_lock_profile_email.test.ts` (execute privilege assertion)
+- `STATUS.md`, `PRODUCT_BACKLOG.md`, `docs/SENIOR_DEV_HANDOFF.md`
+
+### Known gaps
+
+- 078 is not applied. Until it is, clearing `auth.users.email` can still roll back through the 077 profile trigger.
 

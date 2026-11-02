@@ -297,5 +297,12 @@ describe("migration 077", () => {
         has_function_privilege('service_role', 'public.sync_profiles_email_from_auth()', 'execute') as service_role
     `);
     expect(execute.rows[0]).toEqual({ authenticated: false, service_role: false });
+
+    const directory = await db.query<{ anon: boolean; authenticated: boolean }>(`
+      select
+        has_function_privilege('anon', 'public.auth_user_ids_for_email(text)', 'execute') as anon,
+        has_function_privilege('authenticated', 'public.auth_user_ids_for_email(text)', 'execute') as authenticated
+    `);
+    expect(directory.rows[0]).toEqual({ anon: false, authenticated: false });
   });
 });
