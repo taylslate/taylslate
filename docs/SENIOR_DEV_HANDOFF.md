@@ -35,7 +35,7 @@ Cron: `GET /api/cron/airchecks` at 20:00 UTC. Bearer `CRON_SECRET`. A missing se
 
 ### Tests
 
-`npx vitest run`: 315 files, 2737 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 140 pages.
+`npx vitest run`: 315 files, 2752 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 140 pages.
 
 Covers private and NAT64 addresses, a pinned DNS answer, capped response bodies, the RSS item cap, the Whisper chunk cap, spend kept when a save fails, the 200 second stop, no authenticated select on airchecks, and the cron bearer comparison.
 

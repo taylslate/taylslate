@@ -93,6 +93,41 @@ describe("buildDueSpots", () => {
     expect(spots.map((spot) => spot.ioLineItemId)).toEqual(["line-1"]);
   });
 
+  it("keeps recent failures from filling the spot cap", () => {
+    const fails = Array.from({ length: 25 }, (_, index) =>
+      line({ id: `fail-${index}`, post_date: "2026-11-01" })
+    );
+    const fresh = Array.from({ length: 3 }, (_, index) =>
+      line({ id: `new-${index}`, post_date: "2026-11-03" })
+    );
+    const spots = buildDueSpots({
+      ...base,
+      nowMs: Date.parse("2026-11-03T18:00:00.000Z"),
+      lines: [...fails, ...fresh, line({ id: "give-up", post_date: "2026-11-02" })],
+      airchecks: [
+        ...fails.map((row) => ({
+          io_line_item_id: row.id as string,
+          status: "failed",
+          transcript_text: null,
+          ready_for_review: false,
+          match_result: null,
+          error: "attempt=2; no enclosure",
+          updated_at: "2026-11-03T12:00:00.000Z",
+        })),
+        {
+          io_line_item_id: "give-up",
+          status: "failed",
+          transcript_text: null,
+          ready_for_review: false,
+          match_result: null,
+          error: "attempt=5; no enclosure",
+          updated_at: "2020-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+    expect(spots.map((spot) => spot.ioLineItemId)).toEqual(["new-0", "new-1", "new-2"]);
+  });
+
   it("skips a line a person already confirmed or rejected", () => {
     const spots = buildDueSpots({
       ...base,

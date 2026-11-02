@@ -9,7 +9,7 @@ import {
   type YouTubeClient,
 } from "@/lib/enrichment/youtube";
 import { fetchCapped, RSS_MAX_BYTES, DEFAULT_FETCH_TIMEOUT_MS } from "@/lib/security/safe-fetch";
-import { looksLikeAudioUrl, matchRssItem, parseRssItems, type RssItem } from "./rss";
+import { findRssEpisode, looksLikeAudioUrl } from "./rss";
 import { dayInWindow, utcDay, type AirWindow } from "./window";
 
 
@@ -90,27 +90,6 @@ export function youtubeClientFromEnv(): YoutubeAircheckClient | null {
   return youtubeClientAdapter(client);
 }
 
-function closestItem(items: RssItem[], postDate: string, window: AirWindow): RssItem | null {
-  const inWindow = items.filter((item) => {
-    if (!item.enclosureUrl) return false;
-    return dayInWindow(utcDay(item.pubDate ?? ""), window);
-  });
-  if (inWindow.length === 0) return null;
-  const target = Date.parse(`${postDate}T00:00:00.000Z`);
-  let best = inWindow[0];
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const item of inWindow) {
-    const day = utcDay(item.pubDate ?? "");
-    const parsed = day ? Date.parse(`${day}T00:00:00.000Z`) : Number.NaN;
-    const distance = Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : Math.abs(parsed - target);
-    if (distance < bestDistance) {
-      best = item;
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
 async function fetchRss(rssUrl: string): Promise<{ xml: string | null; error: string | null }> {
   const body = await fetchCapped(
     rssUrl,
@@ -145,9 +124,11 @@ export async function findPodcastEpisode(input: {
   }
   const rss = await fetchRss(rssUrl);
   if (!rss.xml) return { error: rss.error ?? "RSS fetch failed" };
-  const items = parseRssItems(rss.xml);
-  const named = episodeUrl ? matchRssItem(items, episodeUrl, null) : null;
-  const item = named ?? closestItem(items, input.postDate, input.window);
+  const item = findRssEpisode(rss.xml, {
+    episodeUrl,
+    postDate: input.postDate,
+    window: input.window,
+  });
   if (!item) {
     return {
       error: episodeUrl

@@ -14,6 +14,11 @@ import {
   type AirWindow,
 } from "./window";
 
+/** Stop retrying a spot after this many stored failures. */
+export const AIRCHECK_MAX_ATTEMPTS = 5;
+/** First failure waits this long. Each later failure doubles the wait. */
+export const AIRCHECK_FAIL_BACKOFF_MS = 6 * 60 * 60 * 1000;
+
 export interface DueSpot {
   ioLineItemId: string;
   dealId: string;
@@ -26,6 +31,10 @@ export interface DueSpot {
   rssUrl: string | null;
   youtubeChannelId: string | null;
   buy: AircheckBuy;
+  /** Failures already stored for this line. The next save adds one. */
+  existingAttempt: number;
+  /** A previous run failed. These sort after spots that have not failed. */
+  priorFailure: boolean;
   /** Transcribed text already stored. The runner matches it and does not download again. */
   existingTranscript: string | null;
 }
@@ -80,6 +89,24 @@ interface AircheckExisting {
   ready_for_review: boolean | null;
   match_result: string | null;
   review_decision?: string | null;
+  error?: string | null;
+  updated_at?: string | null;
+}
+
+export function attemptCount(error: string | null | undefined, status: string | null | undefined): number {
+  const match = /^attempt=(\d+);/.exec(error ?? "");
+  if (match) return Number(match[1]);
+  return status === "failed" ? 1 : 0;
+}
+
+function retryLater(row: AircheckExisting, nowMs: number): boolean {
+  if (row.status !== "failed") return false;
+  const attempts = attemptCount(row.error, row.status);
+  if (attempts >= AIRCHECK_MAX_ATTEMPTS) return true;
+  const updated = Date.parse(row.updated_at ?? "");
+  if (!Number.isFinite(updated)) return false;
+  const wait = AIRCHECK_FAIL_BACKOFF_MS * 2 ** Math.max(0, attempts - 1);
+  return nowMs - updated < wait;
 }
 
 function names(...values: Array<string | null | undefined>): string[] {
@@ -104,6 +131,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 
 export function buildDueSpots(input: {
   today: string;
+  nowMs?: number;
   deals: DealRow[];
   ios: IoRow[];
   lines: LineRow[];
@@ -115,6 +143,7 @@ export function buildDueSpots(input: {
 }): DueSpot[] {
   const today = utcDay(input.today);
   if (!today) return [];
+  const nowMs = input.nowMs ?? Date.parse(`${today}T00:00:00.000Z`);
   const deals = new Map(
     input.deals
       .filter(
@@ -157,6 +186,7 @@ export function buildDueSpots(input: {
     if (existing?.review_decision === "confirmed" || existing?.review_decision === "rejected") {
       continue;
     }
+    if (existing && retryLater(existing, nowMs)) continue;
     if (
       existing?.status === "transcribed" &&
       existing.transcript_text?.trim() &&
@@ -189,6 +219,8 @@ export function buildDueSpots(input: {
       rssUrl: show?.rss_url?.trim() || null,
       youtubeChannelId: channel,
       buy,
+      existingAttempt: existing ? attemptCount(existing.error, existing.status) : 0,
+      priorFailure: existing?.status === "failed",
       existingTranscript:
         existing?.status === "transcribed" && existing.transcript_text?.trim()
           ? existing.transcript_text
@@ -196,7 +228,10 @@ export function buildDueSpots(input: {
     });
   }
 
-  spots.sort((a, b) => a.postDate.localeCompare(b.postDate) || a.ioLineItemId.localeCompare(b.ioLineItemId));
+  spots.sort((a, b) => {
+    if (a.priorFailure !== b.priorFailure) return a.priorFailure ? 1 : -1;
+    return a.postDate.localeCompare(b.postDate) || a.ioLineItemId.localeCompare(b.ioLineItemId);
+  });
   return spots.slice(0, AIRCHECK_SPOTS_PER_RUN);
 }
 
@@ -269,7 +304,7 @@ export async function loadDueSpots(now: Date): Promise<DueSpot[]> {
     "airchecks",
     "io_line_item_id",
     lines.map((line) => line.id),
-    "io_line_item_id, status, transcript_text, ready_for_review, match_result, review_decision"
+    "io_line_item_id, status, transcript_text, ready_for_review, match_result, review_decision, error, updated_at"
   );
 
   let libraryChannels: { show_id: string; channel_id: string }[] = [];
@@ -288,6 +323,7 @@ export async function loadDueSpots(now: Date): Promise<DueSpot[]> {
 
   return buildDueSpots({
     today,
+    nowMs: now.getTime(),
     deals,
     ios,
     lines,

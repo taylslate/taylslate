@@ -90,6 +90,9 @@ async function defaultFindEpisode(spot: DueSpot): Promise<FoundEpisode | { error
 }
 
 function failureRow(spot: DueSpot, message: string, episode?: FoundEpisode): AircheckPersist {
+  const attempt = spot.existingAttempt + 1;
+  const prefix = `attempt=${attempt}; `;
+  const body = clip(message).slice(0, Math.max(0, MAX_ERROR - prefix.length));
   return {
     io_line_item_id: spot.ioLineItemId,
     episode_identifier: episode?.episodeIdentifier ?? spot.episodeUrl,
@@ -97,7 +100,7 @@ function failureRow(spot: DueSpot, message: string, episode?: FoundEpisode): Air
     transcript_text: null,
     provider: null,
     status: "failed",
-    error: clip(message),
+    error: `${prefix}${body}`,
     window_start: spot.window.start,
     window_end: spot.window.end,
     ready_for_review: false,
@@ -126,16 +129,18 @@ async function transcribeFile(
   provider: TranscriptProvider,
   audio: DownloadedAudio,
   budget: { spent: number; cap: number; add: (usd: number) => void },
-  splitAudio: (bytes: Uint8Array) => Uint8Array[] | null
+  splitAudio: (bytes: Uint8Array) => Uint8Array[] | null,
+  time: { deadlineMs: number; clock: () => number }
 ): Promise<
   | { ok: true; text: string; segments: AircheckSegment[]; durationSeconds: number }
-  | { ok: false; message: string; capped: boolean }
+  | { ok: false; message: string; capped: boolean; stop: "cost_cap" | "time" | null }
 > {
   const pieces = splitAudio(audio.bytes);
   if (!pieces) {
     return {
       ok: false,
       capped: false,
+      stop: null,
       message: "Episode audio is over 24MB and is not an mp3 this runner can split for Whisper",
     };
   }
@@ -143,11 +148,21 @@ async function transcribeFile(
   const segments: AircheckSegment[] = [];
   let durationSeconds = 0;
   for (const piece of pieces) {
-    const pieceEstimate = estimateWhisperCostUsd(estimateSecondsFromBytes(piece.byteLength));
+    const pieceSeconds = estimateSecondsFromBytes(piece.byteLength);
+    const pieceEstimate = estimateWhisperCostUsd(pieceSeconds);
+    if (time.clock() >= time.deadlineMs) {
+      return {
+        ok: false,
+        capped: false,
+        stop: "time",
+        message: "Aircheck run time budget reached before the next Whisper chunk",
+      };
+    }
     if (budget.spent >= budget.cap || budget.spent + pieceEstimate > budget.cap) {
       return {
         ok: false,
         capped: true,
+        stop: "cost_cap",
         message: "Aircheck run cost cap reached before the next Whisper chunk",
       };
     }
@@ -156,8 +171,12 @@ async function transcribeFile(
       filename: audio.filename,
       mimeType: audio.mimeType,
     });
-    if (!result.ok) return { ok: false, capped: false, message: result.message };
-    budget.add(estimateWhisperCostUsd(result.durationSeconds));
+    if (!result.ok) {
+      if (/timed out/i.test(result.message)) budget.add(pieceEstimate);
+      return { ok: false, capped: false, stop: null, message: result.message };
+    }
+    const billedSeconds = result.durationSeconds > 0 ? result.durationSeconds : pieceSeconds;
+    budget.add(estimateWhisperCostUsd(billedSeconds));
     const offset = durationSeconds;
     texts.push(result.text);
     for (const segment of result.segments) {
@@ -167,10 +186,10 @@ async function transcribeFile(
         text: segment.text,
       });
     }
-    durationSeconds += result.durationSeconds > 0 ? result.durationSeconds : 0;
+    durationSeconds += billedSeconds;
   }
   const text = texts.join(" ").trim();
-  if (!text) return { ok: false, capped: false, message: "Whisper returned an empty transcript" };
+  if (!text) return { ok: false, capped: false, stop: null, message: "Whisper returned an empty transcript" };
   return { ok: true, text, segments, durationSeconds };
 }
 
@@ -219,13 +238,13 @@ export async function runAutomatedAirchecks(
     report.considered += 1;
     const tally = { usd: 0 };
     try {
-      const outcome = await processSpot(spot, deps, spent, tally);
+      const outcome = await processSpot(spot, deps, spent, tally, started + deps.timeBudgetMs);
       spent = roundUsd(spent + tally.usd);
       report.spentUsd = spent;
       if (outcome.stop) {
-        report.stopped = "cost_cap";
+        report.stopped = outcome.stop;
         if (tally.usd === 0) report.considered -= 1;
-        deps.log(`[aircheck] stopped cost cap spent_usd=${spent.toFixed(4)}`);
+        deps.log(`[aircheck] stopped ${outcome.stop} spent_usd=${spent.toFixed(4)}`);
         break;
       }
       if (outcome.transcribed) report.transcribed += 1;
@@ -251,7 +270,7 @@ export async function runAutomatedAirchecks(
 }
 
 interface SpotOutcome {
-  stop: boolean;
+  stop: false | "cost_cap" | "time";
   spentUsd: number;
   transcribed: boolean;
   readyForReview: boolean;
@@ -310,7 +329,8 @@ async function processSpot(
   spot: DueSpot,
   deps: AircheckRunDeps,
   spent: number,
-  tally: { usd: number }
+  tally: { usd: number },
+  deadlineMs: number
 ): Promise<SpotOutcome> {
   const none: SpotOutcome = {
     stop: false,
@@ -356,7 +376,7 @@ async function processSpot(
   const knownSeconds = found.durationSeconds;
   if (knownSeconds && knownSeconds > 0) {
     const estimate = estimateWhisperCostUsd(knownSeconds);
-    if (spent + estimate > deps.capUsd) return { ...none, stop: true };
+    if (spent + estimate > deps.capUsd) return { ...none, stop: "cost_cap" };
   }
 
   const downloaded = await deps.download(found.audioUrl);
@@ -369,7 +389,7 @@ async function processSpot(
   const fromSize = estimateSecondsFromBytes(downloaded.audio.bytes.byteLength);
   const estimateSeconds = Math.max(fromFeed, fromSize);
   const estimate = estimateWhisperCostUsd(estimateSeconds);
-  if (spent + estimate > deps.capUsd) return { ...none, stop: true };
+  if (spent + estimate > deps.capUsd) return { ...none, stop: "cost_cap" };
 
   const budget = {
     get spent() {
@@ -384,13 +404,18 @@ async function processSpot(
     deps.provider,
     downloaded.audio,
     budget,
-    deps.splitAudio
+    deps.splitAudio,
+    { deadlineMs, clock: deps.clock }
   );
   if (!transcribed.ok) {
     if (tally.usd > 0 || !transcribed.capped) {
       await deps.save(failureRow(spot, transcribed.message, found));
     }
-    return { ...none, failed: tally.usd > 0 || !transcribed.capped, stop: transcribed.capped };
+    return {
+      ...none,
+      failed: tally.usd > 0 || (!transcribed.capped && transcribed.stop !== "time"),
+      stop: transcribed.stop ?? false,
+    };
   }
 
   const minutes = roundMinutes(transcribed.durationSeconds);

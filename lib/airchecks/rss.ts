@@ -14,8 +14,10 @@ const AUDIO_EXT = /\.(mp3|m4a|mp4|m4v|wav|aac|ogg|oga|opus|flac)(?:$|[?#])/i;
 
 /** Stop parsing a feed that is larger than the download cap. */
 export const MAX_RSS_CHARS = 5_000_000;
-/** One show feed. A catalog-sized document is not parsed. */
+/** One page of a show feed. A catalog-sized document is not returned whole. */
 export const MAX_RSS_ITEMS = 200;
+/** Keep scanning past the page so an older in-window episode can still match. */
+export const MAX_RSS_SCAN_ITEMS = 5000;
 /** An item larger than this is skipped instead of scanned. */
 export const MAX_ITEM_CHARS = 100_000;
 
@@ -114,34 +116,122 @@ function attr(block: string, tag: string, name: string): string | null {
   return null;
 }
 
+function readItemBlock(block: string): RssItem {
+  return {
+    link: tagText(block, "link") ?? attr(block, "link", "href"),
+    guid: tagText(block, "guid"),
+    enclosureUrl: attr(block, "enclosure", "url"),
+    pubDate: tagText(block, "pubDate"),
+    durationSeconds: parseItunesDuration(tagText(block, "itunes:duration")),
+  };
+}
+
+/** Next item, or null at the end of the document. Oversized items are skipped. */
+function nextRssItem(
+  xml: string,
+  lower: string,
+  from: number
+): { item: RssItem | null; next: number } | null {
+  const start = lower.indexOf("<item", from);
+  if (start < 0) return null;
+  if (!startsTag(xml, start, "item")) return { item: null, next: start + 5 };
+  const gt = xml.indexOf(">", start);
+  if (gt < 0) return null;
+  const end = lower.indexOf("</item>", gt);
+  if (end < 0) return null;
+  const next = end + "</item>".length;
+  const block = xml.slice(gt + 1, end);
+  if (block.length > MAX_ITEM_CHARS) return { item: null, next };
+  return { item: readItemBlock(block), next };
+}
+
 export function parseRssItems(xml: string): RssItem[] {
   if (xml.length > MAX_RSS_CHARS) return [];
   const items: RssItem[] = [];
   const lower = xml.toLowerCase();
   let from = 0;
   while (items.length < MAX_RSS_ITEMS) {
-    const start = lower.indexOf("<item", from);
-    if (start < 0) break;
-    if (!startsTag(xml, start, "item")) {
-      from = start + 5;
-      continue;
-    }
-    const gt = xml.indexOf(">", start);
-    if (gt < 0) break;
-    const end = lower.indexOf("</item>", gt);
-    if (end < 0) break;
-    const block = xml.slice(gt + 1, end);
-    from = end + "</item>".length;
-    if (block.length > MAX_ITEM_CHARS) continue;
-    items.push({
-      link: tagText(block, "link") ?? attr(block, "link", "href"),
-      guid: tagText(block, "guid"),
-      enclosureUrl: attr(block, "enclosure", "url"),
-      pubDate: tagText(block, "pubDate"),
-      durationSeconds: parseItunesDuration(tagText(block, "itunes:duration")),
-    });
+    const step = nextRssItem(xml, lower, from);
+    if (!step) break;
+    from = step.next;
+    if (step.item) items.push(step.item);
   }
   return items;
+}
+
+function calendarDay(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const parsed = Date.parse(trimmed);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
+/**
+ * Find one episode in a long feed. Pages of 200 items are scanned until
+ * the guid matches, the air window is passed, or the scan cap is hit.
+ */
+export function findRssEpisode(
+  xml: string,
+  input: {
+    episodeUrl: string | null;
+    postDate: string | null;
+    window: { start: string; end: string } | null;
+  }
+): RssItem | null {
+  if (xml.length > MAX_RSS_CHARS) return null;
+  const lower = xml.toLowerCase();
+  let from = 0;
+  let seen = 0;
+  let best: RssItem | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let previousDay: string | null = null;
+  let order: "newest-first" | "oldest-first" | null = null;
+  const target = input.postDate ? Date.parse(`${input.postDate}T00:00:00.000Z`) : Number.NaN;
+
+  while (seen < MAX_RSS_SCAN_ITEMS) {
+    const step = nextRssItem(xml, lower, from);
+    if (!step) break;
+    from = step.next;
+    seen += 1;
+    const item = step.item;
+    if (!item) continue;
+
+    if (input.episodeUrl && matchRssItem([item], input.episodeUrl, null)) return item;
+
+    const day = calendarDay(item.pubDate);
+    if (day && previousDay && !order) {
+      if (day < previousDay) order = "newest-first";
+      else if (day > previousDay) order = "oldest-first";
+    }
+
+    const inWindow =
+      input.window &&
+      item.enclosureUrl &&
+      day &&
+      day >= input.window.start &&
+      day <= input.window.end;
+    if (inWindow && day) {
+      const parsed = Date.parse(`${day}T00:00:00.000Z`);
+      const distance = Number.isNaN(parsed) || Number.isNaN(target)
+        ? 0
+        : Math.abs(parsed - target);
+      if (distance < bestDistance) {
+        best = item;
+        bestDistance = distance;
+      }
+    } else if (!input.episodeUrl && !input.window && input.postDate && day === input.postDate) {
+      return item;
+    }
+
+    if (!input.episodeUrl && input.window && day && order) {
+      if (order === "newest-first" && day < input.window.start) return best;
+      if (order === "oldest-first" && day > input.window.end) return best;
+    }
+    if (day) previousDay = day;
+  }
+  return best;
 }
 
 /** Host, path, and query. Trailing slash and a leading www are ignored. */
@@ -156,15 +246,6 @@ export function normalizeEpisodeUrl(value: string): string {
   } catch {
     return trimmed.toLowerCase().replace(/\/+$/, "");
   }
-}
-
-function calendarDay(value: string | null): string | null {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  const parsed = Date.parse(trimmed);
-  if (Number.isNaN(parsed)) return null;
-  return new Date(parsed).toISOString().slice(0, 10);
 }
 
 /**

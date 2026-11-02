@@ -23,7 +23,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "resend": "^6.9.3",
-    "stripe": "^21.0.1"
+    "stripe": "^21.0.1",
+    "undici": "7.27.2"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.12",

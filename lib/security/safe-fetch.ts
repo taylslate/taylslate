@@ -25,16 +25,19 @@ function parseIpv4(ip: string): number[] | null {
 }
 
 function ipv4Private(octets: number[]): boolean {
-  const [a, b] = octets;
+  const [a, b, c] = octets;
   if (a === 10) return true; // 10.0.0.0/8
   if (a === 127) return true; // 127.0.0.0/8
   if (a === 0) return true; // 0.0.0.0/8
   if (a === 169 && b === 254) return true; // 169.254.0.0/16
   if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
   if (a === 192 && b === 168) return true; // 192.168.0.0/16
+  if (a === 192 && b === 0 && c === 0) return true; // 192.0.0.0/24
+  if (a === 192 && b === 0 && c === 2) return true; // 192.0.2.0/24
   if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
   if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15
   if (a >= 224 && a <= 239) return true; // 224.0.0.0/4 multicast
+  if (a >= 240) return true; // 240.0.0.0/4 and 255.255.255.255
   return false;
 }
 
@@ -84,6 +87,23 @@ function ipv6Private(groups: number[]): boolean {
   if ((groups[0] & 0xfe00) === 0xfc00) return true;
   // fe80::/10 link-local
   if ((groups[0] & 0xffc0) === 0xfe80) return true;
+  // fec0::/10 deprecated site-local
+  if ((groups[0] & 0xffc0) === 0xfec0) return true;
+  // 2002::/16 6to4
+  if (groups[0] === 0x2002) return true;
+  // 64:ff9b:1::/48 local SIIT
+  if (groups[0] === 0x64 && groups[1] === 0xff9b && groups[2] === 1) return true;
+  // ::ffff:0:0:0/96 IPv4-translated SIIT
+  if (
+    groups[0] === 0 &&
+    groups[1] === 0 &&
+    groups[2] === 0 &&
+    groups[3] === 0 &&
+    groups[4] === 0xffff &&
+    groups[5] === 0
+  ) {
+    return true;
+  }
   // 64:ff9b::/96 NAT64. The embedded IPv4 is whatever the translator reaches.
   if (
     groups[0] === 0x64 &&
@@ -132,18 +152,35 @@ export interface PinnedAddress {
   family: 4 | 6;
 }
 
+type LookupAddress = { address: string; family: number };
+
+type LookupCallback = (
+  err: NodeJS.ErrnoException | null,
+  address: string | LookupAddress[],
+  family?: number
+) => void;
+
+function wantsAllAddresses(options: unknown): boolean {
+  return Boolean(
+    options &&
+      typeof options === "object" &&
+      "all" in options &&
+      (options as { all?: boolean }).all
+  );
+}
+
 /**
  * DNS lookup callback that always returns the address chosen before connect.
- * A second answer for the same name is ignored.
+ * Node's connector calls this with `{ all: true }` and reads an array.
+ * A one-address callback still receives the string form.
  */
 export function lookupPinned(address: string, family: 4 | 6) {
-  return (
-    _hostname: string,
-    options: unknown,
-    callback?: (err: null, address: string, family: number) => void
-  ) => {
-    const done = typeof options === "function" ? options : callback;
-    done?.(null, address, family);
+  return (_hostname: string, options: unknown, callback?: LookupCallback) => {
+    const done: LookupCallback | undefined =
+      typeof options === "function" ? (options as LookupCallback) : callback;
+    if (!done) return;
+    if (wantsAllAddresses(options)) done(null, [{ address, family }]);
+    else done(null, address, family);
   };
 }
 
@@ -206,6 +243,35 @@ function withTimeout(
 }
 
 /**
+ * One connection to an address that was already chosen. safeFetch uses
+ * this after isUrlSafe. Callers that need a socket test can pass a
+ * loopback address here without the private-address check.
+ */
+export async function fetchPinned(
+  url: string,
+  pinned: PinnedAddress,
+  init: RequestInit = {}
+): Promise<Response> {
+  const dispatcher = createPinnedDispatcher(pinned.address, pinned.family);
+  try {
+    const res = await fetch(url, {
+      ...init,
+      redirect: "manual",
+      dispatcher,
+    } as RequestInit);
+    if (REDIRECT_STATUSES.has(res.status)) {
+      await res.body?.cancel().catch(() => undefined);
+      await dispatcher.close();
+      return res;
+    }
+    return bindDispatcher(res, dispatcher);
+  } catch (err) {
+    await dispatcher.close();
+    throw err;
+  }
+}
+
+/**
  * fetch() that checks every hop, then connects to the address from that
  * check. Returns null on a blocked target, a missing Location header,
  * more than `maxRedirects` hops, a timeout, or any network error.
@@ -232,23 +298,15 @@ export async function safeFetch(
       if (!pinned) return null;
       if (current.protocol !== "http:" && current.protocol !== "https:") return null;
 
-      const dispatcher = createPinnedDispatcher(pinned.address, pinned.family);
       let res: Response;
       try {
-        res = await fetch(current.toString(), {
-          ...timed.init,
-          redirect: "manual",
-          dispatcher,
-        } as RequestInit);
+        res = await fetchPinned(current.toString(), pinned, timed.init);
       } catch {
-        await dispatcher.close();
         return null;
       }
 
-      if (!REDIRECT_STATUSES.has(res.status)) return bindDispatcher(res, dispatcher);
+      if (!REDIRECT_STATUSES.has(res.status)) return res;
 
-      await res.body?.cancel().catch(() => undefined);
-      await dispatcher.close();
       const location = res.headers.get("location");
       if (!location) return null;
       try {

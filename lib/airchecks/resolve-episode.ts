@@ -4,11 +4,7 @@
 // enclosure is the audio URL. No second episode table.
 
 import { DEFAULT_FETCH_TIMEOUT_MS, fetchCapped, RSS_MAX_BYTES } from "@/lib/security/safe-fetch";
-import {
-  looksLikeAudioUrl,
-  matchRssItem,
-  parseRssItems,
-} from "./rss";
+import { findRssEpisode, looksLikeAudioUrl } from "./rss";
 
 export interface ResolvedEpisode {
   episodeIdentifier: string | null;
@@ -48,7 +44,11 @@ export async function resolveEpisode(input: {
     if (!rss.xml) {
       note = rss.error;
     } else {
-      const item = matchRssItem(parseRssItems(rss.xml), episodeUrl, input.postDate);
+      const item = findRssEpisode(rss.xml, {
+        episodeUrl,
+        postDate: input.postDate,
+        window: null,
+      });
       if (!item) {
         note = episodeUrl
           ? "Show RSS did not list an item for this episode URL"

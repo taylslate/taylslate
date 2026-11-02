@@ -26,6 +26,8 @@ function spot(overrides: Partial<DueSpot> = {}): DueSpot {
       placement: "mid-roll",
       talkingPoints: null,
     },
+    existingAttempt: 0,
+    priorFailure: false,
     existingTranscript: null,
     ...overrides,
   };
@@ -278,23 +280,90 @@ describe("runAutomatedAirchecks", () => {
     expect(report.spentUsd).toBe(0.06);
   });
 
-  it("stops starting spots once the time budget is used", async () => {
-    let now = 1_000;
-    const findEpisode = vi.fn(async () => {
-      now = 1_000 + 200_000;
+  it("checks the time budget before each Whisper chunk", async () => {
+    let now = 0;
+    const transcribe = vi.fn(async () => {
+      now = 200_000;
       return {
-        episodeIdentifier: "ep-1",
-        audioUrl: "https://cdn.example.com/ep.mp3",
-        durationSeconds: 600,
-        source: "rss" as const,
-        note: null,
+        ok: true as const,
+        provider: "openai-whisper",
+        text: "This episode is brought to you by Sauna Box. Use code HUBERMAN.",
+        segments: [{ start_seconds: 0, end_seconds: 10, text: "Sauna Box HUBERMAN" }],
+        durationSeconds: 10,
       };
     });
     const report = await runAutomatedAirchecks(
       deps({
         clock: () => now,
+        timeBudgetMs: 200_000,
+        provider: { ...provider(10), transcribe },
+        splitAudio: () => [new Uint8Array([1]), new Uint8Array([2])],
+      })
+    );
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(report.stopped).toBe("time");
+  });
+
+  it("counts the size estimate when Whisper times out or reports no duration", async () => {
+    const bytes = new Uint8Array(960_000);
+    const timedOut = await runAutomatedAirchecks(
+      deps({
+        provider: {
+          ...provider(0),
+          transcribe: vi.fn(async () => ({
+            ok: false as const,
+            reason: "http" as const,
+            message: "Whisper timed out",
+          })),
+        },
+        download: async () => ({
+          ok: true,
+          audio: { bytes, mimeType: "audio/mpeg", filename: "ep.mp3" },
+        }),
+      })
+    );
+    expect(timedOut.spentUsd).toBe(0.006);
+    expect(timedOut.failed).toBe(1);
+
+    const zeroDuration = await runAutomatedAirchecks(
+      deps({
+        provider: {
+          ...provider(0),
+          transcribe: vi.fn(async () => ({
+            ok: true as const,
+            provider: "openai-whisper",
+            text: "This episode is brought to you by Sauna Box. Use code HUBERMAN at saunabox.com.",
+            segments: [],
+            durationSeconds: 0,
+          })),
+        },
+        download: async () => ({
+          ok: true,
+          audio: { bytes, mimeType: "audio/mpeg", filename: "ep.mp3" },
+        }),
+      })
+    );
+    expect(zeroDuration.spentUsd).toBe(0.006);
+  });
+
+  it("stops starting spots once the time budget is used", async () => {
+    let now = 1_000;
+    const findEpisode = vi.fn(async () => ({
+      episodeIdentifier: "ep-1",
+      audioUrl: "https://cdn.example.com/ep.mp3",
+      durationSeconds: 600,
+      source: "rss" as const,
+      note: null,
+    }));
+    const report = await runAutomatedAirchecks(
+      deps({
+        clock: () => now,
         loadSpots: async () => [spot({ ioLineItemId: "line-1" }), spot({ ioLineItemId: "line-2" })],
         findEpisode,
+        save: async () => {
+          now = 1_000 + 200_000;
+          return { id: "air-1" };
+        },
       })
     );
     expect(findEpisode).toHaveBeenCalledTimes(1);

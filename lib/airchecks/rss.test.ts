@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_ITEM_CHARS, MAX_RSS_ITEMS, parseRssItems } from "./rss";
+import { findRssEpisode, MAX_ITEM_CHARS, MAX_RSS_ITEMS, parseRssItems } from "./rss";
 
 describe("parseRssItems", () => {
   it("reads one item with an index scan", () => {
@@ -31,6 +31,22 @@ describe("parseRssItems", () => {
     expect(parsed).toHaveLength(MAX_RSS_ITEMS);
     expect(parsed[0]?.link).toBe("https://example.com/0");
     expect(parsed.some((item) => (item.link ?? "").startsWith("aaa"))).toBe(false);
+  });
+
+  it("reaches an in-window episode past the first page", () => {
+    const oldItems = Array.from({ length: MAX_RSS_ITEMS + 20 }, (_, index) => {
+      return `<item><link>https://example.com/old-${index}</link><enclosure url="https://cdn.example.com/old-${index}.mp3"/><pubDate>2020-01-01</pubDate></item>`;
+    }).join("");
+    const spot = `<item><guid>https://example.com/episodes/spot</guid><enclosure url="https://cdn.example.com/spot.mp3"/><pubDate>2026-11-03</pubDate></item>`;
+    const xml = `<rss><channel>${oldItems}${spot}</channel></rss>`;
+    expect(parseRssItems(xml).some((item) => item.enclosureUrl?.includes("spot.mp3"))).toBe(false);
+    expect(
+      findRssEpisode(xml, {
+        episodeUrl: "https://example.com/episodes/spot",
+        postDate: "2026-11-03",
+        window: { start: "2026-11-01", end: "2026-11-07" },
+      })?.enclosureUrl
+    ).toBe("https://cdn.example.com/spot.mp3");
   });
 
   it("returns nothing for a document over the size cap", () => {
