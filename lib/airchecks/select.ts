@@ -79,6 +79,7 @@ interface AircheckExisting {
   transcript_text: string | null;
   ready_for_review: boolean | null;
   match_result: string | null;
+  review_decision?: string | null;
 }
 
 function names(...values: Array<string | null | undefined>): string[] {
@@ -153,6 +154,9 @@ export function buildDueSpots(input: {
     if (!window) continue;
     const existing = airchecks.get(line.id);
     if (existing?.ready_for_review) continue;
+    if (existing?.review_decision === "confirmed" || existing?.review_decision === "rejected") {
+      continue;
+    }
     if (
       existing?.status === "transcribed" &&
       existing.transcript_text?.trim() &&
@@ -265,7 +269,7 @@ export async function loadDueSpots(now: Date): Promise<DueSpot[]> {
     "airchecks",
     "io_line_item_id",
     lines.map((line) => line.id),
-    "io_line_item_id, status, transcript_text, ready_for_review, match_result"
+    "io_line_item_id, status, transcript_text, ready_for_review, match_result, review_decision"
   );
 
   let libraryChannels: { show_id: string; channel_id: string }[] = [];

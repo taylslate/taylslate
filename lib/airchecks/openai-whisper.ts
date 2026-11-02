@@ -3,6 +3,7 @@
 // the environment. When it is unset the provider reports missing_api_key
 // and does not call the network.
 
+import { redactAircheckError } from "./redact";
 import { WHISPER_USD_PER_MINUTE } from "./cost";
 import type {
   TranscriptionAudio,
@@ -13,6 +14,7 @@ import type { AircheckSegment } from "./types";
 
 const ENDPOINT = "https://api.openai.com/v1/audio/transcriptions";
 const MODEL = "whisper-1";
+const WHISPER_TIMEOUT_MS = 120_000;
 
 interface WhisperSegment {
   start?: unknown;
@@ -27,7 +29,7 @@ interface WhisperBody {
 }
 
 function clip(message: string): string {
-  const trimmed = message.trim();
+  const trimmed = redactAircheckError(message).trim();
   if (trimmed.length <= 500) return trimmed;
   return trimmed.slice(0, 500);
 }
@@ -79,70 +81,80 @@ export function createOpenAiWhisperProvider(
       }
 
       const form = new FormData();
-      const bytes = new Uint8Array(audio.bytes);
       form.append(
         "file",
-        new Blob([bytes], { type: audio.mimeType || "audio/mpeg" }),
+        new Blob([audio.bytes as BlobPart], { type: audio.mimeType || "audio/mpeg" }),
         audio.filename || "episode.mp3"
       );
       form.append("model", MODEL);
       form.append("response_format", "verbose_json");
       form.append("timestamp_granularities[]", "segment");
 
-      let res: Response;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), WHISPER_TIMEOUT_MS);
       try {
-        res = await fetchImpl(ENDPOINT, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${key}` },
-          body: form,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "network error";
-        return { ok: false, reason: "http", message: clip(message) };
-      }
+        let res: Response;
+        try {
+          res = await fetchImpl(ENDPOINT, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${key}` },
+            body: form,
+            signal: controller.signal,
+          });
+        } catch (err) {
+          const message = controller.signal.aborted
+            ? "Whisper timed out"
+            : err instanceof Error
+              ? err.message
+              : "network error";
+          return { ok: false, reason: "http", message: clip(message) };
+        }
 
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        return {
-          ok: false,
-          reason: "http",
-          message: clip(`Whisper returned ${res.status} ${body}`),
-        };
-      }
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          return {
+            ok: false,
+            reason: "http",
+            message: clip(`Whisper returned ${res.status} ${body}`),
+          };
+        }
 
-      let json: WhisperBody;
-      try {
-        json = (await res.json()) as WhisperBody;
-      } catch {
-        return { ok: false, reason: "invalid", message: "Whisper returned invalid JSON" };
-      }
+        let json: WhisperBody;
+        try {
+          json = (await res.json()) as WhisperBody;
+        } catch {
+          return { ok: false, reason: "invalid", message: "Whisper returned invalid JSON" };
+        }
 
-      const text = typeof json.text === "string" ? json.text.trim() : "";
-      if (!text) {
-        return { ok: false, reason: "empty", message: "Whisper returned an empty transcript" };
-      }
+        const text = typeof json.text === "string" ? json.text.trim() : "";
+        if (!text) {
+          return { ok: false, reason: "empty", message: "Whisper returned an empty transcript" };
+        }
 
-      const duration =
-        typeof json.duration === "number" && Number.isFinite(json.duration)
-          ? json.duration
-          : 0;
-      const segments = asSegments(json.segments, duration).map((segment) =>
-        segment.text ? segment : { ...segment, text }
-      );
-      const durationSeconds =
-        duration > 0
-          ? duration
-          : segments.length > 0
-            ? segments[segments.length - 1].end_seconds
+        const duration =
+          typeof json.duration === "number" && Number.isFinite(json.duration)
+            ? json.duration
             : 0;
+        const segments = asSegments(json.segments, duration).map((segment) =>
+          segment.text ? segment : { ...segment, text }
+        );
+        const durationSeconds =
+          duration > 0
+            ? duration
+            : segments.length > 0
+              ? segments[segments.length - 1].end_seconds
+              : 0;
 
-      return {
-        ok: true,
-        provider: "openai-whisper",
-        text,
-        segments: segments.filter((segment) => segment.text.length > 0),
-        durationSeconds,
-      };
+        return {
+          ok: true,
+          provider: "openai-whisper",
+          text,
+          segments: segments.filter((segment) => segment.text.length > 0),
+          durationSeconds,
+        };
+      } finally {
+        clearTimeout(timer);
+      }
     },
   };
 }

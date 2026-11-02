@@ -8,11 +8,10 @@ import {
   getYouTubeClientSafe,
   type YouTubeClient,
 } from "@/lib/enrichment/youtube";
-import { safeFetch } from "@/lib/security/safe-fetch";
+import { fetchCapped, RSS_MAX_BYTES, DEFAULT_FETCH_TIMEOUT_MS } from "@/lib/security/safe-fetch";
 import { looksLikeAudioUrl, matchRssItem, parseRssItems, type RssItem } from "./rss";
 import { dayInWindow, utcDay, type AirWindow } from "./window";
 
-const MAX_RSS_CHARS = 5_000_000;
 
 export interface YoutubeSpotVideo {
   videoId: string;
@@ -113,14 +112,14 @@ function closestItem(items: RssItem[], postDate: string, window: AirWindow): Rss
 }
 
 async function fetchRss(rssUrl: string): Promise<{ xml: string | null; error: string | null }> {
-  const res = await safeFetch(rssUrl, {
-    headers: { Accept: "application/rss+xml, application/xml, text/xml, */*" },
-  });
-  if (!res) return { xml: null, error: "RSS fetch was blocked or failed" };
-  if (!res.ok) return { xml: null, error: `RSS fetch failed: ${res.status}` };
-  const xml = await res.text();
+  const body = await fetchCapped(
+    rssUrl,
+    { headers: { Accept: "application/rss+xml, application/xml, text/xml, */*" } },
+    { kind: "rss", maxBytes: RSS_MAX_BYTES, timeoutMs: DEFAULT_FETCH_TIMEOUT_MS }
+  );
+  if (!body.ok) return { xml: null, error: body.error };
+  const xml = new TextDecoder().decode(body.bytes);
   if (!xml.trim()) return { xml: null, error: "RSS feed was empty" };
-  if (xml.length > MAX_RSS_CHARS) return { xml: null, error: "RSS feed exceeded 5MB" };
   return { xml, error: null };
 }
 

@@ -93,6 +93,24 @@ describe("buildDueSpots", () => {
     expect(spots.map((spot) => spot.ioLineItemId)).toEqual(["line-1"]);
   });
 
+  it("skips a line a person already confirmed or rejected", () => {
+    const spots = buildDueSpots({
+      ...base,
+      lines: [line({ id: "line-confirmed" }), line()],
+      airchecks: [
+        {
+          io_line_item_id: "line-confirmed",
+          status: "failed",
+          transcript_text: null,
+          ready_for_review: false,
+          match_result: null,
+          review_decision: "confirmed",
+        },
+      ],
+    });
+    expect(spots.map((spot) => spot.ioLineItemId)).toEqual(["line-1"]);
+  });
+
   it("uses the library channel for a youtube spot and ignores a show with no line", () => {
     const spots = buildDueSpots({
       ...base,

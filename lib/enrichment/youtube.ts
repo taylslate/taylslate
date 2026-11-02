@@ -359,7 +359,7 @@ export class YouTubeClient {
   private async request<T>(
     path: string,
     params: Record<string, string | number | boolean>,
-    timeoutMs?: number
+    timeoutMs: number = YOUTUBE_CALL_TIMEOUT_MS
   ): Promise<T> {
     const url = new URL(`${YOUTUBE_API_BASE}${path}`);
     url.searchParams.set("key", this.apiKey);

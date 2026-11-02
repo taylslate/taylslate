@@ -102,6 +102,8 @@ export interface AircheckWrite {
   provider: string | null;
   status: AircheckStatus;
   error: string | null;
+  /** Cleared when a retry stores status failed. The check forbids true unless transcribed. */
+  ready_for_review?: boolean;
 }
 
 /**

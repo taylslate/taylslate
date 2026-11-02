@@ -1,6 +1,7 @@
-import { access } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { splitMp3, withEpisodeFile } from "./audio";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { splitMp3 } from "./audio";
 
 function mp3Frame(): Uint8Array {
   const frame = new Uint8Array(417);
@@ -22,12 +23,10 @@ describe("episode audio", () => {
     expect(chunks?.every((chunk) => chunk.byteLength <= 417)).toBe(true);
   });
 
-  it("deletes the audio file after the work finishes", async () => {
-    let seen = "";
-    await withEpisodeFile(new Uint8Array([1, 2, 3]), "episode.mp3", async (filePath) => {
-      seen = filePath;
-      await access(filePath);
-    });
-    await expect(access(seen)).rejects.toThrow();
+  it("does not write the audio to a temp file", () => {
+    const src = readFileSync(join(process.cwd(), "lib/airchecks/audio.ts"), "utf8");
+    expect(src).not.toMatch(/mkdtemp|writeFile|tmpdir/);
+    const whisper = readFileSync(join(process.cwd(), "lib/airchecks/openai-whisper.ts"), "utf8");
+    expect(whisper).not.toMatch(/new Uint8Array\(audio\.bytes\)/);
   });
 });

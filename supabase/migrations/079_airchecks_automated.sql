@@ -12,10 +12,10 @@
 -- on the existing review screen before any charge. This file does
 -- not mark a line delivered and does not create a payment.
 --
--- Brands and shows can read airchecks for their own deals.
--- The policy compares auth.uid() and auth_login_email() from migration
--- 077. Writes stay on service_role.
--- 077 is already applied. This file does not recreate that function.
+-- Reads and writes stay on service_role. authenticated and anon have
+-- no grant and no policy. The app reads airchecks through the service
+-- role after its own session check. A Data API select would expose
+-- decided_by, errors, audio_url, and the transcript.
 --
 -- Idempotent. Safe to re-run. No backfill.
 --
@@ -31,12 +31,12 @@
 --   select polname from pg_policy
 --    where polrelid = 'public.airchecks'::regclass
 --    order by polname;
---   Expected policy: Brand or show reads own deal airchecks.
+--   Expected: no brand or show policy.
 --   select privilege_type, grantee from information_schema.role_table_grants
 --    where table_schema = 'public' and table_name = 'airchecks'
 --    order by grantee, privilege_type;
---   Expected: authenticated has select. service_role has select,
---   insert, update, delete. anon has none.
+--   Expected: service_role has select, insert, update, delete.
+--   authenticated and anon have none.
 -- ============================================================
 
 alter table public.airchecks
@@ -126,60 +126,12 @@ comment on column public.airchecks.ad_end_seconds is
 comment on column public.airchecks.match_reasons is
   'JSON array of sentences explaining the match judgment.';
 
--- Data API grants. authenticated may read. Writes stay on service_role.
+-- Data API grants. service_role only. No authenticated select.
 revoke all on table public.airchecks from public;
 revoke all on table public.airchecks from anon;
 revoke all on table public.airchecks from authenticated;
 grant select, insert, update, delete on table public.airchecks to service_role;
-grant select on table public.airchecks to authenticated;
-revoke insert, update, delete, truncate, references, trigger
-  on table public.airchecks from authenticated;
 
 alter table public.airchecks enable row level security;
 
 drop policy if exists "Brand or show reads own deal airchecks" on public.airchecks;
-create policy "Brand or show reads own deal airchecks"
-  on public.airchecks
-  for select
-  to authenticated
-  using (
-    exists (
-      select 1
-      from public.io_line_items li
-      join public.insertion_orders io on io.id = li.io_id
-      join public.deals d on d.id = io.deal_id
-      where li.id = airchecks.io_line_item_id
-        and (
-          d.brand_id = (select auth.uid())
-          or d.agency_id = (select auth.uid())
-          or exists (
-            select 1
-            from public.brand_profiles bp
-            where bp.id = d.brand_profile_id
-              and bp.user_id = (select auth.uid())
-          )
-          or exists (
-            select 1
-            from public.show_profiles sp
-            where sp.id = d.show_profile_id
-              and sp.user_id = (select auth.uid())
-          )
-          or (
-            exists (
-              select 1
-              from public.shows s
-              where s.id = d.show_id
-                and 'show_owner' = any (s.data_sources)
-                and s.contact_email is not null
-                and (select public.auth_login_email()) is not null
-                and lower(btrim(s.contact_email)) = (select public.auth_login_email())
-            )
-            and exists (
-              select 1
-              from public.show_profiles owner_profile
-              where owner_profile.user_id = (select auth.uid())
-            )
-          )
-        )
-    )
-  );

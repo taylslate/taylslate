@@ -1,15 +1,11 @@
-// Download one episode file, split it when Whisper's upload limit
-// requires it, and delete the temp file when the caller is done.
-// The publisher URL is not an audio file we keep.
+// Download one episode file and split it when Whisper's upload limit
+// requires it. The bytes stay in memory. The publisher URL is not stored
+// as a file.
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { safeFetch } from "@/lib/security/safe-fetch";
+import { AUDIO_FETCH_TIMEOUT_MS, AUDIO_MAX_BYTES, fetchCapped } from "@/lib/security/safe-fetch";
 
 /** Stay under the 25MB Whisper upload limit. */
 export const WHISPER_MAX_BYTES = 24 * 1024 * 1024;
-const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024;
 
 const BITRATE_MPEG1_L3 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
 const BITRATE_MPEG2_L3 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
@@ -33,22 +29,19 @@ export function audioFilename(audioUrl: string): string {
 export async function downloadEpisodeAudio(
   audioUrl: string
 ): Promise<{ ok: true; audio: DownloadedAudio } | { ok: false; error: string }> {
-  const res = await safeFetch(audioUrl);
-  if (!res) return { ok: false, error: "Episode audio download was blocked or failed" };
-  if (!res.ok) return { ok: false, error: `Episode audio download failed: ${res.status}` };
-  const declared = Number(res.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_DOWNLOAD_BYTES) {
-    return { ok: false, error: "Episode audio is larger than 200MB" };
-  }
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  if (bytes.byteLength === 0) return { ok: false, error: "Episode audio download was empty" };
-  if (bytes.byteLength > MAX_DOWNLOAD_BYTES) {
-    return { ok: false, error: "Episode audio is larger than 200MB" };
-  }
-  const mime = res.headers.get("content-type")?.split(";")[0]?.trim() || "audio/mpeg";
+  const body = await fetchCapped(audioUrl, {}, {
+    kind: "audio",
+    maxBytes: AUDIO_MAX_BYTES,
+    timeoutMs: AUDIO_FETCH_TIMEOUT_MS,
+  });
+  if (!body.ok) return { ok: false, error: body.error };
   return {
     ok: true,
-    audio: { bytes, mimeType: mime, filename: audioFilename(audioUrl) },
+    audio: {
+      bytes: body.bytes,
+      mimeType: body.contentType || "audio/mpeg",
+      filename: audioFilename(audioUrl),
+    },
   };
 }
 
@@ -139,28 +132,4 @@ export function splitAudioForWhisper(
 ): Uint8Array[] | null {
   if (bytes.byteLength <= maxBytes) return [bytes];
   return splitMp3(bytes, maxBytes);
-}
-
-/**
- * Write the audio, run the work, then delete the file and its directory.
- * The deletion runs when the work resolves and when it throws.
- */
-export async function withEpisodeFile<T>(
-  bytes: Uint8Array,
-  filename: string,
-  work: (filePath: string) => Promise<T>
-): Promise<T> {
-  const dir = await mkdtemp(join(tmpdir(), "aircheck-"));
-  const safe = filename.replace(/[^a-z0-9._-]/gi, "_").slice(0, 120) || "episode.mp3";
-  const filePath = join(dir, safe);
-  try {
-    await writeFile(filePath, bytes);
-    return await work(filePath);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
-
-export async function readEpisodeFile(filePath: string): Promise<Uint8Array> {
-  return new Uint8Array(await readFile(filePath));
 }

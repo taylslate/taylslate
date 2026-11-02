@@ -16,7 +16,7 @@ Cost. whisper-1 is priced at $0.006 per minute in `WHISPER_USD_PER_MINUTE`. A 30
 
 Part 2. The read is located from the brand name, `deals.promo_code`, the brand URL, and bullet lines in the outreach pitch. The IO has no talking-points column. The judgment checks placement (pre-roll, mid-roll, post-roll, by where the read starts in the episode) and approximate length (about 30s pre-roll, 60s mid-roll, 30s post-roll, counted when the measured span is between half and double that). Confidence is 0 to 1: brand 0.40, code or URL 0.30, placement 0.15, length 0.10, talking points 0.05. `ready_for_review` is set for `matched` and `not_matched`. A skipped row stays false. `review_decision` is not set. `io_line_items.verified` is not set. No payment row is written. The make-good hook is not called from this cron.
 
-Migration 079 adds the columns, the checks, and the read policy. It is in the repo and is not applied. Brands and shows receive `SELECT` only. `service_role` keeps writes. `anon` has nothing. The policy matches `deals.brand_id`, `deals.agency_id`, `brand_profiles.user_id`, or `show_profiles.user_id` to `auth.uid()`. A show owner matches `shows.contact_email` to `auth_login_email()` from migration 077, with `show_owner` in `data_sources` and a `show_profiles` row for that uid. The policy does not read `profiles.email`.
+Migration 079 adds the columns and the checks. It is in the repo and is not applied. `service_role` is the only grant. `authenticated` and `anon` have no select and no policy, so `decided_by`, errors, `audio_url`, and the transcript are not on the Data API. Every reader uses the service role. RSS and enclosure fetches resolve the host once, connect to that address, stream the body, and abort at 5MB (RSS) or 200MB (audio). Whisper and YouTube calls use an AbortSignal. The cost cap is checked again before each Whisper chunk, the estimate is the larger of the feed duration and the file-size guess, and money already spent is counted when a later save fails. New spots stop at 200 seconds.
 
 Cron: `GET /api/cron/airchecks` at 20:00 UTC. Bearer `CRON_SECRET`. A missing secret is 401. `maxDuration` is 300. `vercel.json` regions stay `pdx1`. `/api/cron/*` was already public in `proxy.ts`.
 
@@ -35,9 +35,9 @@ Cron: `GET /api/cron/airchecks` at 20:00 UTC. Bearer `CRON_SECRET`. A missing se
 
 ### Tests
 
-`npx vitest run`: 314 files, 2711 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 140 pages.
+`npx vitest run`: 315 files, 2737 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 140 pages.
 
-Covers the Whisper skip when the key is missing, the $0.006 rate, the $1 default cap, RSS selection of one enclosure, one YouTube channel with no catalog search, temp-file deletion, confidence and timestamps, RLS for the brand, the agency, the show profile, and the auth login email, a copied `profiles.email` that does not grant the row, anon and authenticated write denial, the ready-for-review check, the cron bearer, and the absence of the charge path.
+Covers private and NAT64 addresses, a pinned DNS answer, capped response bodies, the RSS item cap, the Whisper chunk cap, spend kept when a save fails, the 200 second stop, no authenticated select on airchecks, and the cron bearer comparison.
 
 No page or component was edited. Screenshots are not applicable.
 

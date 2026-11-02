@@ -12,6 +12,13 @@ export interface RssItem {
 
 const AUDIO_EXT = /\.(mp3|m4a|mp4|m4v|wav|aac|ogg|oga|opus|flac)(?:$|[?#])/i;
 
+/** Stop parsing a feed that is larger than the download cap. */
+export const MAX_RSS_CHARS = 5_000_000;
+/** One show feed. A catalog-sized document is not parsed. */
+export const MAX_RSS_ITEMS = 200;
+/** An item larger than this is skipped instead of scanned. */
+export const MAX_ITEM_CHARS = 100_000;
+
 export function looksLikeAudioUrl(value: string): boolean {
   try {
     return AUDIO_EXT.test(new URL(value).pathname);
@@ -49,31 +56,83 @@ export function parseItunesDuration(raw: string | null): number | null {
   return Math.round(parts[0] * 3600 + parts[1] * 60 + parts[2]);
 }
 
+function startsTag(block: string, index: number, tag: string): boolean {
+  const next = block[index + tag.length + 1];
+  return next === ">" || next === " " || next === "/" || next === "\t" || next === "\n" || next === "\r";
+}
+
 function tagText(block: string, tag: string): string | null {
-  const re = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, "i");
-  const match = block.match(re);
-  if (!match) return null;
-  const text = decodeXml(match[1]);
-  return text || null;
+  const lower = block.toLowerCase();
+  const open = `<${tag.toLowerCase()}`;
+  const close = `</${tag.toLowerCase()}>`;
+  let from = 0;
+  while (from < lower.length) {
+    const start = lower.indexOf(open, from);
+    if (start < 0) return null;
+    if (!startsTag(block, start, tag)) {
+      from = start + open.length;
+      continue;
+    }
+    const gt = block.indexOf(">", start);
+    if (gt < 0) return null;
+    const end = lower.indexOf(close, gt + 1);
+    if (end < 0) return null;
+    const text = decodeXml(block.slice(gt + 1, end));
+    return text || null;
+  }
+  return null;
 }
 
 function attr(block: string, tag: string, name: string): string | null {
-  const re = new RegExp(
-    `<${tag}\\b[^>]*\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`,
-    "i"
-  );
-  const match = block.match(re);
-  if (!match) return null;
-  const value = decodeXml(match[1] ?? match[2] ?? "");
-  return value || null;
+  const lower = block.toLowerCase();
+  const open = `<${tag.toLowerCase()}`;
+  const key = `${name.toLowerCase()}=`;
+  let from = 0;
+  while (from < lower.length) {
+    const start = lower.indexOf(open, from);
+    if (start < 0) return null;
+    if (!startsTag(block, start, tag)) {
+      from = start + open.length;
+      continue;
+    }
+    const gt = block.indexOf(">", start);
+    if (gt < 0) return null;
+    const head = block.slice(start, gt);
+    const at = head.toLowerCase().indexOf(key);
+    if (at >= 0) {
+      const quote = head[at + key.length];
+      if (quote === '"' || quote === "'") {
+        const end = head.indexOf(quote, at + key.length + 1);
+        if (end > at) {
+          const value = decodeXml(head.slice(at + key.length + 1, end));
+          return value || null;
+        }
+      }
+    }
+    from = gt + 1;
+  }
+  return null;
 }
 
 export function parseRssItems(xml: string): RssItem[] {
+  if (xml.length > MAX_RSS_CHARS) return [];
   const items: RssItem[] = [];
-  const itemRe = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = itemRe.exec(xml))) {
-    const block = match[1];
+  const lower = xml.toLowerCase();
+  let from = 0;
+  while (items.length < MAX_RSS_ITEMS) {
+    const start = lower.indexOf("<item", from);
+    if (start < 0) break;
+    if (!startsTag(xml, start, "item")) {
+      from = start + 5;
+      continue;
+    }
+    const gt = xml.indexOf(">", start);
+    if (gt < 0) break;
+    const end = lower.indexOf("</item>", gt);
+    if (end < 0) break;
+    const block = xml.slice(gt + 1, end);
+    from = end + "</item>".length;
+    if (block.length > MAX_ITEM_CHARS) continue;
     items.push({
       link: tagText(block, "link") ?? attr(block, "link", "href"),
       guid: tagText(block, "guid"),

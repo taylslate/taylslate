@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { AircheckPersist } from "./persist";
 import { runAutomatedAirchecks, type AircheckRunDeps } from "./run";
+import { splitAudioForWhisper } from "./audio";
 import type { DueSpot } from "./select";
 import type { TranscriptProvider } from "./provider";
 
@@ -76,6 +77,9 @@ function deps(partial: Partial<AircheckRunDeps>): AircheckRunDeps {
     save: async (row) => ({ id: `air-${row.io_line_item_id}` }),
     record: async () => null,
     log: () => undefined,
+    splitAudio: splitAudioForWhisper,
+    clock: () => Date.now(),
+    timeBudgetMs: 200_000,
     ...partial,
   };
 }
@@ -205,6 +209,117 @@ describe("runAutomatedAirchecks", () => {
     expect(saved[0].status).toBe("failed");
     expect(saved[0].ready_for_review).toBe(false);
     expect(saved[0].error).toContain("does not return an audio file");
+  });
+
+  it("stops between Whisper chunks when the cap is already spent", async () => {
+    const transcribe = vi.fn(async () => ({
+      ok: true as const,
+      provider: "openai-whisper",
+      text: "This episode is brought to you by Sauna Box. Use code HUBERMAN.",
+      segments: [
+        {
+          start_seconds: 0,
+          end_seconds: 30,
+          text: "This episode is brought to you by Sauna Box. Use code HUBERMAN.",
+        },
+      ],
+      durationSeconds: 600,
+    }));
+    const report = await runAutomatedAirchecks(
+      deps({
+        capUsd: 0.06,
+        provider: { ...provider(600), transcribe },
+        splitAudio: () => [new Uint8Array([1]), new Uint8Array([2])],
+      })
+    );
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(report.stopped).toBe("cost_cap");
+    expect(report.spentUsd).toBe(0.06);
+  });
+
+  it("estimates cost from the larger of the feed duration and the file size", async () => {
+    const transcribe = vi.fn();
+    const report = await runAutomatedAirchecks(
+      deps({
+        capUsd: 0.01,
+        provider: { ...provider(30), transcribe },
+        findEpisode: async () => ({
+          episodeIdentifier: "ep-1",
+          audioUrl: "https://cdn.example.com/ep.mp3",
+          durationSeconds: 30,
+          source: "rss",
+          note: null,
+        }),
+        download: async () => ({
+          ok: true,
+          audio: {
+            bytes: new Uint8Array(3_200_000),
+            mimeType: "audio/mpeg",
+            filename: "ep.mp3",
+          },
+        }),
+      })
+    );
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(report.stopped).toBe("cost_cap");
+    expect(report.spentUsd).toBe(0);
+  });
+
+  it("counts Whisper spend when the save fails after transcription", async () => {
+    const report = await runAutomatedAirchecks(
+      deps({
+        save: async () => {
+          throw new Error("save failed sk-supersecretkey");
+        },
+        log: () => undefined,
+      })
+    );
+    expect(report.failed).toBe(1);
+    expect(report.spentUsd).toBe(0.06);
+  });
+
+  it("stops starting spots once the time budget is used", async () => {
+    let now = 1_000;
+    const findEpisode = vi.fn(async () => {
+      now = 1_000 + 200_000;
+      return {
+        episodeIdentifier: "ep-1",
+        audioUrl: "https://cdn.example.com/ep.mp3",
+        durationSeconds: 600,
+        source: "rss" as const,
+        note: null,
+      };
+    });
+    const report = await runAutomatedAirchecks(
+      deps({
+        clock: () => now,
+        loadSpots: async () => [spot({ ioLineItemId: "line-1" }), spot({ ioLineItemId: "line-2" })],
+        findEpisode,
+      })
+    );
+    expect(findEpisode).toHaveBeenCalledTimes(1);
+    expect(report.stopped).toBe("time");
+    expect(report.considered).toBe(1);
+  });
+
+  it("redacts secrets from a stored failure", async () => {
+    const saved: AircheckPersist[] = [];
+    const lines: string[] = [];
+    await runAutomatedAirchecks(
+      deps({
+        findEpisode: async () => {
+          throw new Error("download failed sk-supersecretkey bearer sk-supersecretkey");
+        },
+        save: async (row) => {
+          saved.push(row);
+          return { id: "air-fail" };
+        },
+        log: (line) => lines.push(line),
+      })
+    );
+    expect(saved[0].error).not.toContain("sk-supersecretkey");
+    expect(saved[0].error).toContain("sk-[redacted]");
+    expect(lines.join(" ")).not.toContain("sk-supersecretkey");
   });
 
   it("does not import the charge path", () => {

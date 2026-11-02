@@ -178,38 +178,22 @@ describe("migration 079", () => {
     }
   }
 
-  it("is written and not applied, and does not read profiles.email", () => {
+  it("is written and not applied, and does not grant authenticated select", () => {
     expect(sql).toMatch(/NOT applied/);
     expect(sql).toMatch(/after merge and Chris's OK/);
     expect(sql).not.toMatch(/profiles\.email/);
-    expect(sql).toMatch(/auth\.uid\(\)/);
-    expect(sql).toMatch(/auth_login_email\(\)/);
+    expect(sql).not.toMatch(/grant select on table public\.airchecks to authenticated/i);
+    expect(sql).not.toMatch(/create policy/i);
+    expect(sql).toMatch(/drop policy if exists "Brand or show reads own deal airchecks"/);
+    expect(sql).toMatch(/grant select, insert, update, delete on table public\.airchecks to service_role/i);
     expect(sql).not.toContain("\u2014");
   });
 
-  it("lets the brand, the agency, and the show read their deal and hides the other brand", async () => {
-    const brand = await asRole("authenticated", BRAND);
-    expect(brand.map((row) => row.id)).toEqual([LINE]);
-
-    const agency = await asRole("authenticated", AGENCY);
-    expect(agency.map((row) => row.id)).toEqual([LINE]);
-
-    const show = await asRole("authenticated", SHOW_USER);
-    expect(show.map((row) => row.id)).toEqual([LINE]);
-
-    const other = await asRole("authenticated", OTHER);
-    expect(other).toEqual([]);
-  });
-
-  it("lets the show owner in through the auth login and ignores profiles.email", async () => {
-    const owner = await asRole("authenticated", OWNER);
-    expect(owner.map((row) => row.id)).toEqual([OWNER_LINE]);
-
-    const attacker = await asRole("authenticated", ATTACKER);
-    expect(attacker).toEqual([]);
-  });
-
-  it("blocks anon reads and authenticated writes, and lets service_role read", async () => {
+  it("blocks authenticated reads of transcripts and lets service_role read", async () => {
+    await expect(asRole("authenticated", BRAND)).rejects.toThrow();
+    await expect(asRole("authenticated", SHOW_USER)).rejects.toThrow();
+    await expect(asRole("authenticated", OWNER)).rejects.toThrow();
+    await expect(asRole("authenticated", ATTACKER)).rejects.toThrow();
     await expect(db.exec("set role anon; select 1 from public.airchecks")).rejects.toThrow();
     await db.exec("reset role");
 

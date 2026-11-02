@@ -6,10 +6,10 @@
 
 import { logEvent as writeEvent } from "@/lib/data/events";
 import type { LogEventInput } from "@/lib/data/events";
+import { redactAircheckError } from "./redact";
 import {
   downloadEpisodeAudio,
   splitAudioForWhisper,
-  withEpisodeFile,
   type DownloadedAudio,
 } from "./audio";
 import {
@@ -30,10 +30,12 @@ import { aircheckColumnsReady, loadDueSpots, type DueSpot } from "./select";
 import type { AircheckSegment } from "./types";
 
 const MAX_ERROR = 2000;
+/** Stop starting new spots well inside the 300s function limit. */
+export const AIRCHECK_RUN_BUDGET_MS = 200_000;
 
 export interface AircheckRunReport {
   skipped: "missing_openai_api_key" | "migration_079" | null;
-  stopped: "cost_cap" | null;
+  stopped: "cost_cap" | "time" | null;
   capUsd: number;
   spentUsd: number;
   considered: number;
@@ -54,10 +56,13 @@ export interface AircheckRunDeps {
   save: (row: AircheckPersist) => Promise<{ id: string }>;
   record: (input: LogEventInput) => Promise<unknown>;
   log: (line: string) => void;
+  splitAudio: (bytes: Uint8Array) => Uint8Array[] | null;
+  clock: () => number;
+  timeBudgetMs: number;
 }
 
 function clip(message: string): string {
-  const trimmed = message.trim();
+  const trimmed = redactAircheckError(message).trim();
   if (trimmed.length <= MAX_ERROR) return trimmed;
   return trimmed.slice(0, MAX_ERROR);
 }
@@ -111,20 +116,26 @@ export function defaultAircheckDeps(now = new Date()): AircheckRunDeps {
     save: saveAircheckRun,
     record: writeEvent,
     log: (line) => console.info(line),
+    splitAudio: splitAudioForWhisper,
+    clock: () => Date.now(),
+    timeBudgetMs: AIRCHECK_RUN_BUDGET_MS,
   };
 }
 
 async function transcribeFile(
   provider: TranscriptProvider,
-  audio: DownloadedAudio
+  audio: DownloadedAudio,
+  budget: { spent: number; cap: number; add: (usd: number) => void },
+  splitAudio: (bytes: Uint8Array) => Uint8Array[] | null
 ): Promise<
   | { ok: true; text: string; segments: AircheckSegment[]; durationSeconds: number }
-  | { ok: false; message: string }
+  | { ok: false; message: string; capped: boolean }
 > {
-  const pieces = splitAudioForWhisper(audio.bytes);
+  const pieces = splitAudio(audio.bytes);
   if (!pieces) {
     return {
       ok: false,
+      capped: false,
       message: "Episode audio is over 24MB and is not an mp3 this runner can split for Whisper",
     };
   }
@@ -132,12 +143,21 @@ async function transcribeFile(
   const segments: AircheckSegment[] = [];
   let durationSeconds = 0;
   for (const piece of pieces) {
+    const pieceEstimate = estimateWhisperCostUsd(estimateSecondsFromBytes(piece.byteLength));
+    if (budget.spent >= budget.cap || budget.spent + pieceEstimate > budget.cap) {
+      return {
+        ok: false,
+        capped: true,
+        message: "Aircheck run cost cap reached before the next Whisper chunk",
+      };
+    }
     const result = await provider.transcribe({
       bytes: piece,
       filename: audio.filename,
       mimeType: audio.mimeType,
     });
-    if (!result.ok) return { ok: false, message: result.message };
+    if (!result.ok) return { ok: false, capped: false, message: result.message };
+    budget.add(estimateWhisperCostUsd(result.durationSeconds));
     const offset = durationSeconds;
     texts.push(result.text);
     for (const segment of result.segments) {
@@ -150,7 +170,7 @@ async function transcribeFile(
     durationSeconds += result.durationSeconds > 0 ? result.durationSeconds : 0;
   }
   const text = texts.join(" ").trim();
-  if (!text) return { ok: false, message: "Whisper returned an empty transcript" };
+  if (!text) return { ok: false, capped: false, message: "Whisper returned an empty transcript" };
   return { ok: true, text, segments, durationSeconds };
 }
 
@@ -188,24 +208,33 @@ export async function runAutomatedAirchecks(
 
   const spots = await deps.loadSpots(deps.now);
   let spent = 0;
+  const started = deps.clock();
 
   for (const spot of spots) {
+    if (deps.clock() - started >= deps.timeBudgetMs) {
+      report.stopped = "time";
+      deps.log("[aircheck] stopped time budget");
+      break;
+    }
     report.considered += 1;
+    const tally = { usd: 0 };
     try {
-      const outcome = await processSpot(spot, deps, spent);
+      const outcome = await processSpot(spot, deps, spent, tally);
+      spent = roundUsd(spent + tally.usd);
+      report.spentUsd = spent;
       if (outcome.stop) {
         report.stopped = "cost_cap";
-        report.considered -= 1;
+        if (tally.usd === 0) report.considered -= 1;
         deps.log(`[aircheck] stopped cost cap spent_usd=${spent.toFixed(4)}`);
         break;
       }
-      spent = roundUsd(spent + outcome.spentUsd);
-      report.spentUsd = spent;
       if (outcome.transcribed) report.transcribed += 1;
       if (outcome.readyForReview) report.readyForReview += 1;
       if (outcome.failed) report.failed += 1;
       if (outcome.youtubeWithoutAudio) report.youtubeWithoutAudio += 1;
     } catch (err) {
+      spent = roundUsd(spent + tally.usd);
+      report.spentUsd = spent;
       report.failed += 1;
       const message = err instanceof Error ? err.message : "Aircheck failed";
       deps.log(`[aircheck] line=${spot.ioLineItemId} failed ${clip(message)}`);
@@ -280,7 +309,8 @@ async function storeJudgment(
 async function processSpot(
   spot: DueSpot,
   deps: AircheckRunDeps,
-  spent: number
+  spent: number,
+  tally: { usd: number }
 ): Promise<SpotOutcome> {
   const none: SpotOutcome = {
     stop: false,
@@ -335,21 +365,32 @@ async function processSpot(
     return { ...none, failed: true };
   }
 
-  const estimateSeconds =
-    knownSeconds && knownSeconds > 0
-      ? knownSeconds
-      : estimateSecondsFromBytes(downloaded.audio.bytes.byteLength);
+  const fromFeed = knownSeconds && knownSeconds > 0 ? knownSeconds : 0;
+  const fromSize = estimateSecondsFromBytes(downloaded.audio.bytes.byteLength);
+  const estimateSeconds = Math.max(fromFeed, fromSize);
   const estimate = estimateWhisperCostUsd(estimateSeconds);
   if (spent + estimate > deps.capUsd) return { ...none, stop: true };
 
-  const transcribed = await withEpisodeFile(
-    downloaded.audio.bytes,
-    downloaded.audio.filename,
-    async () => transcribeFile(deps.provider, downloaded.audio)
+  const budget = {
+    get spent() {
+      return spent + tally.usd;
+    },
+    cap: deps.capUsd,
+    add(usd: number) {
+      tally.usd = roundUsd(tally.usd + usd);
+    },
+  };
+  const transcribed = await transcribeFile(
+    deps.provider,
+    downloaded.audio,
+    budget,
+    deps.splitAudio
   );
   if (!transcribed.ok) {
-    await deps.save(failureRow(spot, transcribed.message, found));
-    return { ...none, failed: true };
+    if (tally.usd > 0 || !transcribed.capped) {
+      await deps.save(failureRow(spot, transcribed.message, found));
+    }
+    return { ...none, failed: tally.usd > 0 || !transcribed.capped, stop: transcribed.capped };
   }
 
   const minutes = roundMinutes(transcribed.durationSeconds);

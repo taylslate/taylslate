@@ -8,6 +8,7 @@
 // Auth: Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`.
 // A missing secret, or a request without that bearer token, is 401.
 
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { runAutomatedAirchecks } from "@/lib/airchecks/run";
 import { redactSecretParams } from "@/lib/discovery/redact-secrets";
@@ -17,7 +18,12 @@ export const maxDuration = 300;
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
+  const header = req.headers.get("authorization") ?? "";
+  const expected = `Bearer ${secret}`;
+  const left = Buffer.from(header);
+  const right = Buffer.from(expected);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }
 
 function safeError(err: unknown): string {

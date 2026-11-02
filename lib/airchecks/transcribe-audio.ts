@@ -7,9 +7,7 @@
 // multipart field "file". The response is JSON { text } or { transcript },
 // or text/plain.
 
-import { safeFetch } from "@/lib/security/safe-fetch";
-
-const MAX_AUDIO_BYTES = 200 * 1024 * 1024;
+import { AUDIO_FETCH_TIMEOUT_MS, AUDIO_MAX_BYTES, fetchCapped } from "@/lib/security/safe-fetch";
 
 export function activeTranscriptionProvider(): string | null {
   const raw = (process.env.AIRCHECK_TRANSCRIPTION_PROVIDER ?? "").trim();
@@ -37,25 +35,16 @@ export async function transcribeWithProvider(
     );
   }
 
-  const audioRes = await safeFetch(audioUrl);
-  if (!audioRes) throw new Error("Episode audio download was blocked or failed");
-  if (!audioRes.ok) {
-    throw new Error(`Episode audio download failed: ${audioRes.status}`);
-  }
-  const declared = Number(audioRes.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_AUDIO_BYTES) {
-    throw new Error("Episode audio is larger than 200MB");
-  }
-  const bytes = await audioRes.arrayBuffer();
-  if (bytes.byteLength === 0) throw new Error("Episode audio download was empty");
-  if (bytes.byteLength > MAX_AUDIO_BYTES) {
-    throw new Error("Episode audio is larger than 200MB");
-  }
+  const audio = await fetchCapped(audioUrl, {}, {
+    kind: "audio",
+    maxBytes: AUDIO_MAX_BYTES,
+    timeoutMs: AUDIO_FETCH_TIMEOUT_MS,
+  });
+  if (!audio.ok) throw new Error(audio.error);
 
   const form = new FormData();
-  const type =
-    audioRes.headers.get("content-type")?.split(";")[0]?.trim() || "audio/mpeg";
-  form.append("file", new Blob([bytes], { type }), audioFilename(audioUrl));
+  const type = audio.contentType || "audio/mpeg";
+  form.append("file", new Blob([audio.bytes as BlobPart], { type }), audioFilename(audioUrl));
 
   const headers: Record<string, string> = { Accept: "application/json, text/plain" };
   const key = process.env.AIRCHECK_TRANSCRIPTION_API_KEY?.trim();

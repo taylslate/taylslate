@@ -4,7 +4,8 @@ const { mockLookup } = vi.hoisted(() => ({ mockLookup: vi.fn() }));
 
 vi.mock("node:dns/promises", () => ({ lookup: mockLookup }));
 
-import { isPrivateAddress, isUrlSafe, safeFetch } from "./safe-fetch";
+import { readBodyCapped, contentTypeAllowed, safeFetch } from "./safe-fetch";
+import { isPrivateAddress, isUrlSafe } from "./safe-fetch";
 
 const PUBLIC_DNS = [{ address: "93.184.216.34", family: 4 }];
 
@@ -41,14 +42,39 @@ describe("isPrivateAddress", () => {
     expect(isPrivateAddress(ip)).toBe(true);
   });
 
-  it.each(["8.8.8.8", "52.1.2.3", "172.15.0.1", "172.32.0.1", "1.1.1.1"])(
+  it.each([
+    "100.64.0.1",
+    "100.127.255.255",
+    "198.18.0.1",
+    "198.19.255.255",
+    "224.0.0.1",
+    "239.255.255.255",
+  ])("blocks non-routable IPv4 %s", (ip) => {
+    expect(isPrivateAddress(ip)).toBe(true);
+  });
+
+  it.each(["8.8.8.8", "52.1.2.3", "172.15.0.1", "172.32.0.1", "1.1.1.1", "100.63.255.255", "100.128.0.1", "223.255.255.255"])(
     "allows public IPv4 %s",
     (ip) => {
       expect(isPrivateAddress(ip)).toBe(false);
     }
   );
 
-  it.each(["::1", "::", "fc00::1", "fd12:3456::1", "fe80::1", "::ffff:10.0.0.1", "::ffff:192.168.1.1"])(
+  it.each([
+    "::1",
+    "::",
+    "fc00::1",
+    "fd12:3456::1",
+    "fe80::1",
+    "::ffff:10.0.0.1",
+    "::ffff:192.168.1.1",
+    "::ffff:a9fe:a9fe",
+    "::127.0.0.1",
+    "::7f00:1",
+    "64:ff9b::",
+    "64:ff9b::8.8.8.8",
+    "64:ff9b::a9fe:a9fe",
+  ])(
     "blocks private IPv6 %s",
     (ip) => {
       expect(isPrivateAddress(ip)).toBe(true);
@@ -77,6 +103,15 @@ describe("isUrlSafe", () => {
   it("rejects literal private IPs without a DNS lookup", async () => {
     expect(await isUrlSafe(new URL("http://10.0.0.5/admin"))).toBe(false);
     expect(await isUrlSafe(new URL("http://[::1]/"))).toBe(false);
+    expect(await isUrlSafe(new URL("http://[::ffff:a9fe:a9fe]/"))).toBe(false);
+    expect(await isUrlSafe(new URL("http://[::127.0.0.1]/"))).toBe(false);
+    expect(await isUrlSafe(new URL("http://[64:ff9b::a9fe:a9fe]/"))).toBe(false);
+    expect(await isUrlSafe(new URL("http://100.64.1.1/"))).toBe(false);
+    expect(await isUrlSafe(new URL("http://198.18.0.1/"))).toBe(false);
+    expect(await isUrlSafe(new URL("http://224.0.0.1/"))).toBe(false);
+    expect(await isUrlSafe(new URL("http://metadata.google.internal/computeMetadata/v1/"))).toBe(
+      false
+    );
     expect(mockLookup).not.toHaveBeenCalled();
   });
 
@@ -139,6 +174,49 @@ describe("safeFetch", () => {
     expect(await safeFetch("https://example.com")).toBe(final);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchSpy.mock.calls[1][0]).toBe("https://example.com/home");
+    const init = fetchSpy.mock.calls[0][1] as { dispatcher?: { close: () => Promise<void> } };
+    expect(init.dispatcher).toBeTruthy();
+  });
+
+  it("pins the first resolved address and ignores a later DNS answer", async () => {
+    mockLookup
+      .mockResolvedValueOnce([{ address: "93.184.216.34", family: 4 }])
+      .mockResolvedValue([{ address: "169.254.169.254", family: 4 }]);
+    const fetchSpy = vi.fn().mockResolvedValue(okResponse());
+    vi.stubGlobal("fetch", fetchSpy);
+    expect(await safeFetch("https://example.com")).toBeTruthy();
+    const init = fetchSpy.mock.calls[0][1] as {
+      dispatcher?: {
+        pinnedLookup?: (
+          hostname: string,
+          options: unknown,
+          callback: (err: null, address: string, family: number) => void
+        ) => void;
+      };
+    };
+    const pinned = init.dispatcher?.pinnedLookup;
+    expect(pinned).toBeTypeOf("function");
+    await new Promise<void>((resolve) => {
+      pinned?.("169.254.169.254.example", {}, (err, address, family) => {
+        expect(err).toBeNull();
+        expect(address).toBe("93.184.216.34");
+        expect(family).toBe(4);
+        resolve();
+      });
+    });
+    expect(mockLookup).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts a hung connection at the timeout", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        });
+      })
+    );
+    expect(await safeFetch("https://example.com", {}, 5, { timeoutMs: 30 })).toBeNull();
   });
 
   it("resolves relative redirect targets against the current URL", async () => {
@@ -185,5 +263,37 @@ describe("safeFetch", () => {
       redirect: "manual",
       headers: { Accept: "text/html" },
     });
+    expect((fetchSpy.mock.calls[0][1] as { signal?: AbortSignal }).signal).toBeInstanceOf(
+      AbortSignal
+    );
+  });
+});
+
+describe("readBodyCapped", () => {
+  it("cancels the stream once the cap is passed", async () => {
+    let pulls = 0;
+    const stream = new ReadableStream({
+      pull(controller) {
+        pulls += 1;
+        if (pulls > 4) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(new Uint8Array(8));
+      },
+    });
+    const res = new Response(stream);
+    const body = await readBodyCapped(res, 16);
+    expect(body.ok).toBe(false);
+    if (!body.ok) expect(body.error).toMatch(/exceeded 16/);
+    expect(pulls).toBeLessThanOrEqual(3);
+  });
+
+  it("accepts rss and audio types and rejects html", () => {
+    expect(contentTypeAllowed("application/rss+xml; charset=utf-8", "rss")).toBe(true);
+    expect(contentTypeAllowed("text/html", "rss")).toBe(false);
+    expect(contentTypeAllowed("audio/mpeg", "audio")).toBe(true);
+    expect(contentTypeAllowed("text/html", "audio")).toBe(false);
+    expect(contentTypeAllowed(null, "audio")).toBe(false);
   });
 });
