@@ -57,7 +57,9 @@ const STATS_FRESH_MS = 24 * 60 * 60 * 1000;
 export type UploadsStatsFetch =
   | { kind: "skip" }
   | { kind: "uploads"; averageViews: number }
-  | { kind: "estimate" };
+  | { kind: "estimate" }
+  /** The uploads read did not finish. Keep the row's existing stats. */
+  | { kind: "keep" };
 
 export interface UploadsBatchFetch {
   results: UploadsStatsFetch[];
@@ -496,7 +498,7 @@ async function processChunk(input: {
       now: input.now,
     };
     const stats = statsById.get(details.channelId);
-    if (!fresh && stats && stats.kind !== "skip") {
+    if (!fresh && stats && stats.kind !== "skip" && stats.kind !== "keep") {
       if (stats.kind === "uploads") {
         draft.averageViews = stats.averageViews;
         draft.viewsMethod = "recent";

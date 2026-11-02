@@ -2,8 +2,12 @@
 // Stops at YOUTUBE_LIBRARY_REFRESH_BUDGET (1,000 units) or at the
 // pass budget (200 seconds) so the sweep and tagging keep about 40
 // seconds inside the 240 second route budget. A row this run did not
-// reach keeps its old stats_refreshed_at. The 30-day sweep runs only
-// when the pass finishes (stopped null). A time stop is a normal result.
+// reach keeps its old stats_refreshed_at. A time, quota, or error
+// estimate does not replace a stored recent average or stamp
+// stats_refreshed_at. The 30-day sweep costs no YouTube units. It runs
+// whenever the sweep clock still has room, including after a budget,
+// cap, or quota stop. A clock already past that deadline skips it.
+// A time stop is a normal result.
 // Batch tagging runs here, under its own daily cap and the same clock.
 
 import { chunk, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
@@ -68,8 +72,10 @@ type RefreshStop = YoutubeRefreshReport["stopped"];
 function measuredFrom(stats: UploadsStatsFetch | undefined): {
   averageViews?: number;
   viewsMethod?: "recent" | "estimated";
+  keepExistingStats?: boolean;
 } {
   if (!stats || stats.kind === "skip") return {};
+  if (stats.kind === "keep") return { keepExistingStats: true };
   if (stats.kind === "uploads") {
     return { averageViews: stats.averageViews, viewsMethod: "recent" };
   }
@@ -82,7 +88,7 @@ async function refreshOne(
   existing: YoutubeChannelRecord,
   showId: string | null,
   now: string,
-  measured?: { averageViews?: number; viewsMethod?: "recent" | "estimated" }
+  measured?: { averageViews?: number; viewsMethod?: "recent" | "estimated"; keepExistingStats?: boolean }
 ): Promise<void> {
   const record = draftToRecord(
     existing,
@@ -94,6 +100,7 @@ async function refreshOne(
       sourceQuery: existing.source_query,
       averageViews: measured?.averageViews,
       viewsMethod: measured?.viewsMethod,
+      keepExistingStats: measured?.keepExistingStats,
       now,
     },
     showId
@@ -121,7 +128,7 @@ async function refreshChunk(input: {
   unitsSpent: number;
   budget: number;
   log: (line: string) => void;
-}): Promise<{ refreshed: number; units: number; stopped: RefreshStop }> {
+}): Promise<{ refreshed: number; units: number; stopped: RefreshStop; kept: string[] }> {
   const hasBatch = typeof input.api.recentUploadsBatch === "function";
   const hasSingle = typeof input.api.recentUploads === "function";
   const showIds = await mapLimit(input.group, READ_CONCURRENCY, async (details) => {
@@ -146,7 +153,7 @@ async function refreshChunk(input: {
     );
     const ids = input.group.map((details) => details.channelId);
     if (chunkBudgetMs <= 0) {
-      for (const details of input.group) statsById.set(details.channelId, { kind: "estimate" });
+      for (const details of input.group) statsById.set(details.channelId, { kind: "keep" });
       stopped = "time";
     } else {
       try {
@@ -164,7 +171,7 @@ async function refreshChunk(input: {
       } catch (err) {
         logStatsFailure(input.log, err);
         units += uploadsBatchWorstCaseUnits(input.group.length);
-        for (const details of input.group) statsById.set(details.channelId, { kind: "estimate" });
+        for (const details of input.group) statsById.set(details.channelId, { kind: "keep" });
         if (isQuotaError(err)) stopped = "quota";
       }
     }
@@ -186,7 +193,7 @@ async function refreshChunk(input: {
         }
         statsById.set(details.channelId, result);
       } catch (err) {
-        statsById.set(details.channelId, { kind: "estimate" });
+        statsById.set(details.channelId, { kind: "keep" });
         logStatsFailure(input.log, err);
         if (isQuotaError(err)) {
           stopped = "quota";
@@ -219,7 +226,10 @@ async function refreshChunk(input: {
     );
   });
 
-  return { refreshed: rows.length, units, stopped };
+  const kept = input.group
+    .filter((details) => statsById.get(details.channelId)?.kind === "keep")
+    .map((details) => details.channelId);
+  return { refreshed: rows.length, units, stopped, kept };
 }
 
 export async function runRefreshQueue(input: {
@@ -252,6 +262,7 @@ export async function runRefreshQueue(input: {
   let chunks = 0;
   let stopped: RefreshStop = null;
   const seen = new Set<string>();
+  const keptIds = new Set<string>();
   const usesStats =
     typeof input.api.recentUploadsBatch === "function" || typeof input.api.recentUploads === "function";
 
@@ -346,6 +357,7 @@ export async function runRefreshQueue(input: {
       });
       units += saved.units;
       await commit(saved.units);
+      for (const id of saved.kept) keptIds.add(id);
       refreshed += saved.refreshed;
       if (saved.refreshed > 0 || saved.units > 0) chunks += 1;
       if (saved.stopped) {
@@ -358,23 +370,27 @@ export async function runRefreshQueue(input: {
     if (ids.length < 50) break;
   }
 
-  if (stopped === null) {
+  if (pastTime()) {
+    if (stopped) log(`[youtube-library] refresh sweep skipped: ${stopped}`);
+  } else {
+    const passStop = stopped;
     const cutoff = statsFreshCutoff(nowDate);
-    const stale = await input.store.listStale(cutoff);
+    const stale = (await input.store.listStale(cutoff)).filter((row) => !keptIds.has(row.channel_id));
     const deleteIds = stale.filter((row) => !row.show_id).map((row) => row.channel_id);
     const nullIds = stale.filter((row) => row.show_id).map((row) => row.channel_id);
+    let sweepTimedOut = false;
     for (const batch of chunk(deleteIds, SWEEP_BATCH)) {
       if (pastTime()) {
-        stopped = "time";
+        sweepTimedOut = true;
         break;
       }
       await input.store.deleteChannels(batch);
       deleted += batch.length;
     }
-    if (stopped === null) {
+    if (!sweepTimedOut) {
       for (const batch of chunk(nullIds, SWEEP_BATCH)) {
         if (pastTime()) {
-          stopped = "time";
+          sweepTimedOut = true;
           break;
         }
         await mapLimit(batch, READ_CONCURRENCY, async (channelId) => {
@@ -383,8 +399,7 @@ export async function runRefreshQueue(input: {
         nulled += batch.length;
       }
     }
-  } else {
-    log(`[youtube-library] refresh sweep skipped: ${stopped}`);
+    if (sweepTimedOut && passStop === null) stopped = "time";
   }
 
   const elapsedMs = Math.max(0, clock() - startedMs);

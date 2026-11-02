@@ -17,7 +17,7 @@ This block wins over anything older in this file or in other docs.
 - **Open manual settings:** Supabase Auth email templates need `scripts/apply-auth-email-templates.ts` run with a `SUPABASE_ACCESS_TOKEN`. Email OTP expiry is a dashboard setting (Authentication → Sign In / Providers → Email → Email OTP Expiration) and is set to 600 seconds. `SUPABASE_SERVICE_ROLE_KEY` is set for Production only, not Preview.
 - **Migration 076** (YouTube contact emails, Pacific daily quota ledger, pull-queue page token) is written and not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. Until then the library pull and refresh keep the pre-076 budgets and do not write the new tables.
 
-## Most recent — YT2 YouTube library emails, daily quota, queue refill (Nov 2, 2026)
+## Most recent: YT2 YouTube library emails, daily quota, queue refill (Nov 2, 2026)
 
 Contact emails are parsed from channel descriptions, About URLs in that text, and recent upload descriptions. Each address is stored with `source` and `found_at` on `youtube_channel_emails`. The description pass uses the text already on `youtube_channels` and spends no API units. The video pass spends 2 units per channel and stops at the daily cap. About 3,102 existing channels are the backfill. Nothing is scraped from YouTube HTML, and no captcha path was added.
 
@@ -25,7 +25,7 @@ YouTube Data API units are committed on `youtube_quota_days` for the Pacific cal
 
 When `youtube_pull_queue` has no pending rows, the pull adds the next searches: the saved next page, `order:date` and `order:viewCount` for a finished first page, and phrases from channels that passed the market filter, have no brand flag, and have a positive recent-view average. Rows are unique on kind, value, and page token.
 
-Migration **076 is written and not applied**. No Vercel env var was changed. Optional env: `YOUTUBE_DAILY_QUOTA_CAP`. No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited.
+Migration **076 is written and not applied**. Apply it in the same release as this deploy. It drops `youtube_pull_queue_kind_value_uidx`. The previous pull upserts on `(kind, value)` and fails once that index is gone, so do not apply 076 while the previous deploy is still serving. No Vercel env var was changed. Optional env: `YOUTUBE_DAILY_QUOTA_CAP`. No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited.
 
 ## Most recent — outbound email on white, with managed reroute on invoice and legacy outreach (Oct 20, 2026)
 

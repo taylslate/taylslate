@@ -1843,7 +1843,7 @@ Cron: `GET /api/cron/youtube-library-emails` at 19:00 UTC. Bearer `CRON_SECRET`,
 
 ### Tests
 
-`npx vitest run`: 296 files, 2636 passed, 40 skipped. `npx tsc --noEmit` clean.
+`npx vitest run`: 296 files, 2639 passed, 40 skipped. `npx tsc --noEmit` clean.
 
 PGlite runs 074 then 076 twice. RLS on for the three new tables. `anon` and `authenticated` cannot read them or execute `youtube_quota_commit`. `service_role` can. The quota function accepts 100 then 50 against a cap of 150 and writes two log rows. A second email of the same source is rejected. A different source is allowed. Deleting the channel deletes the emails. The queue unique key is `(kind, value, page_token)`.
 
@@ -1853,7 +1853,9 @@ No page or component was edited. Screenshots are not applicable.
 
 ### Known gaps
 
-- Migration 076 is in the repo and is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, naming 076. Until then both existing crons behave as they do today, and the email cron no-ops with `missing_yt2`.
+- Migration 076 is in the repo and is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, naming 076, in the same release as this deploy. 076 drops `youtube_pull_queue_kind_value_uidx`. The previous pull upserts on `(kind, value)` and fails once that index is gone. Do not apply 076 while that deploy is still serving. Until 076 is applied, both existing crons behave as they do today, and the email cron no-ops with `missing_yt2`.
+- A refresh stats read that stops for time, quota, or an error keeps the stored `avg_recent_views`, `avg_views_method`, and `stats_refreshed_at`. Other channel fields from `channels.list` still update. The 30-day sweep runs whenever the sweep clock has room, including after a budget, cap, or quota stop. Rows this run failed to remeasure are left for the next run. Rows it did not reach that are older than 30 days are still deleted or nulled.
+- Refill keywords rotate through the top 200 high-scoring channels, 40 at a time. Queue reads page past 1,000 rows.
 - The description pass covers the stored 3,102 channels without API units once 076 is applied. Video descriptions are 2 units each, about 6,204 units, spread across days. The email job takes at most 2,000 units on a day. A time stop at 240 seconds can scan fewer than that.
 - Discovery's live video search is not on this ledger. A campaign that still calls `search.list` can spend units outside the 8,000 library cap.
 - A stored YouTube page token can expire before the next pull. That queue row then fails like any other search error and stops after 3 attempts. Order variants do not depend on a page token.

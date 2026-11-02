@@ -204,7 +204,9 @@ describe("refresh", () => {
     expect(store.channels.get("oldest")?.avg_views_method).toBe("recent");
     expect(store.channels.get("oldest")?.avg_recent_views).toBe(12000);
     expect(store.channels.get("middle")?.avg_views_method).toBe("estimated");
-    expect(store.channels.get("middle")?.avg_recent_views).toBe(20000);
+    expect(store.channels.get("middle")?.avg_recent_views).toBe(10000);
+    expect(store.channels.get("middle")?.stats_refreshed_at).toBe("2026-09-01T00:00:00.000Z");
+    expect(store.channels.get("middle")?.title).toBe("middle fresh");
     expect(store.channels.get("newest")?.stats_refreshed_at).toBe("2026-10-20T00:00:00.000Z");
     const logged = lines.join("\n");
     expect(logged).toContain("key=[redacted]");
@@ -262,7 +264,7 @@ describe("refresh time budget", () => {
     expect(YOUTUBE_LIBRARY_REFRESH_TIME_BUDGET_MS).toBe(240_000);
     expect(YOUTUBE_LIBRARY_REFRESH_PASS_BUDGET_MS).toBe(200_000);
     const store = createMemoryYoutubeStore();
-    const stamp = "2026-01-01T00:00:00.000Z";
+    const stamp = "2026-10-01T00:00:00.000Z";
     for (let index = 0; index < 60; index += 1) {
       const id = `c${String(index).padStart(2, "0")}`;
       await store.saveChannel(record(id, stamp, index === 59 ? "show-stale" : null));
@@ -301,7 +303,7 @@ describe("refresh time budget", () => {
     expect(store.channels.get("c59")?.show_id).toBe("show-stale");
     expect(store.channels.get("c59")?.subscriber_count).toBe(1000);
     expect(store.channels.get("c00")?.stats_refreshed_at).toBe("2026-10-26T00:00:00.000Z");
-    expect(lines.join("\n")).toContain("refresh sweep skipped: time");
+    expect(lines.join("\n")).not.toContain("refresh sweep skipped");
 
     nowMs = 0;
     saves = 0;
@@ -324,7 +326,7 @@ describe("refresh time budget", () => {
     expect(second.stopped).toBeNull();
   });
 
-  it("does not sweep when the unit budget stops the pass", async () => {
+  it("sweeps rows older than 30 days when the unit budget stops the pass", async () => {
     const store = createMemoryYoutubeStore();
     await store.saveChannel(record("old-free", "2026-01-01T00:00:00.000Z"));
     await store.saveChannel(record("old-linked", "2026-01-02T00:00:00.000Z", "show-1"));
@@ -336,11 +338,12 @@ describe("refresh time budget", () => {
       log: () => {},
     });
     expect(report.stopped).toBe("budget");
-    expect(report.deleted).toBe(0);
-    expect(report.nulled).toBe(0);
-    expect(store.channels.get("old-free")?.title).toBe("old-free");
-    expect(store.channels.get("old-linked")?.title).toBe("old-linked");
-    expect(store.channels.get("old-linked")?.subscriber_count).toBe(1000);
+    expect(report.deleted).toBe(1);
+    expect(report.nulled).toBe(1);
+    expect(store.channels.has("old-free")).toBe(false);
+    expect(store.channels.get("old-linked")?.title).toBeNull();
+    expect(store.channels.get("old-linked")?.subscriber_count).toBeNull();
+    expect(store.channels.get("old-linked")?.show_id).toBe("show-1");
   });
 });
 
@@ -382,16 +385,40 @@ describe("refresh stats chunks", () => {
     }
   });
 
+  it("keeps a recent average when the stats read stops for time, quota, or an error", async () => {
+    const store = createMemoryYoutubeStore();
+    const recent = record("kept", "2026-08-01T00:00:00.000Z");
+    recent.avg_views_method = "recent";
+    recent.avg_recent_views = 15_000;
+    await store.saveChannel(recent);
+    const report = await runRefreshQueue({
+      store,
+      api: api(
+        async (ids) => ({ found: ids.map((id) => details(id)), missing: [] }),
+        {
+          recentUploadsBatch: async () => {
+            throw new Error("YouTube API error 403: quotaExceeded");
+          },
+        }
+      ),
+      now: new Date("2026-10-26T00:00:00.000Z"),
+      log: () => {},
+    });
+    const row = store.channels.get("kept");
+    expect(report.stopped).toBe("quota");
+    expect(row?.title).toBe("kept fresh");
+    expect(row?.avg_views_method).toBe("recent");
+    expect(row?.avg_recent_views).toBe(15_000);
+    expect(row?.stats_refreshed_at).toBe("2026-08-01T00:00:00.000Z");
+  });
+
   it("cuts a stalled stats batch and stores estimated", async () => {
     vi.useFakeTimers();
     try {
       const start = Date.now();
       const store = createMemoryYoutubeStore();
       await store.saveChannel(record("stall", "2026-01-01T00:00:00.000Z"));
-      const recentUploadsBatch = vi.fn(
-        (_ids: string[], _options?: { deadlineMs?: number; clock?: () => number }): Promise<never> =>
-          new Promise(() => {})
-      );
+      const recentUploadsBatch = vi.fn((): Promise<never> => new Promise(() => {}));
       const pending = runRefreshQueue({
         store,
         api: api(async (ids) => ({ found: ids.map((id) => details(id)), missing: [] }), { recentUploadsBatch }),
@@ -420,10 +447,7 @@ describe("refresh stats chunks", () => {
       vi.setSystemTime(near);
       const store = createMemoryYoutubeStore();
       await store.saveChannel(record("late", "2026-01-01T00:00:00.000Z"));
-      const recentUploadsBatch = vi.fn(
-        (_ids: string[], _options?: { deadlineMs?: number; clock?: () => number }): Promise<never> =>
-          new Promise(() => {})
-      );
+      const recentUploadsBatch = vi.fn((): Promise<never> => new Promise(() => {}));
       const pending = runRefreshQueue({
         store,
         api: api(async (ids) => ({ found: ids.map((id) => details(id)), missing: [] }), { recentUploadsBatch }),
@@ -545,7 +569,9 @@ describe("refresh stats chunks", () => {
     expect(report.units).toBe(1000);
     expect(report.stopped).toBe("budget");
     expect(report.refreshed).toBe(10);
-    expect(store.channels.get("n10")?.stats_refreshed_at).toBe("2026-01-11T00:00:00.000Z");
+    expect(report.deleted).toBe(10);
+    expect(store.channels.has("n10")).toBe(false);
+    expect(store.channels.get("n00")?.stats_refreshed_at).toBe("2026-10-26T00:00:00.000Z");
   });
 
   it("never sends more than 50 ids to channels.list or 10 channels to a stats batch", async () => {
@@ -584,7 +610,7 @@ describe("refresh stats chunks", () => {
 
   it("stops on quotaExceeded without deleting the rows it did not refresh", async () => {
     const store = createMemoryYoutubeStore();
-    await store.saveChannel(record("kept", "2026-01-01T00:00:00.000Z"));
+    await store.saveChannel(record("kept", "2026-10-20T00:00:00.000Z"));
     const lines: string[] = [];
     const report = await runRefreshQueue({
       store,
@@ -596,7 +622,6 @@ describe("refresh stats chunks", () => {
     });
     expect(report.stopped).toBe("quota");
     expect(store.channels.get("kept")?.title).toBe("kept");
-    expect(lines.join("\n")).toContain("refresh sweep skipped: quota");
     expect(lines.join("\n")).not.toContain("TESTKEY");
     expect(JSON.stringify(report)).not.toContain("TESTKEY");
   });

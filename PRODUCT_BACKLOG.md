@@ -285,6 +285,7 @@ Built in the repo. Migration **076 is not applied** on `ldtmhafewfifdizgfrnn`. A
 - Daily cap `YOUTUBE_DAILY_QUOTA_CAP`, default 8,000. Pacific reset. Pull, refresh, and the email cron share the ledger. The pull leaves room for refresh and, while video scans remain, for the email job.
 - When the pull queue has no pending rows, new searches are generated from saved page tokens, order variants, and phrases on high-view channels that passed the market filter. Dedupe is `(kind, value, page_token)`.
 - Cron `GET /api/cron/youtube-library-emails` at 19:00 UTC. No screen changes. Optional env var only. Not set in Vercel by this change.
+- Apply 076 together with the deploy. The migration drops `youtube_pull_queue_kind_value_uidx`. The previous pull upserts on `(kind, value)` and fails once that index is gone.
 
 ### Podscan data-layer audit follow-ups (surfaced July 23, 2026)
 From the read-only Podscan consumption audit (see STATUS.md → "Podscan data audit"; verification script `378698a`). Four items, in rough priority:

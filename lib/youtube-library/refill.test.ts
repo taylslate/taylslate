@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planQueueRefill, refillYoutubeQueue } from "./refill";
+import { planQueueRefill, refillYoutubeQueue, rotateHighScoringSample } from "./refill";
 import { createMemoryYoutubeStore, draftToRecord, type ChannelDraft } from "./store";
 import type { YouTubeChannelDetails } from "@/lib/enrichment/youtube";
 
@@ -34,6 +34,15 @@ function draft(details: YouTubeChannelDetails, views: number): ChannelDraft {
 }
 
 describe("queue refill", () => {
+  it("rotates the high-scoring window instead of repeating the same top slice", () => {
+    const pool = ["a", "b", "c", "d", "e"];
+    expect(rotateHighScoringSample(pool, 0, 2)).toEqual(["a", "b"]);
+    expect(rotateHighScoringSample(pool, 1, 2)).toEqual(["c", "d"]);
+    expect(rotateHighScoringSample(pool, 2, 2)).toEqual(["e"]);
+    expect(rotateHighScoringSample(pool, 3, 2)).toEqual(["a", "b"]);
+    expect(rotateHighScoringSample(pool, 0, 40)).toEqual(pool);
+  });
+
   it("pages finished queries and adds keywords from high-scoring channels", () => {
     const planned = planQueueRefill({
       queue: [

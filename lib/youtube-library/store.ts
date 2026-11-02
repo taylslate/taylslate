@@ -103,6 +103,11 @@ export interface ChannelDraft {
    * estimated: that call fell back to total views / video count.
    */
   viewsMethod?: AvgViewsMethod | null;
+  /**
+   * The uploads read stopped for time, quota, or an error.
+   * Keep avg_recent_views, avg_views_method, and stats_refreshed_at.
+   */
+  keepExistingStats?: boolean;
   now: string;
 }
 
@@ -276,7 +281,11 @@ export function draftToRecord(
   // fallback. Both match migration 074's check.
   let avg: number | null;
   let method: AvgViewsMethod | null;
-  if (recentOk && draft.viewsMethod !== "estimated") {
+  const preserve = draft.keepExistingStats === true && existing != null;
+  if (preserve) {
+    avg = existing.avg_recent_views;
+    method = existing.avg_views_method;
+  } else if (recentOk && draft.viewsMethod !== "estimated") {
     avg = measured;
     method = "recent";
   } else {
@@ -328,7 +337,7 @@ export function draftToRecord(
     source: existing?.source ?? draft.source,
     source_query: existing?.source_query ?? draft.sourceQuery,
     first_seen_at: existing?.first_seen_at ?? draft.now,
-    stats_refreshed_at: draft.now,
+    stats_refreshed_at: preserve && existing ? existing.stats_refreshed_at : draft.now,
     created_at: existing?.created_at ?? draft.now,
     updated_at: draft.now,
     custom_url: details.customUrl ?? existing?.custom_url ?? null,
@@ -663,6 +672,21 @@ const QUEUE_COLUMNS =
   "id, kind, value, status, attempts, last_error, done_at";
 const QUEUE_COLUMNS_YT2 =
   "id, kind, value, status, attempts, last_error, done_at, page_token, next_page_token";
+const QUEUE_PAGE = 1000;
+
+async function collectQueuePages(
+  load: (from: number, to: number) => Promise<{ data: unknown[] | null; error: DbError }>
+): Promise<unknown[]> {
+  const rows: unknown[] = [];
+  for (let from = 0; from < 50000; from += QUEUE_PAGE) {
+    const { data, error } = await load(from, from + QUEUE_PAGE - 1);
+    throwIfMissing(error);
+    const batch = data ?? [];
+    rows.push(...batch);
+    if (batch.length < QUEUE_PAGE) break;
+  }
+  return rows;
+}
 
 function asQueueItem(row: Record<string, unknown>, yt2: boolean): QueueItem {
   return {
@@ -791,43 +815,49 @@ export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
     },
     async pendingQueue() {
       const yt2 = await probeYt2();
-      if (yt2) {
-        const { data, error } = await supabaseAdmin
+      const data = await collectQueuePages(async (from, to) => {
+        if (yt2) {
+          const result = await supabaseAdmin
+            .from("youtube_pull_queue")
+            .select(QUEUE_COLUMNS_YT2)
+            .eq("status", "pending")
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to);
+          return { data: result.data, error: result.error };
+        }
+        const result = await supabaseAdmin
           .from("youtube_pull_queue")
-          .select(QUEUE_COLUMNS_YT2)
+          .select(QUEUE_COLUMNS)
           .eq("status", "pending")
           .order("created_at", { ascending: true })
-          .order("id", { ascending: true });
-        throwIfMissing(error);
-        return (data ?? []).map((row) => asQueueItem(row as unknown as Record<string, unknown>, true));
-      }
-      const { data, error } = await supabaseAdmin
-        .from("youtube_pull_queue")
-        .select(QUEUE_COLUMNS)
-        .eq("status", "pending")
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true });
-      throwIfMissing(error);
-      return (data ?? []).map((row) => asQueueItem(row as unknown as Record<string, unknown>, false));
+          .order("id", { ascending: true })
+          .range(from, to);
+        return { data: result.data, error: result.error };
+      });
+      return data.map((row) => asQueueItem(row as Record<string, unknown>, yt2));
     },
     async listQueue() {
       const yt2 = await probeYt2();
-      if (yt2) {
-        const { data, error } = await supabaseAdmin
+      const data = await collectQueuePages(async (from, to) => {
+        if (yt2) {
+          const result = await supabaseAdmin
+            .from("youtube_pull_queue")
+            .select(QUEUE_COLUMNS_YT2)
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to);
+          return { data: result.data, error: result.error };
+        }
+        const result = await supabaseAdmin
           .from("youtube_pull_queue")
-          .select(QUEUE_COLUMNS_YT2)
+          .select(QUEUE_COLUMNS)
           .order("created_at", { ascending: true })
-          .order("id", { ascending: true });
-        throwIfMissing(error);
-        return (data ?? []).map((row) => asQueueItem(row as unknown as Record<string, unknown>, true));
-      }
-      const { data, error } = await supabaseAdmin
-        .from("youtube_pull_queue")
-        .select(QUEUE_COLUMNS)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true });
-      throwIfMissing(error);
-      return (data ?? []).map((row) => asQueueItem(row as unknown as Record<string, unknown>, false));
+          .order("id", { ascending: true })
+          .range(from, to);
+        return { data: result.data, error: result.error };
+      });
+      return data.map((row) => asQueueItem(row as Record<string, unknown>, yt2));
     },
     async markQueueDone(id, at, nextPageToken) {
       const patch: {

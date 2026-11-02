@@ -9,6 +9,18 @@ import type { QueueKind, QueueStatus } from "./store";
 export const REFILL_PAGE_LIMIT = 10;
 export const REFILL_KEYWORD_LIMIT = 20;
 export const REFILL_CHANNEL_SAMPLE = 40;
+/** Ranked pool the 40-channel window rotates through. */
+export const REFILL_CHANNEL_POOL = 200;
+
+/** Slide a fixed window through a ranked pool so later refills see new channels. */
+export function rotateHighScoringSample<T>(pool: readonly T[], cursor: number, size: number): T[] {
+  if (size <= 0 || pool.length === 0) return [];
+  if (pool.length <= size) return [...pool];
+  const windows = Math.ceil(pool.length / size);
+  const index = ((cursor % windows) + windows) % windows;
+  const start = index * size;
+  return pool.slice(start, start + size);
+}
 
 const STOPWORDS = new Set([
   "a",
@@ -167,7 +179,8 @@ export async function refillYoutubeQueue(
   const pending = await store.pendingQueue();
   if (pending.length > 0) return { added: 0, pages: 0, keywords: 0 };
   const queue = await store.listQueue();
-  const channels = await store.listHighScoringChannels(REFILL_CHANNEL_SAMPLE);
+  const pool = await store.listHighScoringChannels(REFILL_CHANNEL_POOL);
+  const channels = rotateHighScoringSample(pool, queue.length, REFILL_CHANNEL_SAMPLE);
   const planned = planQueueRefill({ queue, channels });
   if (planned.items.length === 0) {
     log("[youtube-library] refill added=0 pages=0 keywords=0");

@@ -32,6 +32,11 @@
 --
 -- Idempotent. Safe to re-run. No backfill of email rows. The email
 -- cron scans existing channels after this file is applied.
+-- This file drops youtube_pull_queue_kind_value_uidx and replaces
+-- it with (kind, value, page_token). Apply it in the same release
+-- as the code that upserts on kind,value,page_token. The previous
+-- pull upserts on (kind, value) and fails once the old index is
+-- gone. Do not apply this while that deploy is still serving.
 -- NOT applied. Apply on ldtmhafewfifdizgfrnn only after merge
 -- and Chris's own-words OK. Do not run this from the app, a
 -- seed script, or a deploy hook. Until then the pull and refresh
