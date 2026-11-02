@@ -75,6 +75,18 @@ Admin tool to create a `planning`-status deal between test accounts (brand1 → 
 
 ---
 
+## ADM1 — Internal operations dashboard (Nov 2, 2026)
+
+Read-only founder page at `/admin`. There was no earlier ADM1 spec in the backlog or `docs/jobs`; this is the page those notes did not have. It is not in the sidebar. `lib/nav/items.ts` was left alone. Signed-out requests never reach it (`proxy.ts` already sends them to `/login`). A signed-in session that is not on `INTERNAL_ADMIN_EMAILS` and whose profile role is not `admin` gets a 404. `chris@taylslate.com` is allowed only when that address is on `INTERNAL_ADMIN_EMAILS`. No new env var.
+
+The page reads accounts (brand, show, agency, and sales agent), campaigns, and deals, with a status filter and a search on each list. Active campaigns are status `active`. Active deals are every status except `completed` and `cancelled`. Platform fee totals are the sum of `payments.application_fee_amount_cents` for `succeeded` and `completed`. Pending and processing are shown apart from collected. The page does not call Stripe.
+
+YouTube stats are `youtube_channels` total, `passed_market_filter`, rows created in the last 24 hours and 7 days, and `youtube_pull_queue` counts by status. Email totals are included only when a column whose name contains "email" exists. Recent errors are domain events whose type contains fail, error, rolled_back, or unverified, plus `payment.disputed`, failed payment rows, and YouTube pull rows with status `error`. Event payloads are not selected. Job text is shortened and secret-shaped values are stripped.
+
+No writes. No migration. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `lib/youtube-library` were not edited. A missing YouTube table shows a note and the rest of the page still loads.
+
+---
+
 ## Categorization
 
 - **Operational unblock** — small fixes blocking GTM credibility or daily founder workflow. Pre-launch.
