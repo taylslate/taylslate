@@ -132,6 +132,21 @@ describe("avg views method", () => {
     expect(aboveTotal.avg_recent_views).toBe(50000);
     expect(aboveTotal.avg_recent_views).not.toBe(9_000_000);
   });
+
+  it("keeps a recent measurement when the uploads read did not finish", () => {
+    const prior = draftToRecord(null, draft({ averageViews: 12_000, viewsMethod: "recent" }), null);
+    prior.stats_refreshed_at = "2026-08-01T00:00:00.000Z";
+    const next = draftToRecord(
+      prior,
+      draft({ viewsMethod: "estimated", keepExistingStats: true, now: "2026-10-26T00:00:00.000Z" }),
+      null
+    );
+    expect(next.title).toBe("Huberman Lab");
+    expect(next.avg_views_method).toBe("recent");
+    expect(next.avg_recent_views).toBe(12_000);
+    expect(next.stats_refreshed_at).toBe("2026-08-01T00:00:00.000Z");
+    expect(next.updated_at).toBe("2026-10-26T00:00:00.000Z");
+  });
 });
 
 describe("bulk channel reads", () => {

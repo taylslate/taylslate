@@ -17,6 +17,9 @@ import {
 import { passesYouTubeMarketFilter, youtubeBrandMatch } from "@/lib/discovery/discover-shows";
 import { redactSecretParams } from "@/lib/discovery/redact-secrets";
 import { categoryQueueValues } from "./categories";
+import { encodeNextPageToken, decodeLibrarySearchPage } from "./page-token";
+import { openLibraryQuota, quotaLogLine, type QuotaSpend } from "./quota";
+import { refillYoutubeQueue } from "./refill";
 import { parseChannelRef, parseYoutubeSeedCsv, YOUTUBE_SEEDS_PATH } from "./seeds";
 import {
   CHANNELS_LIST_UNITS,
@@ -54,7 +57,9 @@ const STATS_FRESH_MS = 24 * 60 * 60 * 1000;
 export type UploadsStatsFetch =
   | { kind: "skip" }
   | { kind: "uploads"; averageViews: number }
-  | { kind: "estimate" };
+  | { kind: "estimate" }
+  /** The uploads read did not finish. Keep the row's existing stats. */
+  | { kind: "keep" };
 
 export interface UploadsBatchFetch {
   results: UploadsStatsFetch[];
@@ -74,6 +79,16 @@ export interface LibraryYoutubeApi {
     channelIds: string[],
     options?: { deadlineMs?: number; clock?: () => number }
   ): Promise<UploadsBatchFetch>;
+  /**
+   * Same search as search(), plus an order variant or a YouTube page token.
+   * nextPageToken is already encoded for youtube_pull_queue.page_token.
+   */
+  searchPage?(
+    query: string,
+    pageToken?: string
+  ): Promise<{ channelIds: string[]; nextPageToken: string | null }>;
+  /** Recent upload descriptions. playlistItems.list plus videos.list snippet. */
+  recentVideoDescriptions?(channelId: string): Promise<{ descriptions: string[]; units: number }>;
 }
 
 export interface YoutubePullReport {
@@ -84,10 +99,11 @@ export interface YoutubePullReport {
   upserted: number;
   done: number;
   pending: number;
-  stopped: "budget" | "quota" | "time" | null;
+  stopped: "budget" | "quota" | "time" | "cap" | null;
   elapsedMs: number;
   searched: number;
   chunks: number;
+  refilled: number;
 }
 
 export function scrubYoutubeError(err: unknown): Error {
@@ -301,6 +317,46 @@ export function createLibraryYoutubeApi(client?: YouTubeClient | null): LibraryY
         throw new Error(redactSecretParams(message));
       }
     },
+    async searchPage(query: string, pageToken?: string) {
+      const decoded = decodeLibrarySearchPage(pageToken);
+      if (!youtube || typeof youtube.searchLibraryPage !== "function") {
+        const channelIds = await this.search(query);
+        return { channelIds, nextPageToken: null };
+      }
+      try {
+        const page = await withTimeout(
+          youtube.searchLibraryPage({
+            query,
+            order: decoded.order,
+            pageToken: decoded.pageToken,
+          }),
+          YOUTUBE_CALL_TIMEOUT_MS
+        );
+        return {
+          channelIds: uniqueIds(page.hits.map((hit) => hit.channelId)),
+          nextPageToken: encodeNextPageToken(page.nextPageToken),
+        };
+      } catch (err) {
+        rethrowYoutube(err);
+      }
+    },
+    async recentVideoDescriptions(channelId: string) {
+      if (!youtube || typeof youtube.listRecentVideoDescriptions !== "function") {
+        return { descriptions: [], units: 0 };
+      }
+      try {
+        const listed = await withTimeout(
+          youtube.listRecentVideoDescriptions(channelId),
+          YOUTUBE_CALL_TIMEOUT_MS
+        );
+        return {
+          descriptions: listed.descriptions,
+          units: listed.playlistCalls + listed.videoListCalls,
+        };
+      } catch (err) {
+        rethrowYoutube(err);
+      }
+    },
     async lookupSeed(value: string) {
       const parsed = parseChannelRef(value);
       if (!parsed) return { channelId: null, notFound: true };
@@ -371,7 +427,9 @@ async function processChunk(input: {
   unitsLeft: number;
   log: (line: string) => void;
   deadlineMs: number;
-}): Promise<{ upserted: number; units: number; stopped: "budget" | null }> {
+  unitsLimit?: "budget" | "cap";
+}): Promise<{ upserted: number; units: number; stopped: "budget" | "cap" | null }> {
+  const unitsLimit = input.unitsLimit ?? "budget";
   if (input.found.length === 0) return { upserted: 0, units: 0, stopped: null };
 
   const ids = input.found.map((details) => details.channelId);
@@ -382,7 +440,7 @@ async function processChunk(input: {
   const canStats = typeof input.api.recentUploadsBatch === "function";
   const worst = canStats ? uploadsBatchWorstCaseUnits(needsStats.length) : 0;
   if (worst > 0 && input.unitsLeft < worst) {
-    return { upserted: 0, units: 0, stopped: "budget" };
+    return { upserted: 0, units: 0, stopped: unitsLimit };
   }
 
   const showIds = await mapLimit(input.found, READ_CONCURRENCY, async (details) => {
@@ -440,7 +498,7 @@ async function processChunk(input: {
       now: input.now,
     };
     const stats = statsById.get(details.channelId);
-    if (!fresh && stats && stats.kind !== "skip") {
+    if (!fresh && stats && stats.kind !== "skip" && stats.kind !== "keep") {
       if (stats.kind === "uploads") {
         draft.averageViews = stats.averageViews;
         draft.viewsMethod = "recent";
@@ -482,6 +540,12 @@ export async function runPullQueue(input: {
   /** Injectable clock. Default is Date.now. */
   clock?: () => number;
   callTimeoutMs?: number;
+  /** Shared Pacific-day cap. Absent until migration 076 is applied. */
+  quota?: QuotaSpend;
+  /** When true and the pending queue is empty, generate the next searches. */
+  refill?: boolean;
+  /** Save next page tokens. Set only when migration 076 is present. */
+  yt2?: boolean;
 }): Promise<YoutubePullReport> {
   const budget = input.budget ?? YOUTUBE_LIBRARY_PULL_BUDGET;
   const clock = input.clock ?? Date.now;
@@ -501,8 +565,39 @@ export async function runPullQueue(input: {
   let done = 0;
   let searched = 0;
   let chunks = 0;
+  let refilled = 0;
   let stopped: YoutubePullReport["stopped"] = null;
   const left = () => budget - units;
+
+  async function room(): Promise<{ unitsLeft: number; limit: "budget" | "cap" }> {
+    const runLeft = left();
+    if (!input.quota) return { unitsLeft: runLeft, limit: "budget" };
+    const used = await input.quota.ledger.used(input.quota.day);
+    const dayLeft = input.quota.spendCap - used;
+    if (dayLeft < runLeft) return { unitsLeft: Math.max(0, dayLeft), limit: "cap" };
+    return { unitsLeft: runLeft, limit: "budget" };
+  }
+
+  async function block(cost: number): Promise<"budget" | "cap" | null> {
+    const available = await room();
+    if (available.unitsLeft < cost) return available.limit;
+    return null;
+  }
+
+  async function spend(cost: number): Promise<void> {
+    if (cost <= 0) return;
+    units += cost;
+    if (!input.quota) return;
+    await input.quota.ledger.commit(input.quota.day, cost, input.quota.job, input.quota.cap);
+  }
+
+  if (input.refill) {
+    const waiting = await input.store.pendingQueue();
+    if (waiting.length === 0) {
+      const added = await refillYoutubeQueue(input.store, log);
+      refilled = added.added;
+    }
+  }
 
   const pending = await input.store.pendingQueue();
   for (const item of pending) {
@@ -513,8 +608,9 @@ export async function runPullQueue(input: {
     }
 
     if (item.kind === "category_query") {
-      if (left() < SEARCH_UNITS) {
-        stopped = "budget";
+      const searchGate = await block(SEARCH_UNITS);
+      if (searchGate) {
+        stopped = searchGate;
         break;
       }
       if (pastDeadline()) {
@@ -522,12 +618,22 @@ export async function runPullQueue(input: {
         break;
       }
       let ids: string[];
+      let nextPageToken: string | null = null;
       try {
-        ids = await withTimeout(input.api.search(item.value), callTimeoutMs);
-        units += SEARCH_UNITS;
+        if (input.yt2 && input.api.searchPage) {
+          const page = await withTimeout(
+            input.api.searchPage(item.value, item.page_token || undefined),
+            callTimeoutMs
+          );
+          ids = page.channelIds;
+          nextPageToken = page.nextPageToken;
+        } else {
+          ids = await withTimeout(input.api.search(item.value), callTimeoutMs);
+        }
+        await spend(SEARCH_UNITS);
         searched += 1;
       } catch (err) {
-        units += SEARCH_UNITS;
+        await spend(SEARCH_UNITS);
         searched += 1;
         if (isQuotaError(err)) {
           stopped = "quota";
@@ -544,20 +650,22 @@ export async function runPullQueue(input: {
           stopped = "time";
           break;
         }
-        if (left() < CHANNELS_LIST_UNITS) {
+        const listGate = await block(CHANNELS_LIST_UNITS);
+        if (listGate) {
           incomplete = true;
-          stopped = "budget";
+          stopped = listGate;
           break;
         }
         try {
           const listed = await withTimeout(input.api.list(slice), callTimeoutMs);
-          units += CHANNELS_LIST_UNITS;
+          await spend(CHANNELS_LIST_UNITS);
           for (const group of chunk(listed.found, CHANNEL_CHUNK_SIZE)) {
             if (pastDeadline()) {
               incomplete = true;
               stopped = "time";
               break;
             }
+            const available = await room();
             const saved = await processChunk({
               store: input.store,
               api: input.api,
@@ -566,7 +674,8 @@ export async function runPullQueue(input: {
               sourceQuery: item.value,
               now: recordNow,
               clock,
-              unitsLeft: left(),
+              unitsLeft: available.unitsLeft,
+              unitsLimit: available.limit,
               log,
               deadlineMs,
             });
@@ -576,11 +685,11 @@ export async function runPullQueue(input: {
               break;
             }
             upserted += saved.upserted;
-            units += saved.units;
+            await spend(saved.units);
             chunks += 1;
           }
         } catch (err) {
-          units += CHANNELS_LIST_UNITS;
+          await spend(CHANNELS_LIST_UNITS);
           if (isQuotaError(err)) {
             stopped = "quota";
             incomplete = true;
@@ -594,7 +703,7 @@ export async function runPullQueue(input: {
       }
       if (stopped) break;
       if (incomplete) continue;
-      await input.store.markQueueDone(item.id, recordNow);
+      await input.store.markQueueDone(item.id, recordNow, input.yt2 ? nextPageToken : undefined);
       done += 1;
       continue;
     }
@@ -605,8 +714,9 @@ export async function runPullQueue(input: {
       continue;
     }
     const lookupCost = input.api.seedLookupCost(item.value);
-    if (left() < lookupCost + CHANNELS_LIST_UNITS) {
-      stopped = "budget";
+    const seedGate = await block(lookupCost + CHANNELS_LIST_UNITS);
+    if (seedGate) {
+      stopped = seedGate;
       break;
     }
     if (pastDeadline()) {
@@ -618,14 +728,14 @@ export async function runPullQueue(input: {
     if (lookupCost > 0) {
       try {
         const looked = await withTimeout(input.api.lookupSeed(item.value), callTimeoutMs);
-        units += lookupCost;
+        await spend(lookupCost);
         if (looked.notFound || !looked.channelId) {
           await input.store.markQueueAttempt(item.id, item.attempts + 1, "not found", "error");
           continue;
         }
         channelId = looked.channelId;
       } catch (err) {
-        units += lookupCost;
+        await spend(lookupCost);
         if (isQuotaError(err)) {
           stopped = "quota";
           break;
@@ -643,13 +753,14 @@ export async function runPullQueue(input: {
       stopped = "time";
       break;
     }
-    if (left() < CHANNELS_LIST_UNITS) {
-      stopped = "budget";
+    const detailGate = await block(CHANNELS_LIST_UNITS);
+    if (detailGate) {
+      stopped = detailGate;
       break;
     }
     try {
       const listed = await withTimeout(input.api.list([channelId]), callTimeoutMs);
-      units += CHANNELS_LIST_UNITS;
+      await spend(CHANNELS_LIST_UNITS);
       if (listed.found.length === 0) {
         await input.store.markQueueAttempt(item.id, item.attempts + 1, "not found", "error");
         continue;
@@ -661,6 +772,7 @@ export async function runPullQueue(input: {
           stopped = "time";
           break;
         }
+        const available = await room();
         const saved = await processChunk({
           store: input.store,
           api: input.api,
@@ -669,7 +781,8 @@ export async function runPullQueue(input: {
           sourceQuery: item.value,
           now: recordNow,
           clock,
-          unitsLeft: left(),
+          unitsLeft: available.unitsLeft,
+          unitsLimit: available.limit,
           log,
           deadlineMs,
         });
@@ -679,14 +792,14 @@ export async function runPullQueue(input: {
           break;
         }
         upserted += saved.upserted;
-        units += saved.units;
+        await spend(saved.units);
         chunks += 1;
       }
       if (stopped || seedIncomplete) break;
-      await input.store.markQueueDone(item.id, recordNow);
+      await input.store.markQueueDone(item.id, recordNow, input.yt2 ? null : undefined);
       done += 1;
     } catch (err) {
-      units += CHANNELS_LIST_UNITS;
+      await spend(CHANNELS_LIST_UNITS);
       if (isQuotaError(err) || isNotFoundError(err)) {
         if (isQuotaError(err)) {
           stopped = "quota";
@@ -702,8 +815,12 @@ export async function runPullQueue(input: {
   const stillPending = (await input.store.pendingQueue()).length;
   const elapsedMs = Math.max(0, clock() - startedMs);
   log(
-    `[youtube-library] pull units=${units} upserted=${upserted} seeded=${seeded} done=${done} pending=${stillPending} elapsedMs=${elapsedMs} searched=${searched} chunks=${chunks}`
+    `[youtube-library] pull units=${units} upserted=${upserted} seeded=${seeded} done=${done} pending=${stillPending} elapsedMs=${elapsedMs} searched=${searched} chunks=${chunks} refilled=${refilled}`
   );
+  if (input.quota) {
+    const total = await input.quota.ledger.used(input.quota.day);
+    log(quotaLogLine(input.quota, total));
+  }
   return {
     skipped: false,
     seeded,
@@ -715,6 +832,7 @@ export async function runPullQueue(input: {
     elapsedMs,
     searched,
     chunks,
+    refilled,
   };
 }
 
@@ -734,6 +852,7 @@ function skippedReport(
     elapsedMs: extra.elapsedMs,
     searched: 0,
     chunks: 0,
+    refilled: 0,
   };
 }
 
@@ -771,14 +890,29 @@ export async function runYoutubeLibraryPull(input?: {
   }
 
   const api = input?.api ?? createLibraryYoutubeApi();
+  const now = input?.now ?? new Date(startedMs);
+  let quota: QuotaSpend | null = null;
+  try {
+    quota = await openLibraryQuota(store, now, "pull");
+  } catch (err) {
+    if (!isMissingLibraryTable(err)) throw err;
+  }
+  if (quota) {
+    log(
+      `[youtube-library] quota day=${quota.day} job=pull cap=${quota.cap} spendCap=${quota.spendCap} emailReserve=${quota.emailReserve} refreshReserve=${quota.refreshReserve}`
+    );
+  }
   try {
     return await runPullQueue({
       store,
       api,
-      now: input?.now,
+      now,
       log,
       deadlineMs: input?.deadlineMs,
       clock,
+      quota: quota ?? undefined,
+      refill: Boolean(quota),
+      yt2: Boolean(quota),
     });
   } catch (err) {
     if (err instanceof YoutubeLibraryTableMissing || isMissingLibraryTable(err)) {

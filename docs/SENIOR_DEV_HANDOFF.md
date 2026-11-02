@@ -1873,3 +1873,72 @@ Screenshots are not applicable. No page or component was touched.
 - The restyle pass is last on the build list. It is not started here.
 - This PR does not merge. Paul reviews.
 
+## YT2 YouTube library contact emails, daily quota, and queue refill (Nov 2, 2026)
+
+### What was built
+
+Three additions to the YouTube channel library. No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited.
+
+**Contact emails.** For each channel, addresses are taken from the stored channel description, from About links inside that text, and from recent upload descriptions. About links mean `mailto:` URLs, an email in a URL query string, and the `q` target of a `youtube.com/redirect` link. Those URLs are parsed. They are not fetched. There is no YouTube HTML scrape and no captcha path. Recent upload text comes from `playlistItems.list` plus `videos.list` with `part=snippet` (2 units). Rows go to `youtube_channel_emails` with `source` (`channel_description`, `about_link`, or `video_description`) and `found_at`. A repeat of the same channel, address, and source keeps the original `found_at`. Junk addresses (`noreply@youtube.com`, `example.com`, and similar) are dropped.
+
+The description pass reads `youtube_channels.description` and spends 0 units. `emails_checked_at` marks a channel done. The video pass sets `video_emails_checked_at`. A video read that fails three times is marked checked so one dead channel cannot block the rest. The live library is about 3,102 channels. The description pass covers that set on the first email cron after migration 076 is applied. The video pass continues across Pacific days inside the cap.
+
+**Daily quota.** `youtube_quota_days` stores units for one Pacific calendar day (`America/Los_Angeles`, the YouTube Data API reset). `youtube_quota_commit` adds units up to the cap and writes `youtube_quota_log`. The cap is `YOUTUBE_DAILY_QUOTA_CAP`. Unset or invalid uses 8,000, which is 80% of the default 10,000 unit day. The pull stops before a call that would pass its spend cap. It leaves 1,000 units for the refresh cron. While any channel still needs a video-description scan, it also leaves 2,000 units for the email cron. The email cron may spend up to 2,000 units above the total it sees at start, and never past the hard cap. Each job logs one `[youtube-library] quota day=... job=... total=... cap=...` line. The API key is not logged. Email addresses are not logged. A stop for this cap is `stopped: "cap"`. A YouTube `quotaExceeded` response is still `stopped: "quota"`.
+
+**Queue refill.** When `youtube_pull_queue` has no pending rows, the pull inserts the next searches before it spends units. A finished search with `next_page_token` gets a follow-up row. A finished first page (`page_token` empty) also gets `order:date` and `order:viewCount`. Phrases come from keywords, niche tags, and topic labels on channels that passed the market filter, have no brand flag, and have `avg_recent_views` above 0. At most 10 page rows and 20 phrases per refill. Dedupe is `(kind, value, page_token)`, case-insensitive on the phrase. Real YouTube page tokens are stored as `page:...` so they are not read as an order variant.
+
+Until migration 076 is applied, `yt2Ready()` is false. The pull and refresh keep the previous budgets, do not write page tokens, and do not open the ledger. The email cron returns `missing_yt2`.
+
+Cron: `GET /api/cron/youtube-library-emails` at 19:00 UTC. Bearer `CRON_SECRET`, same as the other library crons. `maxDuration` stays 300. `vercel.json` regions stay `pdx1`.
+
+### Where
+
+- `supabase/migrations/076_youtube_library_yt2.sql`
+- `supabase/migrations/076_youtube_library_yt2.test.ts`
+- `lib/youtube-library/emails.ts` and `emails.test.ts`
+- `lib/youtube-library/emails-backfill.ts` and `emails-backfill.test.ts`
+- `lib/youtube-library/quota.ts` and `quota.test.ts`
+- `lib/youtube-library/refill.ts` and `refill.test.ts`
+- `lib/youtube-library/page-token.ts`
+- `lib/youtube-library/store.ts` (queue page fields, email rows, quota ledger; channel upsert columns unchanged)
+- `lib/youtube-library/pull.ts` and `pull.test.ts` (daily cap, refill when the pending queue is empty, next page token)
+- `lib/youtube-library/refresh.ts` (same ledger)
+- `lib/enrichment/youtube.ts` and `youtube.test.ts` (`searchLibraryPage`, `listRecentVideoDescriptions`)
+- `app/api/cron/youtube-library-emails/route.ts` and `route.test.ts`
+- `vercel.json` (one cron entry)
+- `app/api/cron/pooled-priors/route.test.ts` (cron list)
+- `STATUS.md`, `PRODUCT_BACKLOG.md`, `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx vitest run`: 296 files, 2639 passed, 40 skipped. `npx tsc --noEmit` clean.
+
+PGlite runs 074 then 076 twice. RLS on for the three new tables. `anon` and `authenticated` cannot read them or execute `youtube_quota_commit`. `service_role` can. The quota function accepts 100 then 50 against a cap of 150 and writes two log rows. A second email of the same source is rejected. A different source is allowed. Deleting the channel deletes the emails. The queue unique key is `(kind, value, page_token)`.
+
+Unit: description, mailto, redirect, and obfuscated addresses; junk dropped; video descriptions stay `video_description`; Pacific midnight in November (PST) and July (PDT); cap default 8000; commit stops at the cap and the next day starts at 0; pull spend cap 5000 while video scans remain and 7000 after; refill pages and keywords, and a second call while those rows are pending adds nothing; email backfill stores `found_at` and does not log the address; a cap stop does not call YouTube, and the next Pacific day reads the video description; pull stops with `stopped: "cap"` and the pending query runs the next day.
+
+No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- Migration 076 is in the repo and is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, naming 076, in the same release as this deploy. 076 drops `youtube_pull_queue_kind_value_uidx`. The previous pull upserts on `(kind, value)` and fails once that index is gone. Do not apply 076 while that deploy is still serving. Until 076 is applied, both existing crons behave as they do today, and the email cron no-ops with `missing_yt2`.
+- A refresh stats read that stops for time, quota, or an error keeps the stored `avg_recent_views`, `avg_views_method`, and `stats_refreshed_at`. Other channel fields from `channels.list` still update. The 30-day sweep runs whenever the sweep clock has room, including after a budget, cap, or quota stop. Rows this run failed to remeasure are left for the next run. Rows it did not reach that are older than 30 days are still deleted or nulled.
+- Refill keywords rotate through the top 200 high-scoring channels, 40 at a time. Queue reads page past 1,000 rows.
+- The description pass covers the stored 3,102 channels without API units once 076 is applied. Video descriptions are 2 units each, about 6,204 units, spread across days. The email job takes at most 2,000 units on a day. A time stop at 240 seconds can scan fewer than that.
+- Discovery's live video search is not on this ledger. A campaign that still calls `search.list` can spend units outside the 8,000 library cap.
+- A stored YouTube page token can expire before the next pull. That queue row then fails like any other search error and stops after 3 attempts. Order variants do not depend on a page token.
+- `custom_url` is still not a column. This change does not add it.
+- No live write, charge, or send. This PR does not merge. After 076 is applied, the read-only checks are `youtube_channel_emails` count by source, `youtube_quota_days` for the Pacific day, and `youtube_pull_queue` pending count after a pull that emptied the previous queue. Do not print API keys or the addresses in those checks; count rows instead.
+
+### Env
+
+`YOUTUBE_DAILY_QUOTA_CAP` is optional. Unset uses 8000. This PR does not change Vercel env vars.
+
+### Choices to confirm
+
+- (a) Default cap is 8,000 units, not the full 10,000.
+- (b) The pull leaves 1,000 for refresh and 2,000 for video-email backfill while scans remain.
+- (c) High-scoring channels for refill are market-filter passes with no brand flag and `avg_recent_views` above 0.
+- (d) About links are parsed from API text. The YouTube website is not fetched.
+- (e) Paul Jones reviews. This PR does not merge.
+

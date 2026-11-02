@@ -452,6 +452,89 @@ export class YouTubeClient {
   }
 
   /**
+   * Library search. Same filters as searchVideos, plus an optional page
+   * token and date order. Returns the raw nextPageToken. Callers encode it.
+   * Costs 100 quota units.
+   */
+  async searchLibraryPage(input: {
+    query: string;
+    maxResults?: number;
+    order?: "relevance" | "viewCount" | "date";
+    pageToken?: string;
+  }): Promise<{
+    hits: { channelId: string; videoId: string; title: string; description: string }[];
+    nextPageToken: string | null;
+  }> {
+    const publishedAfter = new Date();
+    publishedAfter.setUTCMonth(publishedAfter.getUTCMonth() - 12);
+    const params: Record<string, string | number | boolean> = {
+      part: "snippet",
+      q: input.query,
+      type: "video",
+      order: input.order ?? "relevance",
+      videoDuration: "medium",
+      publishedAfter: publishedAfter.toISOString(),
+      regionCode: "US",
+      relevanceLanguage: "en",
+      maxResults: input.maxResults ?? 50,
+    };
+    if (input.pageToken) params.pageToken = input.pageToken;
+    const res = await this.request<{
+      nextPageToken?: string;
+      items?: {
+        id?: { videoId?: string };
+        snippet?: { channelId?: string; title?: string; description?: string };
+      }[];
+    }>("/search", params);
+    const hits: { channelId: string; videoId: string; title: string; description: string }[] = [];
+    for (const item of res.items ?? []) {
+      const channelId = item.snippet?.channelId?.trim() ?? "";
+      if (!channelId) continue;
+      hits.push({
+        channelId,
+        videoId: item.id?.videoId ?? "",
+        title: item.snippet?.title ?? "",
+        description: item.snippet?.description ?? "",
+      });
+    }
+    const next = res.nextPageToken?.trim() ?? "";
+    return { hits, nextPageToken: next || null };
+  }
+
+  /**
+   * Descriptions of the newest uploads. playlistItems.list then videos.list
+   * with snippet only. One unit each. Does not follow links off YouTube.
+   */
+  async listRecentVideoDescriptions(channelId: string): Promise<{
+    descriptions: string[];
+    playlistCalls: number;
+    videoListCalls: number;
+  }> {
+    const playlistId = uploadsPlaylistId(channelId);
+    const playlist = await this.request<{
+      items?: { contentDetails?: { videoId?: string } }[];
+    }>("/playlistItems", {
+      part: "contentDetails",
+      playlistId,
+      maxResults: UPLOADS_STATS_MAX_RESULTS,
+    });
+    const ids = (playlist.items ?? [])
+      .map((item) => item.contentDetails?.videoId?.trim() ?? "")
+      .filter(Boolean);
+    if (ids.length === 0) return { descriptions: [], playlistCalls: 1, videoListCalls: 0 };
+    const videos = await this.request<{
+      items?: { snippet?: { description?: string } }[];
+    }>("/videos", {
+      part: "snippet",
+      id: ids.join(","),
+    });
+    const descriptions = (videos.items ?? [])
+      .map((item) => item.snippet?.description?.trim() ?? "")
+      .filter(Boolean);
+    return { descriptions, playlistCalls: 1, videoListCalls: 1 };
+  }
+
+  /**
    * Search for YouTube channels by name.
    * Returns channel IDs and basic info.
    * Enrichment still uses this. Discovery uses searchVideos.

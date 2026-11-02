@@ -19,6 +19,17 @@ This block wins over anything older in this file or in other docs.
 - **Migrations on `ldtmhafewfifdizgfrnn`:** 001–051 applied. 045 (benchmarks + media-kit geography), 046 (podscan_id guard trigger), 047 (campaign learning tables), 048 (make_goods), 049 (show_surfaces anon revoke), 050 (`user_owns_show` without podscan match) were applied Oct 21, 2026. 051 (`login_otp_limits`) was applied earlier the same day. Never re-run a file. Migration 060 is applied (PR 40). The 060 file no longer grants anon SELECT on shows back. Migrations 065 and 066 are written and not applied. Apply 065, then 066, only after merge and Chris's OK. 061 is reserved for the O1 drop of `show_claims`. 062–064 are not in the repo.
 
 - **Open manual settings:** Supabase Auth email templates need `scripts/apply-auth-email-templates.ts` run with a `SUPABASE_ACCESS_TOKEN`. Email OTP expiry is a dashboard setting (Authentication → Sign In / Providers → Email → Email OTP Expiration) and is set to 600 seconds. `SUPABASE_SERVICE_ROLE_KEY` is set for Production only, not Preview.
+- **Migration 076** (YouTube contact emails, Pacific daily quota ledger, pull-queue page token) is written and not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. Until then the library pull and refresh keep the pre-076 budgets and do not write the new tables.
+
+## Most recent: YT2 YouTube library emails, daily quota, queue refill (Nov 2, 2026)
+
+Contact emails are parsed from channel descriptions, About URLs in that text, and recent upload descriptions. Each address is stored with `source` and `found_at` on `youtube_channel_emails`. The description pass uses the text already on `youtube_channels` and spends no API units. The video pass spends 2 units per channel and stops at the daily cap. About 3,102 existing channels are the backfill. Nothing is scraped from YouTube HTML, and no captcha path was added.
+
+YouTube Data API units are committed on `youtube_quota_days` for the Pacific calendar day (`America/Los_Angeles`). `YOUTUBE_DAILY_QUOTA_CAP` defaults to 8,000 (80% of the 10,000 unit day). The pull leaves 1,000 units for refresh, and 2,000 more while video-description scans are still pending. The email cron is `GET /api/cron/youtube-library-emails` at 19:00 UTC. Usage is one `youtube_quota_log` row per commit, plus a `[youtube-library] quota` log line. The API key and the email addresses are not logged.
+
+When `youtube_pull_queue` has no pending rows, the pull adds the next searches: the saved next page, `order:date` and `order:viewCount` for a finished first page, and phrases from channels that passed the market filter, have no brand flag, and have a positive recent-view average. Rows are unique on kind, value, and page token.
+
+Migration **076 is written and not applied**. Apply it in the same release as this deploy. It drops `youtube_pull_queue_kind_value_uidx`. The previous pull upserts on `(kind, value)` and fails once that index is gone, so do not apply 076 while the previous deploy is still serving. No Vercel env var was changed. Optional env: `YOUTUBE_DAILY_QUOTA_CAP`. No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited.
 
 ## Most recent — outbound email on white, with managed reroute on invoice and legacy outreach (Oct 20, 2026)
 

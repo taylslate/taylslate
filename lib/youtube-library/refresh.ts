@@ -2,8 +2,12 @@
 // Stops at YOUTUBE_LIBRARY_REFRESH_BUDGET (1,000 units) or at the
 // pass budget (200 seconds) so the sweep and tagging keep about 40
 // seconds inside the 240 second route budget. A row this run did not
-// reach keeps its old stats_refreshed_at. The 30-day sweep runs only
-// when the pass finishes (stopped null). A time stop is a normal result.
+// reach keeps its old stats_refreshed_at. A time, quota, or error
+// estimate does not replace a stored recent average or stamp
+// stats_refreshed_at. The 30-day sweep costs no YouTube units. It runs
+// whenever the sweep clock still has room, including after a budget,
+// cap, or quota stop. A clock already past that deadline skips it.
+// A time stop is a normal result.
 // Batch tagging runs here, under its own daily cap and the same clock.
 
 import { chunk, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
@@ -33,6 +37,7 @@ import {
   type YoutubeChannelRecord,
   type YoutubeLibraryStore,
 } from "./store";
+import { openLibraryQuota, quotaLogLine, type QuotaSpend } from "./quota";
 import { NICHE_TAGS_VERSION, runNicheTagBatches, TAG_DAILY_CAP, type TagBatchResult } from "./tags";
 
 export const YOUTUBE_LIBRARY_REFRESH_BUDGET = 1000;
@@ -56,7 +61,7 @@ export interface YoutubeRefreshReport {
   refreshed: number;
   deleted: number;
   nulled: number;
-  stopped: "budget" | "quota" | "error" | "time" | null;
+  stopped: "budget" | "quota" | "error" | "time" | "cap" | null;
   tagging: TagBatchResult | null;
   elapsedMs: number;
   chunks: number;
@@ -67,8 +72,10 @@ type RefreshStop = YoutubeRefreshReport["stopped"];
 function measuredFrom(stats: UploadsStatsFetch | undefined): {
   averageViews?: number;
   viewsMethod?: "recent" | "estimated";
+  keepExistingStats?: boolean;
 } {
   if (!stats || stats.kind === "skip") return {};
+  if (stats.kind === "keep") return { keepExistingStats: true };
   if (stats.kind === "uploads") {
     return { averageViews: stats.averageViews, viewsMethod: "recent" };
   }
@@ -81,7 +88,7 @@ async function refreshOne(
   existing: YoutubeChannelRecord,
   showId: string | null,
   now: string,
-  measured?: { averageViews?: number; viewsMethod?: "recent" | "estimated" }
+  measured?: { averageViews?: number; viewsMethod?: "recent" | "estimated"; keepExistingStats?: boolean }
 ): Promise<void> {
   const record = draftToRecord(
     existing,
@@ -93,6 +100,7 @@ async function refreshOne(
       sourceQuery: existing.source_query,
       averageViews: measured?.averageViews,
       viewsMethod: measured?.viewsMethod,
+      keepExistingStats: measured?.keepExistingStats,
       now,
     },
     showId
@@ -120,7 +128,7 @@ async function refreshChunk(input: {
   unitsSpent: number;
   budget: number;
   log: (line: string) => void;
-}): Promise<{ refreshed: number; units: number; stopped: RefreshStop }> {
+}): Promise<{ refreshed: number; units: number; stopped: RefreshStop; kept: string[] }> {
   const hasBatch = typeof input.api.recentUploadsBatch === "function";
   const hasSingle = typeof input.api.recentUploads === "function";
   const showIds = await mapLimit(input.group, READ_CONCURRENCY, async (details) => {
@@ -145,7 +153,7 @@ async function refreshChunk(input: {
     );
     const ids = input.group.map((details) => details.channelId);
     if (chunkBudgetMs <= 0) {
-      for (const details of input.group) statsById.set(details.channelId, { kind: "estimate" });
+      for (const details of input.group) statsById.set(details.channelId, { kind: "keep" });
       stopped = "time";
     } else {
       try {
@@ -163,7 +171,7 @@ async function refreshChunk(input: {
       } catch (err) {
         logStatsFailure(input.log, err);
         units += uploadsBatchWorstCaseUnits(input.group.length);
-        for (const details of input.group) statsById.set(details.channelId, { kind: "estimate" });
+        for (const details of input.group) statsById.set(details.channelId, { kind: "keep" });
         if (isQuotaError(err)) stopped = "quota";
       }
     }
@@ -185,7 +193,7 @@ async function refreshChunk(input: {
         }
         statsById.set(details.channelId, result);
       } catch (err) {
-        statsById.set(details.channelId, { kind: "estimate" });
+        statsById.set(details.channelId, { kind: "keep" });
         logStatsFailure(input.log, err);
         if (isQuotaError(err)) {
           stopped = "quota";
@@ -218,7 +226,10 @@ async function refreshChunk(input: {
     );
   });
 
-  return { refreshed: rows.length, units, stopped };
+  const kept = input.group
+    .filter((details) => statsById.get(details.channelId)?.kind === "keep")
+    .map((details) => details.channelId);
+  return { refreshed: rows.length, units, stopped, kept };
 }
 
 export async function runRefreshQueue(input: {
@@ -232,6 +243,7 @@ export async function runRefreshQueue(input: {
   /** Stop the 30-day sweep at this epoch ms. Default is the 240 second budget. */
   timeDeadlineMs?: number;
   clock?: () => number;
+  quota?: QuotaSpend;
 }): Promise<Omit<YoutubeRefreshReport, "tagging"> & { skipped: false; tagging?: undefined }> {
   const budget = input.budget ?? YOUTUBE_LIBRARY_REFRESH_BUDGET;
   const clock = input.clock ?? Date.now;
@@ -250,8 +262,20 @@ export async function runRefreshQueue(input: {
   let chunks = 0;
   let stopped: RefreshStop = null;
   const seen = new Set<string>();
+  const keptIds = new Set<string>();
   const usesStats =
     typeof input.api.recentUploadsBatch === "function" || typeof input.api.recentUploads === "function";
+
+  async function overCap(cost: number): Promise<boolean> {
+    if (!input.quota || cost <= 0) return false;
+    const used = await input.quota.ledger.used(input.quota.day);
+    return used + cost > input.quota.spendCap;
+  }
+
+  async function commit(cost: number): Promise<void> {
+    if (!input.quota || cost <= 0) return;
+    await input.quota.ledger.commit(input.quota.day, cost, input.quota.job, input.quota.cap);
+  }
 
   while (!stopped) {
     if (pastPass()) {
@@ -262,6 +286,10 @@ export async function runRefreshQueue(input: {
     if (oldest.length === 0) break;
     const ids = oldest.map((row) => row.channel_id);
     // A new group spends 1 unit on channels.list. Stop before the call when it does not fit.
+    if (await overCap(CHANNELS_LIST_UNITS)) {
+      stopped = "cap";
+      break;
+    }
     if (units + CHANNELS_LIST_UNITS > budget) {
       stopped = "budget";
       break;
@@ -272,8 +300,10 @@ export async function runRefreshQueue(input: {
     try {
       listed = await input.api.list(ids);
       units += CHANNELS_LIST_UNITS;
+      await commit(CHANNELS_LIST_UNITS);
     } catch (err) {
       units += CHANNELS_LIST_UNITS;
+      await commit(CHANNELS_LIST_UNITS);
       if (isNotFoundError(err)) {
         await input.store.deleteChannels(ids);
         deleted += ids.length;
@@ -305,6 +335,10 @@ export async function runRefreshQueue(input: {
         break;
       }
       const worst = usesStats ? uploadsBatchWorstCaseUnits(group.length) : 0;
+      if (worst > 0 && (await overCap(worst))) {
+        stopped = "cap";
+        break;
+      }
       if (worst > 0 && units + worst > budget) {
         stopped = "budget";
         break;
@@ -322,6 +356,8 @@ export async function runRefreshQueue(input: {
         log,
       });
       units += saved.units;
+      await commit(saved.units);
+      for (const id of saved.kept) keptIds.add(id);
       refreshed += saved.refreshed;
       if (saved.refreshed > 0 || saved.units > 0) chunks += 1;
       if (saved.stopped) {
@@ -334,23 +370,27 @@ export async function runRefreshQueue(input: {
     if (ids.length < 50) break;
   }
 
-  if (stopped === null) {
+  if (pastTime()) {
+    if (stopped) log(`[youtube-library] refresh sweep skipped: ${stopped}`);
+  } else {
+    const passStop = stopped;
     const cutoff = statsFreshCutoff(nowDate);
-    const stale = await input.store.listStale(cutoff);
+    const stale = (await input.store.listStale(cutoff)).filter((row) => !keptIds.has(row.channel_id));
     const deleteIds = stale.filter((row) => !row.show_id).map((row) => row.channel_id);
     const nullIds = stale.filter((row) => row.show_id).map((row) => row.channel_id);
+    let sweepTimedOut = false;
     for (const batch of chunk(deleteIds, SWEEP_BATCH)) {
       if (pastTime()) {
-        stopped = "time";
+        sweepTimedOut = true;
         break;
       }
       await input.store.deleteChannels(batch);
       deleted += batch.length;
     }
-    if (stopped === null) {
+    if (!sweepTimedOut) {
       for (const batch of chunk(nullIds, SWEEP_BATCH)) {
         if (pastTime()) {
-          stopped = "time";
+          sweepTimedOut = true;
           break;
         }
         await mapLimit(batch, READ_CONCURRENCY, async (channelId) => {
@@ -359,8 +399,7 @@ export async function runRefreshQueue(input: {
         nulled += batch.length;
       }
     }
-  } else {
-    log(`[youtube-library] refresh sweep skipped: ${stopped}`);
+    if (sweepTimedOut && passStop === null) stopped = "time";
   }
 
   const elapsedMs = Math.max(0, clock() - startedMs);
@@ -419,14 +458,22 @@ export async function runYoutubeLibraryRefresh(input?: {
   }
 
   const api = input?.api ?? createLibraryYoutubeApi();
+  const nowDate = input?.now ?? new Date(startedMs);
+  let quota: QuotaSpend | null = null;
+  try {
+    quota = await openLibraryQuota(store, nowDate, "refresh");
+  } catch (err) {
+    if (!isMissingLibraryTable(err)) throw err;
+  }
   const refreshed = await runRefreshQueue({
     store,
     api,
-    now: input?.now,
+    now: nowDate,
     log,
     deadlineMs: passDeadlineMs,
     timeDeadlineMs,
     clock,
+    quota: quota ?? undefined,
   });
   const remain = timeDeadlineMs - clock();
   const taggedAt = (input?.now ?? new Date(startedMs)).toISOString();
@@ -457,6 +504,10 @@ export async function runYoutubeLibraryRefresh(input?: {
   log(
     `[youtube-library] refresh units=${refreshed.units} refreshed=${refreshed.refreshed} deleted=${refreshed.deleted} nulled=${refreshed.nulled} elapsedMs=${elapsedMs} chunks=${refreshed.chunks}`
   );
+  if (quota) {
+    const total = await quota.ledger.used(quota.day);
+    log(quotaLogLine(quota, total));
+  }
   return { ...refreshed, tagging, elapsedMs };
 }
 
