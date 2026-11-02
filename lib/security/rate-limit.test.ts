@@ -36,6 +36,7 @@ const {
   generateLink,
   deleteUser,
   createUser,
+  listUsers,
   from,
   verifyOutreachToken,
   getOutreachById,
@@ -56,6 +57,7 @@ const {
   generateLink: vi.fn(),
   deleteUser: vi.fn(),
   createUser: vi.fn(),
+  listUsers: vi.fn(),
   from: vi.fn(),
   verifyOutreachToken: vi.fn(),
   getOutreachById: vi.fn(),
@@ -76,7 +78,7 @@ vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
     rpc,
     from,
-    auth: { admin: { generateLink, deleteUser, createUser } },
+    auth: { admin: { generateLink, deleteUser, createUser, listUsers } },
   },
 }));
 
@@ -181,6 +183,7 @@ beforeEach(() => {
   generateLink.mockReset();
   deleteUser.mockReset();
   createUser.mockReset();
+  listUsers.mockReset();
   from.mockReset();
   verifyOutreachToken.mockReset();
   getOutreachById.mockReset();
@@ -241,6 +244,15 @@ beforeEach(() => {
     return chain;
   });
 
+  listUsers.mockResolvedValue({
+    data: {
+      users: [
+        { id: "show-1", email: "host@example.com" },
+        { id: "known-1", email: "known@example.com" },
+      ],
+    },
+    error: null,
+  });
   generateLink.mockResolvedValue({
     data: {
       user: { id: "show-1" },

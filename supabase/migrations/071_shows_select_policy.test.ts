@@ -27,6 +27,7 @@ const REP_PENDING = "44444444-4444-4444-8444-444444444444";
 const REP_REJECTED = "55555555-5555-4555-8555-555555555555";
 const SHOW_USER = "66666666-6666-4666-8666-666666666666";
 const OWNER_USER = "77777777-7777-4777-8777-777777777777";
+const SPOOF_USER = "88888888-8888-4888-8888-888888888888";
 const HIDDEN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
 const DEAL_HIDDEN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
 const TIE_HIDDEN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
@@ -59,12 +60,14 @@ describe("migration 071 sql", () => {
       "NOT applied. Apply on ldtmhafewfifdizgfrnn only after merge and Chris's OK."
     );
     expect(sql).toContain("information_schema.role_table_grants");
-    expect(statements).not.toMatch(/\bto\s+service_role\b/i);
-    expect(statements).not.toMatch(/\bfrom\s+service_role\b/i);
-    expect(statements).not.toMatch(/\bgrant\b/i);
+    expect(statements).not.toMatch(/grant\s+select,\s+insert,\s+update,\s+delete\s+on\s+table\s+public\.shows\s+to\s+service_role/i);
+    expect(statements).toMatch(/grant execute on function public\.auth_login_email\(\) to service_role;/i);
+    expect(statements).toMatch(/revoke all on function public\.auth_login_email\(\) from public;/i);
+    expect(statements).toMatch(/revoke all on function public\.auth_login_email\(\) from anon;/i);
     expect(statements).not.toMatch(/show_ownership_proofs/i);
     expect(statements).not.toMatch(/podscan_id/i);
-    expect(statements).not.toMatch(/security definer/i);
+    expect(statements).toMatch(/function public\.auth_login_email\(\)/i);
+    expect(statements).toMatch(/security definer/i);
     expect(statements).not.toMatch(/\badmin\b/i);
   });
 
@@ -84,7 +87,8 @@ describe("migration 071 sql", () => {
     );
     expect(statements).toMatch(/d\.show_profile_id = sp\.id/i);
     expect(statements).toMatch(/'show_owner' = any \(data_sources\)/i);
-    expect(statements).toMatch(/lower\(contact_email\) = lower\(p\.email\)/i);
+    expect(statements).toMatch(/lower\(btrim\(contact_email\)\) = public\.auth_login_email\(\)/i);
+    expect(statements).not.toMatch(/p\.email/i);
     expect(statements).not.toMatch(/auth\.uid\(\)(?!\))/);
     expect(statements).toMatch(
       /revoke all on table public\.shows from anon;/i
@@ -255,12 +259,21 @@ describe.skipIf(!bin)("migration 071 on throwaway postgres", () => {
     `);
 
     for (const path of chainMigrations(67, 70)) file(path);
+    query(`alter table auth.users add column if not exists email text;`);
     file(sqlPath);
     file(sqlPath);
 
-    const users = [AGENT_A, BRAND_B, REP_OK, REP_PENDING, REP_REJECTED, SHOW_USER, OWNER_USER];
+    const users = [AGENT_A, BRAND_B, REP_OK, REP_PENDING, REP_REJECTED, SHOW_USER, OWNER_USER, SPOOF_USER];
     query(`
-      insert into auth.users (id) values ${users.map((id) => `('${id}')`).join(", ")};
+      insert into auth.users (id, email) values
+        ('${AGENT_A}', 'agent-a@example.test'),
+        ('${BRAND_B}', 'brand-b@example.test'),
+        ('${REP_OK}', 'rep-ok@example.test'),
+        ('${REP_PENDING}', 'rep-pending@example.test'),
+        ('${REP_REJECTED}', 'rep-rejected@example.test'),
+        ('${SHOW_USER}', 'show-user@example.test'),
+        ('${OWNER_USER}', 'owner@show.test'),
+        ('${SPOOF_USER}', 'spoof@example.test');
       insert into public.profiles (id, email, full_name, role) values
         ('${AGENT_A}', 'agent-a@example.test', 'Agent A', 'agent'),
         ('${BRAND_B}', 'brand-b@example.test', 'Brand B', 'brand'),
@@ -268,7 +281,8 @@ describe.skipIf(!bin)("migration 071 on throwaway postgres", () => {
         ('${REP_PENDING}', 'rep-pending@example.test', 'Rep Pending', 'agent'),
         ('${REP_REJECTED}', 'rep-rejected@example.test', 'Rep Rejected', 'agent'),
         ('${SHOW_USER}', 'show-user@example.test', 'Show User', 'show'),
-        ('${OWNER_USER}', 'Owner@Show.test', 'Owner User', 'show');
+        ('${OWNER_USER}', 'not-the-login@example.test', 'Owner User', 'show'),
+        ('${SPOOF_USER}', 'owner@show.test', 'Spoof User', 'show');
       insert into public.shows (id, name, platform, is_discoverable, agent_id, contact_email, data_sources) values
         ('${HIDDEN}', 'Hidden Desk', 'podcast', false, '${AGENT_A}', null, '{}'),
         ('${DEAL_HIDDEN}', 'Deal Desk', 'podcast', false, '${AGENT_A}', null, '{}'),
@@ -281,7 +295,8 @@ describe.skipIf(!bin)("migration 071 on throwaway postgres", () => {
         ('${REP_REJECTED}', '${HIDDEN}', 'rejected');
       insert into public.show_profiles (user_id, show_name) values
         ('${SHOW_USER}', 'Tie Desk'),
-        ('${OWNER_USER}', 'Owner Desk');
+        ('${OWNER_USER}', 'Owner Desk'),
+        ('${SPOOF_USER}', 'Spoof Desk');
       insert into public.deals (
         show_id, brand_id, status, num_episodes, placement, ad_format, price_type,
         cpm_rate, guaranteed_downloads, net_per_episode, total_net, flight_start, flight_end,
@@ -362,6 +377,7 @@ describe.skipIf(!bin)("migration 071 on throwaway postgres", () => {
     expect(visible(SHOW_USER, TIE_HIDDEN)).toBe(TIE_HIDDEN);
     expect(visible(OWNER_USER, OWNER_HIDDEN)).toBe(OWNER_HIDDEN);
     expect(visible(BRAND_B, OWNER_HIDDEN)).toBe("");
+    expect(visible(SPOOF_USER, OWNER_HIDDEN)).toBe("");
   });
 
   it("shows a discoverable row to every signed-in user", () => {

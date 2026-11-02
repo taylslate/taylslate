@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { isBrandProfileManaged } from "@/lib/accounts/managed";
+import { getAuthEmail } from "@/lib/auth/auth-email";
 import {
   getAuthenticatedUser,
   getBrandProfileByUserId,
@@ -168,16 +169,16 @@ export async function POST(
   if (!sp) {
     return NextResponse.json({ error: "Show profile missing" }, { status: 500 });
   }
-  const { data: showUser } = await supabaseAdmin
-    .from("profiles")
-    .select("email, full_name")
-    .eq("id", (sp as ShowProfile).user_id)
-    .single();
+  const showUserId = (sp as ShowProfile).user_id;
+  const [{ data: showUser }, showLoginEmail] = await Promise.all([
+    supabaseAdmin.from("profiles").select("full_name").eq("id", showUserId).single(),
+    getAuthEmail(showUserId),
+  ]);
 
   const brandName = brandDisplayName(brandProfile, user.email ?? "Advertiser");
   const showName = (sp as ShowProfile).show_name ?? outreach.show_name;
   const brandSigningEmail = user.email ?? "";
-  const showSigningEmail = (showUser?.email as string) ?? outreach.sent_to_email;
+  const showSigningEmail = showLoginEmail || outreach.sent_to_email;
 
   // Generate the IO PDF — also fires io.generated event. A saved order
   // supplies the negotiated terms and lines; otherwise the deal defaults stand.

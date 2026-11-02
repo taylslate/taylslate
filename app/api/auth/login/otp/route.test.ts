@@ -6,7 +6,7 @@ import {
   type LoginOtpRpcArgs,
 } from "@/lib/auth/login-otp-limit";
 
-const { generateLink, deleteUser, createUser, sendEmail, from, rpc, verifyOutreachToken, getOutreachById, eq, ilike } =
+const { generateLink, deleteUser, createUser, sendEmail, from, rpc, verifyOutreachToken, getOutreachById, eq, ilike, listUsers, authUsers } =
   vi.hoisted(() => ({
     generateLink: vi.fn(),
     deleteUser: vi.fn(),
@@ -18,11 +18,13 @@ const { generateLink, deleteUser, createUser, sendEmail, from, rpc, verifyOutrea
     getOutreachById: vi.fn(),
     eq: vi.fn(),
     ilike: vi.fn(),
+    listUsers: vi.fn(),
+    authUsers: { current: [{ id: "show-1", email: "host@example.com" }] as { id: string; email: string }[] },
   }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
-    auth: { admin: { generateLink, deleteUser, createUser } },
+    auth: { admin: { generateLink, deleteUser, createUser, listUsers } },
     from,
     rpc,
   },
@@ -79,8 +81,11 @@ beforeEach(() => {
   getOutreachById.mockReset();
   eq.mockReset();
   ilike.mockReset();
+  listUsers.mockReset();
   store.clear();
   profile = { id: "show-1", role: "show" };
+  authUsers.current = [{ id: "show-1", email: "host@example.com" }];
+  listUsers.mockImplementation(async () => ({ data: { users: authUsers.current }, error: null }));
   lookupError = null;
   from.mockImplementation(() => profileChain());
   rpc.mockImplementation(async (name: string, args: LoginOtpRpcArgs) => {
@@ -120,8 +125,9 @@ describe("POST /api/auth/login/otp", () => {
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
-    expect(eq).toHaveBeenCalledWith("email", "host@example.com");
+    expect(from).not.toHaveBeenCalled();
     expect(ilike).not.toHaveBeenCalled();
+    expect(listUsers).toHaveBeenCalled();
     expect(rpc).toHaveBeenCalledWith(
       "login_otp_consume",
       expect.objectContaining({
@@ -153,9 +159,10 @@ describe("POST /api/auth/login/otp", () => {
   });
 
   it("matches a wildcard email exactly", async () => {
+    authUsers.current = [{ id: "wild-1", email: "a%@b_c.com" }];
     const res = await POST(req({ email: "a%@b_c.com" }));
     expect(res.status).toBe(200);
-    expect(eq).toHaveBeenCalledWith("email", "a%@b_c.com");
+    expect(from).not.toHaveBeenCalled();
     expect(ilike).not.toHaveBeenCalled();
     expect(generateLink).toHaveBeenCalledWith(
       expect.objectContaining({ email: "a%@b_c.com" }),
@@ -173,6 +180,7 @@ describe("POST /api/auth/login/otp", () => {
 
   it("emails a 6-digit code for an existing brand", async () => {
     profile = { id: "brand-1", role: "brand" };
+    authUsers.current = [{ id: "brand-1", email: "brand@example.com" }];
     const res = await POST(req({ email: "brand@example.com" }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -187,6 +195,7 @@ describe("POST /api/auth/login/otp", () => {
 
   it("returns ok for an unknown email and does not create a user or send mail", async () => {
     profile = null;
+    authUsers.current = [];
     const res = await POST(req({ email: "nobody@example.com" }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -241,8 +250,20 @@ describe("POST /api/auth/login/otp", () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 
+  it("does not treat a spoofed profiles.email as an existing login", async () => {
+    authUsers.current = [];
+    profile = { id: "attacker-1", role: "show" };
+    const res = await POST(req({ email: "victim@example.com" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(from).not.toHaveBeenCalled();
+    expect(generateLink).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
   it("emails a pitch code without creating the show account yet", async () => {
     profile = null;
+    authUsers.current = [];
     verifyOutreachToken.mockReturnValue({ outreach_id: "out-1", iat: 1, v: 1 });
     getOutreachById.mockResolvedValue({
       id: "out-1",
@@ -279,6 +300,7 @@ describe("POST /api/auth/login/otp", () => {
 
   it("returns ok when the outreach contact email does not match", async () => {
     profile = null;
+    authUsers.current = [];
     verifyOutreachToken.mockReturnValue({ outreach_id: "out-1", iat: 1, v: 1 });
     getOutreachById.mockResolvedValue({
       id: "out-1",

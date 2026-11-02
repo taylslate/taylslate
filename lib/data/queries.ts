@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isBrandSide } from "@/lib/nav/items";
 import { isInternalAdmin } from "@/lib/auth/admin";
+import { getAuthEmail } from "@/lib/auth/auth-email";
 import {
   adminViewAccountFromCookie,
   isAdminViewCookie,
@@ -1334,11 +1335,11 @@ export async function importShows(
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("role, email")
+    .select("role")
     .eq("id", user.id)
     .maybeSingle();
   const role = profile?.role as string | undefined;
-  const admin = role === "admin" || isInternalAdmin(profile?.email);
+  const admin = isInternalAdmin(user.email);
   if (profileError || !profile || (!admin && role !== "agent")) {
     throw new Error("Only agents can import shows.");
   }
@@ -2061,52 +2062,23 @@ export async function completeShowProfile(
  * was created at accept time before the show had onboarded (show_profile_id
  * inserted NULL — see the accept path in app/api/outreach/[token]/_shared.ts).
  * Matched via the outreach each deal was created from
- * (outreaches.sent_to_email = the show's login email). Admin client: a deal
+ * (outreaches.sent_to_email = the show's auth login email). Admin client: a deal
  * with a NULL show_profile_id has no RLS path for the show user (the migration
  * 013 show policy keys on show_profile_id), so the service role performs the
  * update. Fail-soft: never throws; returns the number of deals linked.
- *
- * AMBIGUITY GUARD (Codex P3): email alone is a weak identity signal. Before
- * attributing any deal we require that exactly ONE 'show'-role account uses this
- * email. If two show accounts share an email we cannot safely decide whose
- * accepted deals these are, so we SKIP and emit `deal.backfill_ambiguous` for
- * manual admin resolution rather than risk cross-attributing one creator's deal
- * to another. (In practice Supabase auth enforces unique emails, so this is
- * defense-in-depth.) A non-zero link and the ambiguous skip both emit a domain
- * event, so the outcome is auditable — never a silent 0.
+ * profiles.email is not the match. A row that copied another login address
+ * does not receive that login's deals.
  */
 export async function backfillShowProfileOnAcceptedDeals(
   showProfileId: string,
   userId: string
 ): Promise<number> {
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("email, role")
-    .eq("id", userId)
-    .maybeSingle();
-  const email = (profile as { email?: string } | null)?.email;
+  const [{ data: profile }, email] = await Promise.all([
+    supabaseAdmin.from("profiles").select("role").eq("id", userId).maybeSingle(),
+    getAuthEmail(userId),
+  ]);
   const role = (profile as { role?: string } | null)?.role;
   if (!email || role !== "show") return 0;
-
-  // Ambiguity guard: more than one show account on this email → do not guess.
-  const { data: shareholders } = await supabaseAdmin
-    .from("profiles")
-    .select("id")
-    .eq("role", "show")
-    .ilike("email", email);
-  if ((shareholders?.length ?? 0) > 1) {
-    await logEvent({
-      eventType: "deal.backfill_ambiguous",
-      entityType: "profile",
-      entityId: userId,
-      payload: {
-        show_profile_id: showProfileId,
-        email,
-        show_account_count: shareholders?.length ?? 0,
-      },
-    });
-    return 0;
-  }
 
   const { data: outreaches } = await supabaseAdmin
     .from("outreaches")

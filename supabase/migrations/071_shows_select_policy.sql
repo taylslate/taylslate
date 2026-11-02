@@ -23,16 +23,20 @@
 --     is the caller
 --   a verified tie: a deal whose show_profile_id is the caller's
 --     show_profiles row, or a show_owner row whose contact_email
---     matches the caller's profiles.email and the caller has a
+--     matches the caller's auth.users email and the caller has a
 --     show_profiles row
+-- profiles.email is not the match. public.auth_login_email() reads
+-- auth.users for auth.uid() as security definer. It does not read
+-- shows, so the policy stays free of a shows recursion.
 -- show_profiles.podscan_id is not a tie. There is no admin branch.
 -- The live profiles role check allows brand, agency, agent, and
 -- show. It does not allow admin. The env allowlist is not readable
 -- in SQL.
 --
 -- Policies on agent_show_relationships, deals, show_profiles, and
--- profiles do not read shows, so the branches stay inline. No
--- security definer function. Every auth.uid() call is wrapped in
+-- profiles do not read shows, so the branches stay inline. The only
+-- security definer function is auth_login_email, and it reads
+-- auth.users only. Every auth.uid() call is wrapped in
 -- (select auth.uid()).
 --
 -- Indexes added only when missing:
@@ -65,6 +69,23 @@
 --   Expected: anon none, PUBLIC none, authenticated SELECT only.
 --   service_role is unchanged from before this file.
 -- ============================================================
+
+create or replace function public.auth_login_email()
+returns text
+language sql
+stable
+security definer
+set search_path = auth, public, pg_temp
+as $$
+  select nullif(lower(btrim(email)), '')
+  from auth.users
+  where id = (select auth.uid());
+$$;
+
+revoke all on function public.auth_login_email() from public;
+revoke all on function public.auth_login_email() from anon;
+grant execute on function public.auth_login_email() to authenticated;
+grant execute on function public.auth_login_email() to service_role;
 
 drop policy if exists "Shows are publicly readable" on public.shows;
 drop policy if exists "Shows readable by signed-in participants" on public.shows;
@@ -99,17 +120,12 @@ create policy "Shows readable by signed-in participants"
     or (
       'show_owner' = any (data_sources)
       and contact_email is not null
+      and public.auth_login_email() is not null
+      and lower(btrim(contact_email)) = public.auth_login_email()
       and exists (
         select 1
-        from public.profiles p
-        where p.id = (select auth.uid())
-          and p.email is not null
-          and lower(contact_email) = lower(p.email)
-          and exists (
-            select 1
-            from public.show_profiles owner_profile
-            where owner_profile.user_id = p.id
-          )
+        from public.show_profiles owner_profile
+        where owner_profile.user_id = (select auth.uid())
       )
     )
   );

@@ -191,8 +191,8 @@ describe("/admin gate", () => {
   it("404s when profiles.email is the founder but the session email is not", async () => {
     const profilesEmail = "chris@taylslate.com";
     mocks.getAuthenticatedUser.mockResolvedValue({ id: "attacker", email: "ada@brand.test" });
-    // isShowsAdmin trusts profiles.email. That column matching the founder
-    // must not open /admin. The page must not call it.
+    // profiles.email matching the founder must not open /admin.
+    // This page uses the session email and does not call isShowsAdmin.
     mocks.isShowsAdmin.mockImplementation(async () => isInternalAdmin(profilesEmail));
     await expect(AdminOpsPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("NEXT_NOT_FOUND");
     expect(isInternalAdmin(profilesEmail)).toBe(true);

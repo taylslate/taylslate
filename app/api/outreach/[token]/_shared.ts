@@ -27,6 +27,7 @@ import { renderIoReadyForSignature } from "@/lib/email/templates/io-ready-for-si
 import { sendEmail } from "@/lib/email/send";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { profileByLoginEmail } from "@/lib/auth/auth-email";
 import type {
   Outreach,
   OutreachResponseStatus,
@@ -286,12 +287,8 @@ export async function applyAndNotify(
 async function resolveShowProfileIdForOutreach(
   outreach: Outreach
 ): Promise<string | null> {
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("id, role")
-    .ilike("email", outreach.sent_to_email)
-    .maybeSingle();
-  if (!profile || (profile as Profile).role !== "show") return null;
+  const profile = await profileByLoginEmail(outreach.sent_to_email);
+  if (!profile || profile.role !== "show") return null;
   const { data: showProfile } = await supabaseAdmin
     .from("show_profiles")
     .select("id, onboarded_at")

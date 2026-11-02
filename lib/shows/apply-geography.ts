@@ -7,7 +7,7 @@
 //   1. a deal whose show_profile_id is this profile and whose show_id
 //      is the catalog row
 //   2. the private show_owner row (data_sources contains show_owner)
-//      whose contact_email matches the profile owner's login
+//      whose contact_email matches the profile owner's auth login
 //   3. a verified show_ownership_proofs row for that show_id and
 //      show_profile_id
 //
@@ -23,6 +23,7 @@
 // ============================================================
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getAuthEmail, getAuthUserIdByEmail } from "@/lib/auth/auth-email";
 import type { AudienceGeography, ShowDemographics, ShowProfile } from "@/lib/data/types";
 import {
   GEO_KEYS,
@@ -61,7 +62,7 @@ export interface VerifiedGeography {
 /**
  * A show profile tied to a catalog show by a deal (`deals.show_profile_id`)
  * or by the private show_owner row whose contact email matches the profile
- * owner's login. `show_profiles.podscan_id` is not a tie: the host can type it.
+ * owner's auth login. `show_profiles.podscan_id` is not a tie: the host can type it.
  */
 export interface VerifiedProfileTie {
   showId: string;
@@ -179,7 +180,7 @@ export async function getVerifiedProfileTies(
       if (!identity.showId || !isShowOwnerRow(identity.dataSources)) continue;
       const email = identity.contactEmail?.trim();
       if (!email) continue;
-      const owner = await profileByEmail(email);
+      const owner = await profileByLoginEmail(email);
       if (!owner) continue;
       const { data, error } = await supabaseAdmin
         .from("show_profiles")
@@ -265,16 +266,7 @@ async function showsByDeal(showProfileId: string): Promise<GeoShow[]> {
 }
 
 async function showsByOwner(userId: string): Promise<GeoShow[]> {
-  const { data: owner, error } = await supabaseAdmin
-    .from("profiles")
-    .select("email")
-    .eq("id", userId)
-    .maybeSingle();
-  if (error) {
-    console.warn("[applyAudienceGeographyToShow] owner lookup failed:", error.message);
-    return [];
-  }
-  const email = text(owner?.email)?.trim();
+  const email = await getAuthEmail(userId);
   if (!email) return [];
 
   const { data, error: showError } = await supabaseAdmin
@@ -293,16 +285,9 @@ async function showsByOwner(userId: string): Promise<GeoShow[]> {
     .map((row) => ({ id: row.id, demographics: row.demographics }));
 }
 
-async function profileByEmail(email: string): Promise<{ id: string } | null> {
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .select("id, email")
-    .ilike("email", escapeIlike(email))
-    .maybeSingle();
-  if (error || !data) return null;
-  if (!emailsMatch(text(data.email), email)) return null;
-  const id = text(data.id);
-  return id ? { id } : null;
+async function profileByLoginEmail(email: string): Promise<{ id: string } | null> {
+  const userId = await getAuthUserIdByEmail(email);
+  return userId ? { id: userId } : null;
 }
 
 function isShowOwnerRow(dataSources?: string[] | null): boolean {

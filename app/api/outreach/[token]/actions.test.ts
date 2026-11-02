@@ -16,7 +16,15 @@ const { adminBuilder, supabaseAdmin } = vi.hoisted(() => {
   };
   return {
     adminBuilder: builder,
-    supabaseAdmin: { from: vi.fn(() => builder) },
+    supabaseAdmin: {
+      from: vi.fn(() => builder),
+      auth: {
+        admin: {
+          listUsers: vi.fn(async () => ({ data: { users: [] }, error: null })),
+          getUserById: vi.fn(async () => ({ data: { user: null }, error: { message: "missing" } })),
+        },
+      },
+    },
   };
 });
 

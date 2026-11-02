@@ -6,6 +6,7 @@ import type { DomainAdmin } from "./test-admin";
 const bridge = vi.hoisted(() => ({
   keys: null as MemoryAdmin | null,
   data: null as DomainAdmin | null,
+  authUsers: [] as { id: string; email: string }[],
   recordEvent: vi.fn(async (_input: unknown) => undefined),
 }));
 
@@ -23,6 +24,15 @@ vi.mock("@/lib/supabase/admin", () => ({
     },
     rpc: (name: string, args: { p_key_id: string; p_window_start: string }) =>
       bridge.keys!.rpc(name, args),
+    auth: {
+      admin: {
+        listUsers: async () => ({ data: { users: bridge.authUsers }, error: null }),
+        getUserById: async (id: string) => {
+          const user = bridge.authUsers.find((row) => row.id === id) ?? null;
+          return { data: { user }, error: user ? null : { message: "missing" } };
+        },
+      },
+    },
   },
 }));
 
@@ -114,6 +124,7 @@ function seqId(prefix: string, n: number): string {
 beforeEach(() => {
   bridge.keys = createMemoryAdmin();
   bridge.data = createDomainAdmin();
+  bridge.authUsers = [];
   bridge.data.tables.profiles.push({ id: BRAND });
   bridge.recordEvent.mockClear();
   _setApiRateClockForTests(() => FIXED_NOW);
@@ -462,7 +473,8 @@ describe("brand isolation", () => {
     const secret = await readKey();
     const brand = bridge.data!.tables.profiles.find((row) => row.id === BRAND);
     if (!brand) throw new Error("missing brand profile");
-    brand.email = "owner@example.com";
+    brand.email = "not-the-login@example.com";
+    bridge.authUsers = [{ id: BRAND, email: "owner@example.com" }];
     bridge.data!.tables.show_profiles.push({ id: CALLER_SHOW_PROFILE, user_id: BRAND });
     bridge.data!.tables.shows.push(
       {
@@ -536,6 +548,14 @@ describe("brand isolation", () => {
     const owner = await call(getShow, "/api/v1/shows/" + SHOW_OWNER, secret, SHOW_OWNER);
     expect(owner.status).toBe(200);
     expect((await owner.json()).data.contact.email).toBe("owner@example.com");
+
+    bridge.authUsers = [{ id: BRAND, email: "attacker@example.com" }];
+    brand.email = "owner@example.com";
+    const copied = await call(listShows, "/api/v1/shows", secret);
+    const copiedRows = ((await copied.json()) as { data: ShowJson[] }).data;
+    const copiedOwner = copiedRows.find((row) => row.id === SHOW_OWNER);
+    expect(copiedOwner?.contact).toBeUndefined();
+    expect(copiedOwner?.verified).not.toBe(true);
 
     const rep = await call(getShow, "/api/v1/shows/" + SHOW_REP, secret, SHOW_REP);
     expect(rep.status).toBe(200);

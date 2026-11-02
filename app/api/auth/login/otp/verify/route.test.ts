@@ -19,6 +19,8 @@ const {
   createUser,
   deleteUser,
   rpc,
+  listUsers,
+  authUsers,
 } = vi.hoisted(() => ({
   verifyOtp: vi.fn(),
   signOut: vi.fn(),
@@ -30,6 +32,8 @@ const {
   createUser: vi.fn(),
   deleteUser: vi.fn(),
   rpc: vi.fn(),
+  listUsers: vi.fn(),
+  authUsers: { current: [{ id: "show-1", email: "host@example.com" }] as { id: string; email: string }[] },
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -39,7 +43,7 @@ vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
     from,
     rpc,
-    auth: { admin: { generateLink, createUser, deleteUser } },
+    auth: { admin: { generateLink, createUser, deleteUser, listUsers } },
   },
 }));
 vi.mock("next/headers", () => ({
@@ -80,6 +84,8 @@ beforeEach(() => {
   store.clear();
   inserted = [];
   profile = { id: "show-1", role: "show" };
+  authUsers.current = [{ id: "show-1", email: "host@example.com" }];
+  listUsers.mockImplementation(async () => ({ data: { users: authUsers.current }, error: null }));
   signOut.mockResolvedValue({ error: null });
   verifyOtp.mockImplementation(async (args: { token_hash?: string }) => {
     if (args?.token_hash) {
@@ -194,6 +200,7 @@ describe("POST /api/auth/login/otp/verify", () => {
 
   it("signs a brand in and sends show onboarding back to the dashboard", async () => {
     profile = { id: "brand-1", role: "brand" };
+    authUsers.current = [{ id: "brand-1", email: "brand@example.com" }];
     const res = await POST(
       req({ email: "brand@example.com", code: "482913", next: "/onboarding/show" }),
     );
@@ -204,6 +211,7 @@ describe("POST /api/auth/login/otp/verify", () => {
 
   it("keeps a brand's own next path", async () => {
     profile = { id: "brand-1", role: "brand" };
+    authUsers.current = [{ id: "brand-1", email: "brand@example.com" }];
     const res = await POST(
       req({ email: "brand@example.com", code: "482913", next: "/campaigns/abc" }),
     );
@@ -217,6 +225,46 @@ describe("POST /api/auth/login/otp/verify", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "verify_failed" });
     expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not sign in the attacker when profiles.email is the victim address", async () => {
+    authUsers.current = [
+      { id: "victim-1", email: "victim@example.com" },
+      { id: "attacker-1", email: "attacker@example.com" },
+    ];
+    const rows = [
+      { id: "victim-1", role: "show", email: "victim@example.com" },
+      { id: "attacker-1", role: "show", email: "victim@example.com" },
+    ];
+    from.mockImplementation(() => {
+      const filters: Record<string, string> = {};
+      const chain = {
+        select: vi.fn(() => chain),
+        eq: vi.fn((column: string, value: string) => {
+          filters[column] = value;
+          return chain;
+        }),
+        maybeSingle: vi.fn(async () => {
+          if (filters.email) {
+            return { data: rows.find((row) => row.email === filters.email) ?? null, error: null };
+          }
+          return { data: rows.find((row) => row.id === filters.id) ?? null, error: null };
+        }),
+        insert: vi.fn(async () => ({ error: null })),
+      };
+      return chain;
+    });
+    verifyOtp.mockResolvedValue({ data: { user: { id: "attacker-1" } }, error: null });
+    const denied = await POST(req({ email: "victim@example.com", code: "482913" }));
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({ error: "verify_failed" });
+    expect(signOut).toHaveBeenCalled();
+
+    verifyOtp.mockResolvedValue({ data: { user: { id: "victim-1" } }, error: null });
+    signOut.mockClear();
+    const allowed = await POST(req({ email: "victim@example.com", code: "482913" }));
+    expect(allowed.status).toBe(200);
+    expect(signOut).not.toHaveBeenCalled();
   });
 
   it("does not open a session when there is no profile and no pitch code", async () => {

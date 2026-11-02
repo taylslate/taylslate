@@ -19,6 +19,7 @@ import {
   resolveOrMaterializeShowIdForOutreach,
 } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { profileByLoginEmail } from "@/lib/auth/auth-email";
 import { logEvent } from "@/lib/data/events";
 import { brandNameFromProfile } from "@/lib/brand/display-name";
 import { renderIoReadyForSignature } from "@/lib/email/templates/io-ready-for-signature";
@@ -64,12 +65,8 @@ export async function POST(
   }
 
   // Find the show_profile (counter implies show is onboarded).
-  const { data: showUser } = await supabaseAdmin
-    .from("profiles")
-    .select("id, role")
-    .ilike("email", outreach.sent_to_email)
-    .maybeSingle();
-  if (!showUser || (showUser as Profile).role !== "show") {
+  const showUser = await profileByLoginEmail(outreach.sent_to_email);
+  if (!showUser || showUser.role !== "show") {
     return NextResponse.json({ error: "Show profile not found" }, { status: 404 });
   }
   const { data: showProfile } = await supabaseAdmin

@@ -179,6 +179,43 @@ describe("importShows", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("does not publish a roster when profiles.email is an admin and the login is not", async () => {
+    process.env.INTERNAL_ADMIN_EMAILS = "ops@taylslate.com";
+    getUser.mockResolvedValue({
+      data: { user: { id: "agent-1", email: "agent@example.com" } },
+    });
+    let showRow: Record<string, unknown> | null = null;
+    userFrom.mockImplementation((table: string) => {
+      if (table === "profiles") {
+        return chain({
+          data: { id: "agent-1", role: "agent", email: "ops@taylslate.com" },
+          error: null,
+        });
+      }
+      if (table === "agent_show_relationships") {
+        return chain({ data: [], error: null });
+      }
+      return chain({ data: null, error: null });
+    });
+    adminFrom.mockImplementation((table: string) => {
+      if (table === "shows") {
+        return chain(
+          { data: { id: "show-new", name: "Night Desk", platform: "podcast" }, error: null },
+          (row) => {
+            showRow = row as Record<string, unknown>;
+          }
+        );
+      }
+      return chain({ data: null, error: null });
+    });
+
+    await importShows([
+      { name: "Night Desk", platform: "podcast", is_discoverable: true },
+    ]);
+    expect(showRow).toMatchObject({ is_discoverable: false });
+    delete process.env.INTERNAL_ADMIN_EMAILS;
+  });
+
   it("stores is_exclusive false when the row says so", async () => {
     const inserted: Record<string, unknown>[] = [];
     asAgent();

@@ -22,6 +22,8 @@ const {
   getShowSigningUrl,
   verifyEnvelopeTabsPlaced,
   logEvent,
+  showLogin,
+  getUserById,
   supabaseAdmin,
 } = vi.hoisted(() => {
   const builders: Record<string, SingleBuilder> = {};
@@ -37,6 +39,11 @@ const {
     };
     return b;
   }
+  const showLogin = { email: "show@x.com" };
+  const getUserById = vi.fn(async (id: string) => ({
+    data: { user: { id, email: showLogin.email } },
+    error: null,
+  }));
   return {
     getAuthenticatedUser: vi.fn(),
     getBrandProfileByUserId: vi.fn(),
@@ -58,12 +65,15 @@ const {
     getShowSigningUrl: vi.fn(),
     verifyEnvelopeTabsPlaced: vi.fn().mockResolvedValue({ ok: true, missing: [] }),
     logEvent: vi.fn().mockResolvedValue(null),
+    showLogin,
+    getUserById,
     supabaseAdmin: {
       from: vi.fn((table: string) => {
         if (!builders[table]) builders[table] = makeBuilder();
         return builders[table];
       }),
       _builders: builders,
+      auth: { admin: { getUserById } },
     },
   };
 });
@@ -240,6 +250,26 @@ describe("POST /api/deals/[id]/send-to-docusign", () => {
         signer: expect.objectContaining({ email: "brand@x.com", clientUserId: "brand" }),
       })
     );
+  });
+
+  it("addresses the show signer with the auth login when profiles.email differs", async () => {
+    stageHappyPath();
+    showLogin.email = "host-real@show.test";
+    supabaseAdmin.from("profiles")._setSingle({
+      email: "attacker@evil.test",
+      full_name: "Attacker",
+    });
+    getWave12DealById.mockResolvedValueOnce(planningDeal({ docusign_envelope_id: null }));
+    createEnvelope.mockResolvedValueOnce({ envelopeId: "env_new" });
+
+    const res = await POST(req() as never, { params });
+    expect(res.status).toBe(200);
+    expect(createEnvelope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        show: expect.objectContaining({ email: "host-real@show.test" }),
+      }),
+    );
+    showLogin.email = "show@x.com";
   });
 
   it("RESUME from io_sent refreshes the signing URL without a new envelope", async () => {

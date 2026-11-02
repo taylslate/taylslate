@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { from, ties } = vi.hoisted(() => ({
+const { from, ties, authEmail } = vi.hoisted(() => ({
   from: vi.fn(),
   ties: vi.fn(),
+  authEmail: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: { from: (...args: unknown[]) => from(...args) },
+}));
+
+vi.mock("@/lib/auth/auth-email", () => ({
+  getAuthEmail: (...args: unknown[]) => authEmail(...args),
 }));
 
 vi.mock("@/lib/shows/apply-geography", () => ({
@@ -55,22 +60,26 @@ function table(rows: Record<string, Row>) {
 beforeEach(() => {
   vi.clearAllMocks();
   ties.mockResolvedValue([]);
+  authEmail.mockResolvedValue(null);
   delete process.env.INTERNAL_ADMIN_EMAILS;
 });
 
 describe("canEditShow", () => {
-  it("allows an internal admin and a profile role of admin", async () => {
+  it("allows an internal admin from the auth login, not profiles.email", async () => {
     process.env.INTERNAL_ADMIN_EMAILS = "ops@taylslate.com";
+    authEmail.mockResolvedValue("ops@taylslate.com");
     table({
-      profiles: { data: { id: USER, email: "ops@taylslate.com", role: "brand" } },
+      profiles: { data: { id: USER, email: "attacker@example.test", role: "brand" } },
     });
     expect(await canEditShow(USER, SHOW)).toBe(true);
     expect(await isShowsAdmin(USER)).toBe(true);
 
+    authEmail.mockResolvedValue("attacker@example.test");
     table({
-      profiles: { data: { id: USER, email: "other@taylslate.com", role: "admin" } },
+      profiles: { data: { id: USER, email: "ops@taylslate.com", role: "admin" } },
     });
-    expect(await canEditShow(USER, SHOW)).toBe(true);
+    expect(await canEditShow(USER, SHOW)).toBe(false);
+    expect(await isShowsAdmin(USER)).toBe(false);
   });
 
   it("allows an agent only when the roster link is approved", async () => {
