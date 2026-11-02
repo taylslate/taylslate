@@ -1,5 +1,73 @@
 # Senior dev handoff
 
+## ADM1: Internal operations dashboard
+
+### What was built
+
+A read-only founder page at `/admin`. No ADM1 spec was in the backlog or `docs/jobs`. The page follows the existing admin gate and the Ink & Gold admin pages.
+
+Signed out, `proxy.ts` sends the browser to `/login` before this page runs. Signed in, the only gate is `isInternalAdmin` on the session email (`INTERNAL_ADMIN_EMAILS`). Anyone else gets `notFound()`. `profiles.email` is not read. A signed-in user can update that column, so it must not grant this page. `profiles.role` is not read either. The check constraint does not allow `admin`. The allowlisted founder address is `chris@taylslate.com` only when that address is in `INTERNAL_ADMIN_EMAILS`. No new env var.
+
+The page is not in the sidebar. `lib/nav/items.ts` was not edited. Existing admin screens were not edited.
+
+Sections:
+
+- Accounts: counts for brand, show, agency, and sales agent, plus signups in the last 24 hours and 7 days. The list filters by role and searches name, email, and company. Latest 40.
+- Campaigns: counts by status. Active means status `active`. The list opens on active and can search the campaign name or the account.
+- Deals: counts by status. Active means every status except `completed` and `cancelled`. The list opens on active and can search the show name or the brand account. Gross is `deals.total_gross` when that column is set.
+- Platform fees: sum of `payments.application_fee_amount_cents` where status is `succeeded` or `completed`. The last 30 days use `charged_at`, then `created_at`. Pending and processing are labeled not yet collected. Refunded and disputed stay out of the collected total. This does not call Stripe.
+- YouTube library: total channels, `passed_market_filter`, created in the last 24 hours and 7 days, and `youtube_pull_queue` by status. If a column name contains "email", the page counts non-empty values. If no such column exists, it says so. A missing table is a note. The other sections still render.
+- Recent errors and jobs: domain events whose type contains fail, error, rolled_back, or unverified, plus `payment.disputed`. Payloads are not selected. Failed payments show id and date only. YouTube pull errors and the latest finished jobs are listed. Error text is shortened and secret-shaped values are stripped.
+
+Every query is a select through the service role, after the gate. There is no insert, update, delete, or rpc on this path.
+
+### Where
+
+- `app/(dashboard)/admin/page.tsx` at `/admin`
+- `app/(dashboard)/admin/ops-view.tsx`
+- `app/(dashboard)/admin/page.test.tsx`
+- `lib/admin/ops-dashboard.ts` and `lib/admin/ops-dashboard.test.ts`
+- `lib/admin/ops-db.ts` and `lib/admin/ops-db.test.ts`
+- `lib/admin/ops-filters.ts`
+- `PRODUCT_BACKLOG.md`
+- `STATUS.md`
+
+`lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `lib/youtube-library` were not edited. No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No Vercel env change.
+
+### Tests
+
+`npx vitest run lib/admin/ops-dashboard.test.ts lib/admin/ops-db.test.ts "app/(dashboard)/admin/page.test.tsx" proxy.test.ts`
+
+Covers the session-email allowlist, a 404 with no read when `profiles.email` is the founder address but the session email is not, a 404 with no read for signed-out and non-admin sessions, fee sums, list filters, YouTube counts, a missing YouTube table, no email column, redaction of key and payment identifiers, and that the selects do not ask for payment intent ids or event payloads. The page source does not call `isShowsAdmin`. The view renders the fee total, the email-column note, and the existing admin links. Rendered text has no em dash.
+
+`npx tsc --noEmit` clean.
+
+`proxy.test.ts` asserts a signed-out `GET /admin` redirects to `/login?next=/admin`, and a signed-in session is not redirected by the proxy. The page then 404s unless the session is an admin. A local `next dev` check did the same: `GET /admin` returned 307 to `/login?next=%2Fadmin`, and the login HTML did not include the dashboard. This environment has no `.env.local`, so the filled dashboard was not clicked through as a signed-in admin. The view assertions are the rendered component.
+
+### Known gaps
+
+- The page sits under the dashboard layout. A profile with no role, or a brand or show that has not finished onboarding, is redirected by that layout before this page renders. Chris's founder account already has a role and has finished onboarding, so `/admin` opens for that login.
+- There is no sidebar link. Open `/admin` directly.
+- Email totals depend on a column whose name contains "email". Migration 074 has no email column. Until one exists, the page says so.
+- `youtube_channels` and `youtube_pull_queue` are read if they are present. A missing table does not fail the page.
+- Fee totals stop after 5,000 payment rows and say so. Collected revenue is the stored fee snapshot, not a Stripe balance.
+- Deal gross uses `total_gross`. A Wave 12 deal can have that empty. The status still shows.
+- Search ignores characters other than letters, numbers, space, and `@.+_-`, and it keeps 80 characters.
+- While an admin is impersonating a test account, the session email is the test account, so this page 404s. That is the same gate as the other admin tools.
+
+### Follow-up, not in this PR
+
+`canEditShow` in `lib/shows/can-edit-show.ts` has the same `profiles.email` trust bug. `isShowsAdmin` returns true when `profiles.email` is on `INTERNAL_ADMIN_EMAILS`, or when `profiles.role` is `admin`. A signed-in user can update their own `profiles.email`. The role check is dead: the `profiles.role` check constraint does not allow `admin`. Do not change `canEditShow` or `isShowsAdmin` in this PR. A later change should decide show edits from the session email only.
+
+### Choices to confirm
+
+- (a) `/admin` is the URL. It is not linked from the sidebar.
+- (b) Active campaigns are status `active`. Active deals exclude `completed` and `cancelled`.
+- (c) Collected fees are `succeeded` and `completed` only.
+- (d) Sales agents are listed with brands, shows, and agencies.
+- (e) YouTube email stats appear only when a matching column exists.
+- (f) Paul Jones reviews. This PR does not merge until then.
+
 ## I2: Past-campaign parse API
 
 ### What was built

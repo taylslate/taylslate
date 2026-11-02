@@ -68,6 +68,12 @@ describe("proxy public-route allowlist (signed out)", () => {
     expect(res.headers.get("location")).toContain("next=%2Fdashboard");
   });
 
+  it("bounces /admin to /login when signed out", async () => {
+    const res = await run("/admin");
+    expect(redirectedToLogin(res)).toBe(true);
+    expect(res.headers.get("location")).toContain("next=%2Fadmin");
+  });
+
   it("bounces the shows catalog to /login when signed out", async () => {
     const res = await run("/shows");
     expect(redirectedToLogin(res)).toBe(true);
@@ -79,6 +85,12 @@ describe("proxy passes authenticated users through to protected routes", () => {
   it("lets a signed-in user reach /dashboard", async () => {
     getUser.mockResolvedValue({ data: { user: { id: "u1" } } });
     const res = await run("/dashboard");
+    expect(redirectedToLogin(res)).toBe(false);
+  });
+
+  it("lets a signed-in user reach /admin so the page can apply the admin gate", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "u1" } } });
+    const res = await run("/admin");
     expect(redirectedToLogin(res)).toBe(false);
   });
 });
