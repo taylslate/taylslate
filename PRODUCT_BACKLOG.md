@@ -75,9 +75,9 @@ Admin tool to create a `planning`-status deal between test accounts (brand1 → 
 
 ---
 
-## ADM1 — Internal operations dashboard (Nov 2, 2026)
+## ADM1: Internal operations dashboard (Nov 2, 2026)
 
-Read-only founder page at `/admin`. There was no earlier ADM1 spec in the backlog or `docs/jobs`; this is the page those notes did not have. It is not in the sidebar. `lib/nav/items.ts` was left alone. Signed-out requests never reach it (`proxy.ts` already sends them to `/login`). A signed-in session that is not on `INTERNAL_ADMIN_EMAILS` and whose profile role is not `admin` gets a 404. `chris@taylslate.com` is allowed only when that address is on `INTERNAL_ADMIN_EMAILS`. No new env var.
+Read-only founder page at `/admin`. There was no earlier ADM1 spec in the backlog or `docs/jobs`; this is the page those notes did not have. It is not in the sidebar. `lib/nav/items.ts` was left alone. Signed-out requests never reach it (`proxy.ts` already sends them to `/login`). A signed-in session that is not on `INTERNAL_ADMIN_EMAILS` gets a 404. The check uses the session email only. `profiles.email` is writable by the account and does not grant this page. `chris@taylslate.com` is allowed only when that address is on `INTERNAL_ADMIN_EMAILS`. No new env var.
 
 The page reads accounts (brand, show, agency, and sales agent), campaigns, and deals, with a status filter and a search on each list. Active campaigns are status `active`. Active deals are every status except `completed` and `cancelled`. Platform fee totals are the sum of `payments.application_fee_amount_cents` for `succeeded` and `completed`. Pending and processing are shown apart from collected. The page does not call Stripe.
 

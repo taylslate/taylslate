@@ -6,7 +6,7 @@
 
 A read-only founder page at `/admin`. No ADM1 spec was in the backlog or `docs/jobs`. The page follows the existing admin gate and the Ink & Gold admin pages.
 
-Signed out, `proxy.ts` sends the browser to `/login` before this page runs. Signed in, the session email must be on `INTERNAL_ADMIN_EMAILS`, or `isShowsAdmin` must be true (profile role `admin`, or the profile email on that same allowlist). Anyone else gets `notFound()`. The allowlisted founder address is `chris@taylslate.com` only when that address is in `INTERNAL_ADMIN_EMAILS`. No new env var.
+Signed out, `proxy.ts` sends the browser to `/login` before this page runs. Signed in, the only gate is `isInternalAdmin` on the session email (`INTERNAL_ADMIN_EMAILS`). Anyone else gets `notFound()`. `profiles.email` is not read. A signed-in user can update that column, so it must not grant this page. `profiles.role` is not read either. The check constraint does not allow `admin`. The allowlisted founder address is `chris@taylslate.com` only when that address is in `INTERNAL_ADMIN_EMAILS`. No new env var.
 
 The page is not in the sidebar. `lib/nav/items.ts` was not edited. Existing admin screens were not edited.
 
@@ -38,7 +38,7 @@ Every query is a select through the service role, after the gate. There is no in
 
 `npx vitest run lib/admin/ops-dashboard.test.ts lib/admin/ops-db.test.ts "app/(dashboard)/admin/page.test.tsx" proxy.test.ts`
 
-Covers the allowlist and the profile-role admin gate, a 404 with no read for signed-out and non-admin sessions, fee sums, list filters, YouTube counts, a missing YouTube table, no email column, redaction of key and payment identifiers, and that the selects do not ask for payment intent ids or event payloads. The view renders the fee total, the email-column note, and the existing admin links. Rendered text has no em dash.
+Covers the session-email allowlist, a 404 with no read when `profiles.email` is the founder address but the session email is not, a 404 with no read for signed-out and non-admin sessions, fee sums, list filters, YouTube counts, a missing YouTube table, no email column, redaction of key and payment identifiers, and that the selects do not ask for payment intent ids or event payloads. The page source does not call `isShowsAdmin`. The view renders the fee total, the email-column note, and the existing admin links. Rendered text has no em dash.
 
 `npx tsc --noEmit` clean.
 
@@ -54,6 +54,10 @@ Covers the allowlist and the profile-role admin gate, a 404 with no read for sig
 - Deal gross uses `total_gross`. A Wave 12 deal can have that empty. The status still shows.
 - Search ignores characters other than letters, numbers, space, and `@.+_-`, and it keeps 80 characters.
 - While an admin is impersonating a test account, the session email is the test account, so this page 404s. That is the same gate as the other admin tools.
+
+### Follow-up, not in this PR
+
+`canEditShow` in `lib/shows/can-edit-show.ts` has the same `profiles.email` trust bug. `isShowsAdmin` returns true when `profiles.email` is on `INTERNAL_ADMIN_EMAILS`, or when `profiles.role` is `admin`. A signed-in user can update their own `profiles.email`. The role check is dead: the `profiles.role` check constraint does not allow `admin`. Do not change `canEditShow` or `isShowsAdmin` in this PR. A later change should decide show edits from the session email only.
 
 ### Choices to confirm
 

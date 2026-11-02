@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
+import { isInternalAdmin } from "@/lib/auth/admin";
 import type { OpsDashboardData } from "@/lib/admin/ops-dashboard";
 import { DEFAULT_OPS_FILTERS } from "@/lib/admin/ops-filters";
 
@@ -179,10 +182,27 @@ describe("/admin gate", () => {
 
   it("404s for a signed-in brand and does not read", async () => {
     mocks.getAuthenticatedUser.mockResolvedValue({ id: "brand-1", email: "ada@brand.test" });
-    mocks.isShowsAdmin.mockResolvedValue(false);
     await expect(AdminOpsPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(mocks.isShowsAdmin).not.toHaveBeenCalled();
     expect(mocks.loadOpsDashboard).not.toHaveBeenCalled();
     expect(mocks.createSupabaseOpsDb).not.toHaveBeenCalled();
+  });
+
+  it("404s when profiles.email is the founder but the session email is not", async () => {
+    const profilesEmail = "chris@taylslate.com";
+    mocks.getAuthenticatedUser.mockResolvedValue({ id: "attacker", email: "ada@brand.test" });
+    // isShowsAdmin trusts profiles.email. That column matching the founder
+    // must not open /admin. The page must not call it.
+    mocks.isShowsAdmin.mockImplementation(async () => isInternalAdmin(profilesEmail));
+    await expect(AdminOpsPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(isInternalAdmin(profilesEmail)).toBe(true);
+    expect(isInternalAdmin("ada@brand.test")).toBe(false);
+    expect(mocks.isShowsAdmin).not.toHaveBeenCalled();
+    expect(mocks.loadOpsDashboard).not.toHaveBeenCalled();
+    expect(mocks.createSupabaseOpsDb).not.toHaveBeenCalled();
+    const source = readFileSync(join(process.cwd(), "app/(dashboard)/admin/page.tsx"), "utf8");
+    expect(source).not.toMatch(/isShowsAdmin/);
+    expect(source).not.toMatch(/role === ["']admin["']/);
   });
 
   it("reads for the allowlisted founder email", async () => {
@@ -196,14 +216,6 @@ describe("/admin gate", () => {
     );
     expect(screen.getByRole("heading", { name: "Operations" })).toBeInTheDocument();
     expect(screen.getAllByText("ada@brand.test").length).toBeGreaterThan(0);
-  });
-
-  it("reads for a profile role of admin that is not on the allowlist", async () => {
-    mocks.getAuthenticatedUser.mockResolvedValue({ id: "ops", email: "ops@example.com" });
-    mocks.isShowsAdmin.mockResolvedValue(true);
-    render(await AdminOpsPage({ searchParams: Promise.resolve({}) }));
-    expect(mocks.isShowsAdmin).toHaveBeenCalledWith("ops");
-    expect(mocks.loadOpsDashboard).toHaveBeenCalledOnce();
   });
 });
 

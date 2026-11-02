@@ -4,7 +4,6 @@ import { createSupabaseOpsDb } from "@/lib/admin/ops-db";
 import { loadOpsDashboard } from "@/lib/admin/ops-dashboard";
 import { parseOpsFilters } from "@/lib/admin/ops-filters";
 import { getAuthenticatedUser } from "@/lib/data/queries";
-import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 import { OpsView } from "./ops-view";
 
 export const dynamic = "force-dynamic";
@@ -23,14 +22,9 @@ export default async function AdminOpsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const user = await getAuthenticatedUser();
-  if (!user) notFound();
-  // Allowlist is the session email. A profile role of admin is the other gate.
-  // isShowsAdmin also accepts the allowlist on the profile email, so check the
-  // session first and skip that read when the session is already allowlisted.
-  if (!isInternalAdmin(user.email)) {
-    const roleAdmin = await isShowsAdmin(user.id);
-    if (!roleAdmin) notFound();
-  }
+  // Session email only. profiles.email is writable by the signed-in user, and
+  // profiles.role cannot be admin. Neither one may open this page.
+  if (!user || !isInternalAdmin(user.email)) notFound();
   const filters = parseOpsFilters(await searchParams);
   const data = await loadOpsDashboard(createSupabaseOpsDb(), filters, new Date());
   return <OpsView data={data} filters={filters} />;
