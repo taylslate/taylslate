@@ -6,6 +6,8 @@ export interface RssItem {
   guid: string | null;
   enclosureUrl: string | null;
   pubDate: string | null;
+  /** itunes:duration in seconds, when the item includes one. */
+  durationSeconds: number | null;
 }
 
 const AUDIO_EXT = /\.(mp3|m4a|mp4|m4v|wav|aac|ogg|oga|opus|flac)(?:$|[?#])/i;
@@ -29,6 +31,22 @@ function decodeXml(raw: string): string {
     .replace(/&#39;/g, "'")
     .replace(/&apos;/g, "'")
     .trim();
+}
+
+/** Seconds from itunes:duration. Accepts raw seconds, MM:SS, or HH:MM:SS. */
+export function parseItunesDuration(raw: string | null): number | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    return Number.isFinite(seconds) ? Math.round(seconds) : null;
+  }
+  const parts = trimmed.split(":").map((part) => Number(part));
+  if (parts.length < 2 || parts.length > 3) return null;
+  if (parts.some((part) => !Number.isFinite(part) || part < 0)) return null;
+  if (parts.length === 2) return Math.round(parts[0] * 60 + parts[1]);
+  return Math.round(parts[0] * 3600 + parts[1] * 60 + parts[2]);
 }
 
 function tagText(block: string, tag: string): string | null {
@@ -61,6 +79,7 @@ export function parseRssItems(xml: string): RssItem[] {
       guid: tagText(block, "guid"),
       enclosureUrl: attr(block, "enclosure", "url"),
       pubDate: tagText(block, "pubDate"),
+      durationSeconds: parseItunesDuration(tagText(block, "itunes:duration")),
     });
   }
   return items;

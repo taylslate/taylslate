@@ -876,6 +876,40 @@ export class YouTubeClient {
 
     return { results, playlistCalls, videoListCalls };
   }
+
+  /**
+   * One video by id. videos.list, 1 quota unit. Used to pull the episode
+   * a booked spot already names. This does not search the catalog.
+   */
+  async getVideo(videoId: string): Promise<{
+    videoId: string;
+    channelId: string;
+    title: string;
+    publishedAt: string;
+    durationSeconds: number | null;
+  } | null> {
+    const id = videoId.trim();
+    if (!id) return null;
+    const res = await this.request<{
+      items?: {
+        id?: string;
+        snippet?: { channelId?: string; title?: string; publishedAt?: string };
+        contentDetails?: { duration?: string };
+      }[];
+    }>("/videos", {
+      part: "snippet,contentDetails",
+      id,
+    });
+    const item = res.items?.[0];
+    if (!item?.id) return null;
+    return {
+      videoId: item.id,
+      channelId: item.snippet?.channelId?.trim() ?? "",
+      title: item.snippet?.title ?? "",
+      publishedAt: item.snippet?.publishedAt ?? "",
+      durationSeconds: parseIso8601DurationSeconds(item.contentDetails?.duration),
+    };
+  }
 }
 
 // ---- Singleton ----

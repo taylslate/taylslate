@@ -45,6 +45,26 @@ export interface AircheckRow {
   charge_error: string | null;
   created_at: string;
   updated_at: string;
+  /** Timestamped transcript pieces. Null until an automated Whisper run stores them. */
+  transcript_segments?: AircheckSegment[] | null;
+  duration_seconds?: number | null;
+  audio_minutes?: number | null;
+  estimated_cost_usd?: number | null;
+  window_start?: string | null;
+  window_end?: string | null;
+  /** True after a match judgment. A person still confirms before any charge. */
+  ready_for_review?: boolean;
+  confidence?: number | null;
+  ad_start_seconds?: number | null;
+  ad_end_seconds?: number | null;
+  match_reasons?: string[] | null;
+}
+
+/** One timestamped piece of a transcript. */
+export interface AircheckSegment {
+  start_seconds: number;
+  end_seconds: number;
+  text: string;
 }
 
 /** What the review screen shows for one IO line. No transcript body. */

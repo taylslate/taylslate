@@ -30,7 +30,7 @@ function escapeRegExp(value: string): string {
 }
 
 /** Index of phrase in transcript, punctuation-insensitive, bounded by tokens. */
-function phraseIndex(transcript: string, phrase: string): number {
+export function phraseIndex(transcript: string, phrase: string): number {
   const tokens = normalize(phrase).split(" ").filter(Boolean);
   if (tokens.join("").length < 3) return -1;
   const pattern = tokens.map(escapeRegExp).join("[^a-z0-9]*");
@@ -50,7 +50,7 @@ function earliest(transcript: string, phrases: string[]): number {
   return best;
 }
 
-function brandPhrases(name: string): string[] {
+export function brandPhrases(name: string): string[] {
   const trimmed = name.trim();
   if (!trimmed) return [];
   const stripped = trimmed
@@ -63,7 +63,7 @@ function brandPhrases(name: string): string[] {
   return phrases.filter((phrase) => normalize(phrase).replace(/ /g, "").length >= 3);
 }
 
-function urlPhrases(raw: string | null): string[] {
+export function urlPhrases(raw: string | null): string[] {
   const trimmed = raw?.trim();
   if (!trimmed) return [];
   let host = trimmed;
@@ -80,7 +80,7 @@ function urlPhrases(raw: string | null): string[] {
   return [host];
 }
 
-function placementZone(placement: string | null): PlacementZone | null {
+export function placementZone(placement: string | null): PlacementZone | null {
   if (!placement) return null;
   const compact = placement.toLowerCase().replace(/[\s_-]/g, "");
   if (compact.startsWith("pre")) return "pre-roll";
@@ -127,7 +127,10 @@ function skipped(reason: string): AircheckJudgment {
  * Talking points are not a column. When a caller passes text, the read
  * matches only if one of those lines is in the transcript.
  */
-function scriptFound(transcript: string, talkingPoints: string | null): boolean | null {
+export function talkingPointsFound(
+  transcript: string,
+  talkingPoints: string | null
+): boolean | null {
   const text = talkingPoints?.trim() ?? "";
   if (!text) return null;
   const chunks = text
@@ -159,7 +162,7 @@ export function judgeAircheck(
 
   const brandFound = brandAt >= 0;
   const offerFound = offerAt >= 0;
-  const script = scriptFound(transcript, buy.talkingPoints);
+  const script = talkingPointsFound(transcript, buy.talkingPoints);
   const hitAt = brandAt >= 0 ? brandAt : offerAt;
   const expected = placementZone(buy.placement);
   const positionFound =
