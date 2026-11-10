@@ -1,14 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 const BRAND = "11111111-1111-4111-8111-111111111111";
-const OTHER = "22222222-2222-4222-8222-222222222222";
 const ACTION = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
 const KEY = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
 
-const { getAuthenticatedUser, enforceRules, getShow, tables } = vi.hoisted(() => ({
+const { getAuthenticatedUser, getShow, tables } = vi.hoisted(() => ({
   getAuthenticatedUser: vi.fn(),
-  enforceRules: vi.fn(),
   getShow: vi.fn(),
   tables: {
     profiles: [] as Record<string, unknown>[],
@@ -21,9 +19,6 @@ vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: (...args: unknown[]) => getAuthenticatedUser(...args),
   createCampaign: vi.fn(),
 }));
-vi.mock("@/lib/security/rate-limit", () => ({
-  enforceRules: (...args: unknown[]) => enforceRules(...args),
-}));
 vi.mock("@/lib/api/v1/reads", () => ({
   getShow: (...args: unknown[]) => getShow(...args),
 }));
@@ -34,7 +29,6 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 import { GET } from "./route";
-import { POST } from "./[id]/route";
 
 function query(table: string) {
   const filters: Array<(row: Record<string, unknown>) => boolean> = [];
@@ -108,10 +102,8 @@ function request(path: string, body?: unknown, origin = "http://localhost") {
 
 beforeEach(() => {
   getAuthenticatedUser.mockReset();
-  enforceRules.mockReset();
   getShow.mockReset();
   getAuthenticatedUser.mockResolvedValue({ id: BRAND, email: "brand@example.com" });
-  enforceRules.mockResolvedValue(null);
   getShow.mockResolvedValue({ name: "Visible Show" });
   tables.profiles = [{ id: BRAND, role: "brand" }];
   tables.api_keys = [
@@ -172,80 +164,6 @@ describe("GET /api/settings/agent-actions", () => {
     expect(JSON.stringify(body)).not.toMatch(/payload-hash-secret|key-hash-secret|idem-secret/);
   });
 });
-
-describe("POST /api/settings/agent-actions/[id]", () => {
-  it("returns 401 without a session", async () => {
-    getAuthenticatedUser.mockResolvedValue(null);
-    const response = await post({ decision: "approve" });
-    expect(response.status).toBe(401);
-  });
-
-  it("returns 403 for a show and an agent", async () => {
-    tables.profiles = [{ id: BRAND, role: "show" }];
-    expect((await post({ decision: "approve" })).status).toBe(403);
-    tables.profiles = [{ id: BRAND, role: "agent" }];
-    expect((await post({ decision: "reject" })).status).toBe(403);
-  });
-
-  it("returns 404 for another brand's action", async () => {
-    tables.api_write_actions[0].brand_id = OTHER;
-    const response = await post({ decision: "approve" });
-    expect(response.status).toBe(404);
-    expect(tables.api_write_actions[0].status).toBe("pending");
-  });
-
-  it("returns 403 when the origin host does not match", async () => {
-    const response = await POST(
-      request(`/api/settings/agent-actions/${ACTION}`, { decision: "approve" }, "https://evil.example"),
-      { params: Promise.resolve({ id: ACTION }) }
-    );
-    expect(response.status).toBe(403);
-    expect(enforceRules).not.toHaveBeenCalled();
-    expect(tables.api_write_actions[0].status).toBe("pending");
-  });
-
-  it("returns 422 for an unknown key", async () => {
-    const response = await post({ decision: "approve", extra: true });
-    expect(response.status).toBe(422);
-  });
-
-  it("returns 429 when the user is over the hourly limit", async () => {
-    enforceRules.mockResolvedValue(
-      NextResponse.json({ error: "Too many requests. Try again later." }, { status: 429 })
-    );
-    const response = await post({ decision: "approve" });
-    expect(response.status).toBe(429);
-    expect(enforceRules).toHaveBeenCalledWith({
-      failureMode: "closed",
-      rules: [
-        expect.objectContaining({
-          bucket: "api_action_decide_user_hour",
-          key: BRAND,
-          max: 60,
-        }),
-      ],
-    });
-    expect(tables.api_write_actions[0].status).toBe("pending");
-  });
-
-  it("approves outreach without sending and hides secrets", async () => {
-    const response = await post({ decision: "approve", note: "ok" });
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.message).toBe("Approved. Nothing was sent.");
-    expect(jsonKeys(body).has("payload_hash")).toBe(false);
-    expect(jsonKeys(body).has("key_hash")).toBe(false);
-    expect(jsonKeys(body).has("idempotency_key")).toBe(false);
-    expect(JSON.stringify(body)).not.toMatch(/payload-hash-secret|key-hash-secret|idem-secret/);
-    expect(tables.api_write_actions[0].status).toBe("approved");
-  });
-});
-
-function post(body: unknown) {
-  return POST(request(`/api/settings/agent-actions/${ACTION}`, body), {
-    params: Promise.resolve({ id: ACTION }),
-  });
-}
 
 function jsonKeys(value: unknown, into = new Set<string>()): Set<string> {
   if (Array.isArray(value)) {

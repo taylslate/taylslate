@@ -316,6 +316,45 @@ describe("decideAction", () => {
     expect(row.execution_error).toBe(EXECUTION_ERROR);
     expect(row.result_campaign_id).toBeNull();
   });
+
+  it("does not retry after the draft campaign was deleted", async () => {
+    const row = admin.current!.rows("api_write_actions")[0];
+    row.status = "approved";
+    row.decided_by = BRAND;
+    row.decided_at = NOW;
+    row.executed_at = NOW;
+    row.result_campaign_id = null;
+    const result = await decideAction({
+      userId: BRAND,
+      actionId: ACTION,
+      decision: "retry",
+      note: null,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.httpStatus).toBe(409);
+    expect(createCampaign).not.toHaveBeenCalled();
+    expect(row.result_campaign_id).toBeNull();
+  });
+
+  it("returns 500 when the show check fails for a reason other than not found", async () => {
+    const row = admin.current!.rows("api_write_actions")[0];
+    row.kind = "outreach.draft";
+    row.payload = outreachPayload();
+    getShow.mockRejectedValue(new Error("database unavailable"));
+    const result = await decideAction({
+      userId: BRAND,
+      actionId: ACTION,
+      decision: "approve",
+      note: null,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.httpStatus).toBe(500);
+      expect(result.error).not.toBe("This show is no longer available.");
+    }
+    expect(row.status).toBe("pending");
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
 });
 
 describe("approval modules do not send", () => {

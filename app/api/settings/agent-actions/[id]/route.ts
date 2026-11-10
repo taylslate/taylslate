@@ -25,8 +25,18 @@ export async function POST(request: NextRequest, route: DecisionRoute) {
     return NextResponse.json({ error: actor.error }, { status: actor.httpStatus });
   }
 
+  if (!isSameOriginRequest(request)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const limited = await enforceRules({
+    rules: [apiActionDecideRule(actor.userId)],
+    failureMode: "closed",
+  });
+  if (limited) return limited;
+
   const raw = await request.text();
-  if (raw.length > MAX_BODY_BYTES) {
+  if (Buffer.byteLength(raw, "utf8") > MAX_BODY_BYTES) {
     return NextResponse.json({ error: "Request body is too large." }, { status: 413 });
   }
   let parsed: unknown;
@@ -39,16 +49,6 @@ export async function POST(request: NextRequest, route: DecisionRoute) {
   if (!body.ok) {
     return NextResponse.json({ error: body.error }, { status: 422 });
   }
-
-  if (!isSameOriginRequest(request)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const limited = await enforceRules({
-    rules: [apiActionDecideRule(actor.userId)],
-    failureMode: "closed",
-  });
-  if (limited) return limited;
 
   const { id } = await route.params;
   const result = await decideAction({

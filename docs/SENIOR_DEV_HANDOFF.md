@@ -2102,9 +2102,9 @@ Handoff writes the previous login to `domain_events` before `updateUserById`. A 
 
 A brand can open `/settings/agent-actions` and review the pending rows its API keys recorded through `/api/v1`. The screen has Pending, Approved, Rejected, and Expired tabs. Approve and Reject take an optional note and a confirm step. The actor is the session user id. Role is read from `profiles` by that id and must be `brand`. Another brand's action id is 404.
 
-Approving `campaign.create` creates one draft campaign through `createCampaign`, the same insert the manual brief submit uses: status `draft`, platforms podcast and youtube, recommendations empty, brief version 2. The campaign name follows `deriveCampaignName`, with ` - ` in place of the em dash that route uses. A reused pattern id is loaded with `getCampaignPatternById` and must have `customer_id` equal to the session user. A foreign or missing pattern leaves the row approved, stores a generic `execution_error`, and returns 502. Retry is allowed only for an approved `campaign.create` whose `result_campaign_id` is null, and it uses the same claim, so two retries create one campaign.
+Approving `campaign.create` creates one draft campaign through `createCampaign`, the same insert the manual brief submit uses: status `draft`, platforms podcast and youtube, recommendations empty, brief version 2. The brief stores `source_action_id`. Before creating, execution looks up `campaigns` for this user with `brief->>source_action_id` equal to the action id and links that row when it exists. The campaign name follows `deriveCampaignName`, with ` - ` in place of the em dash that route uses. A reused pattern id is loaded with `getCampaignPatternById` and must have `customer_id` equal to the session user. A foreign or missing pattern leaves the row approved, stores a generic `execution_error`, and returns 502. Retry is allowed only for an approved `campaign.create` whose `result_campaign_id` and `executed_at` are both null. The claim and the error write use the same `executed_at` check.
 
-Approving `outreach.draft` checks the show is still visible with `getShow` and then records the decision only. Nothing is sent. The row and the screen say "Approved. Nothing was sent." A show that is no longer visible returns 409 and leaves the row pending.
+Approving `outreach.draft` checks the show is still visible with `getShow` and then records the decision only. Nothing is sent. The row and the screen say "Approved. Nothing was sent." A missing show returns 409 and leaves the row pending. A show check that fails for another reason returns 500 and leaves the row pending.
 
 A pending row older than 14 days is shown as expired. Deciding one returns 409 and sets status `expired`. The decision update matches `status = pending` and `created_at` inside 14 days, so two approvals produce one decision.
 
@@ -2118,7 +2118,7 @@ Migration 082 is in the PR and is not applied. Apply it on `ldtmhafewfifdizgfrnn
 - `lib/api/approvals/decide.ts` and `decide.test.ts`
 - `lib/api/approvals/execute.ts` and `execute.test.ts`
 - `app/api/settings/agent-actions/route.ts` and `route.test.ts`
-- `app/api/settings/agent-actions/[id]/route.ts`
+- `app/api/settings/agent-actions/[id]/route.ts` and `[id]/route.test.ts`
 - `app/(dashboard)/settings/agent-actions/page.tsx`
 - `app/(dashboard)/settings/agent-actions/agent-actions-client.tsx` and `agent-actions.test.tsx`
 - `lib/data/types.ts` (the four `api_action.*` event types and the `api_action` entity type)
@@ -2136,5 +2136,5 @@ The PGlite suite applies the on-disk migrations through 082 (080 and 081 are abs
 - Approving outreach does not send email and does not insert an outreach row. Sending needs a later job and Chris's OK.
 - The page is reachable by URL. A5 adds the link from the API keys page. This job does not edit settings or nav.
 - The draft campaign name uses ` - ` instead of the em dash in `deriveCampaignName`.
-- If campaign creation succeeds and the result id write fails, the claim stays for 5 minutes. After that a retry can create a second draft. Deleting the draft sets `result_campaign_id` null (`on delete set null`), and retry can create another.
+- There is no unique index on `campaigns`. A retry finds the draft by `brief.source_action_id` before it inserts. A deleted draft clears `result_campaign_id` and leaves `executed_at` set, so retry does not create another.
 

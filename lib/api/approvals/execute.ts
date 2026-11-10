@@ -36,6 +36,10 @@ export async function executeApprovedCampaign(input: {
 
   try {
     const payload = validateCampaignCreate(claimed.payload);
+    const existingDraft = await findDraftForAction(input.userId, input.actionId);
+    if (existingDraft) {
+      return finishExisting(input.userId, input.actionId, existingDraft, payload);
+    }
     const pattern = await ownedPattern(input.userId, payload);
     if (payload.customer_context?.reused_from_pattern_id && !pattern) {
       await failExecution(input.userId, input.actionId);
@@ -44,7 +48,7 @@ export async function executeApprovedCampaign(input: {
     const campaign = await createCampaign({
       user_id: input.userId,
       name: campaignName(payload, pattern),
-      brief: briefFromPayload(payload),
+      brief: briefFromPayload(payload, input.actionId),
       budget_total: payload.budget_total,
       platforms: ["podcast", "youtube"],
       status: "draft",
@@ -54,36 +58,7 @@ export async function executeApprovedCampaign(input: {
       await failExecution(input.userId, input.actionId);
       return { ok: false, reason: "failed" };
     }
-    const linked = await linkCampaign(input.userId, input.actionId, campaign.id);
-    if (!linked) {
-      const existing = await readResult(input.userId, input.actionId);
-      if (existing) return { ok: true, campaignId: existing };
-      await markExecutionError(input.userId, input.actionId, false);
-      await logFailed(input.userId, input.actionId);
-      return { ok: false, reason: "failed" };
-    }
-    await logEvent({
-      eventType: "brief.submitted",
-      entityType: "campaign",
-      entityId: campaign.id,
-      actorId: input.userId,
-      payload: {
-        reused_from_pattern_id: payload.customer_context?.reused_from_pattern_id ?? null,
-        changed_fields: Object.keys(payload.customer_context?.changed_fields ?? {}),
-        goals: payload.goals ?? [],
-        budget_total: payload.budget_total ?? null,
-        source: "api_action",
-        action_id: input.actionId,
-      },
-    });
-    await logEvent({
-      eventType: "api_action.executed",
-      entityType: "api_action",
-      entityId: input.actionId,
-      actorId: input.userId,
-      payload: { action_id: input.actionId, kind: "campaign.create" },
-    });
-    return { ok: true, campaignId: campaign.id };
+    return finishExisting(input.userId, input.actionId, campaign.id, payload);
   } catch (err) {
     if (!(err instanceof ApiWriteError)) {
       console.error("[approvals.execute] campaign create failed");
@@ -113,7 +88,10 @@ export function campaignName(
   return `${brandName || "Campaign"} - ${monthYear}`;
 }
 
-function briefFromPayload(payload: CampaignCreatePayload): Record<string, unknown> {
+function briefFromPayload(
+  payload: CampaignCreatePayload,
+  actionId: string
+): Record<string, unknown> {
   return {
     version: 2,
     product: payload.product,
@@ -123,8 +101,60 @@ function briefFromPayload(payload: CampaignCreatePayload): Record<string, unknow
     goals_context: payload.goals_context,
     flight: payload.flight,
     exclusions_text: payload.exclusions_text,
+    source_action_id: actionId,
     submitted_at: new Date().toISOString(),
   };
+}
+
+async function findDraftForAction(userId: string, actionId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("campaigns")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("brief->>source_action_id", actionId)
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  const id = (data as { id?: unknown }).id;
+  return typeof id === "string" && isUuid(id) ? id : null;
+}
+
+async function finishExisting(
+  userId: string,
+  actionId: string,
+  campaignId: string,
+  payload: CampaignCreatePayload
+): Promise<ExecuteResult> {
+  const linked = await linkCampaign(userId, actionId, campaignId);
+  if (!linked) {
+    const existing = await readResult(userId, actionId);
+    if (existing) return { ok: true, campaignId: existing };
+    await markExecutionError(userId, actionId, false);
+    await logFailed(userId, actionId);
+    return { ok: false, reason: "failed" };
+  }
+  await logEvent({
+    eventType: "brief.submitted",
+    entityType: "campaign",
+    entityId: campaignId,
+    actorId: userId,
+    payload: {
+      reused_from_pattern_id: payload.customer_context?.reused_from_pattern_id ?? null,
+      changed_fields: Object.keys(payload.customer_context?.changed_fields ?? {}),
+      goals: payload.goals ?? [],
+      budget_total: payload.budget_total ?? null,
+      source: "api_action",
+      action_id: actionId,
+    },
+  });
+  await logEvent({
+    eventType: "api_action.executed",
+    entityType: "api_action",
+    entityId: actionId,
+    actorId: userId,
+    payload: { action_id: actionId, kind: "campaign.create" },
+  });
+  return { ok: true, campaignId };
 }
 
 async function ownedPattern(
@@ -154,6 +184,7 @@ async function claim(userId: string, actionId: string): Promise<Claim> {
     .eq("status", "approved")
     .eq("kind", "campaign.create")
     .is("result_campaign_id", null)
+    .is("executed_at", null)
     .or(`execution_started_at.is.null,execution_started_at.lt.${quoteFilterValue(staleBefore)}`)
     .select("id, payload, result_campaign_id")
     .maybeSingle();
@@ -238,7 +269,8 @@ async function markExecutionError(
     .eq("id", actionId)
     .eq("brand_id", userId)
     .eq("status", "approved")
-    .is("result_campaign_id", null);
+    .is("result_campaign_id", null)
+    .is("executed_at", null);
   if (error) console.error("[approvals.execute] error write failed", error.code ?? "unknown");
 }
 

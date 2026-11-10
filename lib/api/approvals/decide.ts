@@ -94,6 +94,7 @@ interface OwnedRow {
   payload: unknown;
   created_at: string;
   result_campaign_id: string | null;
+  executed_at: string | null;
 }
 
 export async function decideAction(input: {
@@ -122,8 +123,11 @@ export async function decideAction(input: {
     };
   }
   if (input.decision === "approve" && existing.kind === "outreach.draft") {
-    const visible = await outreachShowVisible(input.userId, existing.payload);
-    if (!visible) {
+    const visible = await outreachShowCheck(input.userId, existing.payload);
+    if (visible === "error") {
+      return { ok: false, httpStatus: 500, error: "Could not check the show." };
+    }
+    if (visible !== "visible") {
       return { ok: false, httpStatus: 409, error: SHOW_UNAVAILABLE };
     }
   }
@@ -195,7 +199,8 @@ async function retryAction(userId: string, actionId: string): Promise<DecideResu
   if (
     existing.status !== "approved" ||
     existing.kind !== "campaign.create" ||
-    existing.result_campaign_id
+    existing.result_campaign_id ||
+    existing.executed_at
   ) {
     return {
       ok: false,
@@ -250,7 +255,10 @@ function conflict(status: string): DecideResult {
   return { ok: false, httpStatus: 409, error, status: current };
 }
 
-async function outreachShowVisible(userId: string, payload: unknown): Promise<boolean> {
+async function outreachShowCheck(
+  userId: string,
+  payload: unknown
+): Promise<"visible" | "gone" | "error"> {
   const showId =
     payload &&
     typeof payload === "object" &&
@@ -258,22 +266,21 @@ async function outreachShowVisible(userId: string, payload: unknown): Promise<bo
     typeof (payload as { show_id?: unknown }).show_id === "string"
       ? (payload as { show_id: string }).show_id
       : "";
-  if (!isUuid(showId)) return false;
+  if (!isUuid(showId)) return "gone";
   try {
     await getShow(userId, showId);
-    return true;
+    return "visible";
   } catch (err) {
-    if (!(err instanceof ApiReadError)) {
-      console.error("[approvals.decide] show check failed");
-    }
-    return false;
+    if (err instanceof ApiReadError) return "gone";
+    console.error("[approvals.decide] show check failed");
+    return "error";
   }
 }
 
 async function readOwned(userId: string, actionId: string): Promise<OwnedRow | null> {
   const { data, error } = await supabaseAdmin
     .from("api_write_actions")
-    .select("id, kind, status, payload, created_at, result_campaign_id")
+    .select("id, kind, status, payload, created_at, result_campaign_id, executed_at")
     .eq("brand_id", userId)
     .eq("id", actionId)
     .maybeSingle();
@@ -288,6 +295,7 @@ async function readOwned(userId: string, actionId: string): Promise<OwnedRow | n
     created_at: typeof row.created_at === "string" ? row.created_at : "",
     result_campaign_id:
       typeof row.result_campaign_id === "string" ? row.result_campaign_id : null,
+    executed_at: typeof row.executed_at === "string" ? row.executed_at : null,
   };
 }
 

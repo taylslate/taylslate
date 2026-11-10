@@ -13,12 +13,14 @@ const { createCampaign, getCampaignPatternById, logEvent, row } = vi.hoisted(() 
   logEvent: vi.fn(),
   row: {
     current: null as Record<string, unknown> | null,
+    campaigns: [] as Record<string, unknown>[],
+    failNextLink: false,
   },
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
-    from: () => builder(),
+    from: (table: string) => builder(table),
   },
 }));
 vi.mock("@/lib/data/queries", () => ({
@@ -34,7 +36,7 @@ vi.mock("@/lib/data/events", () => ({
 import { campaignName, EXECUTION_ERROR, executeApprovedCampaign } from "@/lib/api/approvals/execute";
 import type { CampaignCreatePayload } from "@/lib/api/v1/writes";
 
-function builder() {
+function builder(table: string) {
   const filters: Array<(record: Record<string, unknown>) => boolean> = [];
   let patch: Record<string, unknown> | null = null;
   const api = {
@@ -46,7 +48,7 @@ function builder() {
       return api;
     },
     eq(column: string, value: unknown) {
-      filters.push((record) => record[column] === value);
+      filters.push((record) => columnMatches(record, column, value));
       return api;
     },
     is(column: string, value: unknown) {
@@ -57,6 +59,9 @@ function builder() {
       filters.push((record) => matchOr(record, expression));
       return api;
     },
+    limit() {
+      return api;
+    },
     maybeSingle() {
       return Promise.resolve().then(() => apply());
     },
@@ -65,14 +70,41 @@ function builder() {
     },
   };
 
+  function source(): Record<string, unknown>[] {
+    if (table === "campaigns") return row.campaigns;
+    return row.current ? [row.current] : [];
+  }
+
   function apply() {
-    const current = row.current;
-    const matched = current != null && filters.every((filter) => filter(current));
-    if (matched && patch && current) Object.assign(current, patch);
-    return { data: matched && current ? { ...current } : null, error: null };
+    const found = source().filter((record) => filters.every((filter) => filter(record)));
+    if (
+      patch &&
+      table !== "campaigns" &&
+      Object.prototype.hasOwnProperty.call(patch, "result_campaign_id") &&
+      row.failNextLink
+    ) {
+      row.failNextLink = false;
+      return { data: null, error: { code: "link_failed" } };
+    }
+    if (patch) {
+      for (const record of found) Object.assign(record, patch);
+    }
+    return { data: found[0] ? { ...found[0] } : null, error: null };
   }
 
   return api;
+}
+
+function columnMatches(record: Record<string, unknown>, column: string, value: unknown): boolean {
+  if (column === "brief->>source_action_id") {
+    const brief = record.brief;
+    return (
+      !!brief &&
+      typeof brief === "object" &&
+      (brief as { source_action_id?: unknown }).source_action_id === value
+    );
+  }
+  return record[column] === value;
 }
 
 function matchOr(record: Record<string, unknown>, expression: string): boolean {
@@ -123,6 +155,8 @@ beforeEach(() => {
   getCampaignPatternById.mockResolvedValue(null);
   logEvent.mockResolvedValue(null);
   row.current = baseRow();
+  row.campaigns = [];
+  row.failNextLink = false;
 });
 
 describe("campaignName", () => {
@@ -172,6 +206,7 @@ describe("executeApprovedCampaign", () => {
     expect(args.brief.customer_text).toBe("SECRET_CUSTOMER_TEXT");
     expect(args.brief.budget_total).toBeUndefined();
     expect(args.brief.submitted_at).toBe(NOW);
+    expect(args.brief.source_action_id).toBe(ACTION);
     expect(row.current?.result_campaign_id).toBe(CAMPAIGN);
     expect(JSON.stringify(logEvent.mock.calls)).not.toContain("SECRET_CUSTOMER_TEXT");
     expect(logEvent).toHaveBeenCalledWith(expect.objectContaining({
@@ -229,5 +264,50 @@ describe("executeApprovedCampaign", () => {
     expect(created).toBe(1);
     expect([left, right].filter((result) => result.ok)).toHaveLength(1);
     expect(row.current?.result_campaign_id).toBe(CAMPAIGN);
+  });
+
+  it("links the existing draft when the link write failed and retry is 6 minutes later", async () => {
+    row.failNextLink = true;
+    createCampaign.mockImplementation(async (input: { user_id: string; brief: Record<string, unknown> }) => {
+      row.campaigns.push({ id: CAMPAIGN, user_id: input.user_id, brief: input.brief });
+      return { id: CAMPAIGN };
+    });
+    const first = await executeApprovedCampaign({ userId: BRAND, actionId: ACTION });
+    expect(first.ok).toBe(false);
+    expect(row.campaigns).toHaveLength(1);
+    expect(row.current?.result_campaign_id).toBeNull();
+
+    vi.setSystemTime(new Date(Date.parse(NOW) + 6 * 60 * 1000));
+    const second = await executeApprovedCampaign({ userId: BRAND, actionId: ACTION });
+    expect(second).toEqual({ ok: true, campaignId: CAMPAIGN });
+    expect(createCampaign).toHaveBeenCalledTimes(1);
+    expect(row.campaigns).toHaveLength(1);
+    expect(row.current?.result_campaign_id).toBe(CAMPAIGN);
+  });
+
+  it("links the committed draft when createCampaign returns null", async () => {
+    createCampaign.mockImplementation(async (input: { user_id: string; brief: Record<string, unknown> }) => {
+      row.campaigns.push({ id: CAMPAIGN, user_id: input.user_id, brief: input.brief });
+      return null;
+    });
+    const first = await executeApprovedCampaign({ userId: BRAND, actionId: ACTION });
+    expect(first.ok).toBe(false);
+    expect(row.current?.execution_started_at).toBeNull();
+    expect(row.campaigns).toHaveLength(1);
+
+    const second = await executeApprovedCampaign({ userId: BRAND, actionId: ACTION });
+    expect(second).toEqual({ ok: true, campaignId: CAMPAIGN });
+    expect(createCampaign).toHaveBeenCalledTimes(1);
+    expect(row.campaigns).toHaveLength(1);
+    expect(row.current?.result_campaign_id).toBe(CAMPAIGN);
+  });
+
+  it("does not create another draft after the campaign row was deleted", async () => {
+    if (!row.current) throw new Error("missing action");
+    row.current.executed_at = NOW;
+    row.current.result_campaign_id = null;
+    const result = await executeApprovedCampaign({ userId: BRAND, actionId: ACTION });
+    expect(result.ok).toBe(false);
+    expect(createCampaign).not.toHaveBeenCalled();
   });
 });
