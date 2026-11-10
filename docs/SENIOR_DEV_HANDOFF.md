@@ -252,13 +252,13 @@ Covers the migration grants, revokes, RLS, and the select policy; authenticated 
 ### Known gaps
 
 - Migration 057 is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, then run the introspection query in the file header.
-- No settings UI (A4) and no data endpoints (A2).
+- Settings UI shipped in A5 at `/settings/api-keys`. Data endpoints shipped in A2.
 - No plan check. Operator `apiAccess` is for A7.
 - The limit is 60 requests per minute per key, in code, not an env var.
 - `lib/utils/rate-limit.ts` is still the in-process limiter for outreach actions.
 - `last_used_at` is best-effort. A failed touch does not fail the request.
 - Old rate windows for a key are deleted on that key's next increment once they are an hour old. Windows for idle keys stay until the key is used again or the key row is deleted.
-- `listKeys` and `revokeKey` are service-role helpers. Nothing in the app calls them yet.
+- `listKeys` and `revokeKey` are service-role helpers. A5 calls them from `/settings/api-keys` and `/api/settings/api-keys` for the signed-in brand. The plaintext secret is still returned only from `createKey`.
 
 ## R2: Rep store and API
 
@@ -2095,4 +2095,49 @@ Handoff writes the previous login to `domain_events` before `updateUserById`. A 
 ### Known gaps
 
 - 078 is not applied. Until it is, clearing `auth.users.email` can still roll back through the 077 profile trigger.
+
+## A5: API key settings for brands
+
+### What was built
+
+A brand can create, list, and revoke its own API keys at `/settings/api-keys`. The plaintext secret is returned once from `POST /api/settings/api-keys` and is not stored, logged, or shown again. `/settings` has one new brand-only link card, placed directly after Brand profile. Show, agent, and agency do not see it. Nothing else on that page changed.
+
+The brand id is the session user id. Role and plan are read from `profiles` by that id. A role other than `brand` is 403 on the routes and `notFound` on the page. No session is 401 on the routes and a redirect to `/login?next=/settings/api-keys` on the page.
+
+Creating a key requires `PLANS[plan].features.apiAccess` (Operator, and the legacy agency plan). Free and Starter can still list and revoke. They see "API keys are part of the Operator plan." with a link to `/settings/billing`, and `POST` returns 403. `plans.ts` was not edited.
+
+`POST` accepts `{ name, scopes }` only. The name is trimmed to 1-60 printable characters. Scopes are a non-empty deduped subset of `read`, `write:campaigns`, and `write:outreach`. Ten active keys is the cap (409). The response is `{ key, secret }` with `Cache-Control: no-store`. `key` is `id, name, prefix, scopes, created_at, last_used_at, revoked_at`. `GET` returns `{ keys }` on that allowlist. `DELETE` revokes one active key owned by this brand. A foreign id, a bad id, and an already revoked id are 404.
+
+`POST` and `DELETE` require the Origin host to match the request host. Create is 10 per user per hour (`api_key_create_user_hour`). Revoke is 30 per user per hour (`api_key_revoke_user_hour`). Both use `enforceRules` with `failureMode: "closed"`. `lib/security/rate-limit.ts` was not edited. The JSON body cap is 8 KB.
+
+The client keeps the secret in component state, in a read-only field with Copy, until Done or unmount. It is not put in a URL, storage, a cookie, or a log. A revoked key then gets 401 from `GET /api/v1/health` in the route test, using the existing in-memory admin double.
+
+### Where
+
+- `app/(dashboard)/settings/api-keys/page.tsx`
+- `app/(dashboard)/settings/api-keys/api-keys-client.tsx`
+- `app/(dashboard)/settings/api-keys/api-keys.test.tsx`
+- `app/api/settings/api-keys/route.ts`
+- `app/api/settings/api-keys/route.test.ts`
+- `app/api/settings/api-keys/[id]/route.ts`
+- `app/api/settings/api-keys/[id]/route.test.ts`
+- `lib/api/key-settings.ts`
+- `lib/api/key-settings.test.ts`
+- `app/(dashboard)/settings/page.tsx` (one brand link card)
+- `docs/jobs/A5.md`
+
+### Tests
+
+`npx vitest run lib/api/key-settings "app/api/settings/api-keys" "app/(dashboard)/settings/api-keys" "app/(dashboard)/settings"`
+
+Covers 401, 403 for show and agent, 403 without `apiAccess`, 422 on a bad name and an unknown scope, 409 at 10 active keys, 429 on both buckets, 503 when the rate-limit RPC fails, a foreign id and an already revoked id as 404, cross-origin 403, response keys equal to the allowlist with no `key_hash`, the secret only in the POST body and never in a console call, the client clearing the secret on Done, and the settings card for brand only. The settings page source with that card removed hashes to the pre-change file. `npx tsc --noEmit` is clean. `npx vitest run` passed 2789 tests (40 skipped). `npx next build` completed.
+
+### Known gaps
+
+- Request-time plan checks on `/api/v1` and MCP are A7. A key minted on Operator still resolves after a downgrade until it is revoked. List and revoke keep working.
+- `/settings/agent-actions` is a static link. A4 builds that page.
+- The disabled Generate API Key button on `/settings` is unchanged.
+- Two overlapping revokes can both see the key as active and both return 200. A later revoke is 404.
+- No migration. If `api_keys` from A1 is not on the database, the page shows a generic load error and the routes return 500.
+- A brand whose plan is the legacy agency record can create keys, because that plan's `apiAccess` is true. The agency role cannot open the page.
 
