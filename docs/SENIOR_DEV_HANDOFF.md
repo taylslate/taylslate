@@ -768,7 +768,7 @@ Migration 070 creates `api_write_actions` with RLS on and zero policies. `servic
 
 ### Known gaps
 
-- No approve or reject path. Status stays `pending` until a later job.
+- Approve and reject are on `/settings/agent-actions` (A4). A pending row stays pending until the brand decides there.
 - A reused campaign pattern id is checked as a uuid. It is not loaded, so ownership of that pattern is not checked until something executes the action.
 - `api_key_id` does not cascade when a key row is deleted. Deleting the profile still cascades the action through `brand_id`.
 - The campaign payload has no derived name. The manual brief route builds that name when it creates the row. This route only records the brief fields.
@@ -2095,4 +2095,46 @@ Handoff writes the previous login to `domain_events` before `updateUserById`. A 
 ### Known gaps
 
 - 078 is not applied. Until it is, clearing `auth.users.email` can still roll back through the 077 profile trigger.
+
+## A4: brand approvals inbox for agent actions (migration 082)
+
+### What was built
+
+A brand can open `/settings/agent-actions` and review the pending rows its API keys recorded through `/api/v1`. The screen has Pending, Approved, Rejected, and Expired tabs. Approve and Reject take an optional note and a confirm step. The actor is the session user id. Role is read from `profiles` by that id and must be `brand`. Another brand's action id is 404.
+
+Approving `campaign.create` creates one draft campaign through `createCampaign`, the same insert the manual brief submit uses: status `draft`, platforms podcast and youtube, recommendations empty, brief version 2. The campaign name follows `deriveCampaignName`, with ` - ` in place of the em dash that route uses. A reused pattern id is loaded with `getCampaignPatternById` and must have `customer_id` equal to the session user. A foreign or missing pattern leaves the row approved, stores a generic `execution_error`, and returns 502. Retry is allowed only for an approved `campaign.create` whose `result_campaign_id` is null, and it uses the same claim, so two retries create one campaign.
+
+Approving `outreach.draft` checks the show is still visible with `getShow` and then records the decision only. Nothing is sent. The row and the screen say "Approved. Nothing was sent." A show that is no longer visible returns 409 and leaves the row pending.
+
+A pending row older than 14 days is shown as expired. Deciding one returns 409 and sets status `expired`. The decision update matches `status = pending` and `created_at` inside 14 days, so two approvals produce one decision.
+
+Migration 082 is in the PR and is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
+
+### Where
+
+- `supabase/migrations/082_api_write_action_decisions.sql` (not applied)
+- `supabase/migrations/082_api_write_action_decisions.test.ts`
+- `lib/api/approvals/list.ts` and `list.test.ts`
+- `lib/api/approvals/decide.ts` and `decide.test.ts`
+- `lib/api/approvals/execute.ts` and `execute.test.ts`
+- `app/api/settings/agent-actions/route.ts` and `route.test.ts`
+- `app/api/settings/agent-actions/[id]/route.ts`
+- `app/(dashboard)/settings/agent-actions/page.tsx`
+- `app/(dashboard)/settings/agent-actions/agent-actions-client.tsx` and `agent-actions.test.tsx`
+- `lib/data/types.ts` (the four `api_action.*` event types and the `api_action` entity type)
+- `docs/jobs/A4.md`
+
+### Tests
+
+`npx vitest run supabase/migrations/082_api_write_action_decisions.test.ts lib/api/approvals app/api/settings/agent-actions "app/(dashboard)/settings/agent-actions"`
+
+The PGlite suite applies the on-disk migrations through 082 (080 and 081 are absent), applies 082 again, and checks the new columns, checks, service_role-only grants, RLS, and zero policies. No live database write.
+
+### Known gaps
+
+- 082 is not applied. Do not approve live rows until Chris says so.
+- Approving outreach does not send email and does not insert an outreach row. Sending needs a later job and Chris's OK.
+- The page is reachable by URL. A5 adds the link from the API keys page. This job does not edit settings or nav.
+- The draft campaign name uses ` - ` instead of the em dash in `deriveCampaignName`.
+- If campaign creation succeeds and the result id write fails, the claim stays for 5 minutes. After that a retry can create a second draft. Deleting the draft sets `result_campaign_id` null (`on delete set null`), and retry can create another.
 
