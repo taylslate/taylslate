@@ -6,6 +6,10 @@
 
 Migration **079 is written and not applied**. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. `airchecks` stays service_role only, so transcripts, audio URLs, and errors are not on the Data API. RSS and enclosure fetches pin the resolved address, stream up to a byte cap, and time out. The run stops new spots at 200 seconds and re-checks the Whisper cap between chunks. `lib/stripe`, `lib/payouts`, and `lib/billing` were not edited.
 
+## Q12: roster dispute block and rep owner heads-up (Nov 10, 2026)
+
+An open owner dispute blocks approve. The block is in `approveRosterLink` and in a BEFORE UPDATE trigger in migration **081**, which is written and not applied. Apply 081 on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. Resolve is an admin note. It does not approve, reject, publish, or email. A rep whose link points at a verified owner gets one heads-up, at import commit or from the daily cron `GET /api/cron/roster-owner-notices` (21:00 UTC). 075 is live and was not edited. `lib/stripe`, `lib/payouts`, and `lib/billing` were not edited. Walkthrough and open questions are in `docs/jobs/Q12.md`.
+
 ## SEC1: profiles.email is not an access check (Nov 2, 2026)
 
 Authorization that used `profiles.email` now uses the auth login (`getUser().email`, `getUserById`, or `auth_user_ids_for_email`). `isShowsAdmin` no longer treats `profiles.role = admin` as a grant. Migration 077 is applied. It forces `profiles.email` to follow `auth.users.email`. Migration 078 is written and not applied. It stops a null auth email from rolling back that auth update. Do not paste 078 until Chris says so. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. The audit list is in `docs/SENIOR_DEV_HANDOFF.md` under SEC1.

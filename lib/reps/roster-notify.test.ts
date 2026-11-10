@@ -13,7 +13,7 @@ type Sent = {
   from?: string;
 };
 
-const { sendEmail, adminFrom, db, calls } = vi.hoisted(() => ({
+const { sendEmail, adminFrom, db, calls, flags } = vi.hoisted(() => ({
   sendEmail: vi.fn(),
   adminFrom: vi.fn(),
   db: {
@@ -21,8 +21,11 @@ const { sendEmail, adminFrom, db, calls } = vi.hoisted(() => ({
     shows: [] as Row[],
     show_ownership_proofs: [] as Row[],
     agent_show_relationships: [] as Row[],
+    roster_owner_verified_notices: [] as Row[],
+    domain_events: [] as Row[],
   },
   calls: [] as { table: string; filters: { op: string; column: string; value: unknown }[] }[],
+  flags: { noticesMissing: false },
 }));
 
 vi.mock("@/lib/email/send", () => ({
@@ -34,12 +37,15 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 import {
+  ROSTER_HEADS_UP_CAP,
   ROSTER_OWNER_EMAIL_CAP,
   loadOwnerRosterLink,
+  notifyRepsOfOwnerVerification,
   notifyRosterDispute,
   notifyRosterImportCommit,
   notifyRosterLinkDecision,
   rosterAdminAlertEmail,
+  sweepOwnerVerificationNotices,
 } from "./roster-notify";
 
 const AGENT = "agent-1";
@@ -66,7 +72,10 @@ function row(partial: Partial<RosterImportResultRow> & Pick<RosterImportResultRo
 
 function installAdmin() {
   adminFrom.mockImplementation((table: string) => {
-    const filters: { op: "eq" | "in"; column: string; value: unknown }[] = [];
+    const filters: { op: "eq" | "in" | "gte"; column: string; value: unknown }[] = [];
+    let insertRow: Row | null = null;
+    let patch: Row | null = null;
+    let deleting = false;
     const builder: Record<string, unknown> = {};
     const self = () => builder;
     builder.select = vi.fn(self);
@@ -78,25 +87,85 @@ function installAdmin() {
       filters.push({ op: "in", column, value });
       return builder;
     });
+    builder.gte = vi.fn((column: string, value: unknown) => {
+      filters.push({ op: "gte", column, value });
+      return builder;
+    });
     builder.limit = vi.fn(self);
+    builder.insert = vi.fn((row: Row) => {
+      insertRow = { ...row };
+      return builder;
+    });
+    builder.update = vi.fn((row: Row) => {
+      patch = { ...row };
+      return builder;
+    });
+    builder.delete = vi.fn(() => {
+      deleting = true;
+      return builder;
+    });
+    const list = (): Row[] => {
+      const source = db[table as keyof typeof db];
+      return Array.isArray(source) ? source : [];
+    };
+    const matches = (item: Row) =>
+      filters.every((filter) => {
+        if (filter.op === "eq") return item[filter.column] === filter.value;
+        if (filter.op === "gte") return String(item[filter.column] ?? "") >= String(filter.value ?? "");
+        return (filter.value as unknown[]).includes(item[filter.column]);
+      });
     const run = () => {
       calls.push({
         table,
         filters: filters.map((filter) => ({ ...filter })),
       });
-      const source = db[table as keyof typeof db] ?? [];
-      return source.filter((item) =>
-        filters.every((filter) => {
-          if (filter.op === "eq") return item[filter.column] === filter.value;
-          return (filter.value as unknown[]).includes(item[filter.column]);
-        })
-      );
+      if (table === "roster_owner_verified_notices" && flags.noticesMissing) {
+        return {
+          data: null,
+          error: {
+            code: "PGRST205",
+            message: "Could not find the table 'public.roster_owner_verified_notices' in the schema cache",
+          },
+        };
+      }
+      if (insertRow) {
+        if (table === "roster_owner_verified_notices") {
+          const duplicate = list().some(
+            (item) => item.link_id === insertRow?.link_id && item.proof_id === insertRow?.proof_id
+          );
+          if (duplicate) return { data: null, error: { code: "23505", message: "duplicate key" } };
+          const stored = { id: `notice-${list().length + 1}`, result: "claimed", ...insertRow };
+          list().push(stored);
+          return { data: stored, error: null };
+        }
+        if (table === "domain_events") {
+          list().push(insertRow);
+          return { data: { id: `evt-${list().length}` }, error: null };
+        }
+      }
+      if (deleting) {
+        const kept = list().filter((item) => !matches(item));
+        list().splice(0, list().length, ...kept);
+        return { data: null, error: null };
+      }
+      if (patch) {
+        const updated = list().filter(matches);
+        for (const item of updated) Object.assign(item, patch);
+        return { data: updated, error: null };
+      }
+      return { data: list().filter(matches), error: null };
     };
-    builder.maybeSingle = vi.fn(async () => ({ data: run()[0] ?? null, error: null }));
+    const finish = async () => {
+      const result = run();
+      const data = Array.isArray(result.data) ? (result.data[0] ?? null) : result.data;
+      return { data, error: result.error };
+    };
+    builder.maybeSingle = vi.fn(finish);
+    builder.single = vi.fn(finish);
     builder.then = (
-      resolve: (value: { data: Row[]; error: null }) => unknown,
+      resolve: (value: { data: unknown; error: { code?: string; message?: string } | null }) => unknown,
       reject?: (reason: unknown) => unknown
-    ) => Promise.resolve({ data: run(), error: null }).then(resolve, reject);
+    ) => Promise.resolve(run()).then(resolve, reject);
     return builder;
   });
 }
@@ -126,6 +195,9 @@ beforeEach(() => {
   db.shows = [];
   db.show_ownership_proofs = [];
   db.agent_show_relationships = [];
+  db.roster_owner_verified_notices = [];
+  db.domain_events = [];
+  flags.noticesMissing = false;
   calls.length = 0;
   installAdmin();
   process.env.INTERNAL_ALERT_EMAIL = ALERT;
@@ -453,5 +525,358 @@ describe("roster notify source", () => {
     delete process.env.INTERNAL_ALERT_EMAIL;
     expect(rosterAdminAlertEmail()).toBe("chris@taylslate.com");
     process.env.INTERNAL_ALERT_EMAIL = previous;
+  });
+});
+
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function headsUpPayloads(): Row[] {
+  return db.domain_events.map((event) => (event.payload as Row) ?? {});
+}
+
+describe("notifyRosterImportCommit owner heads-up", () => {
+  it("sends one owner notice and one import heads-up for an owned link", async () => {
+    db.profiles.push(
+      { id: AGENT, email: REP_EMAIL, company_name: "Northwind", full_name: "Ada" },
+      { id: OWNER, email: OWNER_EMAIL, company_name: null, full_name: "Host" }
+    );
+    db.shows.push(
+      { id: "show-verified", name: "Odd Lots", ownership_status: "verified" },
+      { id: "show-conflict", name: "Acquired", ownership_status: "verified" }
+    );
+    db.show_ownership_proofs.push(
+      { id: "proof-1", show_id: "show-verified", user_id: OWNER, status: "verified", verified_at: daysAgo(1) },
+      { id: "proof-2", show_id: "show-conflict", user_id: OWNER, status: "verified", verified_at: daysAgo(1) }
+    );
+    db.agent_show_relationships.push(
+      { id: "link-a", show_id: "show-verified", agent_id: AGENT, status: "pending", created_at: daysAgo(1) },
+      { id: "link-b", show_id: "show-conflict", agent_id: AGENT, status: "pending", created_at: daysAgo(1) }
+    );
+
+    await notifyRosterImportCommit({
+      agentId: AGENT,
+      rows: [
+        row({
+          class: "link_existing",
+          committed: true,
+          link_id: "link-a",
+          show_id: "show-verified",
+          show_name: "Odd Lots",
+        }),
+        row({
+          class: "exclusive_conflict",
+          committed: true,
+          link_id: "link-b",
+          show_id: "show-conflict",
+          show_name: "Acquired",
+        }),
+      ],
+    });
+
+    expect(sent().filter((mail) => mail.to === OWNER_EMAIL)).toHaveLength(1);
+    const heads = sent().filter((mail) => mail.to === REP_EMAIL);
+    expect(heads).toHaveLength(2);
+    expect(heads.every((mail) => mail.subject.includes("already has a verified owner"))).toBe(true);
+    expect(heads.every((mail) => mail.recipientProfileId === AGENT)).toBe(true);
+    expect(db.roster_owner_verified_notices).toHaveLength(2);
+    expect(db.roster_owner_verified_notices.every((notice) => notice.trigger === "import" && notice.result === "sent")).toBe(true);
+  });
+
+  it("sends no heads-up for a new show, a retry, an unclaimed show, or the rep who owns it", async () => {
+    db.profiles.push(
+      { id: AGENT, email: REP_EMAIL, company_name: "Northwind", full_name: "Ada" },
+      { id: OWNER, email: OWNER_EMAIL, company_name: null, full_name: "Host" }
+    );
+    db.shows.push(
+      { id: "show-new", name: "Brand New", ownership_status: "unclaimed" },
+      { id: "show-open", name: "Quiet", ownership_status: "unclaimed" },
+      { id: "show-self", name: "Own Show", ownership_status: "verified" }
+    );
+    db.show_ownership_proofs.push({
+      id: "proof-self",
+      show_id: "show-self",
+      user_id: AGENT,
+      status: "verified",
+      verified_at: daysAgo(1),
+    });
+    db.agent_show_relationships.push({
+      id: "link-self",
+      show_id: "show-self",
+      agent_id: AGENT,
+      status: "pending",
+      created_at: daysAgo(1),
+    });
+
+    await notifyRosterImportCommit({
+      agentId: AGENT,
+      rows: [
+        row({ class: "new_show", committed: true, link_id: "link-new", show_id: "show-new", show_name: "Brand New" }),
+        row({ class: "link_existing", committed: true, link_id: "link-open", show_id: "show-open", show_name: "Quiet" }),
+        row({ class: "link_existing", committed: true, link_id: "link-self", show_id: "show-self", show_name: "Own Show" }),
+        row({ class: "link_existing", committed: false, link_id: "link-retry", show_id: "show-self", show_name: "Own Show" }),
+      ],
+    });
+
+    expect(sent().some((mail) => mail.to === REP_EMAIL)).toBe(false);
+    expect(sent().some((mail) => mail.to === OWNER_EMAIL)).toBe(false);
+    expect(db.roster_owner_verified_notices).toEqual([]);
+  });
+});
+
+describe("notifyRepsOfOwnerVerification", () => {
+  function seedLink(partial: Row) {
+    db.agent_show_relationships.push({
+      status: "pending",
+      created_at: daysAgo(1),
+      ...partial,
+    });
+  }
+
+  it("mails pending and approved links once, and skips a rejected link and the owner", async () => {
+    db.profiles.push(
+      { id: AGENT, email: REP_EMAIL, company_name: "Northwind", full_name: "Ada" },
+      { id: OWNER, email: OWNER_EMAIL, company_name: null, full_name: "Host" }
+    );
+    db.shows.push({ id: "show-1", name: "Odd Lots", ownership_status: "verified" });
+    db.show_ownership_proofs.push({
+      id: "proof-1",
+      show_id: "show-1",
+      user_id: OWNER,
+      status: "verified",
+      verified_at: daysAgo(1),
+    });
+    seedLink({ id: "link-pending", show_id: "show-1", agent_id: AGENT });
+    seedLink({ id: "link-approved", show_id: "show-1", agent_id: AGENT, status: "approved" });
+    seedLink({ id: "link-rejected", show_id: "show-1", agent_id: AGENT, status: "rejected" });
+    seedLink({ id: "link-owner", show_id: "show-1", agent_id: OWNER });
+
+    const first = await notifyRepsOfOwnerVerification({
+      proofId: "proof-1",
+      linkIds: ["link-pending", "link-approved", "link-rejected", "link-owner"],
+      trigger: "verified_later",
+    });
+    expect(first.sent).toBe(2);
+    expect(first.skipped).toBe(2);
+    expect(sent()).toHaveLength(2);
+    expect(sent().every((mail) => mail.to === REP_EMAIL && mail.recipientProfileId === AGENT)).toBe(true);
+    expect(sent().some((mail) => mail.text.includes("pending review"))).toBe(true);
+    expect(sent().some((mail) => mail.text.includes("is approved"))).toBe(true);
+    expect(db.roster_owner_verified_notices).toHaveLength(2);
+
+    sendEmail.mockClear();
+    const second = await notifyRepsOfOwnerVerification({
+      proofId: "proof-1",
+      linkIds: ["link-pending", "link-approved"],
+      trigger: "verified_later",
+    });
+    expect(second).toMatchObject({ sent: 0, already: 2 });
+    expect(sendEmail).not.toHaveBeenCalled();
+    const logged = JSON.stringify(headsUpPayloads());
+    expect(logged).not.toContain(REP_EMAIL);
+    expect(logged).not.toContain(OWNER_EMAIL);
+    expect(logged).not.toContain("@");
+  });
+
+  it("sends once when two calls claim the same link", async () => {
+    db.profiles.push({ id: AGENT, email: REP_EMAIL, company_name: "Northwind", full_name: "Ada" });
+    db.shows.push({ id: "show-1", name: "Odd Lots", ownership_status: "verified" });
+    db.show_ownership_proofs.push({
+      id: "proof-1",
+      show_id: "show-1",
+      user_id: OWNER,
+      status: "verified",
+      verified_at: daysAgo(1),
+    });
+    db.agent_show_relationships.push({
+      id: "link-1",
+      show_id: "show-1",
+      agent_id: AGENT,
+      status: "pending",
+      created_at: daysAgo(1),
+    });
+    const [left, right] = await Promise.all([
+      notifyRepsOfOwnerVerification({ proofId: "proof-1", linkIds: ["link-1"], trigger: "import" }),
+      notifyRepsOfOwnerVerification({ proofId: "proof-1", linkIds: ["link-1"], trigger: "import" }),
+    ]);
+    expect(left.sent + right.sent).toBe(1);
+    expect(left.already + right.already).toBe(1);
+    expect(sent()).toHaveLength(1);
+    expect(db.roster_owner_verified_notices).toHaveLength(1);
+  });
+
+  it("deletes a failed claim so the retry sends, and keeps a no-key claim", async () => {
+    db.profiles.push({ id: AGENT, email: REP_EMAIL, company_name: "Northwind", full_name: "Ada" });
+    db.shows.push({ id: "show-1", name: "Odd Lots", ownership_status: "verified" });
+    db.show_ownership_proofs.push({
+      id: "proof-1",
+      show_id: "show-1",
+      user_id: OWNER,
+      status: "verified",
+    });
+    db.agent_show_relationships.push({
+      id: "link-1",
+      show_id: "show-1",
+      agent_id: AGENT,
+      status: "pending",
+      created_at: daysAgo(1),
+    });
+    sendEmail.mockResolvedValueOnce({ ok: false, reason: "send_failed" });
+    const failed = await notifyRepsOfOwnerVerification({
+      proofId: "proof-1",
+      linkIds: ["link-1"],
+      trigger: "import",
+    });
+    expect(failed.sent).toBe(0);
+    expect(db.roster_owner_verified_notices).toEqual([]);
+    sendEmail.mockResolvedValue({ ok: true, id: "mail-2" });
+    const retried = await notifyRepsOfOwnerVerification({
+      proofId: "proof-1",
+      linkIds: ["link-1"],
+      trigger: "import",
+    });
+    expect(retried.sent).toBe(1);
+    expect(db.roster_owner_verified_notices).toHaveLength(1);
+
+    db.roster_owner_verified_notices = [];
+    sendEmail.mockClear();
+    sendEmail.mockResolvedValueOnce({ ok: false, reason: "no_api_key" });
+    await notifyRepsOfOwnerVerification({ proofId: "proof-1", linkIds: ["link-1"], trigger: "import" });
+    expect(db.roster_owner_verified_notices[0].result).toBe("no_api_key");
+    sendEmail.mockResolvedValueOnce({ ok: false, reason: "managed_inbox_unset" });
+    db.agent_show_relationships.push({
+      id: "link-2",
+      show_id: "show-1",
+      agent_id: AGENT,
+      status: "approved",
+      created_at: daysAgo(1),
+    });
+    await notifyRepsOfOwnerVerification({ proofId: "proof-1", linkIds: ["link-2"], trigger: "import" });
+    expect(db.roster_owner_verified_notices.find((row) => row.link_id === "link-2")?.result).toBe(
+      "managed_inbox_unset"
+    );
+    sendEmail.mockClear();
+    const again = await notifyRepsOfOwnerVerification({
+      proofId: "proof-1",
+      linkIds: ["link-1", "link-2"],
+      trigger: "import",
+    });
+    expect(again.already).toBe(2);
+    expect(again.sent).toBe(0);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing when the notices table is missing", async () => {
+    flags.noticesMissing = true;
+    db.profiles.push({ id: AGENT, email: REP_EMAIL, company_name: "Northwind", full_name: "Ada" });
+    db.shows.push({ id: "show-1", name: "Odd Lots", ownership_status: "verified" });
+    db.show_ownership_proofs.push({
+      id: "proof-1",
+      show_id: "show-1",
+      user_id: OWNER,
+      status: "verified",
+    });
+    db.agent_show_relationships.push({
+      id: "link-1",
+      show_id: "show-1",
+      agent_id: AGENT,
+      status: "pending",
+      created_at: daysAgo(1),
+    });
+    const errors: unknown[][] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args);
+    });
+    const result = await notifyRepsOfOwnerVerification({
+      proofId: "proof-1",
+      linkIds: ["link-1"],
+      trigger: "import",
+    });
+    expect(result.sent).toBe(0);
+    expect(sendEmail).not.toHaveBeenCalled();
+    const logged = errors.flat().map(String).join(" ");
+    expect(logged).toContain("missing_table");
+    expect(logged).not.toContain(REP_EMAIL);
+    expect(logged).not.toContain("@");
+    spy.mockRestore();
+  });
+
+  it("caps a call at 50 links and logs only the overflow count", async () => {
+    db.profiles.push({ id: AGENT, email: REP_EMAIL, company_name: "Northwind", full_name: "Ada" });
+    db.shows.push({ id: "show-1", name: "Odd Lots", ownership_status: "verified" });
+    db.show_ownership_proofs.push({
+      id: "proof-1",
+      show_id: "show-1",
+      user_id: OWNER,
+      status: "verified",
+    });
+    const linkIds: string[] = [];
+    for (let index = 0; index < ROSTER_HEADS_UP_CAP + 1; index += 1) {
+      const id = `link-${index}`;
+      linkIds.push(id);
+      db.agent_show_relationships.push({
+        id,
+        show_id: "show-1",
+        agent_id: AGENT,
+        status: "pending",
+        created_at: daysAgo(1),
+      });
+    }
+    const errors: unknown[][] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args);
+    });
+    const result = await notifyRepsOfOwnerVerification({
+      proofId: "proof-1",
+      linkIds,
+      trigger: "import",
+    });
+    expect(result.sent).toBe(ROSTER_HEADS_UP_CAP);
+    expect(sent()).toHaveLength(ROSTER_HEADS_UP_CAP);
+    const logged = errors.flat().map(String).join(" ");
+    expect(logged).toContain("heads_up_cap 1");
+    expect(logged).not.toContain(REP_EMAIL);
+    expect(logged).not.toContain("@");
+    spy.mockRestore();
+  });
+});
+
+describe("sweepOwnerVerificationNotices", () => {
+  it("sends inside the window once and skips a rerun and an old pair", async () => {
+    db.profiles.push({ id: AGENT, email: REP_EMAIL, company_name: "Northwind", full_name: "Ada" });
+    db.shows.push(
+      { id: "show-new", name: "Odd Lots", ownership_status: "verified" },
+      { id: "show-old", name: "Quiet", ownership_status: "verified" },
+      { id: "show-approved", name: "Acquired", ownership_status: "verified" }
+    );
+    db.show_ownership_proofs.push(
+      { id: "proof-new", show_id: "show-new", user_id: OWNER, status: "verified", verified_at: daysAgo(1) },
+      { id: "proof-old", show_id: "show-old", user_id: OWNER, status: "verified", verified_at: daysAgo(8) },
+      { id: "proof-approved", show_id: "show-approved", user_id: OWNER, status: "verified", verified_at: daysAgo(2) }
+    );
+    db.agent_show_relationships.push(
+      { id: "link-new", show_id: "show-new", agent_id: AGENT, status: "pending", created_at: daysAgo(30) },
+      { id: "link-old", show_id: "show-old", agent_id: AGENT, status: "pending", created_at: daysAgo(8) },
+      { id: "link-approved", show_id: "show-approved", agent_id: AGENT, status: "approved", created_at: daysAgo(20) },
+      { id: "link-rejected", show_id: "show-new", agent_id: AGENT, status: "rejected", created_at: daysAgo(1) },
+      { id: "link-self", show_id: "show-new", agent_id: OWNER, status: "pending", created_at: daysAgo(1) }
+    );
+
+    const first = await sweepOwnerVerificationNotices();
+    expect(first.sent).toBe(2);
+    expect(sent().map((mail) => mail.subject).sort()).toEqual([
+      "Acquired now has a verified owner",
+      "Odd Lots now has a verified owner",
+    ]);
+    expect(sent().every((mail) => mail.to === REP_EMAIL)).toBe(true);
+    expect(db.roster_owner_verified_notices).toHaveLength(2);
+    expect(db.roster_owner_verified_notices.every((row) => row.trigger === "verified_later")).toBe(true);
+
+    sendEmail.mockClear();
+    const second = await sweepOwnerVerificationNotices();
+    expect(second.sent).toBe(0);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(db.roster_owner_verified_notices).toHaveLength(2);
   });
 });

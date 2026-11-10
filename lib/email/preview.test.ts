@@ -14,6 +14,8 @@ describe("email previews", () => {
         "roster-rep-decision",
         "roster-owner-notice",
         "roster-dispute-alert",
+        "roster-rep-owner-heads-up-import",
+        "roster-rep-owner-heads-up-verified",
       ])
     );
     expect(new Set(ids).size).toBe(ids.length);

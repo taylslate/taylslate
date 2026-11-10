@@ -1,4 +1,4 @@
-// Roster link mail. Four messages, all from the default notifications sender.
+// Roster link mail. Five messages, all from the default notifications sender.
 // auth@ is for sign-in only. Callers do not pass `from`.
 //
 // Owner mail names the rep as company or full name only. It does not
@@ -47,6 +47,13 @@ export interface RosterDisputeAlertInput {
   repLabel: string;
   ownerEmail: string;
   note?: string | null;
+}
+
+export interface RosterRepOwnerHeadsUpInput {
+  showName: string;
+  trigger: "import" | "verified_later";
+  /** verified_later only. Import copy always says the link stays pending. */
+  linkStatus?: "pending" | "approved";
 }
 
 /** CR and LF would split a Subject header. */
@@ -162,6 +169,31 @@ export function renderRosterDisputeAlert(input: RosterDisputeAlertInput): Render
     bodyHtml: `${emailParagraph(escapeHtml(lead))}${noteHtml}`,
     cta: { href: ROSTER_REVIEW_URL, label: "Review roster requests" },
     text: `${body}\n\nReview roster requests: ${ROSTER_REVIEW_URL}`,
+  });
+  return { subject: emailSubject(subject), html: laid.html, text: laid.text };
+}
+
+export function renderRosterRepOwnerHeadsUp(input: RosterRepOwnerHeadsUpInput): RenderedRosterEmail {
+  const showName = input.showName.trim() || "your show";
+  if (input.trigger === "import") {
+    const subject = `${showName} already has a verified owner`;
+    const body = `${showName} has a verified owner on Taylslate. Taylslate let them know about your roster link. Your link stays pending until Taylslate reviews it.`;
+    const laid = renderEmailLayout({
+      preheader: subject,
+      headline: subject,
+      bodyHtml: emailParagraph(escapeHtml(body)),
+      text: body,
+    });
+    return { subject: emailSubject(subject), html: laid.html, text: laid.text };
+  }
+  const subject = `${showName} now has a verified owner`;
+  const state = input.linkStatus === "approved" ? "approved" : "pending review";
+  const body = `The owner of ${showName} verified ownership on Taylslate. Your roster link for it is ${state}. Keep your roster details current.`;
+  const laid = renderEmailLayout({
+    preheader: subject,
+    headline: subject,
+    bodyHtml: emailParagraph(escapeHtml(body)),
+    text: body,
   });
   return { subject: emailSubject(subject), html: laid.html, text: laid.text };
 }

@@ -7,6 +7,7 @@
 // this response.
 
 import { NextResponse } from "next/server";
+import { logEvent } from "@/lib/data/events";
 import { getAuthenticatedUser } from "@/lib/data/queries";
 import { loadOwnerRosterLink, notifyRosterDispute } from "@/lib/reps/roster-notify";
 import { enforceRosterDispute } from "@/lib/security/rate-limit";
@@ -102,12 +103,28 @@ export async function POST(
     .maybeSingle();
 
   if (error?.code === "23505") {
+    const existing = await readDisputeStatus(access.linkId, user.id);
+    if (existing === "resolved") {
+      return NextResponse.json({ ok: true, result: "already reviewed" });
+    }
     return NextResponse.json({ ok: true, result: "already flagged" });
   }
   if (error || !data) {
     console.error("[roster-dispute] insert", error?.code ?? "error");
     return NextResponse.json({ error: "Couldn't flag that link." }, { status: 500 });
   }
+
+  await logEvent({
+    eventType: "roster_link.dispute_opened",
+    entityType: "roster_link",
+    entityId: access.linkId,
+    actorId: user.id,
+    payload: {
+      link_id: access.linkId,
+      show_id: access.showId,
+      note_length: note.note ? noteLength(note.note) : 0,
+    },
+  });
 
   const ownerEmail = typeof user.email === "string" ? user.email.trim() : "";
   try {
@@ -122,4 +139,24 @@ export async function POST(
   }
 
   return NextResponse.json({ ok: true, result: "flagged" });
+}
+
+async function readDisputeStatus(
+  linkId: string,
+  ownerUserId: string
+): Promise<"open" | "resolved" | "unknown"> {
+  const { data, error } = await supabaseAdmin
+    .from("roster_link_disputes")
+    .select("status")
+    .eq("link_id", linkId)
+    .eq("owner_user_id", ownerUserId)
+    .maybeSingle();
+  if (error || !data) {
+    console.error("[roster-dispute] read", error?.code ?? "error");
+    return "unknown";
+  }
+  const status = (data as { status?: unknown }).status;
+  if (status === "resolved") return "resolved";
+  if (status === "open") return "open";
+  return "unknown";
 }

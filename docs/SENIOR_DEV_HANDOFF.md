@@ -1843,11 +1843,11 @@ After a roster import commit that creates at least one pending link, Taylslate s
 
 The same commit emails each verified owner of a show that already existed (`link_existing` or `exclusive_conflict`, not `new_show`). A verified owner is `shows.ownership_status = verified` and a `show_ownership_proofs` row for that show with `status = verified`. The address is `profiles.email` on `user_id`. This is the proof branch of `getVerifiedProfileTies` only. Deal ties and show-owner contact-email ties from that helper are not mailed. An unclaimed show gets no email and no proof lookup. The rep is skipped when `user_id` is the rep. One owner with several shows gets one email. The cap is 50 owner emails per commit; the overflow count is logged with no address. The mail says the rep listed the show, Taylslate is reviewing it, and nothing is live yet. "This is not right" goes to `https://www.taylslate.com/shows/roster-links/<link id>`. It does not include another rep, a rep email, commission, exclusivity, any other show, or an admin note. There is no second email on approval.
 
-`/admin/roster-requests` shows "N pending" from the rows already loaded, and a "Disputed by owner" badge when that link has an open dispute. The badge is not a block. Approve still works with an open dispute.
+`/admin/roster-requests` shows "N pending" from the rows already loaded, and a "Disputed by owner" badge when that link has an open dispute. In N1 the badge was not a block. Q12 blocks approve while that dispute is open. See Q12.
 
 After approve or reject flips a pending link, the rep gets one email. Approve has no note. Reject includes the stored trimmed note, HTML escaped, at most 500 characters. `recipientProfileId` is the rep. A second call is 409 and sends nothing. If the rep has no email, the send is skipped and the log has no address. A rejected link is still `already_on_roster` on re-import, with `committed` false and no insert. The existing test around the pending, approved, and rejected cases already asserts both. It was not duplicated.
 
-`POST /api/roster-links/[id]/dispute` is signed in. The limit is 10 per hour per user, closed on failure. An optional note is trimmed and must be 1 to 500 characters when set. The caller must be a verified owner of that link's show, same check as the owner email. A missing link and a non-owner both return 404 `{ error: "Not found" }`. A rejected link returns 200 `{ ok: true, result: "already declined" }` and writes nothing. The first insert returns 200 `{ ok: true, result: "flagged" }` and emails the admin (show name, rep company or name, owner email, note, review link). A unique violation returns 200 `{ ok: true, result: "already flagged" }` and sends nothing. The link status does not change. Resolving a dispute is not built. Rows stay `open`.
+`POST /api/roster-links/[id]/dispute` is signed in. The limit is 10 per hour per user, closed on failure. An optional note is trimmed and must be 1 to 500 characters when set. The caller must be a verified owner of that link's show, same check as the owner email. A missing link and a non-owner both return 404 `{ error: "Not found" }`. A rejected link returns 200 `{ ok: true, result: "already declined" }` and writes nothing. The first insert returns 200 `{ ok: true, result: "flagged" }` and emails the admin (show name, rep company or name, owner email, note, review link). A unique violation returns 200 `{ ok: true, result: "already flagged" }` when the row is still open, and sends nothing. The link status does not change. N1 left rows `open`. Q12 adds resolve. See Q12.
 
 `/shows/roster-links/[id]` is the page the owner email links to. Signed out and anyone who is not a verified owner get `notFound()`. The page shows the show name, the rep's company or name, a short explanation, and "Flag this to Taylslate" with an optional note. A rejected link shows "This link was already declined." and hides the form.
 
@@ -1886,9 +1886,9 @@ Screenshots of `/admin/roster-requests` before and after, and of the new owner p
 
 ### Known gaps
 
-- Migration 075 is in the repo and is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, naming 075. Until then a dispute insert fails, and the admin list treats a missing `roster_link_disputes` table as no open disputes so the page still loads.
-- Dispute rows stay `open`. Nothing sets `resolved`. Approve and reject do not read the dispute. The badge is the only guard. Chris to confirm that an open dispute does not block approve.
-- When a show is later claimed or verified, the rep who already has a pending or approved link is not notified. O2 and O4 are not merged, and no code on main writes proofs, so live data has no verified owners today. Owner mail will not fire until a verified proof exists.
+- Migration 075 is live on `ldtmhafewfifdizgfrnn`. Q12 does not edit it.
+- Q12 closed the open-dispute gap. Approve reads the dispute and a trigger blocks the status change. An internal admin can resolve it. See Q12.
+- Q12 closed the later-verification gap for a pending or approved link. The daily sweep and `notifyRepsOfOwnerVerification` send one heads-up. O2 and O4 should call that helper when they write a verified proof. They are still unmerged, so live data still has a verified owner only by an admin SQL insert.
 - Unclaimed shows get no email, including no mail to `contact_email`. That is intentional.
 - At most once. A crash after the write and before the send drops that email. A digest was skipped on purpose.
 - `docs/security/RATE_LIMITS.md` lists the dispute bucket: 10 per hour per user id, closed on failure.
@@ -1899,11 +1899,11 @@ Screenshots of `/admin/roster-requests` before and after, and of the new owner p
 - (a) Owner email goes out on creation, while the link is pending, and not again on approval.
 - (b) The rep shown to the owner is company name, else full name, else "A Taylslate sales agent". No rep email.
 - (c) The admin alert goes to `INTERNAL_ALERT_EMAIL` (fallback `chris@taylslate.com`) from `notifications@taylslate.com`, not `auth@`.
-- (d) An open dispute does not block approve. The badge is the guard.
+- (d) N1 did not block approve. Q12 changed that. An open dispute blocks approve until an admin resolves it.
 - (e) Owner recipients are verified proofs only (`ownership_status` verified plus a verified proof, `user_id`). Not deal ties or contact-email ties from `getVerifiedProfileTies`.
 - (f) Cap of 50 owner emails per commit.
 - (g) A daily digest was skipped.
-- (h) Notice to a rep when an unclaimed show is later claimed or verified is a documented gap, not built.
+- (h) N1 left the later owner notice unbuilt. Q12 sends one heads-up for a verified proof. A pending claim still sends nothing.
 
 ## DOC1: Multi-channel creator profiles and the restyle pass (Nov 1, 2026)
 
@@ -2142,4 +2142,68 @@ Each request logs one line: method, tool name, outcome code, elapsed ms. Argumen
 - (a) Paul reviews. This PR does not merge.
 - (b) Protocol versions are `2026-07-28`, `2025-11-25`, and `2025-06-18`. JSON only. No session.
 - (c) `propose_campaign` and `propose_outreach` stay pending until a later job approves them.
+
+## Q12: Roster dispute block and rep owner heads-up
+
+### What was built
+
+An open owner dispute blocks approve. `assertNoOpenDispute` runs after the admin check. A read error fails closed. Migration 081 adds `resolution_note`, a resolved-state check, and a BEFORE UPDATE OF status trigger on `agent_show_relationships` that raises P0001 `roster link has an open dispute`. The trigger does not fire on reject or on other columns. `approveRosterLink` maps that error and does not publish. 081 also adds `roster_owner_verified_notices` (unique link and proof, RLS on, no policy, service_role only). 081 is not applied. 075 is live and was not edited.
+
+Resolve is `POST /api/admin/roster-links/[id]` with `{ action: "resolve_dispute", note }`. The note is 1 to 500 characters. `resolved_by` is the session user. A non-admin is 403. A repeat or a link with no open dispute is 409. A missing `resolution_note` column is 503. Resolve does not change the link and sends no email.
+
+The dispute route writes `roster_link.dispute_opened` on the first insert. A 23505 on an open row stays "already flagged". A 23505 on a resolved row is "already reviewed" with no email. Approve blocked, resolve, and the rep heads-up write `roster_link.approve_blocked`, `roster_link.dispute_resolved`, and `roster_link.owner_heads_up`. Payloads are ids, counts, and lengths.
+
+The admin list disables Approve on a disputed row, shows the blocked line, and opens a resolve dialog. Success clears the pill locally and leaves the row pending. Reject stays available.
+
+The rep heads-up goes out once per link and verified proof. Import commit sends the import variant for `link_existing` and `exclusive_conflict` after the owner notice. The 7-day sweep sends the verified-later variant. `GET /api/cron/roster-owner-notices` runs daily at 21:00 UTC. `POST /api/admin/roster-links/owner-notices` is the admin trigger. `send_failed` deletes the claim. `no_api_key` and `managed_inbox_unset` are not retried. The owner-as-rep is skipped. A missing notices table sends nothing.
+
+O2 and O4 should call `notifyRepsOfOwnerVerification` after they write a verified proof. They were not edited.
+
+### Where
+
+- `supabase/migrations/081_roster_dispute_block.sql` and `081_roster_dispute_block.test.ts`
+- `lib/reps/roster-disputes.ts` and `roster-disputes.test.ts`
+- `lib/reps/store.ts` (`approveRosterLink` only) and `lib/reps/store.test.ts`
+- `lib/reps/roster-notify.ts` and `roster-notify.test.ts`
+- `lib/email/templates/roster-links.ts` and `roster-links.test.ts`
+- `lib/email/preview.ts` and `preview.test.ts`
+- `docs/email-previews/roster-rep-owner-heads-up-import.html` and `roster-rep-owner-heads-up-verified.html`
+- `app/api/admin/roster-links/[id]/route.ts` and `route.test.ts`
+- `app/api/admin/roster-links/owner-notices/route.ts` and `route.test.ts`
+- `app/api/cron/roster-owner-notices/route.ts` and `route.test.ts`
+- `app/api/roster-links/[id]/dispute/route.ts` and `route.test.ts`
+- `app/(dashboard)/admin/roster-requests/roster-requests-client.tsx` and `roster-requests.test.tsx`
+- `lib/data/types.ts` (event strings and `roster_link`)
+- `vercel.json` (one cron entry, regions unchanged)
+- `app/api/cron/pooled-priors/route.test.ts` (one expectation: that test freezes the full cron list, so the new 21:00 entry had to be added there or vitest fails. No route behavior changed.)
+- `docs/EMAILS.md`, `docs/jobs/Q12.md`, `STATUS.md`, `PRODUCT_BACKLOG.md`, `docs/SENIOR_DEV_HANDOFF.md`
+
+`lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `lib/billing/plans.ts` were not edited. No Vercel env change. No live write, charge, or send. 081 was not applied.
+
+### Tests
+
+`npx vitest run`: 323 files, 2814 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 142 pages.
+
+Covers open, none, and read-error dispute checks; approve blocked with no update and no publish; trigger P0001 mapped to 409; route 401, 403, 409 disputed, 503, 400 note, resolve 200, 403, 409 repeat, 409 none, 503 without 081; `resolved_by` from the session; no link change and no email on resolve; dispute 23505 open and resolved; the opened event once; import heads-up for an owned link and an exclusive conflict; none for a new show, a retry, the owner-as-rep, or an unclaimed show; pending and approved links; rejected skipped; one send on a double call; `send_failed` retry; `no_api_key` and `managed_inbox_unset` kept; missing table sends nothing; the cap of 50; sweep window and rerun; cron 401; admin sweep 401 and 403; the blocked line, disabled Approve, resolve dialog, local re-enable, other rows unchanged, and no em dash; both template variants escaped with no owner data; preview registration; migration grants, RLS, the trigger, the unique key, and a rerun.
+
+### Known gaps
+
+- Migration 081 is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, naming 081. Until then resolve returns 503 and the heads-up sends nothing.
+- The same owner cannot flag again after a resolve. That is the 075 unique key. Withdraw is not built.
+- A dispute on an already approved link does not demote the link.
+- The admin page does not show the owner's dispute note.
+- The legacy `/shows` CSV upload (`POST /api/shows/import`) still inserts a new show. No owner notice, dispute, or heads-up runs from that screen. Out of scope.
+- O2 and O4 are unmerged. Until they call `notifyRepsOfOwnerVerification`, a later verification is picked up only by the 7-day sweep.
+- Open questions 1 through 7 and 9 are defaults pending Chris. Question 8 is noted only. See `docs/jobs/Q12.md`.
+- This PR does not merge. Paul reviews.
+
+### Choices to confirm
+
+- (a) Any `INTERNAL_ADMIN_EMAILS` user resolves. There is no teammate table.
+- (b) The owner cannot withdraw, and cannot flag again after resolve.
+- (c) An approved link is not demoted by a later dispute.
+- (d) The dispute note stays off the admin page.
+- (e) The heads-up is the import email plus the 7-day sweep. The copy says the owner was told and does not mention a dispute.
+- (f) Preview setup is a throwaway project, not a Supabase branch.
+- (g) Test Agent 1 is not added to "Log in as".
 

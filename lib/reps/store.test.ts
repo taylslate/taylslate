@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { adminFrom, userFrom, isShowsAdmin } = vi.hoisted(() => ({
+const { adminFrom, userFrom, isShowsAdmin, logEvent } = vi.hoisted(() => ({
   adminFrom: vi.fn(),
   userFrom: vi.fn(),
   isShowsAdmin: vi.fn(),
+  logEvent: vi.fn(async (..._args: unknown[]) => null),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -18,6 +19,10 @@ vi.mock("@/lib/supabase/server", () => ({
 
 vi.mock("@/lib/shows/can-edit-show", () => ({
   isShowsAdmin,
+}));
+
+vi.mock("@/lib/data/events", () => ({
+  logEvent: (...args: unknown[]) => logEvent(...args),
 }));
 
 import {
@@ -185,6 +190,7 @@ describe("rep store", () => {
     adminFrom.mockReset();
     userFrom.mockReset();
     isShowsAdmin.mockReset();
+    logEvent.mockReset();
   });
 
   it("lists every roster link for the agent, including pending", async () => {
@@ -467,5 +473,120 @@ describe("rep store", () => {
     isShowsAdmin.mockResolvedValue(false);
     await expect(approveRosterLink("brand-1", "rel-1")).rejects.toThrow(/admin/i);
     expect(adminFrom).not.toHaveBeenCalled();
+  });
+
+  it("blocks an open dispute with no update and no publish", async () => {
+    isShowsAdmin.mockResolvedValue(true);
+    const writes: string[] = [];
+    adminFrom.mockImplementation((table: string) => {
+      const builder: Record<string, unknown> = {};
+      const self = () => builder;
+      builder.select = vi.fn(self);
+      builder.eq = vi.fn(self);
+      builder.update = vi.fn(() => {
+        writes.push(table);
+        return builder;
+      });
+      builder.single = vi.fn(async () => ({ data: null, error: { message: "should not update" } }));
+      builder.maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+      builder.then = (
+        resolve: (value: { data: unknown; error: null }) => unknown,
+        reject?: (reason: unknown) => unknown
+      ) =>
+        Promise.resolve({
+          data:
+            table === "roster_link_disputes"
+              ? [{ id: "d1", show_id: "show-1", status: "open", note: "SECRET-NOTE" }]
+              : [],
+          error: null,
+        }).then(resolve, reject);
+      return builder;
+    });
+
+    await expect(approveRosterLink("admin-1", "rel-1")).rejects.toMatchObject({
+      name: "RosterLinkDisputedError",
+      showId: "show-1",
+    });
+    expect(writes).toEqual([]);
+    expect(logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "roster_link.approve_blocked",
+        entityType: "roster_link",
+        entityId: "rel-1",
+        payload: { link_id: "rel-1", show_id: "show-1" },
+      })
+    );
+    expect(JSON.stringify(logEvent.mock.calls)).not.toContain("SECRET-NOTE");
+  });
+
+  it("maps a trigger P0001 open dispute to the same error and does not publish", async () => {
+    isShowsAdmin.mockResolvedValue(true);
+    const writes: string[] = [];
+    adminFrom.mockImplementation((table: string) => {
+      const builder: Record<string, unknown> = {};
+      const self = () => builder;
+      let patched = false;
+      builder.select = vi.fn(self);
+      builder.eq = vi.fn(self);
+      builder.update = vi.fn(() => {
+        patched = true;
+        writes.push(`update:${table}`);
+        return builder;
+      });
+      builder.single = vi.fn(async () => ({
+        data: null,
+        error: { code: "P0001", message: "roster link has an open dispute" },
+      }));
+      builder.maybeSingle = vi.fn(async () => ({
+        data: table === "agent_show_relationships" ? { show_id: "show-9" } : null,
+        error: null,
+      }));
+      builder.then = (
+        resolve: (value: { data: unknown; error: null }) => unknown,
+        reject?: (reason: unknown) => unknown
+      ) => {
+        if (patched && table === "shows") writes.push("publish");
+        return Promise.resolve({ data: [], error: null }).then(resolve, reject);
+      };
+      return builder;
+    });
+
+    await expect(approveRosterLink("admin-1", "rel-1")).rejects.toMatchObject({
+      name: "RosterLinkDisputedError",
+      showId: "show-9",
+    });
+    expect(writes).toEqual(["update:agent_show_relationships"]);
+    expect(logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "roster_link.approve_blocked",
+        payload: { link_id: "rel-1", show_id: "show-9" },
+      })
+    );
+  });
+
+  it("blocks approve when the dispute read fails", async () => {
+    isShowsAdmin.mockResolvedValue(true);
+    const writes: string[] = [];
+    adminFrom.mockImplementation(() => {
+      const builder: Record<string, unknown> = {};
+      const self = () => builder;
+      builder.select = vi.fn(self);
+      builder.eq = vi.fn(self);
+      builder.update = vi.fn(() => {
+        writes.push("update");
+        return builder;
+      });
+      builder.then = (
+        resolve: (value: { data: null; error: { message: string } }) => unknown,
+        reject?: (reason: unknown) => unknown
+      ) => Promise.resolve({ data: null, error: { message: "read failed", code: "08000" } }).then(resolve, reject);
+      return builder;
+    });
+
+    await expect(approveRosterLink("admin-1", "rel-1")).rejects.toMatchObject({
+      name: "RosterDisputeReadError",
+    });
+    expect(writes).toEqual([]);
+    expect(logEvent).not.toHaveBeenCalled();
   });
 });

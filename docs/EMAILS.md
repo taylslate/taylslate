@@ -56,10 +56,12 @@ Invoice send, legacy campaign outreach, and IO PDF send call `resolveManagedDeli
 | roster-rep-decision | Admin approve or reject in `POST /api/admin/roster-links/[id]`, only the call that flips `pending` | The rep | `lib/email/templates/roster-links.ts` | notifications@ | Yes, `recipientProfileId` is the rep. A decline includes the stored note. An approval has no note |
 | roster-owner-notice | Same commit, for each verified owner of a show that already existed | That owner | `lib/email/templates/roster-links.ts` | notifications@ | Yes, `recipientProfileId` is the owner. One email per owner per commit |
 | roster-dispute-alert | First `POST /api/roster-links/[id]/dispute` insert | `INTERNAL_ALERT_EMAIL`, or chris@taylslate.com | `lib/email/templates/roster-links.ts` | notifications@ | Not applied. A repeat flag sends nothing |
+| roster-rep-owner-heads-up-import | `POST /api/reps/roster/import?mode=commit` when a committed `link_existing` or `exclusive_conflict` row points at a verified owner | The rep | `lib/email/templates/roster-links.ts` | notifications@ | Yes, `recipientProfileId` is the rep. One row in `roster_owner_verified_notices` per link and proof. A preview, a retry, a `new_show` row, and the legacy `/api/shows/import` path send nothing |
+| roster-rep-owner-heads-up-verified | Daily `GET /api/cron/roster-owner-notices`, `POST /api/admin/roster-links/owner-notices`, or a later call from O2/O4 after a proof is verified | The rep | `lib/email/templates/roster-links.ts` | notifications@ | Yes, `recipientProfileId` is the rep. The same link and proof are not mailed twice |
 
 ## Roster link mail
 
-These four messages use the default sender, `notifications@taylslate.com`. `auth@taylslate.com` is sign-in mail only. Callers do not pass `from`.
+These messages use the default sender, `notifications@taylslate.com`. `auth@taylslate.com` is sign-in mail only. Callers do not pass `from`.
 
 The admin alert goes out once after a commit that created at least one pending link. It names the rep's company, or full name, the count, how many rows are new shows, and how many link to shows already in the catalog. It names at most five shows. The button goes to `https://www.taylslate.com/admin/roster-requests`. A preview and a retry send nothing, because those rows are not committed.
 
@@ -68,6 +70,8 @@ The rep decision mail goes out only after approve or reject changes a pending li
 The owner notice goes out on creation, while the link is pending, not again on approval. The recipient is a verified owner: `shows.ownership_status` is `verified` and a `show_ownership_proofs` row for that show has status `verified`. The address is `profiles.email` for that proof's `user_id`. Deal ties and show contact-email ties are not mailed. An unclaimed show gets no email and no proof lookup. A new show the rep just created is not mailed. The rep is not mailed when `user_id` is the rep. One owner with several shows gets one email listing those shows. The cap is 50 owner emails per commit. The mail says the rep (company, else full name, else "A Taylslate sales agent") listed the show, Taylslate is reviewing it, and nothing is live yet. The button "This is not right" goes to `https://www.taylslate.com/shows/roster-links/<link id>`. It does not include another rep, a rep email, commission, exclusivity, any other show, or an admin note.
 
 The dispute alert goes to the same admin address after the first flag. It includes the show name, the rep's company or name, the owner's email, the note, and the review link. The dispute does not change the link. The rep cannot read the dispute row.
+
+The rep heads-up is `renderRosterRepOwnerHeadsUp`. The import variant says the show already has a verified owner, Taylslate told that owner about the roster link, and the link stays pending. The verified-later variant says the owner verified, and that the link is pending review or approved. Neither message includes the owner's name, email, or id, a dispute, another rep, commission, or exclusivity. One notice row per link and proof. `send_failed` deletes the claim so the sweep can retry. `no_api_key` and `managed_inbox_unset` keep the row and are not retried.
 
 Payments and payouts do not send a Taylslate email. Stripe may send its own receipt if that is turned on in Stripe. DocuSign sends the countersign envelope from dse@docusign.net. The show-countersign message tells the host to expect that.
 

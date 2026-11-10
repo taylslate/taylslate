@@ -16,7 +16,13 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { logEvent } from "@/lib/data/events";
 import { getAgentShowRelationship } from "@/lib/data/queries";
+import {
+  assertNoOpenDispute,
+  isOpenDisputeDbError,
+  RosterLinkDisputedError,
+} from "@/lib/reps/roster-disputes";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 
 export interface RosterEntry {
@@ -181,7 +187,8 @@ export async function listRosterShowDeals(
  * shows.is_discoverable becomes true only when shows.agent_id equals the
  * link's agent_id. Any other show stays hidden. The link is still approved.
  * A caller who is not an admin writes nothing. A link that is not pending
- * is not updated.
+ * is not updated. An open owner dispute writes nothing and publishes
+ * nothing, including when the database trigger rejects the update.
  */
 export async function approveRosterLink(
   adminUserId: string,
@@ -189,6 +196,15 @@ export async function approveRosterLink(
 ): Promise<{ id: string; show_id: string; status: "approved" }> {
   if (!(await isShowsAdmin(adminUserId))) {
     throw new Error("Only an admin can approve a roster link.");
+  }
+
+  try {
+    await assertNoOpenDispute(relationshipId);
+  } catch (err) {
+    if (err instanceof RosterLinkDisputedError) {
+      await recordApproveBlocked(adminUserId, relationshipId, err.showId);
+    }
+    throw err;
   }
 
   const approvedAt = new Date().toISOString();
@@ -203,6 +219,11 @@ export async function approveRosterLink(
     .eq("status", "pending")
     .select("id, show_id, agent_id, status")
     .single();
+  if (error && isOpenDisputeDbError(error)) {
+    const showId = await readRosterLinkShowId(relationshipId);
+    await recordApproveBlocked(adminUserId, relationshipId, showId);
+    throw new RosterLinkDisputedError(showId);
+  }
   if (error || !data) {
     throw new Error(error?.message ?? "Roster link is not pending.");
   }
@@ -238,6 +259,35 @@ export async function approveRosterLink(
   }
 
   return { id: String(row.id), show_id: showId, status: "approved" };
+}
+
+async function recordApproveBlocked(
+  adminUserId: string,
+  linkId: string,
+  showId: string | null
+): Promise<void> {
+  await logEvent({
+    eventType: "roster_link.approve_blocked",
+    entityType: "roster_link",
+    entityId: linkId,
+    actorId: adminUserId,
+    payload: { link_id: linkId, show_id: showId },
+  });
+}
+
+async function readRosterLinkShowId(relationshipId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("agent_show_relationships")
+      .select("show_id")
+      .eq("id", relationshipId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const showId = (data as { show_id?: unknown }).show_id;
+    return typeof showId === "string" && showId.trim() ? showId : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getRepShow(

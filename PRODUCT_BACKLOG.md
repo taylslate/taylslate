@@ -110,6 +110,10 @@ Things that must finish before GTM. The launch bar.
 - `OPENAI_API_KEY` is not set. The cron skips until it is. Optional `AIRCHECK_RUN_COST_CAP_USD` defaults to $1 per run. whisper-1 is $0.006 per minute, so a 45-minute episode is about $0.27.
 - The review screen that confirms a line and charges was not part of this change. A YouTube spot with no media file is stored as failed and is not sent to Whisper, because the Data API does not return the audio.
 
+### Q12: roster dispute block and rep owner heads-up (Nov 10, 2026)
+- Shipped in code. An open dispute blocks approve until an internal admin resolves it with a note. The link stays pending. Migration 081 is written and not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
+- A rep gets one heads-up when a roster link points at a verified owner: at import commit, and later from the daily cron or an O2/O4 call. The legacy `/shows` CSV upload still creates a duplicate show. That screen is out of scope (see `docs/jobs/Q12.md`).
+
 ### SEC1: profiles.email must not grant access (Nov 2, 2026)
 - Shipped in code. A signed-in user can update `profiles.email`. Admin, show edit, roster import discoverability, show-owner ties, deal backfill, login and magic account lookup, outreach show resolution, and the DocuSign show signer now use the auth login.
 - Migration 077 is applied. Migration 078 is written and not applied. A null auth email must not roll back the auth update. Apply 078 only after merge and Chris's OK.
