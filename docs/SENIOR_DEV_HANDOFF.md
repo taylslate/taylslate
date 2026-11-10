@@ -2136,5 +2136,5 @@ The PGlite suite applies the on-disk migrations through 082 (080 and 081 are abs
 - Approving outreach does not send email and does not insert an outreach row. Sending needs a later job and Chris's OK.
 - The page is reachable by URL. A5 adds the link from the API keys page. This job does not edit settings or nav.
 - The draft campaign name uses ` - ` instead of the em dash in `deriveCampaignName`.
-- There is no unique index on `campaigns`. A retry finds the draft by `brief.source_action_id` before it inserts. A deleted draft clears `result_campaign_id` and leaves `executed_at` set, so retry does not create another.
+- There is no unique index on `campaigns`. A retry finds the draft by `brief.source_action_id` before it inserts. A deleted draft clears `result_campaign_id` and leaves `executed_at` set, so retry does not create another. If the brand manually re-submits that draft after a failed link, `source_action_id` is lost.
 

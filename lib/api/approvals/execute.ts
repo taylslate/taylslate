@@ -37,8 +37,12 @@ export async function executeApprovedCampaign(input: {
   try {
     const payload = validateCampaignCreate(claimed.payload);
     const existingDraft = await findDraftForAction(input.userId, input.actionId);
-    if (existingDraft) {
-      return finishExisting(input.userId, input.actionId, existingDraft, payload);
+    if (existingDraft.error) {
+      await failExecution(input.userId, input.actionId);
+      return { ok: false, reason: "failed" };
+    }
+    if (existingDraft.campaignId) {
+      return finishExisting(input.userId, input.actionId, existingDraft.campaignId, payload);
     }
     const pattern = await ownedPattern(input.userId, payload);
     if (payload.customer_context?.reused_from_pattern_id && !pattern) {
@@ -106,17 +110,32 @@ function briefFromPayload(
   };
 }
 
-async function findDraftForAction(userId: string, actionId: string): Promise<string | null> {
-  const { data, error } = await supabaseAdmin
-    .from("campaigns")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("brief->>source_action_id", actionId)
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) return null;
-  const id = (data as { id?: unknown }).id;
-  return typeof id === "string" && isUuid(id) ? id : null;
+async function findDraftForAction(
+  userId: string,
+  actionId: string
+): Promise<{ campaignId: string | null; error: boolean }> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("campaigns")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("brief->>source_action_id", actionId)
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.error("[approvals.execute] draft lookup failed", error.code ?? "unknown");
+      return { campaignId: null, error: true };
+    }
+    if (!data) return { campaignId: null, error: false };
+    const id = (data as { id?: unknown }).id;
+    return {
+      campaignId: typeof id === "string" && isUuid(id) ? id : null,
+      error: false,
+    };
+  } catch {
+    console.error("[approvals.execute] draft lookup failed");
+    return { campaignId: null, error: true };
+  }
 }
 
 async function finishExisting(

@@ -121,6 +121,7 @@ describe("AgentActionsClient", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Approved" }));
     const link = await screen.findByRole("link", { name: "Open campaign" });
     expect(link).toHaveAttribute("href", `/campaigns/${CAMPAIGN}`);
+    expect(screen.queryByText("Draft was removed.")).not.toBeInTheDocument();
     expect(screen.getByText("The campaign could not be created.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => {
@@ -131,5 +132,46 @@ describe("AgentActionsClient", () => {
       expect(call?.[0]).toContain("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3");
       expect(JSON.parse(String(call?.[1]?.body))).toEqual({ decision: "retry" });
     });
+  });
+
+  it("says the draft was removed when an approved campaign no longer has a result", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const status = new URL(String(url), "http://localhost").searchParams.get("status");
+        return {
+          ok: true,
+          json: async () => ({
+            data:
+              status === "approved"
+                ? [
+                    {
+                      ...outreachRow(),
+                      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6",
+                      kind: "campaign.create",
+                      status: "approved",
+                      executed_at: "2026-06-16T15:00:00.000Z",
+                      result_campaign_id: null,
+                      execution_error: null,
+                      summary: {
+                        type: "campaign",
+                        brand_name: "Sauna Box",
+                        budget_total: 25000,
+                        goals: "Test the channel",
+                        flight: "Next 30 days",
+                      },
+                    },
+                  ]
+                : [],
+            next_cursor: null,
+          }),
+        };
+      })
+    );
+    render(<AgentActionsClient />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Approved" }));
+    expect(await screen.findByText("Draft was removed.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open campaign" })).not.toBeInTheDocument();
   });
 });

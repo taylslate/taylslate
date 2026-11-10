@@ -283,6 +283,9 @@ function ActionRow({
       {row.kind === "outreach.draft" && row.status === "approved" ? (
         <p className={`mt-2 ${inkText}`}>Approved. Nothing was sent.</p>
       ) : null}
+      {row.kind === "campaign.create" && row.status === "approved" && row.executed_at && !campaignId ? (
+        <p className={`mt-2 ${mutedText}`}>Draft was removed.</p>
+      ) : null}
       {row.execution_error ? (
         <p className={`mt-2 ${mutedText}`} role="alert">
           {row.execution_error}

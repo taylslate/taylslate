@@ -15,6 +15,7 @@ const { createCampaign, getCampaignPatternById, logEvent, row } = vi.hoisted(() 
     current: null as Record<string, unknown> | null,
     campaigns: [] as Record<string, unknown>[],
     failNextLink: false,
+    draftLookupError: false,
   },
 }));
 
@@ -76,6 +77,9 @@ function builder(table: string) {
   }
 
   function apply() {
+    if (table === "campaigns" && row.draftLookupError && !patch) {
+      return { data: null, error: { code: "XX000" } };
+    }
     const found = source().filter((record) => filters.every((filter) => filter(record)));
     if (
       patch &&
@@ -157,6 +161,7 @@ beforeEach(() => {
   row.current = baseRow();
   row.campaigns = [];
   row.failNextLink = false;
+  row.draftLookupError = false;
 });
 
 describe("campaignName", () => {
@@ -300,6 +305,15 @@ describe("executeApprovedCampaign", () => {
     expect(createCampaign).toHaveBeenCalledTimes(1);
     expect(row.campaigns).toHaveLength(1);
     expect(row.current?.result_campaign_id).toBe(CAMPAIGN);
+  });
+
+  it("does not create a campaign when the draft lookup fails", async () => {
+    row.draftLookupError = true;
+    const result = await executeApprovedCampaign({ userId: BRAND, actionId: ACTION });
+    expect(result.ok).toBe(false);
+    expect(createCampaign).not.toHaveBeenCalled();
+    expect(row.campaigns).toHaveLength(0);
+    expect(row.current?.execution_error).toBe(EXECUTION_ERROR);
   });
 
   it("does not create another draft after the campaign row was deleted", async () => {
