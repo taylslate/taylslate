@@ -117,7 +117,12 @@ describe("roster link templates", () => {
 
   it("tells the rep a show has a verified owner and names nobody else", () => {
     const showName = `<Odd & Lots>`;
-    const imported = renderRosterRepOwnerHeadsUp({ showName, trigger: "import" });
+    const imported = renderRosterRepOwnerHeadsUp({
+      showName,
+      trigger: "import",
+      ownerNotified: true,
+    });
+    const neutral = renderRosterRepOwnerHeadsUp({ showName, trigger: "import" });
     const pending = renderRosterRepOwnerHeadsUp({
       showName,
       trigger: "verified_later",
@@ -133,10 +138,12 @@ describe("roster link templates", () => {
     expect(imported.html).not.toContain("<Odd");
     expect(imported.text).toContain("Taylslate let them know about your roster link.");
     expect(imported.text).toContain("Your link stays pending until Taylslate reviews it.");
+    expect(neutral.text).not.toContain("let them know");
+    expect(neutral.text).toContain("Your link stays pending until Taylslate reviews it.");
     expect(pending.subject).toBe("<Odd & Lots> now has a verified owner");
     expect(pending.text).toContain("is pending review.");
     expect(approved.text).toContain("Your roster link for it is approved.");
-    for (const rendered of [imported, pending, approved]) {
+    for (const rendered of [imported, neutral, pending, approved]) {
       const joinedText = joined(rendered);
       expect(joinedText).not.toContain("\u2014");
       expect(joinedText.toLowerCase()).not.toContain("dispute");

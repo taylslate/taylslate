@@ -6,7 +6,7 @@
 
 Migration **079 is written and not applied**. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. `airchecks` stays service_role only, so transcripts, audio URLs, and errors are not on the Data API. RSS and enclosure fetches pin the resolved address, stream up to a byte cap, and time out. The run stops new spots at 200 seconds and re-checks the Whisper cap between chunks. `lib/stripe`, `lib/payouts`, and `lib/billing` were not edited.
 
-## Q12: roster dispute block and rep owner heads-up (Nov 10, 2026)
+## Q12: roster dispute block and rep owner heads-up (Nov 9, 2026)
 
 An open owner dispute blocks approve. The block is in `approveRosterLink` and in a BEFORE UPDATE trigger in migration **081**, which is written and not applied. Apply 081 on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. Resolve is an admin note. It does not approve, reject, publish, or email. A rep whose link points at a verified owner gets one heads-up, at import commit or from the daily cron `GET /api/cron/roster-owner-notices` (21:00 UTC). 075 is live and was not edited. `lib/stripe`, `lib/payouts`, and `lib/billing` were not edited. Walkthrough and open questions are in `docs/jobs/Q12.md`.
 

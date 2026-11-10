@@ -870,7 +870,12 @@ export type DomainEventType =
   | "roster_link.dispute_opened"
   | "roster_link.approve_blocked"
   | "roster_link.dispute_resolved"
-  | "roster_link.owner_heads_up";
+  | "roster_link.owner_heads_up"
+  // Brand decision on a pending API write action.
+  | "api_action.approved"
+  | "api_action.rejected"
+  | "api_action.executed"
+  | "api_action.execution_failed";
 
 export type DomainEntityType =
   | "deal"
@@ -892,7 +897,9 @@ export type DomainEntityType =
   // Make-good proposal and the brand's decision.
   | "make_good"
   // Wave 14 Phase 2A — brief derivation/interpretation events hang off campaigns
-  | "campaign";
+  | "campaign"
+  // A recorded public API write waiting for a brand decision.
+  | "api_action";
 
 export interface DomainEvent {
   id: string;

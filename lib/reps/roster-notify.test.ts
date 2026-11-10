@@ -72,7 +72,7 @@ function row(partial: Partial<RosterImportResultRow> & Pick<RosterImportResultRo
 
 function installAdmin() {
   adminFrom.mockImplementation((table: string) => {
-    const filters: { op: "eq" | "in" | "gte"; column: string; value: unknown }[] = [];
+    const filters: { op: "eq" | "in" | "gte" | "lt"; column: string; value: unknown }[] = [];
     let insertRow: Row | null = null;
     let patch: Row | null = null;
     let deleting = false;
@@ -89,6 +89,10 @@ function installAdmin() {
     });
     builder.gte = vi.fn((column: string, value: unknown) => {
       filters.push({ op: "gte", column, value });
+      return builder;
+    });
+    builder.lt = vi.fn((column: string, value: unknown) => {
+      filters.push({ op: "lt", column, value });
       return builder;
     });
     builder.limit = vi.fn(self);
@@ -112,6 +116,11 @@ function installAdmin() {
       filters.every((filter) => {
         if (filter.op === "eq") return item[filter.column] === filter.value;
         if (filter.op === "gte") return String(item[filter.column] ?? "") >= String(filter.value ?? "");
+        if (filter.op === "lt") {
+          const value = item[filter.column];
+          if (typeof value !== "string" || !value) return false;
+          return value < String(filter.value ?? "");
+        }
         return (filter.value as unknown[]).includes(item[filter.column]);
       });
     const run = () => {
@@ -144,9 +153,10 @@ function installAdmin() {
         }
       }
       if (deleting) {
+        const removed = list().filter(matches);
         const kept = list().filter((item) => !matches(item));
         list().splice(0, list().length, ...kept);
-        return { data: null, error: null };
+        return { data: removed, error: null };
       }
       if (patch) {
         const updated = list().filter(matches);
@@ -623,6 +633,50 @@ describe("notifyRosterImportCommit owner heads-up", () => {
     expect(sent().some((mail) => mail.to === OWNER_EMAIL)).toBe(false);
     expect(db.roster_owner_verified_notices).toEqual([]);
   });
+
+  it("does not say the owner was told when that notice failed", async () => {
+    db.profiles.push(
+      { id: AGENT, email: REP_EMAIL, company_name: "Northwind", full_name: "Ada" },
+      { id: OWNER, email: OWNER_EMAIL, company_name: null, full_name: "Host" }
+    );
+    db.shows.push({ id: "show-verified", name: "Odd Lots", ownership_status: "verified" });
+    db.show_ownership_proofs.push({
+      id: "proof-1",
+      show_id: "show-verified",
+      user_id: OWNER,
+      status: "verified",
+      verified_at: daysAgo(1),
+    });
+    db.agent_show_relationships.push({
+      id: "link-a",
+      show_id: "show-verified",
+      agent_id: AGENT,
+      status: "pending",
+      created_at: daysAgo(1),
+    });
+    sendEmail.mockImplementation(async (input: { to?: string }) => {
+      if (input.to === OWNER_EMAIL) return { ok: false, reason: "send_failed" };
+      return { ok: true, id: "mail-ok" };
+    });
+
+    await notifyRosterImportCommit({
+      agentId: AGENT,
+      rows: [
+        row({
+          class: "link_existing",
+          committed: true,
+          link_id: "link-a",
+          show_id: "show-verified",
+          show_name: "Odd Lots",
+        }),
+      ],
+    });
+
+    const heads = sent().filter((mail) => mail.to === REP_EMAIL);
+    expect(heads).toHaveLength(1);
+    expect(heads[0].text).not.toContain("let them know");
+    expect(heads[0].text).toContain("Your link stays pending until Taylslate reviews it.");
+  });
 });
 
 describe("notifyRepsOfOwnerVerification", () => {
@@ -878,5 +932,51 @@ describe("sweepOwnerVerificationNotices", () => {
     expect(second.sent).toBe(0);
     expect(sendEmail).not.toHaveBeenCalled();
     expect(db.roster_owner_verified_notices).toHaveLength(2);
+  });
+
+  it("retries a claimed notice older than one hour and leaves a fresh claim", async () => {
+    db.profiles.push({ id: AGENT, email: REP_EMAIL, company_name: "Northwind", full_name: "Ada" });
+    db.shows.push({ id: "show-1", name: "Odd Lots", ownership_status: "verified" });
+    db.show_ownership_proofs.push({
+      id: "proof-1",
+      show_id: "show-1",
+      user_id: OWNER,
+      status: "verified",
+      verified_at: daysAgo(1),
+    });
+    db.agent_show_relationships.push(
+      { id: "link-stale", show_id: "show-1", agent_id: AGENT, status: "pending", created_at: daysAgo(2) },
+      { id: "link-fresh", show_id: "show-1", agent_id: AGENT, status: "pending", created_at: daysAgo(1) }
+    );
+    db.roster_owner_verified_notices.push(
+      {
+        id: "notice-stale",
+        link_id: "link-stale",
+        proof_id: "proof-1",
+        rep_user_id: AGENT,
+        trigger: "import",
+        result: "claimed",
+        created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: "notice-fresh",
+        link_id: "link-fresh",
+        proof_id: "proof-1",
+        rep_user_id: AGENT,
+        trigger: "import",
+        result: "claimed",
+        created_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      }
+    );
+
+    const result = await sweepOwnerVerificationNotices();
+    expect(result.sent).toBe(1);
+    expect(sent()).toHaveLength(1);
+    expect(sent()[0].to).toBe(REP_EMAIL);
+    const stale = db.roster_owner_verified_notices.find((row) => row.link_id === "link-stale");
+    const fresh = db.roster_owner_verified_notices.find((row) => row.link_id === "link-fresh");
+    expect(stale?.result).toBe("sent");
+    expect(fresh?.result).toBe("claimed");
+    expect(fresh?.id).toBe("notice-fresh");
   });
 });

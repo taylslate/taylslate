@@ -275,31 +275,17 @@ export function RosterRequestsClient({ links }: { links: PendingRosterRequest[] 
                     )}
                   </div>
                   <div className="flex flex-col items-start gap-2">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={primaryButtonClass}
-                      style={radiusStyle}
-                      disabled={busy || dialog !== null || row.disputedByOwner}
-                      onClick={() => approve(row)}
-                    >
-                      {busyId === row.id && !dialog ? <Spinner /> : null}
-                      Approve {row.showName}
-                    </button>
-                    <button
-                      type="button"
-                      className={ghostButtonClass}
-                      style={radiusStyle}
-                      disabled={busy || dialog !== null}
-                      onClick={() => {
-                        setError(null);
-                        setNote("");
-                        setDialog({ kind: "reject", id: row.id });
-                      }}
-                    >
-                      Reject {row.showName}
-                    </button>
-                    {row.disputedByOwner ? (
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className={primaryButtonClass}
+                        style={radiusStyle}
+                        disabled={busy || dialog !== null || row.disputedByOwner}
+                        onClick={() => approve(row)}
+                      >
+                        {busyId === row.id && !dialog ? <Spinner /> : null}
+                        Approve {row.showName}
+                      </button>
                       <button
                         type="button"
                         className={ghostButtonClass}
@@ -308,18 +294,32 @@ export function RosterRequestsClient({ links }: { links: PendingRosterRequest[] 
                         onClick={() => {
                           setError(null);
                           setNote("");
-                          setDialog({ kind: "resolve", id: row.id });
+                          setDialog({ kind: "reject", id: row.id });
                         }}
                       >
-                        Resolve dispute for {row.showName}
+                        Reject {row.showName}
                       </button>
+                      {row.disputedByOwner ? (
+                        <button
+                          type="button"
+                          className={ghostButtonClass}
+                          style={radiusStyle}
+                          disabled={busy || dialog !== null}
+                          onClick={() => {
+                            setError(null);
+                            setNote("");
+                            setDialog({ kind: "resolve", id: row.id });
+                          }}
+                        >
+                          Resolve dispute for {row.showName}
+                        </button>
+                      ) : null}
+                    </div>
+                    {row.disputedByOwner ? (
+                      <p className={mutedClass} data-testid="dispute-blocked">
+                        Approval is blocked while the owner's dispute is open. Resolve it first.
+                      </p>
                     ) : null}
-                  </div>
-                  {row.disputedByOwner ? (
-                    <p className={mutedClass} data-testid="dispute-blocked">
-                      Approval is blocked while the owner's dispute is open. Resolve it first.
-                    </p>
-                  ) : null}
                   </div>
                 </div>
               </li>

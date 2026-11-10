@@ -29,6 +29,7 @@ export const ROSTER_ADMIN_NAME_CAP = 5;
 export const ROSTER_HEADS_UP_CAP = 50;
 const ROSTER_OWNER_SWEEP_LIMIT = 100;
 const ROSTER_OWNER_NOTICE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const STALE_CLAIM_MS = 60 * 60 * 1000;
 
 const FALLBACK_REP = "A Taylslate sales agent";
 
@@ -142,14 +143,17 @@ export async function notifyRosterImportCommit(input: {
   }
 
   let verifiedProofs: VerifiedProof[] = [];
+  let notifiedShowIds = new Set<string>();
   try {
-    verifiedProofs = await sendOwnerNotices(input.agentId, repLabel, committed);
+    const notices = await sendOwnerNotices(input.agentId, repLabel, committed);
+    verifiedProofs = notices.proofs;
+    notifiedShowIds = notices.notifiedShowIds;
   } catch (err) {
     logRosterNotify("owner_notice", err);
   }
 
   try {
-    await notifyRepsAfterImport(verifiedProofs, committed);
+    await notifyRepsAfterImport(verifiedProofs, committed, notifiedShowIds);
   } catch (err) {
     logRosterNotify("owner_heads_up", err);
   }
@@ -183,7 +187,7 @@ async function sendOwnerNotices(
   agentId: string,
   repLabel: string,
   committed: RosterImportResultRow[]
-): Promise<VerifiedProof[]> {
+): Promise<{ proofs: VerifiedProof[]; notifiedShowIds: Set<string> }> {
   const existing = committed.filter(
     (row) =>
       (row.class === "link_existing" || row.class === "exclusive_conflict") &&
@@ -192,19 +196,19 @@ async function sendOwnerNotices(
       typeof row.link_id === "string" &&
       row.link_id
   );
-  if (existing.length === 0) return [];
+  if (existing.length === 0) return { proofs: [], notifiedShowIds: new Set() };
 
   const showIds = [...new Set(existing.map((row) => row.show_id as string))];
   const status = await readOwnershipStatus(showIds);
   const verifiedIds = showIds.filter((id) => status.get(id) === "verified");
   // Unclaimed shows stop here. No proof read, no profile read.
-  if (verifiedIds.length === 0) return [];
+  if (verifiedIds.length === 0) return { proofs: [], notifiedShowIds: new Set() };
 
   const proofs = await readVerifiedProofs(verifiedIds);
   const ownerIds = [
     ...new Set(proofs.map((proof) => proof.userId).filter((id) => id !== agentId)),
   ];
-  if (ownerIds.length === 0) return proofs;
+  if (ownerIds.length === 0) return { proofs, notifiedShowIds: new Set() };
 
   const emails = await readProfileEmails(ownerIds);
   let missingEmail = 0;
@@ -226,19 +230,24 @@ async function sendOwnerNotices(
     console.error(`[roster-notify] owner_notice no_email ${missingEmail}`);
   }
 
-  const buckets = new Map<string, { userId: string; email: string; shows: RosterOwnerShow[] }>();
+  const buckets = new Map<
+    string,
+    { userId: string; email: string; shows: RosterOwnerShow[]; showIds: string[] }
+  >();
   for (const row of existing) {
     const owners = ownersByShow.get(row.show_id as string) ?? [];
     for (const owner of owners) {
       let bucket = buckets.get(owner.userId);
       if (!bucket) {
-        bucket = { userId: owner.userId, email: owner.email, shows: [] };
+        bucket = { userId: owner.userId, email: owner.email, shows: [], showIds: [] };
         buckets.set(owner.userId, bucket);
       }
       bucket.shows.push({
         name: row.show_name?.trim() || "Your show",
         linkId: row.link_id as string,
       });
+      const showId = row.show_id as string;
+      if (!bucket.showIds.includes(showId)) bucket.showIds.push(showId);
     }
   }
 
@@ -248,17 +257,25 @@ async function sendOwnerNotices(
     console.error(`[roster-notify] owner_cap ${all.length - ROSTER_OWNER_EMAIL_CAP}`);
   }
 
+  const notifiedShowIds = new Set<string>();
   for (const bucket of capped) {
     const rendered = renderRosterOwnerNotice({ repLabel, shows: bucket.shows });
-    await deliver("owner_notice", {
-      to: bucket.email,
-      subject: rendered.subject,
-      html: rendered.html,
-      text: rendered.text,
-      recipientProfileId: bucket.userId,
-    });
+    try {
+      const sent = await deliver("owner_notice", {
+        to: bucket.email,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+        recipientProfileId: bucket.userId,
+      });
+      if (sent.ok) {
+        for (const showId of bucket.showIds) notifiedShowIds.add(showId);
+      }
+    } catch (err) {
+      logRosterNotify("owner_notice", err);
+    }
   }
-  return proofs;
+  return { proofs, notifiedShowIds };
 }
 
 export async function notifyRosterLinkDecision(input: {
@@ -319,7 +336,8 @@ export async function notifyRosterDispute(input: {
 
 async function notifyRepsAfterImport(
   proofs: VerifiedProof[],
-  committed: RosterImportResultRow[]
+  committed: RosterImportResultRow[],
+  notifiedShowIds: Set<string>
 ): Promise<void> {
   const seen = new Set<string>();
   for (const proof of proofs) {
@@ -340,6 +358,7 @@ async function notifyRepsAfterImport(
       proofId: proof.id,
       linkIds,
       trigger: "import",
+      ownerNotified: notifiedShowIds.has(proof.showId),
     });
   }
 }
@@ -354,6 +373,7 @@ export async function notifyRepsOfOwnerVerification(input: {
   proofId: string;
   linkIds?: string[];
   trigger: HeadsUpTrigger;
+  ownerNotified?: boolean;
 }): Promise<OwnerHeadsUpCounts> {
   const counts: OwnerHeadsUpCounts = { sent: 0, already: 0, skipped: 0 };
   try {
@@ -432,6 +452,7 @@ export async function notifyRepsOfOwnerVerification(input: {
           showName: show.name,
           trigger: input.trigger,
           linkStatus: link.status === "approved" ? "approved" : "pending",
+          ownerNotified: input.ownerNotified === true,
         });
         result = await deliver("owner_heads_up", {
           to: email,
@@ -519,7 +540,11 @@ export async function sweepOwnerVerificationNotices(): Promise<OwnerHeadsUpCount
       console.error("[roster-notify] owner_heads_up missing_table");
       return totals;
     }
-    const have = new Set(notices.map((row) => `${row.linkId}:${row.proofId}`));
+    const have = new Set(
+      notices
+        .filter((row) => !isStaleClaim(row.result, row.createdAt))
+        .map((row) => `${row.linkId}:${row.proofId}`)
+    );
     const pending = pairs
       .filter((pair) => !have.has(`${pair.linkId}:${pair.proofId}`))
       .slice(0, ROSTER_OWNER_SWEEP_LIMIT);
@@ -863,30 +888,44 @@ function dedupeLinks(rows: HeadsUpLink[]): HeadsUpLink[] {
   });
 }
 
+function isStaleClaim(result: string, createdAt: string, now = Date.now()): boolean {
+  if (result !== "claimed") return false;
+  const created = Date.parse(createdAt);
+  if (!Number.isFinite(created)) return false;
+  return now - created > STALE_CLAIM_MS;
+}
+
 async function listOwnerNotices(
   linkIds: string[]
-): Promise<{ linkId: string; proofId: string }[] | "missing"> {
+): Promise<{ linkId: string; proofId: string; result: string; createdAt: string }[] | "missing"> {
   const ids = [...new Set(linkIds)];
   if (ids.length === 0) return [];
   const { data, error } = await supabaseAdmin
     .from("roster_owner_verified_notices")
-    .select("link_id, proof_id")
+    .select("link_id, proof_id, result, created_at")
     .in("link_id", ids);
   if (error && isMissingNotices(error)) return "missing";
   if (error) throw namedRead("owner notice read failed", error.code);
-  const out: { linkId: string; proofId: string }[] = [];
+  const out: { linkId: string; proofId: string; result: string; createdAt: string }[] = [];
   for (const item of data ?? []) {
     const row = item as Record<string, unknown>;
     const linkId = text(row.link_id);
     const proofId = text(row.proof_id);
-    if (linkId && proofId) out.push({ linkId, proofId });
+    if (linkId && proofId) {
+      out.push({
+        linkId,
+        proofId,
+        result: text(row.result),
+        createdAt: text(row.created_at),
+      });
+    }
   }
   return out;
 }
 
 type ClaimResult = "claimed" | "already" | "missing_table" | "failed";
 
-async function claimOwnerNotice(input: {
+async function insertOwnerNotice(input: {
   linkId: string;
   proofId: string;
   repUserId: string;
@@ -909,6 +948,38 @@ async function claimOwnerNotice(input: {
     return "failed";
   }
   return "claimed";
+}
+
+async function claimOwnerNotice(input: {
+  linkId: string;
+  proofId: string;
+  repUserId: string;
+  trigger: HeadsUpTrigger;
+}): Promise<ClaimResult> {
+  const inserted = await insertOwnerNotice(input);
+  if (inserted !== "already") return inserted;
+
+  const { data, error } = await supabaseAdmin
+    .from("roster_owner_verified_notices")
+    .select("result, created_at")
+    .eq("link_id", input.linkId)
+    .eq("proof_id", input.proofId)
+    .maybeSingle();
+  if (error || !data) return "already";
+  const row = data as { result?: unknown; created_at?: unknown };
+  if (!isStaleClaim(text(row.result), text(row.created_at))) return "already";
+
+  const cutoff = new Date(Date.now() - STALE_CLAIM_MS).toISOString();
+  const removed = await supabaseAdmin
+    .from("roster_owner_verified_notices")
+    .delete()
+    .eq("link_id", input.linkId)
+    .eq("proof_id", input.proofId)
+    .eq("result", "claimed")
+    .lt("created_at", cutoff)
+    .select("id");
+  if (removed.error || !Array.isArray(removed.data) || removed.data.length === 0) return "already";
+  return insertOwnerNotice(input);
 }
 
 async function finishOwnerNotice(

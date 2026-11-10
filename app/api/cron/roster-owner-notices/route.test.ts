@@ -33,6 +33,8 @@ describe("GET /api/cron/roster-owner-notices", () => {
     expect(missingHeader.status).toBe(401);
     const wrong = await GET(request("Bearer other") as never);
     expect(wrong.status).toBe(401);
+    const sameLength = await GET(request("Bearer cron-secreX") as never);
+    expect(sameLength.status).toBe(401);
     expect(sweepOwnerVerificationNotices).not.toHaveBeenCalled();
   });
 

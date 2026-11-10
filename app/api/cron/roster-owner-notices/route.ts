@@ -7,6 +7,7 @@
 // A missing secret, or a request without that bearer token, is 401.
 // A missing notices table sends nothing until migration 081 is applied.
 
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { sweepOwnerVerificationNotices } from "@/lib/reps/roster-notify";
 
@@ -15,7 +16,12 @@ export const runtime = "nodejs";
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
+  const header = req.headers.get("authorization") ?? "";
+  const expected = `Bearer ${secret}`;
+  const left = Buffer.from(header);
+  const right = Buffer.from(expected);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }
 
 export async function GET(request: NextRequest) {

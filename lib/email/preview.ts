@@ -267,6 +267,7 @@ function appPreviews(): EmailPreview[] {
       ...renderRosterRepOwnerHeadsUp({
         showName: "Odd Lots",
         trigger: "import",
+        ownerNotified: true,
       }),
     },
     {

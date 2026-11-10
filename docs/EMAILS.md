@@ -71,7 +71,7 @@ The owner notice goes out on creation, while the link is pending, not again on a
 
 The dispute alert goes to the same admin address after the first flag. It includes the show name, the rep's company or name, the owner's email, the note, and the review link. The dispute does not change the link. The rep cannot read the dispute row.
 
-The rep heads-up is `renderRosterRepOwnerHeadsUp`. The import variant says the show already has a verified owner, Taylslate told that owner about the roster link, and the link stays pending. The verified-later variant says the owner verified, and that the link is pending review or approved. Neither message includes the owner's name, email, or id, a dispute, another rep, commission, or exclusivity. One notice row per link and proof. `send_failed` deletes the claim so the sweep can retry. `no_api_key` and `managed_inbox_unset` keep the row and are not retried.
+The rep heads-up is `renderRosterRepOwnerHeadsUp`. The import variant says the show already has a verified owner and the link stays pending. It says Taylslate told that owner only when that owner notice was sent. The verified-later variant says the owner verified, and that the link is pending review or approved. Neither message includes the owner's name, email, or id, a dispute, another rep, commission, or exclusivity. One notice row per link and proof. `send_failed` deletes the claim so the sweep can retry. `no_api_key` and `managed_inbox_unset` keep the row and are not retried.
 
 Payments and payouts do not send a Taylslate email. Stripe may send its own receipt if that is turned on in Stripe. DocuSign sends the countersign envelope from dse@docusign.net. The show-countersign message tells the host to expect that.
 

@@ -54,6 +54,8 @@ export interface RosterRepOwnerHeadsUpInput {
   trigger: "import" | "verified_later";
   /** verified_later only. Import copy always says the link stays pending. */
   linkStatus?: "pending" | "approved";
+  /** Import only. True when that owner notice was actually sent. */
+  ownerNotified?: boolean;
 }
 
 /** CR and LF would split a Subject header. */
@@ -177,7 +179,8 @@ export function renderRosterRepOwnerHeadsUp(input: RosterRepOwnerHeadsUpInput): 
   const showName = input.showName.trim() || "your show";
   if (input.trigger === "import") {
     const subject = `${showName} already has a verified owner`;
-    const body = `${showName} has a verified owner on Taylslate. Taylslate let them know about your roster link. Your link stays pending until Taylslate reviews it.`;
+    const told = input.ownerNotified ? " Taylslate let them know about your roster link." : "";
+    const body = `${showName} has a verified owner on Taylslate.${told} Your link stays pending until Taylslate reviews it.`;
     const laid = renderEmailLayout({
       preheader: subject,
       headline: subject,

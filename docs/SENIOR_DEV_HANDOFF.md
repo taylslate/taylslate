@@ -252,13 +252,13 @@ Covers the migration grants, revokes, RLS, and the select policy; authenticated 
 ### Known gaps
 
 - Migration 057 is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK, then run the introspection query in the file header.
-- No settings UI (A4) and no data endpoints (A2).
+- Settings UI shipped in A5 at `/settings/api-keys`. Data endpoints shipped in A2.
 - No plan check. Operator `apiAccess` is for A7.
 - The limit is 60 requests per minute per key, in code, not an env var.
 - `lib/utils/rate-limit.ts` is still the in-process limiter for outreach actions.
 - `last_used_at` is best-effort. A failed touch does not fail the request.
 - Old rate windows for a key are deleted on that key's next increment once they are an hour old. Windows for idle keys stay until the key is used again or the key row is deleted.
-- `listKeys` and `revokeKey` are service-role helpers. Nothing in the app calls them yet.
+- `listKeys` and `revokeKey` are service-role helpers. A5 calls them from `/settings/api-keys` and `/api/settings/api-keys` for the signed-in brand. The plaintext secret is still returned only from `createKey`.
 
 ## R2: Rep store and API
 
@@ -768,7 +768,7 @@ Migration 070 creates `api_write_actions` with RLS on and zero policies. `servic
 
 ### Known gaps
 
-- No approve or reject path. Status stays `pending` until a later job.
+- Approve and reject are on `/settings/agent-actions` (A4). A pending row stays pending until the brand decides there.
 - A reused campaign pattern id is checked as a uuid. It is not loaded, so ownership of that pattern is not checked until something executes the action.
 - `api_key_id` does not cascade when a key row is deleted. Deleting the profile still cascades the action through `brand_id`.
 - The campaign payload has no derived name. The manual brief route builds that name when it creates the row. This route only records the brief fields.
@@ -2182,7 +2182,7 @@ O2 and O4 should call `notifyRepsOfOwnerVerification` after they write a verifie
 
 ### Tests
 
-`npx vitest run`: 323 files, 2814 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 142 pages.
+`npx vitest run`: 334 files, 2903 passed, 40 skipped. `npx tsc --noEmit` clean. `npx next build` compiled and generated 142 pages.
 
 Covers open, none, and read-error dispute checks; approve blocked with no update and no publish; trigger P0001 mapped to 409; route 401, 403, 409 disputed, 503, 400 note, resolve 200, 403, 409 repeat, 409 none, 503 without 081; `resolved_by` from the session; no link change and no email on resolve; dispute 23505 open and resolved; the opened event once; import heads-up for an owned link and an exclusive conflict; none for a new show, a retry, the owner-as-rep, or an unclaimed show; pending and approved links; rejected skipped; one send on a double call; `send_failed` retry; `no_api_key` and `managed_inbox_unset` kept; missing table sends nothing; the cap of 50; sweep window and rerun; cron 401; admin sweep 401 and 403; the blocked line, disabled Approve, resolve dialog, local re-enable, other rows unchanged, and no em dash; both template variants escaped with no owner data; preview registration; migration grants, RLS, the trigger, the unique key, and a rerun.
 
@@ -2203,7 +2203,94 @@ Covers open, none, and read-error dispute checks; approve blocked with no update
 - (b) The owner cannot withdraw, and cannot flag again after resolve.
 - (c) An approved link is not demoted by a later dispute.
 - (d) The dispute note stays off the admin page.
-- (e) The heads-up is the import email plus the 7-day sweep. The copy says the owner was told and does not mention a dispute.
+- (e) The heads-up is the import email plus the 7-day sweep. The copy says the owner was told only when that notice was sent. It does not mention a dispute. A claimed notice older than one hour is retried.
 - (f) Preview setup is a throwaway project, not a Supabase branch.
 - (g) Test Agent 1 is not added to "Log in as".
+
+## A4: brand approvals inbox for agent actions (migration 082)
+
+### What was built
+
+A brand can open `/settings/agent-actions` and review the pending rows its API keys recorded through `/api/v1`. The screen has Pending, Approved, Rejected, and Expired tabs. Approve and Reject take an optional note and a confirm step. The actor is the session user id. Role is read from `profiles` by that id and must be `brand`. Another brand's action id is 404.
+
+Approving `campaign.create` creates one draft campaign through `createCampaign`, the same insert the manual brief submit uses: status `draft`, platforms podcast and youtube, recommendations empty, brief version 2. The brief stores `source_action_id`. Before creating, execution looks up `campaigns` for this user with `brief->>source_action_id` equal to the action id and links that row when it exists. The campaign name follows `deriveCampaignName`, with ` - ` in place of the em dash that route uses. A reused pattern id is loaded with `getCampaignPatternById` and must have `customer_id` equal to the session user. A foreign or missing pattern leaves the row approved, stores a generic `execution_error`, and returns 502. Retry is allowed only for an approved `campaign.create` whose `result_campaign_id` and `executed_at` are both null. The claim and the error write use the same `executed_at` check.
+
+Approving `outreach.draft` checks the show is still visible with `getShow` and then records the decision only. Nothing is sent. The row and the screen say "Approved. Nothing was sent." A missing show returns 409 and leaves the row pending. A show check that fails for another reason returns 500 and leaves the row pending.
+
+A pending row older than 14 days is shown as expired. Deciding one returns 409 and sets status `expired`. The decision update matches `status = pending` and `created_at` inside 14 days, so two approvals produce one decision.
+
+Migration 082 is in the PR and is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
+
+### Where
+
+- `supabase/migrations/082_api_write_action_decisions.sql` (not applied)
+- `supabase/migrations/082_api_write_action_decisions.test.ts`
+- `lib/api/approvals/list.ts` and `list.test.ts`
+- `lib/api/approvals/decide.ts` and `decide.test.ts`
+- `lib/api/approvals/execute.ts` and `execute.test.ts`
+- `app/api/settings/agent-actions/route.ts` and `route.test.ts`
+- `app/api/settings/agent-actions/[id]/route.ts` and `[id]/route.test.ts`
+- `app/(dashboard)/settings/agent-actions/page.tsx`
+- `app/(dashboard)/settings/agent-actions/agent-actions-client.tsx` and `agent-actions.test.tsx`
+- `lib/data/types.ts` (the four `api_action.*` event types and the `api_action` entity type)
+- `docs/jobs/A4.md`
+
+### Tests
+
+`npx vitest run supabase/migrations/082_api_write_action_decisions.test.ts lib/api/approvals app/api/settings/agent-actions "app/(dashboard)/settings/agent-actions"`
+
+The PGlite suite applies the on-disk migrations through 082 (080 and 081 are absent), applies 082 again, and checks the new columns, checks, service_role-only grants, RLS, and zero policies. No live database write.
+
+### Known gaps
+
+- 082 is not applied. Do not approve live rows until Chris says so.
+- Approving outreach does not send email and does not insert an outreach row. Sending needs a later job and Chris's OK.
+- The page is reachable by URL. A5 adds the link from the API keys page. This job does not edit settings or nav.
+- The draft campaign name uses ` - ` instead of the em dash in `deriveCampaignName`.
+- There is no unique index on `campaigns`. A retry finds the draft by `brief.source_action_id` before it inserts. A deleted draft clears `result_campaign_id` and leaves `executed_at` set, so retry does not create another. If the brand manually re-submits that draft after a failed link, `source_action_id` is lost.
+
+## A5: API key settings for brands
+
+### What was built
+
+A brand can create, list, and revoke its own API keys at `/settings/api-keys`. The plaintext secret is returned once from `POST /api/settings/api-keys` and is not stored, logged, or shown again. `/settings` has one new brand-only link card, placed directly after Brand profile. Show, agent, and agency do not see it. Nothing else on that page changed.
+
+The brand id is the session user id. Role and plan are read from `profiles` by that id. A role other than `brand` is 403 on the routes and `notFound` on the page. No session is 401 on the routes and a redirect to `/login?next=/settings/api-keys` on the page.
+
+Creating a key requires `PLANS[plan].features.apiAccess` (Operator, and the legacy agency plan). Free and Starter can still list and revoke. They see "API keys are part of the Operator plan." with a link to `/settings/billing`, and `POST` returns 403. `plans.ts` was not edited.
+
+`POST` accepts `{ name, scopes }` only. The name is trimmed to 1-60 printable characters. Scopes are a non-empty deduped subset of `read`, `write:campaigns`, and `write:outreach`. Ten active keys is the cap (409). The response is `{ key, secret }` with `Cache-Control: no-store`. `key` is `id, name, prefix, scopes, created_at, last_used_at, revoked_at`. `GET` returns `{ keys }` on that allowlist. `DELETE` revokes one active key owned by this brand. A foreign id, a bad id, and an already revoked id are 404.
+
+`POST` and `DELETE` require the Origin host to match the request host. Create is 10 per user per hour (`api_key_create_user_hour`). Revoke is 30 per user per hour (`api_key_revoke_user_hour`). Both use `enforceRules` with `failureMode: "closed"`. `lib/security/rate-limit.ts` was not edited. The JSON body cap is 8 KB.
+
+The client keeps the secret in component state, in a read-only field with Copy, until Done or unmount. It is not put in a URL, storage, a cookie, or a log. A revoked key then gets 401 from `GET /api/v1/health` in the route test, using the existing in-memory admin double.
+
+### Where
+
+- `app/(dashboard)/settings/api-keys/page.tsx`
+- `app/(dashboard)/settings/api-keys/api-keys-client.tsx`
+- `app/(dashboard)/settings/api-keys/api-keys.test.tsx`
+- `app/api/settings/api-keys/route.ts`
+- `app/api/settings/api-keys/route.test.ts`
+- `app/api/settings/api-keys/[id]/route.ts`
+- `app/api/settings/api-keys/[id]/route.test.ts`
+- `lib/api/key-settings.ts`
+- `lib/api/key-settings.test.ts`
+- `app/(dashboard)/settings/page.tsx` (one brand link card)
+- `docs/jobs/A5.md`
+
+### Tests
+
+`npx vitest run lib/api/key-settings "app/api/settings/api-keys" "app/(dashboard)/settings/api-keys" "app/(dashboard)/settings"`
+
+Covers 401, 403 for show and agent, 403 without `apiAccess`, 422 on a bad name and an unknown scope, 409 at 10 active keys, 429 on both buckets, 503 when the rate-limit RPC fails, a foreign id and an already revoked id as 404, cross-origin 403, response keys equal to the allowlist with no `key_hash`, the secret only in the POST body and never in a console call, the client clearing the secret on Done, and the settings card for brand only. The settings page source with that card removed hashes to the pre-change file. `npx tsc --noEmit` is clean. `npx vitest run` passed 2789 tests (40 skipped). `npx next build` completed.
+
+### Known gaps
+
+- Request-time plan checks on `/api/v1` and MCP are A7. A key minted on Operator still resolves after a downgrade until it is revoked. List and revoke keep working.
+- `/settings/agent-actions` is a static link. A4 builds that page.
+- The disabled Generate API Key button on `/settings` is unchanged.
+- Two overlapping revokes can both see the key as active and both return 200. A later revoke is 404.
+- No migration. If `api_keys` from A1 is not on the database, the page shows a generic load error and the routes return 500.
+- A brand whose plan is the legacy agency record can create keys, because that plan's `apiAccess` is true. The agency role cannot open the page.
 
