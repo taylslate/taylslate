@@ -33,6 +33,8 @@ describe("GET /api/cron/youtube-library-emails", () => {
     expect(missingHeader.status).toBe(401);
     const wrong = await GET(request("Bearer other") as never);
     expect(wrong.status).toBe(401);
+    const sameLength = await GET(request("Bearer cron-secreX") as never);
+    expect(sameLength.status).toBe(401);
     expect(runYoutubeEmailBackfill).not.toHaveBeenCalled();
   });
 

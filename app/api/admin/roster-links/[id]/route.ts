@@ -1,13 +1,21 @@
 // POST /api/admin/roster-links/[id]
 // Body { action: "approve" } calls approveRosterLink.
 // Body { action: "reject", note } rejects a pending link only.
-// A non-admin is 403. A link that is not pending returns "Not pending".
+// Body { action: "resolve_dispute", note } resolves an open dispute
+// and does not change the link. A non-admin is 403. A link that is
+// not pending returns "Not pending".
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/data/queries";
+import {
+  RosterDisputeReadError,
+  RosterLinkDisputedError,
+  RosterResolutionUnavailableError,
+  resolveRosterDispute,
+} from "@/lib/reps/roster-disputes";
 import { notifyRosterLinkDecision } from "@/lib/reps/roster-notify";
+import { rosterReviewNote, rejectRosterLink } from "@/lib/reps/roster-review";
 import { approveRosterLink } from "@/lib/reps/store";
-import { rejectRosterLink } from "@/lib/reps/roster-review";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 
 export const runtime = "nodejs";
@@ -95,7 +103,44 @@ export async function POST(
       }
       return NextResponse.json(approved);
     } catch (error) {
+      if (error instanceof RosterLinkDisputedError) {
+        return NextResponse.json(
+          {
+            error: "This link has an open dispute. Resolve it before approving.",
+            code: "disputed",
+          },
+          { status: 409 }
+        );
+      }
+      if (error instanceof RosterDisputeReadError) {
+        return NextResponse.json({ error: "Couldn't check the dispute." }, { status: 503 });
+      }
       return failureResponse(error, "Couldn't approve that link.");
+    }
+  }
+
+  if (body.action === "resolve_dispute") {
+    const note = rosterReviewNote(body.note);
+    if (!note) {
+      return NextResponse.json(
+        { error: "A note of 1 to 500 characters is required." },
+        { status: 400 }
+      );
+    }
+    try {
+      const resolved = await resolveRosterDispute(gate.userId, id, note);
+      if (resolved.resolved_count === 0) {
+        return NextResponse.json({ error: "No open dispute on this link." }, { status: 409 });
+      }
+      return NextResponse.json({ ok: true, resolved_count: resolved.resolved_count });
+    } catch (error) {
+      if (error instanceof RosterResolutionUnavailableError) {
+        return NextResponse.json(
+          { error: "Resolving disputes needs migration 081." },
+          { status: 503 }
+        );
+      }
+      return failureResponse(error, "Couldn't resolve that dispute.");
     }
   }
 
@@ -116,5 +161,8 @@ export async function POST(
     }
   }
 
-  return NextResponse.json({ error: "Action must be approve or reject" }, { status: 400 });
+  return NextResponse.json(
+    { error: "Action must be approve, reject, or resolve_dispute" },
+    { status: 400 }
+  );
 }

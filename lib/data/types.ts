@@ -866,6 +866,11 @@ export type DomainEventType =
   | "make_good.detected"
   | "make_good.approved"
   | "make_good.declined"
+  // Roster link review. Payloads carry ids, counts, and lengths only.
+  | "roster_link.dispute_opened"
+  | "roster_link.approve_blocked"
+  | "roster_link.dispute_resolved"
+  | "roster_link.owner_heads_up"
   // Brand decision on a pending API write action.
   | "api_action.approved"
   | "api_action.rejected"
@@ -885,6 +890,8 @@ export type DomainEntityType =
   | "payout"
   // Pay-as-delivers delivery verification events hang off io_line_items
   | "io_line_item"
+  // Roster link review: dispute, approve block, resolve, and the rep heads-up.
+  | "roster_link"
   // Aircheck review decision, one row per IO line.
   | "aircheck"
   // Make-good proposal and the brand's decision.

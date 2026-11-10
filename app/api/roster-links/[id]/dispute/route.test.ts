@@ -12,6 +12,7 @@ const { getAuthenticatedUser, enforceRosterDispute, sendEmail, adminFrom, db } =
     proofs: [] as Row[],
     profiles: [] as Row[],
     disputes: [] as Row[],
+    events: [] as Row[],
   },
 }));
 
@@ -56,15 +57,23 @@ function installAdmin() {
     });
     const matches = (row: Row) => filters.every((filter) => row[filter.column] === filter.value);
     const run = () => {
+      if (table === "domain_events") {
+        if (insertRow) {
+          db.events.push(insertRow);
+          return { data: { id: `evt-${db.events.length}` }, error: null };
+        }
+        return { data: db.events, error: null };
+      }
       if (insertRow) {
         const duplicate = db.disputes.some(
           (row) => row.link_id === insertRow?.link_id && row.owner_user_id === insertRow?.owner_user_id
         );
         if (duplicate) return { data: null, error: { code: "23505", message: "duplicate key" } };
-        const stored = { id: `dispute-${db.disputes.length + 1}`, ...insertRow };
+        const stored = { id: `dispute-${db.disputes.length + 1}`, status: "open", ...insertRow };
         db.disputes.push(stored);
         return { data: { id: stored.id }, error: null };
       }
+      if (table === "roster_link_disputes") return { data: db.disputes.filter(matches), error: null };
       if (table === "agent_show_relationships") return { data: db.links.filter(matches), error: null };
       if (table === "show_ownership_proofs") return { data: db.proofs.filter(matches), error: null };
       if (table === "profiles") return { data: db.profiles.filter(matches), error: null };
@@ -75,6 +84,7 @@ function installAdmin() {
       const data = Array.isArray(result.data) ? (result.data[0] ?? null) : result.data;
       return { data, error: result.error };
     });
+    builder.single = builder.maybeSingle;
     builder.then = (
       resolve: (value: { data: unknown; error: { code?: string } | null }) => unknown,
       reject?: (reason: unknown) => unknown
@@ -111,6 +121,7 @@ beforeEach(() => {
   db.proofs = [{ show_id: SHOW, user_id: OWNER, status: "verified" }];
   db.profiles = [{ id: AGENT, company_name: "Northwind", full_name: "Ada", email: "rep-secret@example.com" }];
   db.disputes = [];
+  db.events = [];
   installAdmin();
   enforceRosterDispute.mockResolvedValue(null);
   sendEmail.mockResolvedValue({ ok: true, id: "mail-1" });
@@ -186,7 +197,37 @@ describe("POST /api/roster-links/[id]/dispute", () => {
     expect(second.status).toBe(200);
     expect(await second.json()).toEqual({ ok: true, result: "already flagged" });
     expect(db.disputes).toHaveLength(1);
+    expect(db.events).toHaveLength(1);
+    expect(db.events[0]).toMatchObject({
+      event_type: "roster_link.dispute_opened",
+      entity_type: "roster_link",
+      entity_id: LINK,
+      actor_id: OWNER,
+    });
+    const opened = db.events[0].payload as Record<string, unknown>;
+    expect(opened).toEqual({ link_id: LINK, show_id: SHOW, note_length: Array.from("<b>Not mine</b>").length });
+    expect(JSON.stringify(opened)).not.toContain("Not mine");
+    expect(JSON.stringify(opened)).not.toContain("owner@example.com");
+    expect(JSON.stringify(db.events[0])).not.toContain("owner@example.com");
     expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("replies already reviewed when the unique row is resolved, and writes nothing", async () => {
+    db.disputes.push({
+      id: "dispute-existing",
+      link_id: LINK,
+      show_id: SHOW,
+      owner_user_id: OWNER,
+      status: "resolved",
+      note: "SECRET-NOTE",
+    });
+    const response = await post(LINK, { note: "Again" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, result: "already reviewed" });
+    expect(db.disputes).toHaveLength(1);
+    expect(db.events).toEqual([]);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(db.links[0].status).toBe("pending");
   });
 
   it("returns already declined for a rejected link and writes nothing", async () => {

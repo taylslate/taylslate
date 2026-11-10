@@ -73,8 +73,18 @@ const conflict: PendingRosterRequest = {
     },
   ],
   exclusiveConflict: true,
-  disputedByOwner: true,
+  disputedByOwner: false,
   status: "pending",
+};
+
+const disputed: PendingRosterRequest = {
+  ...clean,
+  id: "rel-disputed",
+  showId: "show-3",
+  showName: "Acquired",
+  agentEmail: "ada@example.com",
+  isExclusive: false,
+  disputedByOwner: true,
 };
 
 afterEach(() => {
@@ -229,7 +239,7 @@ describe("RosterRequestsClient", () => {
       json: async () => ({ id: "rel-clean", status: "approved" }),
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<RosterRequestsClient links={[clean, conflict]} />);
+    render(<RosterRequestsClient links={[clean, disputed]} />);
     expect(screen.getByTestId("roster-pending-count")).toHaveTextContent("2 pending");
     const rows = screen.getAllByTestId("roster-request");
     expect(within(rows[0]).queryByTestId("disputed-by-owner")).not.toBeInTheDocument();
@@ -237,5 +247,68 @@ describe("RosterRequestsClient", () => {
     await user.click(screen.getByRole("button", { name: "Approve Odd Lots" }));
     expect(await screen.findByTestId("roster-pending-count")).toHaveTextContent("1 pending");
     expect(screen.getByTestId("disputed-by-owner")).toBeInTheDocument();
+  });
+
+  it("blocks approve on a disputed row and re-enables it after resolve", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, resolved_count: 1 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const view = render(<RosterRequestsClient links={[clean, disputed]} />);
+    const rows = screen.getAllByTestId("roster-request");
+    expect(within(rows[0]).queryByTestId("dispute-blocked")).not.toBeInTheDocument();
+    expect(within(rows[0]).queryByRole("button", { name: /Resolve dispute/ })).not.toBeInTheDocument();
+    expect(within(rows[0]).getByRole("button", { name: "Approve Odd Lots" })).toBeEnabled();
+
+    const blocked = within(rows[1]);
+    expect(blocked.getByTestId("dispute-blocked")).toHaveTextContent(
+      "Approval is blocked while the owner's dispute is open. Resolve it first."
+    );
+    expect(blocked.getByRole("button", { name: "Approve Acquired" })).toBeDisabled();
+    expect(blocked.getByRole("button", { name: "Reject Acquired" })).toBeEnabled();
+
+    await user.click(blocked.getByRole("button", { name: "Resolve dispute for Acquired" }));
+    const dialog = screen.getByTestId("resolve-dialog");
+    const submit = within(dialog).getByRole("button", { name: "Resolve dispute for Acquired" });
+    expect(submit).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("Note"), "Reviewed with the owner.");
+    expect(within(dialog).getByText("24 / 500")).toBeInTheDocument();
+    expect(submit).toBeEnabled();
+    await user.click(submit);
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/roster-links/rel-disputed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "resolve_dispute", note: "Reviewed with the owner." }),
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent("Resolved the dispute on Acquired.");
+    expect(screen.queryByTestId("disputed-by-owner")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("dispute-blocked")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve Acquired" })).toBeEnabled();
+    expect(screen.getByTestId("roster-pending-count")).toHaveTextContent("2 pending");
+    expect(screen.getAllByTestId("roster-request")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Approve Odd Lots" })).toBeEnabled();
+    expectNoEmDash(view.container);
+  });
+
+  it("shows a resolve 409 in the page alert and leaves the dispute open", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: "No open dispute on this link." }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const view = render(<RosterRequestsClient links={[disputed]} />);
+    await user.click(screen.getByRole("button", { name: "Resolve dispute for Acquired" }));
+    const dialog = screen.getByTestId("resolve-dialog");
+    await user.type(within(dialog).getByLabelText("Note"), "Again");
+    await user.click(within(dialog).getByRole("button", { name: "Resolve dispute for Acquired" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("No open dispute on this link.");
+    expect(screen.queryByTestId("resolve-dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("disputed-by-owner")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve Acquired" })).toBeDisabled();
+    expectNoEmDash(view.container);
   });
 });

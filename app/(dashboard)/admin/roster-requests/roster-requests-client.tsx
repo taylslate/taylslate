@@ -22,6 +22,7 @@ const labelClass = "mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper
 type DialogState =
   | { kind: "approve"; id: string }
   | { kind: "reject"; id: string }
+  | { kind: "resolve"; id: string }
   | null;
 
 function sourceLabel(source: string | null): string {
@@ -112,11 +113,20 @@ export function RosterRequestsClient({ links }: { links: PendingRosterRequest[] 
 
   async function post(
     row: PendingRosterRequest,
-    body: { action: "approve" } | { action: "reject"; note: string }
+    body:
+      | { action: "approve" }
+      | { action: "reject"; note: string }
+      | { action: "resolve_dispute"; note: string }
   ) {
     setBusyId(row.id);
     setError(null);
     setNotice(null);
+    const fallback =
+      body.action === "approve"
+        ? "Couldn't approve that link."
+        : body.action === "reject"
+          ? "Couldn't reject that link."
+          : "Couldn't resolve that dispute.";
     try {
       const response = await fetch(`/api/admin/roster-links/${row.id}`, {
         method: "POST",
@@ -125,9 +135,20 @@ export function RosterRequestsClient({ links }: { links: PendingRosterRequest[] 
       });
       const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
       if (!response.ok) {
-        const fallback =
-          body.action === "approve" ? "Couldn't approve that link." : "Couldn't reject that link.";
         setError(payload && typeof payload.error === "string" ? payload.error : fallback);
+        if (body.action === "resolve_dispute") {
+          setDialog(null);
+          setNote("");
+        }
+        return;
+      }
+      if (body.action === "resolve_dispute") {
+        setRows((current) =>
+          current.map((item) => (item.id === row.id ? { ...item, disputedByOwner: false } : item))
+        );
+        setDialog(null);
+        setNote("");
+        setNotice(`Resolved the dispute on ${row.showName}.`);
         return;
       }
       setRows((current) => current.filter((item) => item.id !== row.id));
@@ -137,15 +158,18 @@ export function RosterRequestsClient({ links }: { links: PendingRosterRequest[] 
         body.action === "approve" ? `Approved ${row.showName}.` : `Rejected ${row.showName}.`
       );
     } catch {
-      setError(
-        body.action === "approve" ? "Couldn't approve that link." : "Couldn't reject that link."
-      );
+      setError(fallback);
+      if (body.action === "resolve_dispute") {
+        setDialog(null);
+        setNote("");
+      }
     } finally {
       setBusyId(null);
     }
   }
 
   function approve(row: PendingRosterRequest) {
+    if (row.disputedByOwner) return;
     setError(null);
     if (row.exclusiveConflict) {
       setDialog({ kind: "approve", id: row.id });
@@ -157,6 +181,11 @@ export function RosterRequestsClient({ links }: { links: PendingRosterRequest[] 
   function reject(row: PendingRosterRequest) {
     if (!noteReady) return;
     void post(row, { action: "reject", note: trimmedNote });
+  }
+
+  function resolveDispute(row: PendingRosterRequest) {
+    if (!noteReady) return;
+    void post(row, { action: "resolve_dispute", note: trimmedNote });
   }
 
   return (
@@ -245,30 +274,52 @@ export function RosterRequestsClient({ links }: { links: PendingRosterRequest[] 
                       <p className={`mt-2 ${mutedClass}`}>No other pending or approved links.</p>
                     )}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={primaryButtonClass}
-                      style={radiusStyle}
-                      disabled={busy || dialog !== null}
-                      onClick={() => approve(row)}
-                    >
-                      {busyId === row.id && !dialog ? <Spinner /> : null}
-                      Approve {row.showName}
-                    </button>
-                    <button
-                      type="button"
-                      className={ghostButtonClass}
-                      style={radiusStyle}
-                      disabled={busy || dialog !== null}
-                      onClick={() => {
-                        setError(null);
-                        setNote("");
-                        setDialog({ kind: "reject", id: row.id });
-                      }}
-                    >
-                      Reject {row.showName}
-                    </button>
+                  <div className="flex flex-col items-start gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className={primaryButtonClass}
+                        style={radiusStyle}
+                        disabled={busy || dialog !== null || row.disputedByOwner}
+                        onClick={() => approve(row)}
+                      >
+                        {busyId === row.id && !dialog ? <Spinner /> : null}
+                        Approve {row.showName}
+                      </button>
+                      <button
+                        type="button"
+                        className={ghostButtonClass}
+                        style={radiusStyle}
+                        disabled={busy || dialog !== null}
+                        onClick={() => {
+                          setError(null);
+                          setNote("");
+                          setDialog({ kind: "reject", id: row.id });
+                        }}
+                      >
+                        Reject {row.showName}
+                      </button>
+                      {row.disputedByOwner ? (
+                        <button
+                          type="button"
+                          className={ghostButtonClass}
+                          style={radiusStyle}
+                          disabled={busy || dialog !== null}
+                          onClick={() => {
+                            setError(null);
+                            setNote("");
+                            setDialog({ kind: "resolve", id: row.id });
+                          }}
+                        >
+                          Resolve dispute for {row.showName}
+                        </button>
+                      ) : null}
+                    </div>
+                    {row.disputedByOwner ? (
+                      <p className={mutedClass} data-testid="dispute-blocked">
+                        Approval is blocked while the owner's dispute is open. Resolve it first.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </li>
@@ -399,6 +450,86 @@ export function RosterRequestsClient({ links }: { links: PendingRosterRequest[] 
                 >
                   {busy ? <Spinner /> : null}
                   Reject {active.showName}
+                </button>
+                <button
+                  type="button"
+                  className={ghostButtonClass}
+                  style={radiusStyle}
+                  disabled={busy}
+                  onClick={closeDialog}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {active && dialog?.kind === "resolve" ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ts-ink-on-paper)]/40 px-4"
+          onClick={closeDialog}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            data-testid="resolve-dialog"
+            className={`${cardClass} w-full max-w-md`}
+            style={radiusStyle}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") closeDialog();
+            }}
+          >
+            <h2
+              id={titleId}
+              className="font-[family-name:var(--font-app-display)] text-xl font-semibold tracking-tight"
+            >
+              Resolve dispute for {active.showName}
+            </h2>
+            <p className={`mt-2 ${mutedClass}`}>
+              A note is required, from 1 to 500 characters. Resolving the dispute does not approve
+              or reject the link.
+            </p>
+            {error ? (
+              <p className="mt-3 text-sm text-[var(--ts-accent-text)]" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <form
+              className="mt-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                resolveDispute(active);
+              }}
+            >
+              <label htmlFor={noteId} className={labelClass}>
+                Note
+              </label>
+              <textarea
+                id={noteId}
+                className={fieldClass}
+                style={radiusStyle}
+                rows={4}
+                value={note}
+                autoFocus
+                onChange={(event) => setNote(event.target.value)}
+              />
+              <p className={`mt-1 ${mutedClass}`}>
+                {noteCount} / 500
+                {noteCount > 500 ? ". Use 1 to 500 characters." : ""}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="submit"
+                  className={primaryButtonClass}
+                  style={radiusStyle}
+                  disabled={busy || !noteReady}
+                >
+                  {busy ? <Spinner /> : null}
+                  Resolve dispute for {active.showName}
                 </button>
                 <button
                   type="button"

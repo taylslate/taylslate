@@ -21,6 +21,7 @@ import {
   renderRosterDisputeAlert,
   renderRosterOwnerNotice,
   renderRosterRepDecision,
+  renderRosterRepOwnerHeadsUp,
 } from "@/lib/email/templates/roster-links";
 import { renderInvoiceNotice } from "@/lib/email/templates/invoice-notice";
 import { renderIoAttachmentEmail } from "@/lib/email/templates/io-attachment";
@@ -257,6 +258,26 @@ function appPreviews(): EmailPreview[] {
         repLabel: "Northwind",
         ownerEmail: "host@dailybriefing.example",
         note: "I did not agree to this listing.",
+      }),
+    },
+    {
+      id: "roster-rep-owner-heads-up-import",
+      title: "Rep heads-up, show already owned",
+      from: EMAIL_FROM_NOTIFICATIONS,
+      ...renderRosterRepOwnerHeadsUp({
+        showName: "Odd Lots",
+        trigger: "import",
+        ownerNotified: true,
+      }),
+    },
+    {
+      id: "roster-rep-owner-heads-up-verified",
+      title: "Rep heads-up, owner verified later",
+      from: EMAIL_FROM_NOTIFICATIONS,
+      ...renderRosterRepOwnerHeadsUp({
+        showName: "Odd Lots",
+        trigger: "verified_later",
+        linkStatus: "pending",
       }),
     },
   ];

@@ -10,6 +10,7 @@
 // that file is applied this route no-ops with missing_yt2.
 // The API key is never logged. Email addresses are not logged.
 
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { redactSecretParams } from "@/lib/discovery/redact-secrets";
 import { runYoutubeEmailBackfill } from "@/lib/youtube-library/emails-backfill";
@@ -21,7 +22,12 @@ export const maxDuration = 300;
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
+  const header = req.headers.get("authorization") ?? "";
+  const expected = `Bearer ${secret}`;
+  const left = Buffer.from(header);
+  const right = Buffer.from(expected);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }
 
 function safeError(err: unknown): string {
