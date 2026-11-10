@@ -768,7 +768,7 @@ Migration 070 creates `api_write_actions` with RLS on and zero policies. `servic
 
 ### Known gaps
 
-- No approve or reject path. Status stays `pending` until a later job.
+- Approve and reject are on `/settings/agent-actions` (A4). A pending row stays pending until the brand decides there.
 - A reused campaign pattern id is checked as a uuid. It is not loaded, so ownership of that pattern is not checked until something executes the action.
 - `api_key_id` does not cascade when a key row is deleted. Deleting the profile still cascades the action through `brand_id`.
 - The campaign payload has no derived name. The manual brief route builds that name when it creates the row. This route only records the brief fields.
@@ -2095,6 +2095,95 @@ Handoff writes the previous login to `domain_events` before `updateUserById`. A 
 ### Known gaps
 
 - 078 is not applied. Until it is, clearing `auth.users.email` can still roll back through the 077 profile trigger.
+
+## M1: MCP tool layer over the public API v1
+
+### What was built
+
+`POST /api/v1/mcp` is a stateless MCP server over the existing public API. One JSON-RPC 2.0 message per POST. The response is JSON, or `202` with an empty body for a notification. No SSE, no session, no server-initiated request. No new business action. No migration. No screen, style, or animation change. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, `proxy.ts`, and the existing `/api/v1` routes were not edited.
+
+The server speaks `2026-07-28`, `2025-11-25`, and `2025-06-18`. The current version uses `server/discover`. The 2025 versions use `initialize`. All three support `ping`, `tools/list`, and `tools/call`. Capabilities advertise tools only. `serverInfo.name` is `taylslate`.
+
+Request order matches `withApiRead`: Origin, then `resolveApiRequest`, then `enforceApiRateLimit`, then the 64 KB body cap and JSON content type, then dispatch. A foreign Origin is `403`. Auth failures are `401` with `WWW-Authenticate: Bearer` and the existing `ApiAuthError` message, including a revoked key and a key whose `brand_id` is not a `profiles` row. The limit is 60 POSTs per key per UTC minute, with `Retry-After`. `GET`, `PUT`, `PATCH`, and `DELETE` are `405` with `Allow: POST`.
+
+`tools/list` returns only the tools the key's scopes allow. A `tools/call` the key cannot use is a tool error, `API key lacks the required scope.`, and does not read or write the row. Read tools call `listShows`, `getShow`, `listCampaigns`, `getCampaign`, `listScores`, `getPlan`, `listDeals`, `getDeal`, `listWriteActions`, and `getWriteAction`. Show results use the same `fullShowIdsForCaller` projection as `GET /api/v1/shows`, so contact and rates stay off an untied show. `propose_campaign` calls `recordCampaignCreate`. `propose_outreach` calls `recordOutreachDraft`. Both only insert one pending `api_write_actions` row. A replay of the same idempotency key and payload returns that `action_id` with `replayed: true`. A changed payload is `isError` with status `409`. Nothing is sent, created, signed, or charged.
+
+`callTool(ctx, name, args)` is the in-process entry. `ctx` is `{ brandId, keyId, scopes }`. The HTTP request does not reach a handler. The route uses `callTool` too. Arguments cannot carry a brand id, user id, or key id.
+
+Each request logs one line: method, tool name, outcome code, elapsed ms. Arguments, outreach text, and the Authorization value are not logged. `resolveApiRequest` still writes the single `api_call` row. This job does not add a second metering write.
+
+### Where
+
+- `app/api/v1/mcp/route.ts` and `route.test.ts`
+- `lib/mcp/protocol.ts` and `protocol.test.ts`
+- `lib/mcp/tools.ts` and `tools.test.ts`
+- `lib/mcp/args.ts` and `args.test.ts`
+- `docs/api/MCP.md`
+- `docs/jobs/M1.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx vitest run lib/mcp app/api/v1/mcp`: 4 files, 22 passed. Covers 401 (missing, bad format, revoked, untied), 403 foreign Origin, 429 with Retry-After, 413, 415, 405 on GET/PUT/PATCH/DELETE, batch 400, notification 202, unsupported version 400, initialize and tools/list per version, tools/list filtered by scope, tool scope error, cross-brand id not found, limit clamp at 100, propose replay and conflict, the only domain write is one `api_write_actions` insert, and no Authorization value or argument text in console output. A test asserts each tool's output keys equal the matching v1 serializer allowlist and that no output key matches stripe, payment, payout, fee, card, setup_intent, or envelope.
+
+`npx tsc --noEmit` clean. `npx vitest run`: 319 files, 2774 passed, 40 skipped. `npx next build` compiled and generated 140 pages. `/api/v1/mcp` is dynamic. No page or component was edited. Screenshots are not applicable.
+
+### Known gaps
+
+- The command agent has no `api_keys` row. `api_write_actions.api_key_id` is `NOT NULL`, and `recordCampaignCreate` / `recordOutreachDraft` require a uuid key id. `callTool` can record a pending action only when the caller already has a real key id. The command agent job needs its own migration before an in-process caller without a key can insert.
+- No OAuth, dynamic client registration, or protected-resource metadata.
+- No tool approves, sends, signs, charges, or pays.
+- `tools/list` is one page. A non-empty cursor is invalid params.
+- `lib/data/event-log.ts` still has the MCP TODO. That file is outside this job. The `api_call` row is the existing `resolveApiRequest` write.
+- No Vercel env change. No migration to apply.
+
+### Choices to confirm
+
+- (a) Paul reviews. This PR does not merge.
+- (b) Protocol versions are `2026-07-28`, `2025-11-25`, and `2025-06-18`. JSON only. No session.
+- (c) `propose_campaign` and `propose_outreach` stay pending until a later job approves them.
+
+## A4: brand approvals inbox for agent actions (migration 082)
+
+### What was built
+
+A brand can open `/settings/agent-actions` and review the pending rows its API keys recorded through `/api/v1`. The screen has Pending, Approved, Rejected, and Expired tabs. Approve and Reject take an optional note and a confirm step. The actor is the session user id. Role is read from `profiles` by that id and must be `brand`. Another brand's action id is 404.
+
+Approving `campaign.create` creates one draft campaign through `createCampaign`, the same insert the manual brief submit uses: status `draft`, platforms podcast and youtube, recommendations empty, brief version 2. The brief stores `source_action_id`. Before creating, execution looks up `campaigns` for this user with `brief->>source_action_id` equal to the action id and links that row when it exists. The campaign name follows `deriveCampaignName`, with ` - ` in place of the em dash that route uses. A reused pattern id is loaded with `getCampaignPatternById` and must have `customer_id` equal to the session user. A foreign or missing pattern leaves the row approved, stores a generic `execution_error`, and returns 502. Retry is allowed only for an approved `campaign.create` whose `result_campaign_id` and `executed_at` are both null. The claim and the error write use the same `executed_at` check.
+
+Approving `outreach.draft` checks the show is still visible with `getShow` and then records the decision only. Nothing is sent. The row and the screen say "Approved. Nothing was sent." A missing show returns 409 and leaves the row pending. A show check that fails for another reason returns 500 and leaves the row pending.
+
+A pending row older than 14 days is shown as expired. Deciding one returns 409 and sets status `expired`. The decision update matches `status = pending` and `created_at` inside 14 days, so two approvals produce one decision.
+
+Migration 082 is in the PR and is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
+
+### Where
+
+- `supabase/migrations/082_api_write_action_decisions.sql` (not applied)
+- `supabase/migrations/082_api_write_action_decisions.test.ts`
+- `lib/api/approvals/list.ts` and `list.test.ts`
+- `lib/api/approvals/decide.ts` and `decide.test.ts`
+- `lib/api/approvals/execute.ts` and `execute.test.ts`
+- `app/api/settings/agent-actions/route.ts` and `route.test.ts`
+- `app/api/settings/agent-actions/[id]/route.ts` and `[id]/route.test.ts`
+- `app/(dashboard)/settings/agent-actions/page.tsx`
+- `app/(dashboard)/settings/agent-actions/agent-actions-client.tsx` and `agent-actions.test.tsx`
+- `lib/data/types.ts` (the four `api_action.*` event types and the `api_action` entity type)
+- `docs/jobs/A4.md`
+
+### Tests
+
+`npx vitest run supabase/migrations/082_api_write_action_decisions.test.ts lib/api/approvals app/api/settings/agent-actions "app/(dashboard)/settings/agent-actions"`
+
+The PGlite suite applies the on-disk migrations through 082 (080 and 081 are absent), applies 082 again, and checks the new columns, checks, service_role-only grants, RLS, and zero policies. No live database write.
+
+### Known gaps
+
+- 082 is not applied. Do not approve live rows until Chris says so.
+- Approving outreach does not send email and does not insert an outreach row. Sending needs a later job and Chris's OK.
+- The page is reachable by URL. A5 adds the link from the API keys page. This job does not edit settings or nav.
+- The draft campaign name uses ` - ` instead of the em dash in `deriveCampaignName`.
+- There is no unique index on `campaigns`. A retry finds the draft by `brief.source_action_id` before it inserts. A deleted draft clears `result_campaign_id` and leaves `executed_at` set, so retry does not create another. If the brand manually re-submits that draft after a failed link, `source_action_id` is lost.
 
 ## A5: API key settings for brands
 
