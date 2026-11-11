@@ -8,6 +8,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import {
+  AircheckConfirmInProgress,
+  AircheckConfirmUnavailable,
   AircheckReviewConflict,
   AircheckReviewNotFound,
   confirmAircheck,
@@ -22,6 +24,26 @@ interface ReviewBody {
   ioLineItemId?: string;
   decision?: string;
   reason?: string;
+}
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const HIDDEN_RESPONSE_KEYS = new Set([
+  "transcript_text",
+  "audio_url",
+  "transcript_segments",
+  "client_secret",
+]);
+
+function publicBody(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (HIDDEN_RESPONSE_KEYS.has(key)) continue;
+    out[key] = item;
+  }
+  return out;
 }
 
 export async function POST(request: NextRequest) {
@@ -45,6 +67,12 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  if (!UUID.test(body.ioLineItemId)) {
+    return NextResponse.json(
+      { error: "ioLineItemId must be a uuid" },
+      { status: 400 }
+    );
+  }
   if (body.decision !== "confirm" && body.decision !== "reject") {
     return NextResponse.json(
       { error: "decision must be confirm or reject" },
@@ -55,6 +83,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "reason must be a string" }, { status: 400 });
   }
 
+  // Session only. A decidedBy or actorId in the body is ignored.
   const decidedBy = user.email ?? user.id;
   try {
     if (body.decision === "reject") {
@@ -64,7 +93,7 @@ export async function POST(request: NextRequest) {
         actorId: user.id,
         reason: body.reason,
       });
-      return NextResponse.json({ ok: true, aircheck });
+      return NextResponse.json({ ok: true, aircheck: publicBody(aircheck) });
     }
     const result = await confirmAircheck({
       ioLineItemId: body.ioLineItemId,
@@ -76,7 +105,7 @@ export async function POST(request: NextRequest) {
         {
           ok: false,
           chargeError: result.chargeError,
-          aircheck: result.aircheck,
+          aircheck: publicBody(result.aircheck),
         },
         { status: 502 }
       );
@@ -84,14 +113,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       alreadyCharged: result.alreadyCharged,
-      charge: result.charge,
-      aircheck: result.aircheck,
+      charge: publicBody(result.charge),
+      aircheck: publicBody(result.aircheck),
     });
   } catch (err) {
     if (err instanceof AircheckReviewNotFound) {
       return NextResponse.json({ error: err.message }, { status: 404 });
     }
-    if (err instanceof AircheckReviewConflict) {
+    if (err instanceof AircheckConfirmUnavailable) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
+    }
+    if (
+      err instanceof AircheckReviewConflict ||
+      err instanceof AircheckConfirmInProgress
+    ) {
       return NextResponse.json({ error: err.message }, { status: 409 });
     }
     const message = err instanceof Error ? err.message : "Review failed";

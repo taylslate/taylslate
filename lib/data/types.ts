@@ -780,6 +780,8 @@ export type DomainEventType =
   // Aircheck review — human confirm (charge succeeded) or reject (no charge).
   | "aircheck.confirmed"
   | "aircheck.rejected"
+  | "aircheck.confirm_blocked"
+  | "aircheck.charge_failed"
   // Automated aircheck. Transcript stored, then a match is ready for a person.
   // Neither event charges or marks the line delivered.
   | "aircheck.transcribed"
