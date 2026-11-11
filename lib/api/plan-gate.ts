@@ -4,7 +4,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { PLANS, type PlanId } from "@/lib/billing/plans";
-import { ApiAuthError } from "@/lib/api/auth";
+import { ApiAuthError } from "@/lib/api/errors";
 
 interface DbError {
   code?: string;
@@ -13,6 +13,18 @@ interface DbError {
 function planAllowsApi(plan: unknown): boolean {
   if (typeof plan !== "string" || !Object.hasOwn(PLANS, plan)) return false;
   return PLANS[plan as PlanId].features.apiAccess;
+}
+
+export function assertProfileApiAccess(
+  row: { role?: unknown; plan?: unknown } | null
+): void {
+  if (row?.role === "brand" && planAllowsApi(row.plan)) return;
+
+  throw new ApiAuthError(
+    403,
+    "Your plan does not include API access.",
+    "plan_no_api_access"
+  );
 }
 
 export async function assertBrandApiAccess(brandId: string): Promise<void> {
@@ -30,12 +42,5 @@ export async function assertBrandApiAccess(brandId: string): Promise<void> {
     throw new Error("API key lookup failed.");
   }
 
-  const row = data as { role?: unknown; plan?: unknown } | null;
-  if (row?.role === "brand" && planAllowsApi(row.plan)) return;
-
-  throw new ApiAuthError(
-    403,
-    "Your plan does not include API access.",
-    "plan_no_api_access"
-  );
+  assertProfileApiAccess(data as { role?: unknown; plan?: unknown } | null);
 }

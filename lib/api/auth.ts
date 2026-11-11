@@ -6,7 +6,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { recordEvent } from "@/lib/data/event-log";
-import { assertBrandApiAccess } from "@/lib/api/plan-gate";
+import { ApiAuthError } from "@/lib/api/errors";
+import { assertProfileApiAccess } from "@/lib/api/plan-gate";
 import {
   hashKey,
   parseApiToken,
@@ -14,22 +15,12 @@ import {
   type ApiScope,
 } from "@/lib/api/keys";
 
+export { ApiAuthError } from "@/lib/api/errors";
+
 export interface ResolvedApiRequest {
   brandId: string;
   scopes: ApiScope[];
   keyId: string;
-}
-
-export class ApiAuthError extends Error {
-  readonly status: 401 | 403;
-  readonly code?: string;
-
-  constructor(status: 401 | 403, message: string, code?: string) {
-    super(message);
-    this.name = "ApiAuthError";
-    this.status = status;
-    this.code = code;
-  }
 }
 
 interface KeyAuthRow {
@@ -67,19 +58,22 @@ const USER_ID =
 // The only programmatic credential is a v1 key whose brand_id is a
 // profiles row (the user account). There is no separate MCP secret.
 // A key with no matching profile is rejected before last_used_at.
-async function keyTiedToUser(brandId: string): Promise<boolean> {
-  if (!USER_ID.test(brandId)) return false;
+async function keyTiedToUser(
+  brandId: string
+): Promise<{ role?: unknown; plan?: unknown } | null> {
+  if (!USER_ID.test(brandId)) return null;
   const { data, error } = await supabaseAdmin
     .from("profiles")
-    .select("id")
+    .select("id, role, plan")
     .eq("id", brandId)
     .maybeSingle();
   if (error) {
     console.warn("[api.auth] profile lookup failed:", (error as DbError).code ?? "unknown");
     throw new Error("API key lookup failed.");
   }
-  const id = (data as { id?: unknown } | null)?.id;
-  return id === brandId;
+  const row = data as { id?: unknown; role?: unknown; plan?: unknown } | null;
+  if (row?.id !== brandId) return null;
+  return { role: row.role, plan: row.plan };
 }
 
 function requestPath(req: Request): string {
@@ -126,11 +120,12 @@ export async function resolveApiRequest(req: Request): Promise<ResolvedApiReques
   if (row.revoked_at) {
     throw new ApiAuthError(401, "API key is revoked.");
   }
-  if (!(await keyTiedToUser(row.brand_id))) {
+  const profile = await keyTiedToUser(row.brand_id);
+  if (!profile) {
     throw new ApiAuthError(401, "API key is not tied to a user.");
   }
 
-  await assertBrandApiAccess(row.brand_id);
+  assertProfileApiAccess(profile);
 
   const { error: touchError } = await supabaseAdmin
     .from("api_keys")

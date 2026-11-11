@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   getNavItemsForRole,
@@ -6,6 +9,17 @@ import {
   isBrandSide,
 } from "./items";
 import type { UserRole } from "@/lib/data/types";
+
+const ROOT = fileURLToPath(new URL("../..", import.meta.url));
+const TODAY_BRAND = [
+  "Dashboard",
+  "Campaigns",
+  "Deals",
+  "CRM",
+  "Search",
+  "Invoices",
+  "Settings",
+];
 
 const ALL_ROLES: UserRole[] = ["brand", "agency", "agent", "show"];
 
@@ -39,6 +53,38 @@ describe("getNavItemsForRole", () => {
 
   it("agent mirrors show", () => {
     expect(getNavItemsForRole("agent")).toEqual(getNavItemsForRole("show"));
+  });
+
+  it("adds Tay for a brand only when assistant is requested", () => {
+    const withTay = getNavItemsForRole("brand", { assistant: true }).map((item) => item.label);
+    expect(withTay).toEqual([
+      "Dashboard",
+      "Campaigns",
+      "Deals",
+      "CRM",
+      "Search",
+      "Tay",
+      "Invoices",
+      "Settings",
+    ]);
+    expect(getNavItemsForRole("brand", { assistant: true }).find((item) => item.label === "Tay")).toEqual({
+      label: "Tay",
+      href: "/assistant",
+      iconKey: "shows",
+    });
+    expect(getNavItemsForRole("brand").map((item) => item.label)).toEqual(TODAY_BRAND);
+    expect(getNavItemsForRole("brand", { assistant: false }).map((item) => item.label)).toEqual(
+      TODAY_BRAND
+    );
+    expect(getNavItemsForRole("agency")).toEqual(getNavItemsForRole("brand"));
+    expect(getNavItemsForRole("agency", { assistant: true }).map((item) => item.label)).toEqual(
+      TODAY_BRAND
+    );
+    expect(getNavItemsForRole("agency", { assistant: true }).map((item) => item.label)).not.toContain(
+      "Tay"
+    );
+    expect(getNavItemsForRole("show", { assistant: true })).toEqual(getNavItemsForRole("show"));
+    expect(getNavItemsForRole("agent", { assistant: true })).toEqual(getNavItemsForRole("agent"));
   });
 
   it("show and agent navs are unchanged", () => {
@@ -127,6 +173,42 @@ describe("isRouteAllowedForRole", () => {
       expect(isRouteAllowedForRole("/dashboard", role)).toBe(true);
       expect(isRouteAllowedForRole("/settings", role)).toBe(true);
     }
+  });
+});
+
+function walkTsx(dir: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) {
+      files.push(...walkTsx(path));
+      continue;
+    }
+    if (entry.endsWith(".tsx") && !entry.endsWith(".test.tsx")) files.push(path);
+  }
+  return files;
+}
+
+function renderedHits(source: string): string[] {
+  const hits: string[] = [];
+  const literals = source.match(/(['"`])(?:\\.|(?!\1)[\s\S])*?\1/g) ?? [];
+  for (const literal of literals) {
+    if (/command agent/i.test(literal)) hits.push(literal);
+  }
+  const text = source.match(/>([^<{]+)</g) ?? [];
+  for (const node of text) {
+    if (/command agent/i.test(node)) hits.push(node);
+  }
+  return hits;
+}
+
+describe("rendered copy", () => {
+  it("has no command agent text in app or component tsx", () => {
+    const files = [...walkTsx(join(ROOT, "app")), ...walkTsx(join(ROOT, "components"))];
+    const hits = files.flatMap((file) =>
+      renderedHits(readFileSync(file, "utf8")).map((hit) => `${file}: ${hit}`)
+    );
+    expect(hits).toEqual([]);
   });
 });
 

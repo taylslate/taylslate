@@ -29,6 +29,8 @@ function chain(result: RowResult, onInsert?: (row: unknown) => void) {
   const self = () => builder;
   builder.select = vi.fn(self);
   builder.eq = vi.fn(self);
+  builder.ilike = vi.fn(self);
+  builder.limit = vi.fn(self);
   builder.insert = vi.fn((row: unknown) => {
     onInsert?.(row);
     return builder;
@@ -176,6 +178,124 @@ describe("importShows", () => {
     expect(showRow).toMatchObject({ agent_id: "agent-1", is_discoverable: false });
     expect(showRow).not.toHaveProperty("is_exclusive");
     expect(result.imported).toHaveLength(1);
+    expect(result.skipped).toEqual([]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("skips a catalog match and inserts no show and no link", async () => {
+    asAgent();
+    const insertedShows: unknown[] = [];
+    const insertedLinks: unknown[] = [];
+    adminFrom.mockImplementation((table: string) => {
+      if (table !== "shows") {
+        return chain({ data: null, error: null }, (row) => {
+          insertedLinks.push(row);
+        });
+      }
+      let inserted = false;
+      const builder: Record<string, unknown> = {};
+      const self = () => builder;
+      builder.select = vi.fn(self);
+      builder.ilike = vi.fn(self);
+      builder.limit = vi.fn(self);
+      builder.eq = vi.fn(self);
+      builder.insert = vi.fn((row: unknown) => {
+        inserted = true;
+        insertedShows.push(row);
+        return builder;
+      });
+      builder.single = vi.fn(async () => ({
+        data: { id: "show-new", name: "The Daily Podcast", platform: "podcast" },
+        error: null,
+      }));
+      builder.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve(
+          inserted
+            ? { data: { id: "show-new" }, error: null }
+            : {
+                data: [
+                  {
+                    id: "catalog-1",
+                    name: "daily",
+                    agent_id: "someone-else",
+                    is_discoverable: true,
+                    rss_url: null,
+                  },
+                ],
+                error: null,
+              }
+        ).then(resolve);
+      return builder;
+    });
+
+    const result = await importShows([
+      { name: "The Daily Podcast", platform: "podcast" },
+    ]);
+    expect(result.skipped).toEqual(["The Daily Podcast"]);
+    expect(result.imported).toEqual([]);
+    expect(result.errors).toEqual([]);
+    expect(insertedShows).toEqual([]);
+    expect(insertedLinks).toEqual([]);
+  });
+
+  it("inserts once when two rows in one file share a normalized name", async () => {
+    const showInserts: unknown[] = [];
+    const linkInserts: unknown[] = [];
+    userFrom.mockImplementation((table: string) => {
+      if (table === "profiles") {
+        return chain({ data: { id: "agent-1", role: "agent" }, error: null });
+      }
+      if (table === "agent_show_relationships") {
+        return chain({ data: [], error: null });
+      }
+      return chain({ data: null, error: null });
+    });
+    adminFrom.mockImplementation((table: string) => {
+      if (table !== "shows") {
+        return chain({ data: null, error: null }, (row) => {
+          linkInserts.push(row);
+        });
+      }
+      let lookup = true;
+      const builder: Record<string, unknown> = {};
+      const self = () => builder;
+      builder.select = vi.fn(self);
+      builder.ilike = vi.fn(self);
+      builder.limit = vi.fn(self);
+      builder.insert = vi.fn((row: unknown) => {
+        lookup = false;
+        showInserts.push(row);
+        return builder;
+      });
+      builder.single = vi.fn(async () => ({
+        data: { id: "show-new", name: "The Daily Podcast", platform: "podcast" },
+        error: null,
+      }));
+      builder.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve(
+          lookup ? { data: [], error: null } : { data: { id: "show-new" }, error: null }
+        ).then(resolve);
+      return builder;
+    });
+
+    const result = await importShows([
+      { name: "The Daily Podcast", platform: "podcast" },
+      { name: "Daily", platform: "podcast" },
+    ]);
+    expect(showInserts).toHaveLength(1);
+    expect(linkInserts).toHaveLength(1);
+    expect(linkInserts[0]).toMatchObject({
+      agent_id: "agent-1",
+      show_id: "show-new",
+      status: "pending",
+      source: "import",
+    });
+    expect(showInserts[0]).toMatchObject({
+      agent_id: "agent-1",
+      is_discoverable: false,
+    });
+    expect(result.imported).toHaveLength(1);
+    expect(result.skipped).toEqual(["Daily"]);
     expect(result.errors).toEqual([]);
   });
 

@@ -74,6 +74,7 @@ export default async function DashboardLayout({
     >
       <Sidebar
         role={effectiveRole}
+        assistantEnabled={profile.role === "brand" && effectiveRole === "brand"}
         canSwitchTo={canSwitchTo}
         isAdmin={isAdmin}
         displayName={profile.full_name?.trim() || profile.company_name?.trim() || profile.email}
