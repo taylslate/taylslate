@@ -73,4 +73,44 @@ describe("Privacy Policy page", () => {
       "/privacy",
     );
   });
+
+  it("discloses Google and YouTube data, retention, and Limited Use", () => {
+    render(<PrivacyPage />);
+
+    const heading = screen.getByRole("heading", {
+      level: 2,
+      name: "Google and YouTube data",
+    });
+    const google = heading.closest("section")?.textContent ?? "";
+
+    expect(google).toContain(
+      "Taylslate's use and transfer to any other app of information received from Google APIs will adhere to the Google API Services User Data Policy (https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.",
+    );
+    expect(google).toContain("30 days");
+    expect(google).toContain("7 days");
+    expect(google).not.toContain("\u2014");
+
+    for (const href of [
+      "https://www.youtube.com/t/terms",
+      "https://policies.google.com/privacy",
+      "https://security.google.com/settings/security/permissions",
+      "https://developers.google.com/terms/api-services-user-data-policy",
+    ]) {
+      expect(screen.getByRole("link", { name: href })).toHaveAttribute(
+        "href",
+        href,
+      );
+    }
+
+    expect(document.body.textContent).toContain(
+      "Google (YouTube Data API and YouTube Analytics API): public channel data, and, for creators who connect a channel, the data described under Google and YouTube data.",
+    );
+    expect(document.body.textContent).toContain(
+      "Connecting a YouTube channel sets a short-lived cookie (10 minutes) that protects the Google sign-in step.",
+    );
+    expect(document.body.textContent).toContain(
+      "You can also disconnect YouTube as described under Google and YouTube data.",
+    );
+    expect(document.body.textContent).toContain("[PRIVACY CONTACT EMAIL]");
+  });
 });

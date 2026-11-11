@@ -48,6 +48,19 @@ export default function TermsPage() {
         </p>
       </LegalSection>
 
+      <LegalSection heading="YouTube">
+        <p>
+          Taylslate uses YouTube API Services. If you connect a YouTube channel
+          or use a feature that shows YouTube data, you agree to be bound by
+          the YouTube Terms of Service (
+          <LegalBodyLink href="https://www.youtube.com/t/terms">
+            https://www.youtube.com/t/terms
+          </LegalBodyLink>
+          ). How Taylslate handles Google data is in the{" "}
+          <LegalBodyLink href="/privacy">Privacy Policy</LegalBodyLink>.
+        </p>
+      </LegalSection>
+
       <LegalSection heading="How we use data">
         <DataUseCopy consentLine={CONSENT_LINE} />
       </LegalSection>
