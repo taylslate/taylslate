@@ -15,7 +15,7 @@ import {
 import {
   aircheckCostLog,
   estimateSecondsFromBytes,
-  estimateWhisperCostUsd,
+  estimateTranscriptCostUsd,
   readRunCostCapUsd,
   roundMinutes,
   roundUsd,
@@ -24,7 +24,7 @@ import { findPodcastEpisode, findYoutubeEpisode, youtubeClientFromEnv } from "./
 import type { FoundEpisode } from "./episode";
 import { locateAdRead } from "./locate";
 import { saveAircheckRun, type AircheckPersist } from "./persist";
-import { createOpenAiWhisperProvider } from "./openai-whisper";
+import { selectTranscriptProvider } from "./provider-select";
 import type { TranscriptProvider } from "./provider";
 import { aircheckColumnsReady, loadDueSpots, type DueSpot } from "./select";
 import type { AircheckSegment } from "./types";
@@ -34,7 +34,7 @@ const MAX_ERROR = 2000;
 export const AIRCHECK_RUN_BUDGET_MS = 200_000;
 
 export interface AircheckRunReport {
-  skipped: "missing_openai_api_key" | "migration_079" | null;
+  skipped: "missing_openai_api_key" | "missing_transcription_api_key" | "migration_079" | null;
   stopped: "cost_cap" | "time" | null;
   capUsd: number;
   spentUsd: number;
@@ -110,7 +110,7 @@ function failureRow(spot: DueSpot, message: string, episode?: FoundEpisode): Air
 export function defaultAircheckDeps(now = new Date()): AircheckRunDeps {
   return {
     now,
-    provider: createOpenAiWhisperProvider(),
+    provider: selectTranscriptProvider(now).provider,
     capUsd: readRunCostCapUsd(),
     columnsReady: aircheckColumnsReady,
     loadSpots: loadDueSpots,
@@ -125,12 +125,38 @@ export function defaultAircheckDeps(now = new Date()): AircheckRunDeps {
   };
 }
 
+function transcriptHints(spot: DueSpot): string[] {
+  const hints: string[] = [];
+  for (const name of spot.buy.brandNames) {
+    if (typeof name === "string" && name.trim()) hints.push(name.trim());
+  }
+  if (typeof spot.buy.promoCode === "string" && spot.buy.promoCode.trim()) {
+    hints.push(spot.buy.promoCode.trim());
+  }
+  const host = urlHost(spot.buy.url);
+  if (host) hints.push(host);
+  return hints;
+}
+
+function urlHost(url: string | null): string | null {
+  if (!url || !url.trim()) return null;
+  const trimmed = url.trim();
+  try {
+    const parsed = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+    const host = parsed.hostname.trim();
+    return host || null;
+  } catch {
+    return null;
+  }
+}
+
 async function transcribeFile(
   provider: TranscriptProvider,
   audio: DownloadedAudio,
   budget: { spent: number; cap: number; add: (usd: number) => void },
   splitAudio: (bytes: Uint8Array) => Uint8Array[] | null,
-  time: { deadlineMs: number; clock: () => number }
+  time: { deadlineMs: number; clock: () => number },
+  spot: DueSpot
 ): Promise<
   | { ok: true; text: string; segments: AircheckSegment[]; durationSeconds: number }
   | { ok: false; message: string; capped: boolean; stop: "cost_cap" | "time" | null }
@@ -149,7 +175,7 @@ async function transcribeFile(
   let durationSeconds = 0;
   for (const piece of pieces) {
     const pieceSeconds = estimateSecondsFromBytes(piece.byteLength);
-    const pieceEstimate = estimateWhisperCostUsd(pieceSeconds);
+    const pieceEstimate = estimateTranscriptCostUsd(pieceSeconds, provider.usdPerMinute);
     if (time.clock() >= time.deadlineMs) {
       return {
         ok: false,
@@ -170,13 +196,14 @@ async function transcribeFile(
       bytes: piece,
       filename: audio.filename,
       mimeType: audio.mimeType,
+      hints: transcriptHints(spot),
     });
     if (!result.ok) {
       if (/timed out/i.test(result.message)) budget.add(pieceEstimate);
       return { ok: false, capped: false, stop: null, message: result.message };
     }
     const billedSeconds = result.durationSeconds > 0 ? result.durationSeconds : pieceSeconds;
-    budget.add(estimateWhisperCostUsd(billedSeconds));
+    budget.add(estimateTranscriptCostUsd(billedSeconds, provider.usdPerMinute));
     const offset = durationSeconds;
     texts.push(result.text);
     for (const segment of result.segments) {
@@ -196,7 +223,8 @@ async function transcribeFile(
 export async function runAutomatedAirchecks(
   overrides: Partial<AircheckRunDeps> = {}
 ): Promise<AircheckRunReport> {
-  const deps: AircheckRunDeps = { ...defaultAircheckDeps(), ...overrides };
+  const now = overrides.now ?? new Date();
+  const deps: AircheckRunDeps = { ...defaultAircheckDeps(now), ...overrides, now };
   const report: AircheckRunReport = {
     skipped: null,
     stopped: null,
@@ -210,9 +238,14 @@ export async function runAutomatedAirchecks(
   };
 
   if (!deps.provider.isConfigured()) {
-    report.skipped = "missing_openai_api_key";
-    deps.log("[aircheck] skipped missing OPENAI_API_KEY");
+    report.skipped = "missing_transcription_api_key";
+    deps.log(
+      "[aircheck] skipped no transcription provider configured (DEEPGRAM_API_KEY and OPENAI_API_KEY unset, or whisper-1 past shutdown)"
+    );
     return report;
+  }
+  if (!("provider" in overrides) && selectTranscriptProvider(now).reason === "whisper_fallback") {
+    deps.log("[aircheck] provider=whisper-1 fallback (DEEPGRAM_API_KEY unset)");
   }
   if (deps.capUsd <= 0) {
     report.stopped = "cost_cap";
@@ -375,7 +408,7 @@ async function processSpot(
 
   const knownSeconds = found.durationSeconds;
   if (knownSeconds && knownSeconds > 0) {
-    const estimate = estimateWhisperCostUsd(knownSeconds);
+    const estimate = estimateTranscriptCostUsd(knownSeconds, deps.provider.usdPerMinute);
     if (spent + estimate > deps.capUsd) return { ...none, stop: "cost_cap" };
   }
 
@@ -388,7 +421,7 @@ async function processSpot(
   const fromFeed = knownSeconds && knownSeconds > 0 ? knownSeconds : 0;
   const fromSize = estimateSecondsFromBytes(downloaded.audio.bytes.byteLength);
   const estimateSeconds = Math.max(fromFeed, fromSize);
-  const estimate = estimateWhisperCostUsd(estimateSeconds);
+  const estimate = estimateTranscriptCostUsd(estimateSeconds, deps.provider.usdPerMinute);
   if (spent + estimate > deps.capUsd) return { ...none, stop: "cost_cap" };
 
   const budget = {
@@ -405,7 +438,8 @@ async function processSpot(
     downloaded.audio,
     budget,
     deps.splitAudio,
-    { deadlineMs, clock: deps.clock }
+    { deadlineMs, clock: deps.clock },
+    spot
   );
   if (!transcribed.ok) {
     if (tally.usd > 0 || !transcribed.capped) {
@@ -419,7 +453,7 @@ async function processSpot(
   }
 
   const minutes = roundMinutes(transcribed.durationSeconds);
-  const cost = estimateWhisperCostUsd(transcribed.durationSeconds);
+  const cost = estimateTranscriptCostUsd(transcribed.durationSeconds, deps.provider.usdPerMinute);
   deps.log(
     aircheckCostLog({
       ioLineItemId: spot.ioLineItemId,

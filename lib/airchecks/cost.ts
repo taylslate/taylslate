@@ -5,6 +5,14 @@
 export const WHISPER_USD_PER_MINUTE = 0.006;
 
 /**
+ * USD per audio minute for Deepgram Nova-3 pre-recorded with Keyterm Prompting.
+ * Nova-3 is $0.0043 per minute, plus $0.0013 per minute for keyterms.
+ * https://deepgram.com/pricing
+ * https://developers.deepgram.com/docs/keyterm
+ */
+export const DEEPGRAM_USD_PER_MINUTE = 0.0056;
+
+/**
  * Default cap for one cron run when AIRCHECK_RUN_COST_CAP_USD is unset.
  * $1 is about 166 minutes, about three 45-minute episodes.
  */
@@ -19,8 +27,13 @@ export function roundMinutes(seconds: number): number {
   return Math.round(minutes * 10000) / 10000;
 }
 
+/** Cost at the active provider's own rate. The runner uses this for the cap and the stored estimate. */
+export function estimateTranscriptCostUsd(durationSeconds: number, usdPerMinute: number): number {
+  return roundUsd(roundMinutes(durationSeconds) * usdPerMinute);
+}
+
 export function estimateWhisperCostUsd(durationSeconds: number): number {
-  return roundUsd(roundMinutes(durationSeconds) * WHISPER_USD_PER_MINUTE);
+  return estimateTranscriptCostUsd(durationSeconds, WHISPER_USD_PER_MINUTE);
 }
 
 /**

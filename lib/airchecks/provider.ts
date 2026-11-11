@@ -7,6 +7,8 @@ export interface TranscriptionAudio {
   bytes: Uint8Array;
   filename: string;
   mimeType: string;
+  /** Brand names, promo code, and URL host. Providers that support keyterms may use these. */
+  hints?: string[];
 }
 
 export interface TranscriptionOk {
