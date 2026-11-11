@@ -213,4 +213,15 @@ describe("POST /api/admin/aircheck/review", () => {
       actorId: "admin_1",
     });
   });
+
+  it("returns a fixed 500 and hides the thrown message", async () => {
+    getAuthenticatedUser.mockResolvedValueOnce({
+      id: "admin_1",
+      email: "ops@taylslate.com",
+    });
+    confirmAircheck.mockRejectedValueOnce(new Error("db says x"));
+    const res = await POST(makeReq({ ioLineItemId: LINE, decision: "confirm" }) as never);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "Review failed." });
+  });
 });

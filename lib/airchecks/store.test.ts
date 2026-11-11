@@ -182,7 +182,7 @@ vi.mock("@/lib/supabase/admin", () => {
       },
       then(resolve: (value: unknown) => void, reject?: (reason: unknown) => void) {
         try {
-          resolve(finish(false));
+          resolve(finish(op === "update"));
         } catch (err) {
           reject?.(err);
         }
@@ -255,11 +255,20 @@ describe("claimAircheckConfirm", () => {
 
   it("releases a claim so it can be taken again", async () => {
     tables.airchecks.push(aircheck());
-    await claimAircheckConfirm(LINE, "ops@taylslate.com");
-    await releaseAircheckConfirm(LINE);
+    const claimed = await claimAircheckConfirm(LINE, "ops@taylslate.com");
+    await releaseAircheckConfirm(LINE, String(claimed?.confirm_claimed_at));
     expect(tables.airchecks[0].confirm_claimed_at).toBeNull();
     const again = await claimAircheckConfirm(LINE, "next@taylslate.com");
     expect(again?.confirm_claimed_by).toBe("next@taylslate.com");
+  });
+
+  it("leaves the claim in place when the held time does not match", async () => {
+    tables.airchecks.push(aircheck());
+    const claimed = await claimAircheckConfirm(LINE, "ops@taylslate.com");
+    const held = claimed?.confirm_claimed_at;
+    await releaseAircheckConfirm(LINE, "2000-01-01T00:00:00.000Z");
+    expect(tables.airchecks[0].confirm_claimed_at).toBe(held);
+    expect(tables.airchecks[0].confirm_claimed_by).toBe("ops@taylslate.com");
   });
 
   it("reclaims a stale claim and leaves a fresh claim alone", async () => {

@@ -13,8 +13,10 @@
 -- create a payment. No backfill.
 --
 -- Reads and writes stay on service_role. authenticated and anon have
--- no grant and no policy. The app reads airchecks through the service
--- role after its own session check.
+-- no grant. Live already has the policy "Service role can manage all
+-- airchecks" (service_role ALL). This file does not drop that policy.
+-- The app reads airchecks through the service role after its own
+-- session check.
 --
 -- Idempotent. Safe to re-run.
 --
@@ -26,8 +28,9 @@
 --   select privilege_type, grantee from information_schema.role_table_grants
 --    where table_schema = 'public' and table_name = 'airchecks'
 --    order by grantee, privilege_type;
---   Expected: service_role has select, insert, update, delete.
---   authenticated and anon have none.
+--   Expected: service_role has select, insert, update, delete, and
+--   also references, trigger, and truncate, which live already has.
+--   This file does not revoke those. authenticated and anon have none.
 -- ============================================================
 
 alter table public.airchecks

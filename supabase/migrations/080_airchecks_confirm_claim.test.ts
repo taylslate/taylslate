@@ -21,6 +21,13 @@ create table public.airchecks (
   status text not null default 'transcribed',
   review_decision text
 );
+
+grant select, insert, update, delete, references, trigger, truncate
+  on public.airchecks to service_role;
+alter table public.airchecks enable row level security;
+create policy "Service role can manage all airchecks"
+  on public.airchecks for all to service_role
+  using (true) with check (true);
 `;
 
 const claimSql = (lineId: string, who: string) => `
@@ -98,11 +105,14 @@ describe("migration 080", () => {
     `);
     expect(rls.rows[0].rls).toBe(true);
 
-    const policies = await db.query<{ n: number }>(`
-      select count(*)::int as n from pg_policy
+    const policies = await db.query<{ polname: string }>(`
+      select polname from pg_policy
       where polrelid = 'public.airchecks'::regclass
+      order by polname
     `);
-    expect(policies.rows[0].n).toBe(0);
+    expect(policies.rows.map((row) => row.polname)).toEqual([
+      "Service role can manage all airchecks",
+    ]);
 
     const grants = await db.query<{ grantee: string; privilege_type: string }>(`
       select grantee, privilege_type
@@ -118,7 +128,15 @@ describe("migration 080", () => {
       .filter((row) => row.grantee === "service_role")
       .map((row) => row.privilege_type)
       .sort();
-    expect(service).toEqual(["DELETE", "INSERT", "SELECT", "UPDATE"]);
+    expect(service).toEqual([
+      "DELETE",
+      "INSERT",
+      "REFERENCES",
+      "SELECT",
+      "TRIGGER",
+      "TRUNCATE",
+      "UPDATE",
+    ]);
   });
 
   it("lets only one of two competing claims win, and a stale claim can be taken", async () => {

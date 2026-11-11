@@ -198,9 +198,9 @@ async function claimOrUnavailable(
   }
 }
 
-async function releaseClaim(ioLineItemId: string): Promise<void> {
+async function releaseClaim(ioLineItemId: string, heldAt: string): Promise<void> {
   try {
-    await releaseAircheckConfirm(ioLineItemId);
+    await releaseAircheckConfirm(ioLineItemId, heldAt);
   } catch (err) {
     console.error(
       "[airchecks] confirm claim release failed:",
@@ -295,14 +295,14 @@ export async function confirmAircheck(
     throw new AircheckReviewConflict(reason);
   }
 
-  let claimed = false;
+  let heldAt: string | null = null;
   try {
     const claim = await claimOrUnavailable(input.ioLineItemId, input.decidedBy);
     if (!claim) {
       await logBlocked(input, existing.id, IN_PROGRESS);
       throw new AircheckConfirmInProgress(IN_PROGRESS);
     }
-    claimed = true;
+    heldAt = claim.confirm_claimed_at ?? null;
 
     const fresh = await requireAircheck(input.ioLineItemId);
     if (fresh.review_decision === "confirmed") {
@@ -331,7 +331,7 @@ export async function confirmAircheck(
     });
     if (!delivered.ok) {
       if (delivered.status === 404) {
-        throw new AircheckReviewNotFound(delivered.error);
+        throw new AircheckReviewNotFound("No IO line is stored for this line.");
       }
       if (delivered.status !== 502) {
         throw new Error(delivered.error);
@@ -375,17 +375,20 @@ export async function confirmAircheck(
       charge: delivered.charge,
     };
   } finally {
-    if (claimed) await releaseClaim(input.ioLineItemId);
+    if (heldAt) await releaseClaim(input.ioLineItemId, heldAt);
   }
 }
 
 export async function rejectAircheck(input: RejectInput): Promise<AircheckRow> {
   await requireAircheck(input.ioLineItemId);
-  let claimed = false;
+  let heldAt: string | null = null;
   try {
     const claim = await claimOrUnavailable(input.ioLineItemId, input.decidedBy);
     if (!claim) {
       const row = await requireAircheck(input.ioLineItemId);
+      if (row.review_decision === "rejected") {
+        throw new AircheckReviewConflict("This line was rejected.");
+      }
       const deal = await loadAircheckLineDeal(input.ioLineItemId);
       const paymentId = await paymentFor(deal, input.ioLineItemId);
       if (row.review_decision === "confirmed" || paymentId) {
@@ -393,7 +396,7 @@ export async function rejectAircheck(input: RejectInput): Promise<AircheckRow> {
       }
       throw new AircheckConfirmInProgress(IN_PROGRESS);
     }
-    claimed = true;
+    heldAt = claim.confirm_claimed_at ?? null;
 
     const fresh = await requireAircheck(input.ioLineItemId);
     const deal = await loadAircheckLineDeal(input.ioLineItemId);
@@ -426,6 +429,6 @@ export async function rejectAircheck(input: RejectInput): Promise<AircheckRow> {
     await runMakeGoodDetectionHook(input.ioLineItemId);
     return aircheck;
   } finally {
-    if (claimed) await releaseClaim(input.ioLineItemId);
+    if (heldAt) await releaseClaim(input.ioLineItemId, heldAt);
   }
 }

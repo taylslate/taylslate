@@ -129,8 +129,8 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json({ error: err.message }, { status: 409 });
     }
-    const message = err instanceof Error ? err.message : "Review failed";
+    const message = err instanceof Error ? err.message : "Review failed.";
     console.error(`[admin/aircheck/review] line ${body.ioLineItemId}:`, message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Review failed." }, { status: 500 });
   }
 }

@@ -342,15 +342,19 @@ export async function claimAircheckConfirm(
   return (data as AircheckRow | null) ?? null;
 }
 
-/** Clears the claim. Does not change review_decision. */
-export async function releaseAircheckConfirm(ioLineItemId: string): Promise<void> {
+/** Clears this claim only. A newer claim on the same line stays. */
+export async function releaseAircheckConfirm(
+  ioLineItemId: string,
+  heldAt: string
+): Promise<void> {
   const { error } = await supabaseAdmin
     .from("airchecks")
     .update({
       confirm_claimed_at: null,
       confirm_claimed_by: null,
     })
-    .eq("io_line_item_id", ioLineItemId);
+    .eq("io_line_item_id", ioLineItemId)
+    .eq("confirm_claimed_at", heldAt);
   if (error && !isAircheckClaimColumnError(error)) {
     throw new Error(`aircheck claim release failed: ${error.message}`);
   }

@@ -605,6 +605,30 @@ describe("confirmAircheck", () => {
     expect(chargeForEpisode).not.toHaveBeenCalled();
   });
 
+  it("hides the delivery lookup id on a 404", async () => {
+    const hidden = "11111111-1111-4111-8111-111111111111";
+    delivery.deliverAndChargeLine.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      error: `IO line item ${hidden} not found`,
+    });
+    await expect(
+      confirmAircheck({ ioLineItemId: LINE, decidedBy: "ops@taylslate.com" })
+    ).rejects.toMatchObject({
+      name: "AircheckReviewNotFound",
+      message: "No IO line is stored for this line.",
+    });
+
+    delivery.deliverAndChargeLine.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      error: `Insertion order ${hidden} not found`,
+    });
+    await expect(
+      confirmAircheck({ ioLineItemId: LINE, decidedBy: "ops@taylslate.com" })
+    ).rejects.toThrow("No IO line is stored for this line.");
+  });
+
   it("blocks a rejected row", async () => {
     tables.airchecks[0].review_decision = "rejected";
     await expect(
@@ -693,6 +717,18 @@ describe("rejectAircheck", () => {
     expect(delivery.deliverAndChargeLine).not.toHaveBeenCalled();
     expect(hook).not.toHaveBeenCalled();
     expect(tables.airchecks[0].review_decision).toBe("confirmed");
+  });
+
+  it("says the line was rejected when reject is repeated", async () => {
+    await rejectAircheck({
+      ioLineItemId: LINE,
+      decidedBy: "ops@taylslate.com",
+    });
+    await expect(
+      rejectAircheck({ ioLineItemId: LINE, decidedBy: "ops@taylslate.com" })
+    ).rejects.toThrow("This line was rejected.");
+    expect(delivery.deliverAndChargeLine).not.toHaveBeenCalled();
+    expect(tables.airchecks[0].review_decision).toBe("rejected");
   });
 
   it("is blocked while a claim is active", async () => {
