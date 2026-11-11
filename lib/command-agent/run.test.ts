@@ -140,7 +140,7 @@ vi.mock("@/lib/command-agent/store", () => ({
 }));
 
 import { DAILY_CAP_MESSAGE } from "@/lib/command-agent/limits";
-import { loadPrompt } from "@/lib/llm/client";
+import { FALLBACK_MODEL, loadPrompt } from "@/lib/llm/client";
 import { MCP_TOOL_NAMES } from "@/lib/mcp/args";
 import { decideAction } from "@/lib/api/approvals/decide";
 import { recordCampaignCreate } from "@/lib/api/v1/writes";
@@ -652,6 +652,32 @@ describe("command agent turn", () => {
     expect(mocks.create).toHaveBeenCalledTimes(1);
     expect(mocks.usage).toEqual([{ inputTokens: 2_000, outputTokens: 1 }]);
     expect(result.messages.at(-1)?.content.text).toBe(DAILY_CAP_MESSAGE);
+  });
+
+  it("records a usage row for the refusal fallback call", async () => {
+    seedUser("Tell me about the product");
+    mocks.model.mockReturnValue("claude-primary");
+    mocks.create
+      .mockResolvedValueOnce({
+        stop_reason: "refusal",
+        usage: { input_tokens: 11, output_tokens: 7 },
+        content: [],
+      })
+      .mockResolvedValueOnce(textReply("Here is a safer answer.", { input_tokens: 13, output_tokens: 5 }));
+    const result = await runAgentTurn({
+      brandId: BRAND,
+      conversationId: CONV,
+      userMessageId: USER_MESSAGE,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(mocks.usage).toEqual([
+      { inputTokens: 11, outputTokens: 7 },
+      { inputTokens: 13, outputTokens: 5 },
+    ]);
+    const models = mocks.create.mock.calls.map((call) => (call[0] as { model: string }).model);
+    expect(models).toEqual(["claude-primary", FALLBACK_MODEL]);
+    expect(result.messages.at(-1)?.content.text).toBe("Here is a safer answer.");
   });
 
   it("does not replay a stored tool result into the next turn", async () => {

@@ -9,6 +9,7 @@
 // is applied. The API key is never logged.
 
 import { NextRequest, NextResponse } from "next/server";
+import { isCronAuthorized } from "@/lib/security/cron-auth";
 import { redactSecretParams } from "@/lib/discovery/redact-secrets";
 import { runYoutubeLibraryRefresh } from "@/lib/youtube-library/refresh";
 
@@ -16,9 +17,7 @@ import { runYoutubeLibraryRefresh } from "@/lib/youtube-library/refresh";
 export const maxDuration = 300;
 
 function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
+  return isCronAuthorized(req);
 }
 
 function safeError(err: unknown): string {

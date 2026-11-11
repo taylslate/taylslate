@@ -44,7 +44,7 @@ describe("GET /api/cron/youtube-library-pull", () => {
     expect(runYoutubeLibraryPull).toHaveBeenCalledOnce();
 
     const src = readFileSync(join(process.cwd(), "app/api/cron/youtube-library-pull/route.ts"), "utf8");
-    expect(src).toContain("Bearer ${secret}");
+    expect(src).toContain("isCronAuthorized");
     expect(src).not.toContain("YOUTUBE_API_KEY");
     expect(src).not.toMatch(/console\.(log|error|warn)\([^)]*apiKey/i);
 

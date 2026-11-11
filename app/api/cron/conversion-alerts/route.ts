@@ -17,6 +17,7 @@
 // Auth: Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`.
 
 import { NextRequest, NextResponse } from "next/server";
+import { isCronAuthorized } from "@/lib/security/cron-auth";
 import { getAllPaygCustomersAboveBreakeven } from "@/lib/analytics/gmv";
 import {
   buildConversionAlertPayload,
@@ -31,12 +32,7 @@ const ALERT_THRESHOLD_CENTS = 1_250_000; // $12,500/mo Operator breakeven
 const RESEND_GUARD_DAYS = 7;
 
 function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return process.env.NODE_ENV !== "production";
-  }
-  const header = req.headers.get("authorization");
-  return header === `Bearer ${secret}`;
+  return isCronAuthorized(req, { allowUnsetSecretOutsideProduction: true });
 }
 
 function internalAlertEmail(): string {

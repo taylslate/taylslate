@@ -120,6 +120,15 @@ export async function claimTurn(
 ): Promise<"claimed" | "busy" | "missing" | "error"> {
   if (!isUuid(brandId) || !isUuid(conversationId)) return "missing";
   const stale = new Date(now.getTime() - TURN_LOCK_MS).toISOString();
+  const cleared = await supabaseAdmin
+    .from("command_agent_conversations")
+    .update({ turn_started_at: null })
+    .eq("brand_id", brandId)
+    .or(`turn_started_at.lt.${quoteFilter(stale)}`);
+  if (cleared.error) {
+    console.error("[command-agent] outcome=claim_failed");
+    return "error";
+  }
   const fresh = await freshTurns(brandId, stale);
   if (!fresh.ok) return "error";
   if (fresh.rows.length > 0) return "busy";
@@ -128,9 +137,10 @@ export async function claimTurn(
     .update({ turn_started_at: now.toISOString() })
     .eq("id", conversationId)
     .eq("brand_id", brandId)
-    .or(`turn_started_at.is.null,turn_started_at.lt.${quoteFilter(stale)}`)
+    .is("turn_started_at", null)
     .select("id");
   if (error) {
+    if (error.code === "23505") return "busy";
     console.error("[command-agent] outcome=claim_failed");
     return "error";
   }
