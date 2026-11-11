@@ -7,7 +7,7 @@ const SHOW = TEST_ACCOUNTS.find((a) => a.key === "show1")!;
 
 // One shared service-role builder. Terminal reads (maybeSingle / single) are
 // driven by mockResolvedValueOnce queues in call order:
-//   brand_profiles.maybeSingle -> campaigns(insert).single -> outreaches(update).single
+//   brand_profiles.maybeSingle -> campaigns(insert).single
 const { adminBuilder, supabaseAdmin } = vi.hoisted(() => {
   const select = vi.fn();
   const eq = vi.fn();
@@ -60,9 +60,7 @@ function req(body?: unknown): Request {
 // Queue one seed call's service-role terminals.
 function primeServiceRole() {
   adminBuilder.maybeSingle.mockResolvedValueOnce({ data: { id: "bp1" }, error: null });
-  adminBuilder.single
-    .mockResolvedValueOnce({ data: { id: "camp-1" }, error: null }) // campaign insert
-    .mockResolvedValueOnce({ data: { id: "outreach-1", token: "stored" }, error: null }); // token update
+  adminBuilder.single.mockResolvedValueOnce({ data: { id: "camp-1" }, error: null });
 }
 
 beforeEach(() => {
@@ -220,10 +218,13 @@ describe("POST /api/admin/seed-outreach — accept URL token", () => {
     expect(payload!.outreach_id).toBe("outreach-1");
   });
 
-  it("persists the signed token back onto the outreach row (service-role update)", async () => {
+  it("does not store the signed token", async () => {
     await POST(req({ variant: "catalog" }) as never);
-    // The finalize step swaps the placeholder token for the real signed one.
-    const updateArg = adminBuilder.update.mock.calls[0][0] as { token: string };
-    expect(verifyOutreachToken(updateArg.token)?.outreach_id).toBe("outreach-1");
+    const draft = createOutreach.mock.calls[0][0] as { token: string };
+    expect(draft.token).toMatch(/^retired:/);
+    expect(verifyOutreachToken(draft.token)).toBeNull();
+    for (const call of adminBuilder.update.mock.calls) {
+      expect(call[0]).not.toHaveProperty("token");
+    }
   });
 });

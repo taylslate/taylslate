@@ -2,6 +2,7 @@
 // Creates an outreach record, signs a token, and sends the brand-forward email.
 // One outreach per (campaign_id, show). Unique constraint at the DB level.
 
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
   createOutreach,
@@ -10,6 +11,7 @@ import {
   getCampaignById,
 } from "@/lib/data/queries";
 import { signOutreachToken } from "@/lib/io/tokens";
+import { redactOutreach } from "@/lib/outreach/public";
 import { renderOutreachEmail } from "@/lib/email/templates/outreach";
 import { sendEmail } from "@/lib/email/send";
 import { recordEvent } from "@/lib/data/event-log";
@@ -112,10 +114,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
   }
 
-  // Generate token + persist. The token is signed from the outreach id, but
-  // we don't have the id until after insert. Sign a placeholder, swap in the
-  // real signed token after we know the id.
-  const placeholderToken = `pending_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  // The signed token is the email link. It is not stored. The column
+  // is still NOT NULL until migration 087, so the insert uses a unique
+  // non-secret placeholder.
+  const placeholderToken = `retired:${randomUUID()}`;
 
   const draft: Omit<Outreach, "id" | "created_at" | "updated_at"> = {
     brand_profile_id: brandProfile.id,
@@ -150,7 +152,7 @@ export async function POST(request: NextRequest) {
   const realToken = signOutreachToken(created.id);
   const { data: updated, error: updateErr } = await supabaseAdmin
     .from("outreaches")
-    .update({ token: realToken, sent_at: new Date().toISOString() })
+    .update({ sent_at: new Date().toISOString() })
     .eq("id", created.id)
     .select()
     .single();
@@ -197,8 +199,7 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json({
-    outreach: updated,
-    pitch_url: pitchUrl,
+    outreach: redactOutreach(updated),
     email_sent: sendResult.ok,
     email_reason: sendResult.reason,
   });

@@ -2529,6 +2529,7 @@ PGlite covers two parallel claims on one brand with 084, the same case with migr
 - The two youtube route tests above are outside the Owns list. Only the source assertion changed.
 - No page or component was edited. This PR does not merge. Paul reviews.
 
+
 ## SEC3
 
 ### What was built
@@ -2610,3 +2611,50 @@ The helper test checks that a missing-table error returns null or false and that
 - The page and `GET /api/deals/[id]` still send `setup_intent_id`, `payment_method_id`, and `docusign_envelope_id` to the show viewer. Those are ids. The show does not use them.
 - `app/api/admin/seed-deal/route.ts:529` mentions a `deal_setup_intents` table that does not exist.
 - No page markup changed. Screenshots are not applicable. This PR does not merge. Paul reviews.
+
+## SEC5: stop storing the outreach response token
+
+### What was built
+
+The signed outreach link is no longer stored, and no API response or page prop returns it. `redactOutreach` / `redactOutreaches` set `token` to `""`. `POST /api/outreach` inserts `retired:<uuid>`, updates `sent_at` only, still signs the email link, and drops `pitch_url`. Accept, counter, and decline return the redacted row. The campaign outreach list, the campaign outreach page prop, the pitch page's outreach prop, and the Wave 12 deal GET do the same. The pitch page still passes the URL token separately. The admin seed route inserts the same placeholder, does not write the signed token, and still returns the signed URL to the admin caller.
+
+Verification stays signature-only. `lib/io/tokens.ts`, `lib/data/queries.ts`, and `lib/data/types.ts` were not edited.
+
+087 overwrites every stored token with `retired:<id>` and drops NOT NULL, only if the column exists. `outreaches_token_key` stays. No grant change, no policy change, no new table. It was not applied. Precheck on `ldtmhafewfifdizgfrnn` (11 Nov 2026, read only): 1 outreach, 0 unexpected tokens, `token` not nullable, `outreach_tokens` absent, select policies "Brand reads own outreach, Show reads outreach to their email".
+
+No markup or copy changed. Screenshots are not included. The two page edits are the outreach prop only, and both pages need a live session or a live signed link.
+
+### Where
+
+- `lib/outreach/public.ts` and `public.test.ts`
+- `app/api/outreach/route.ts` and `route.test.ts`
+- `app/api/outreach/[token]/accept/route.ts`, `counter/route.ts`, `decline/route.ts`, and `actions.test.ts`
+- `app/api/campaigns/[id]/outreach/route.ts` and `route.test.ts`
+- `app/(dashboard)/campaigns/[id]/outreach/page.tsx` (the `initialOutreaches` prop)
+- `app/outreach/[token]/page.tsx` (the `outreach` prop; the URL `token` prop is unchanged)
+- `app/api/deals/[id]/route.ts` (the Wave 12 `outreach` field) and `route.test.ts`
+- `app/api/admin/seed-outreach/route.ts`
+- `app/api/admin/seed-outreach/route.test.ts` (outside the Owns list: the old assertion required storing the signed token, and the `single()` queue assumed that update)
+- `supabase/migrations/087_outreach_token_retire.sql` and its test
+- `docs/jobs/SEC5.md`
+- `docs/security/S-A_FINDINGS.md` (SA-28)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run` after the rebase onto main (`cb12449`): 357 files, 3042 passed, 41 skipped. `npx next build` completed.
+
+PGlite loads migrations 001 through 084, seeds two JWT-shaped tokens, and applies 087. The same assertions pass after loading through 085, which is on main. Both tokens become `retired:<id>`, `token` is nullable, and `outreaches_token_key` remains. A brand JWT sees only `retired:` values. Show A sees only the row sent to its login email. Anon is permission denied. `service_role` can select and can insert a row with no token. A second apply leaves the retired values unchanged. No hosted database.
+
+Route tests: the send response has no `pitch_url` and `outreach.token` is `""`; the update payload has no `token`; the insert placeholder starts with `retired:`; the email html and text contain `/outreach/<jwt>` and `verifyOutreachToken` returns the new outreach id. Accept, counter, and decline still return 200 with the same status transitions and emails, with `token: ""`. A bad signature is still 401. The campaign outreach owner gets empty tokens; a non-owner gets 404. The Wave 12 deal GET redacts `outreach.token` for the brand and for the show.
+
+### Known gaps
+
+- 087 is not applied. Merge first, then apply it after Chris names it. Until then, the one live row still holds its JWT in the column. No response or prop returns it.
+- Tokens still do not expire and cannot be revoked without rotating `OUTREACH_TOKEN_SECRET`. Default: no rotation. One live outreach, internal taylslate.com recipient.
+- Contract migration (drop the column and the placeholder writes) waits until 087 is live and this code is deployed.
+- `setup_intent_id`, `payment_method_id`, and `docusign_envelope_id` still reach the show viewer. SEC4 owns that. Ids, not credentials.
+- `POST /api/auth/magic/start` still sends a magic link to any address for any valid outreach token. Behavior review, not this job.
+- `app/api/admin/seed-outreach/route.test.ts` is outside the Owns list. Only the token-persist assertion and the `single()` queue changed.
+- This PR does not merge. Paul reviews.

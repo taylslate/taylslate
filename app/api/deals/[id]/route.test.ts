@@ -80,7 +80,10 @@ beforeEach(() => {
   getDealById.mockResolvedValue(wave12Row);
   getDealWithRelations.mockResolvedValue(null);
   getWave12DealById.mockResolvedValue(wave12Row);
-  getOutreachById.mockResolvedValue({ show_name: "Show" });
+  getOutreachById.mockResolvedValue({
+    show_name: "Show",
+    token: "eyJhbGciOiJIUzI1NiJ9.payload.signature",
+  });
   // The intruder owns neither the brand nor the show profile on the deal.
   getBrandProfileByUserId.mockResolvedValue({ id: "bp-intruder" });
   getShowProfileByUserId.mockResolvedValue({ id: "sp-intruder" });
@@ -113,6 +116,20 @@ describe("deals/[id] authorization gate", () => {
     // Owner passes the gate → proceeds to the Wave-12 shaping path.
     expect(getWave12DealById).toHaveBeenCalled();
     expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.deal.outreach.token).toBe("");
+    expect(body.deal.outreach.show_name).toBe("Show");
+  });
+
+  it("GET redacts the outreach token for the owning show", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u-show", email: "show@x.com" });
+    getBrandProfileByUserId.mockResolvedValue(null);
+    getShowProfileByUserId.mockResolvedValue({ id: "sp-owner" });
+    const res = await GET({} as never, params as never);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.deal.outreach.token).toBe("");
+    expect(body.deal.outreach.show_name).toBe("Show");
   });
 
   it("GET allows the owning show (legacy-column owner too)", async () => {

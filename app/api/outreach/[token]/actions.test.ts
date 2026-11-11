@@ -160,6 +160,7 @@ describe("POST /api/outreach/[token]/accept", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.outreach.response_status).toBe("accepted");
+    expect(body.outreach.token).toBe("");
     expect(updateOutreachResponse).toHaveBeenCalled();
     expect(sendEmail).toHaveBeenCalled();
     const sendArgs = sendEmail.mock.calls[0][0];
@@ -195,6 +196,9 @@ describe("POST /api/outreach/[token]/counter", () => {
       params as never
     );
     expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.outreach.response_status).toBe("countered");
+    expect(body.outreach.token).toBe("");
     const update = updateOutreachResponse.mock.calls[0][1];
     expect(update.response_status).toBe("countered");
     expect(update.counter_cpm).toBe(32);
@@ -206,6 +210,9 @@ describe("POST /api/outreach/[token]/decline", () => {
   it("declines without reason", async () => {
     const res = await DECLINE(jsonReq({}) as never, params as never);
     expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.outreach.response_status).toBe("declined");
+    expect(body.outreach.token).toBe("");
     const update = updateOutreachResponse.mock.calls[0][1];
     expect(update.response_status).toBe("declined");
     expect(update.decline_reason).toBeNull();

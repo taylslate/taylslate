@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { redactOutreach } from "@/lib/outreach/public";
 import { applyAndNotify, resolveOutreachOr400 } from "../_shared";
 
 export async function POST(
@@ -17,5 +18,5 @@ export async function POST(
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
-  return NextResponse.json({ outreach: result.outreach });
+  return NextResponse.json({ outreach: redactOutreach(result.outreach) });
 }

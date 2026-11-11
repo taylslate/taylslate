@@ -11,6 +11,7 @@ import {
   getShowProfileByUserId,
 } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { redactOutreach } from "@/lib/outreach/public";
 import type { DealStatus, BrandProfile, ShowProfile } from "@/lib/data/types";
 
 const VALID_STATUSES: DealStatus[] = ["planning", "io_sent", "live", "completed"];
@@ -126,7 +127,7 @@ export async function GET(
           brand_is_managed: await brandIsManaged(
             (wave12 as { brand_id?: unknown }).brand_id
           ),
-          outreach,
+          outreach: outreach ? redactOutreach(outreach) : outreach,
         },
       });
     }

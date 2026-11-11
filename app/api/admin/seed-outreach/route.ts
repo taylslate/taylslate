@@ -3,9 +3,10 @@
 //
 // seed-deal fabricates a finished planning-status deal DIRECTLY, bypassing the
 // accept path — so the accept-flow launch-blocker cluster's fixes never execute
-// through it. This route seeds only the INPUTS to the accept flow: a campaign +
-// a `pending` outreach carrying a valid HMAC token, so the public accept URL
-// (/outreach/<token>) actually verifies and runs applyAndNotify — exercising
+// through it. This route seeds only the INPUTS to the accept flow: a campaign
+// and a `pending` outreach. The public accept URL is signed in memory (the
+// token is not stored), so /outreach/<token> verifies and runs applyAndNotify,
+// exercising
 // the accept cluster (NOT-NULL deal creation, materialization, backfill,
 // flight-date rendering) live. This route never touches the accept path itself.
 //
@@ -25,8 +26,9 @@
 // input; `variant` only selects between the two hardwired shapes.
 //
 // No email side effects: this route never sends the outreach email (it calls
-// createOutreach + a service-role token update directly, not the send path).
-// The accept/IO emails fire later, from the real accept path, when Chris clicks.
+// createOutreach directly, not the send path). The signed URL is returned
+// to the admin caller and is not stored. The accept/IO emails fire later,
+// from the real accept path, when Chris clicks.
 
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
@@ -190,12 +192,10 @@ export async function POST(request: NextRequest) {
     sentToEmail = `chris+seedotr-${nonce}@taylslate.com`;
   }
 
-  // Create the outreach in the acceptable `pending` state (isOutreachOpen only
-  // treats `pending` as open), then sign the real HMAC token from its id — the
-  // token binds to the row id, unknown until after insert — and swap it in, so
-  // the returned /outreach/<token> URL verifies against the real secret exactly
-  // like a production send. (Mirrors app/api/outreach/route.ts.)
-  const placeholderToken = `pending_seed_${nonce}_${randomUUID()}`;
+  // Pending is the only open status. The signed token is built from the
+  // row id and returned in acceptUrl. It is not written. The insert keeps
+  // a unique non-secret placeholder while the column is still NOT NULL.
+  const placeholderToken = `retired:${randomUUID()}`;
   const draft: Omit<Outreach, "id" | "created_at" | "updated_at"> = {
     brand_profile_id: bp.id,
     campaign_id: seededCampaign.id,
@@ -227,18 +227,6 @@ export async function POST(request: NextRequest) {
   }
 
   const realToken = signOutreachToken(created.id);
-  const { data: finalized, error: tokenErr } = await supabaseAdmin
-    .from("outreaches")
-    .update({ token: realToken })
-    .eq("id", created.id)
-    .select("id, token")
-    .single();
-  if (tokenErr || !finalized) {
-    return NextResponse.json(
-      { error: "Couldn't finalize seeded outreach token" },
-      { status: 500 }
-    );
-  }
 
   // Marker event (symmetric with deal.seeded). Payload carries every id teardown
   // needs to discover this seed directly, plus the variant + batch. logEvent is
