@@ -4,7 +4,7 @@
 
 ### What was built
 
-A daily job pulls the episode for each booked IO spot whose air window is open, transcribes that episode, and stores a match that is ready for a person to review. Part 3, the review screen that marks delivery and charges, was left as it is. No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, and `lib/billing` were not edited.
+A daily job pulls the episode for each booked IO spot whose air window is open, transcribes that episode, and stores a match that is ready for a person to review. Part 3 is AC3: a person confirms a ready line on the existing review screen, and that confirm charges through the existing delivery path. See the AC3 section. No screen, style, or animation was edited for parts 1 and 2. `lib/stripe`, `lib/payouts`, and `lib/billing` were not edited.
 
 Booked means deal status `show_signed`, `delivering`, `signed`, `live`, or `completed`, and `cancelled_at` is empty. A cancelled IO is skipped. The air window starts on `io_line_items.post_date` and runs 7 days, through `post_date` plus 6 days. The job keeps looking for 7 days after the window closes. At most 25 spots run per cron. A show with no booked line is never fetched.
 
@@ -2892,3 +2892,65 @@ Covers `youtube-captions` true, and null, undefined, `podscan`, `deepgram`, `whi
 - `review.ts` still treats a confirmed aircheck as aired. It only sees rows assemble kept.
 - A future job that reads `airchecks` or `youtube_aircheck_metrics` for learning or pooling needs Chris's OK plus a Limited Use review.
 - No page or component was edited. Screenshots are not applicable. This PR does not merge. Paul reviews.
+
+## AC3
+
+### What was built
+
+A person confirms or rejects one aircheck. Confirm is the only new way a charge starts, and it calls the existing `deliverAndChargeLine` once. Nothing in the cron confirms or charges.
+
+Confirm loads the row. An already confirmed row returns `alreadyCharged` and does not charge. A rejected row is 409: reopening a rejected line is not supported. A non-failed payment on the same `deal_id` and `io_line_item_id` is saved as `confirmed` and does not charge. A payment for that line on a different deal does not count. `lineAlreadyCharged` in `lib/airchecks/review.ts` was re-keyed onto that pair. `lib/stripe` was not edited.
+
+The row must be `transcribed` with `match_result` `matched` or `not_matched`, and the deal must be booked (`show_signed`, `delivering`, `completed`, `signed`, `live`) with `cancelled_at` empty. A `not_matched` confirm needs no typed reason. `aircheck.confirmed` sets `override: true`. Skipped, failed, pending, unjudged, and a cancelled or unbooked deal are 409 and do not charge.
+
+Confirm and reject then take one claim. The update matches `review_decision is null` and a null or stale `confirm_claimed_at` (older than 5 minutes). Zero rows is 409 and does not charge. Inside the claim, confirm calls `deliverAndChargeLine` only. The success write sets `confirmed` and clears the claim. A failed charge stores `charge_error`, emits `aircheck.charge_failed`, releases the claim, and leaves the decision empty. If the charge succeeded and saving `confirmed` throws, the claim is released. A retry reconciles from the payment and does not charge again.
+
+Reject claims, then refuses a confirmed row or a non-failed payment. It stores `rejected`, emits `aircheck.rejected`, and runs the make-good hook once. It never calls `deliverAndChargeLine`.
+
+If `confirm_claimed_at` is missing (`42703` or `PGRST204`), confirm and reject return 503 and do not charge.
+
+`/admin/airchecks` is a new read-only queue. Same admin gate and the same "This page is for Taylslate admins." copy as the review page. Up to 50 ready rows, newest `matched_at` first, plus rows with `charge_error` and no decision. Columns are show, advertiser, placement, match result, confidence, matched date, and a link to `/admin/airchecks/[ioLineItemId]`. The query does not select `transcript_text`, `audio_url`, or `decided_by`. The page is URL only. The admin dashboard was not edited. `review-client.tsx` and the `[ioLineItemId]` page were not edited. A blocked confirm shows in the existing error notice.
+
+Events added: `aircheck.confirm_blocked` and `aircheck.charge_failed`. `aircheck.confirmed` now also carries `match_result`, `confidence`, `override`, and `payment_id`. Every event uses `actorId` from the session. No transcript, audio URL, or client secret is in a payload or a response.
+
+Migration 080 adds `confirm_claimed_at` and `confirm_claimed_by`, re-asserts RLS, revokes `public`, `anon`, and `authenticated`, and grants `service_role` select, insert, update, and delete. No policy. No backfill. It is not applied.
+
+Decisions Chris locked: rejected is final; a `not_matched` override needs no reason; the three Stripe limits stay out; 040 and 079 are already live; the queue is URL only.
+
+### Where
+
+- `lib/airchecks/review.ts` and `review.test.ts`
+- `lib/airchecks/eligibility.ts` and `eligibility.test.ts`
+- `lib/airchecks/store.ts` (claim, release, queue loader) and `store.test.ts`
+- `lib/airchecks/types.ts` (`AircheckQueueRow`, claim fields)
+- `lib/airchecks/boundaries.test.ts`
+- `app/api/admin/aircheck/review/route.ts` and `route.test.ts`
+- `app/(dashboard)/admin/airchecks/page.tsx` and `page.test.tsx`
+- `lib/data/types.ts` (`aircheck.confirm_blocked`, `aircheck.charge_failed`)
+- `supabase/migrations/080_airchecks_confirm_claim.sql` and its test
+- `docs/jobs/AC3.md`, `STATUS.md`, `PRODUCT_BACKLOG.md`, `docs/SENIOR_DEV_HANDOFF.md`
+
+`lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/delivery` were not edited.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 367 files, 3154 passed, 41 skipped.
+
+`npx vitest run lib/airchecks app/api/admin/aircheck 'app/(dashboard)/admin/airchecks' supabase/migrations`: 62 files, 342 passed, 40 skipped.
+
+`npx next build` compiled successfully and generated 143 pages. `/admin/airchecks` is dynamic.
+
+Covers eligibility branches, a payment on the same line under a different deal, two concurrent confirms with `deliverAndChargeLine` called once, charge failure and `aircheck.charge_failed`, a failed confirmed-save then a retry that does not charge, rejected then confirm is 409, reject during an active claim is 409, a stale claim can be taken, missing-column 503, route 401, 403, 400, 404, 409, 502, and 503, the queue gate and columns, the boundary scan, and the 080 PGlite test. No added line contains an em dash.
+
+Screenshots are the real review component (unchanged source) and the new queue, rendered with the production stylesheet. The review screen before and after the idle state match. One shot shows the existing error notice after a 409. The queue shot is after only. A live admin session was not used.
+
+### Known gaps
+
+- Migration 080 is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge, only when Chris names 080, in the same release as the deploy, and only after 079 and 040, which are already live. Until then confirm and reject return 503 and do not charge.
+- Rejected is final. There is no reopen path.
+- The three Stripe limits stay out. A retry after a decline within 24 hours can replay Stripe's idempotent decline. A PaymentIntent created but not persisted, retried after the 24 hour key window, could double charge. `isPayoutOwnerVerified` is not wired into payouts.
+- The queue is not linked from the admin dashboard or any existing screen.
+- No auto-confirm, auto-reject, or batch confirm. The cron still does not charge.
+- This PR does not merge. Paul reviews.

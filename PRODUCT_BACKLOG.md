@@ -104,6 +104,12 @@ Things that must finish before GTM. The launch bar.
 
 ## Operational Unblock
 
+### AC3: confirm one aircheck, then charge (Nov 11, 2026)
+- Shipped in code. An admin opens `/admin/airchecks` (URL only, no dashboard link) and confirms or rejects one line on the existing review screen. That screen was not edited.
+- Confirm requires a transcribed match of `matched` or `not_matched`, and a booked deal that is not cancelled. It claims the row, then calls `deliverAndChargeLine` once. A second click gets 409. Reject does not charge and runs the make-good hook once. Rejected is final.
+- `lineAlreadyCharged` keys the payment lookup on `deal_id` and `io_line_item_id` inside `lib/airchecks/review.ts`. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/delivery` were not edited.
+- Migration 080 is in the repo and is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge, only when Chris names 080, in the same release as the deploy, and only after 079 and 040, which are already live. Until then confirm and reject return 503 and do not charge.
+
 ### Automated airchecks, parts 1 and 2 (Nov 2, 2026)
 - Shipped in code. A daily cron pulls the episode for each booked IO spot in its air window, transcribes it with OpenAI Whisper, stores the text and timestamped segments, deletes the audio, and writes a match with confidence, timestamps, and reasons. `ready_for_review` is set. The line is not marked delivered and nothing is charged.
 - Migration 079 is applied on `ldtmhafewfifdizgfrnn` (Nov 2, 2026 UTC). authenticated has no select on `airchecks`.

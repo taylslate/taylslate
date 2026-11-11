@@ -1,5 +1,5 @@
 // Stored transcript, match judgment, and human review for one IO line.
-// Column names match public.airchecks (migrations 038, 039, and 040).
+// Column names match public.airchecks (migrations 038, 039, 040, and 080).
 // A match is data only. review_decision confirmed is set only after the
 // existing charge path succeeds. rejected does not charge.
 
@@ -43,6 +43,10 @@ export interface AircheckRow {
   decided_at: string | null;
   /** Set when confirm's charge failed. The decision stays unconfirmed. */
   charge_error: string | null;
+  /** Set while a confirm or reject holds the row. Migration 080. */
+  confirm_claimed_at?: string | null;
+  /** Internal admin email that holds confirm_claimed_at. */
+  confirm_claimed_by?: string | null;
   created_at: string;
   updated_at: string;
   /** Timestamped transcript pieces. Null until an automated Whisper run stores them. */
@@ -122,6 +126,22 @@ export interface AircheckBuy {
   placement: string | null;
   /** Not a column. Null unless a caller already has the script text. */
   talkingPoints: string | null;
+}
+
+/**
+ * One line on the admin queue at /admin/airchecks.
+ * No transcript, audio URL, or decided_by.
+ */
+export interface AircheckQueueRow {
+  id: string;
+  ioLineItemId: string;
+  showName: string;
+  advertiserName: string | null;
+  placement: string | null;
+  matchResult: AircheckMatchResult | null;
+  confidence: number | null;
+  matchedAt: string | null;
+  chargeError: string | null;
 }
 
 export interface AircheckJudgment {
