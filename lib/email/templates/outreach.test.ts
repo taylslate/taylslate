@@ -139,5 +139,6 @@ describe("renderMagicLinkEmail", () => {
     expect(out.subject).toContain("Aurora");
     expect(out.html).toContain("https://app/auth/magic?token=abc");
     expect(out.text).toContain("Aurora");
+    expect(out.text).toContain("expires in 1 hour");
   });
 });

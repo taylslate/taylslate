@@ -5,6 +5,7 @@ import {
   LOGIN_CODE_SEND_EMAIL_WINDOW_SEC,
   LOGIN_CODE_SEND_IP_MAX,
   LOGIN_CODE_SEND_IP_WINDOW_SEC,
+  MAGIC_START_OUTREACH_MAX,
   LOGIN_CODE_VERIFY_MAX,
   LOGIN_CODE_VERIFY_WINDOW_SEC,
   OUTREACH_SEND_USER_DAY_MAX,
@@ -19,6 +20,7 @@ import {
   UPLOAD_USER_HOUR_MAX,
   UPLOAD_USER_HOUR_WINDOW_SEC,
   enforceAuthMagic,
+  enforceMagicStart,
   enforceLoginCodeSend,
   enforceLoginCodeVerify,
   enforceOutreachSend,
@@ -681,5 +683,42 @@ describe("wired routes", () => {
     );
     expect(blockedShow.status).toBe(429);
     expect(importShows).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("enforceMagicStart", () => {
+  it("sends IP, outreach, and email rules and fails closed", async () => {
+    const res = await enforceMagicStart(
+      { headers: headers() },
+      { outreachId: "out-1", email: " Host@Example.com " },
+    );
+    expect(res).toBeNull();
+    expect(rpc).toHaveBeenNthCalledWith(1, "rate_limit_hit", {
+      p_bucket: "magic_start_ip",
+      p_key: "203.0.113.5",
+      p_max: LOGIN_CODE_SEND_IP_MAX,
+      p_window_seconds: LOGIN_CODE_SEND_IP_WINDOW_SEC,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, "rate_limit_hit", {
+      p_bucket: "magic_start_outreach",
+      p_key: "out-1",
+      p_max: MAGIC_START_OUTREACH_MAX,
+      p_window_seconds: LOGIN_CODE_SEND_IP_WINDOW_SEC,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(3, "rate_limit_hit", {
+      p_bucket: "magic_start_email",
+      p_key: hashRateLimitEmail("host@example.com"),
+      p_max: LOGIN_CODE_SEND_EMAIL_MAX,
+      p_window_seconds: LOGIN_CODE_SEND_EMAIL_WINDOW_SEC,
+    });
+    expect(MAGIC_START_OUTREACH_MAX).toBe(5);
+
+    rpcError = { message: "database unavailable" };
+    const closed = await enforceMagicStart(
+      { headers: headers("198.51.100.9") },
+      { outreachId: "out-fresh", email: "fresh@example.com" },
+    );
+    expect(closed?.status).toBe(503);
+    expect(await closed?.json()).toEqual({ error: "unavailable" });
   });
 });

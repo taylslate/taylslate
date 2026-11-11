@@ -1,5 +1,7 @@
-// POST /api/auth/magic/start — issues a magic link to the show's email.
+// POST /api/auth/magic/start. Issues a magic link to the outreach recipient.
 // Used from the public pitch page when the recipient is not yet onboarded.
+// The posted address must be outreaches.sent_to_email. Any other address gets
+// the same { ok: true } and no mail.
 
 import { NextRequest, NextResponse } from "next/server";
 import { signMagicLinkToken, verifyOutreachToken } from "@/lib/io/tokens";
@@ -10,11 +12,16 @@ import { brandNameFromProfile } from "@/lib/brand/display-name";
 import { getOutreachById } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { BrandProfile } from "@/lib/data/types";
+import { isValidLoginEmail, normalizeLoginEmail } from "@/lib/auth/login-magic";
+import { enforceMagicStart } from "@/lib/security/rate-limit";
 
 interface StartBody {
-  outreach_token: string;
-  email: string;
+  outreach_token?: unknown;
+  email?: unknown;
 }
+
+/** Pitch setup links last one hour. The token helper's default stays 24h. */
+export const MAGIC_START_TTL_SECONDS = 60 * 60;
 
 function siteOrigin(req: NextRequest): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
@@ -30,14 +37,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (!body.outreach_token || !body.email) {
+  const email = normalizeLoginEmail(body.email);
+  const outreachToken = typeof body.outreach_token === "string" ? body.outreach_token : "";
+  if (!outreachToken || !email) {
     return NextResponse.json({ error: "outreach_token and email required" }, { status: 400 });
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
+  if (!isValidLoginEmail(email)) {
     return NextResponse.json({ error: "invalid email" }, { status: 400 });
   }
 
-  const tokenPayload = verifyOutreachToken(body.outreach_token);
+  const tokenPayload = verifyOutreachToken(outreachToken);
   if (!tokenPayload) {
     return NextResponse.json({ error: "Invalid outreach token" }, { status: 401 });
   }
@@ -46,11 +55,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Outreach not found" }, { status: 404 });
   }
 
+  const outreachId = tokenPayload.outreach_id;
+  const limited = await enforceMagicStart(request, { outreachId, email });
+  if (limited) return limited;
+
+  const recipient = normalizeLoginEmail(outreach.sent_to_email);
+  if (!recipient || recipient !== email) {
+    console.warn(`[magic.start] recipient mismatch ${outreachId}`);
+    return NextResponse.json({ ok: true });
+  }
+
   // Tie the magic link to the original pitch URL so onboarding completion
   // bounces the show back to accept/counter/decline.
   const origin = siteOrigin(request);
-  const returnUrl = `${origin}/outreach/${body.outreach_token}`;
-  const magicToken = signMagicLinkToken(body.email, returnUrl);
+  const returnUrl = `${origin}/outreach/${outreachToken}`;
+  const magicToken = signMagicLinkToken(recipient, returnUrl, MAGIC_START_TTL_SECONDS);
 
   const magicUrl = `${origin}/api/auth/magic?token=${encodeURIComponent(magicToken)}`;
 
@@ -64,22 +83,25 @@ export async function POST(request: NextRequest) {
   const brandName =
     brandNameFromProfile((brandProfile ?? {}) as BrandProfile) || "A brand";
 
-  const email = renderMagicLinkEmail({
-    to_email: body.email,
+  const rendered = renderMagicLinkEmail({
+    to_email: recipient,
     brand_name: brandName,
     show_name: outreach.show_name,
     magic_link_url: magicUrl,
   });
 
   const sendResult = await sendEmail({
-    to: body.email,
-    subject: email.subject,
-    html: email.html,
-    text: email.text,
+    to: recipient,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
     from: EMAIL_FROM_AUTH,
     // Show setup links must reach the real address, including for a managed brand.
     bypassManagedReroute: true,
   });
+  if (!sendResult.ok) {
+    console.error("[magic.start] send failed:", sendResult.reason ?? "send_failed");
+  }
 
-  return NextResponse.json({ ok: true, email_sent: sendResult.ok, email_reason: sendResult.reason });
+  return NextResponse.json({ ok: true });
 }

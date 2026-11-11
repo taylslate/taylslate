@@ -11,7 +11,7 @@ import { AuthShell } from "@/components/auth/auth-shell";
 const ERROR_MESSAGES: Record<string, string> = {
   missing_token: "This link is missing its token. Ask the brand to resend the invite.",
   invalid_or_expired:
-    "This link has expired or isn't valid. Magic links are good for 24 hours — ask the brand to resend.",
+    "This link has expired or isn't valid. Setup links are good for 1 hour. Go back to the offer email and request a new one.",
   signup_failed: "We couldn't create your account. Please try again or contact support.",
   signin_failed: "We couldn't sign you in. Please try the link again.",
 };
@@ -51,7 +51,7 @@ function MagicMessage() {
           to the pitch.
         </p>
         <p className="mt-2 text-xs text-[var(--ts-ink-muted-on-paper)]">
-          The link expires in 24 hours.
+          The link expires in 1 hour.
         </p>
       </>
     );

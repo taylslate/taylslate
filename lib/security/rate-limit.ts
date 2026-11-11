@@ -29,6 +29,7 @@ export const ROSTER_IMPORT_USER_HOUR_MAX = 10;
 export const ROSTER_IMPORT_USER_HOUR_WINDOW_SEC = 60 * 60;
 export const ROSTER_DISPUTE_USER_HOUR_MAX = 10;
 export const ROSTER_DISPUTE_USER_HOUR_WINDOW_SEC = 60 * 60;
+export const MAGIC_START_OUTREACH_MAX = 5;
 
 export const RATE_LIMIT_MESSAGE = "Too many requests. Try again later.";
 
@@ -41,6 +42,9 @@ const OUTREACH_SEND_DAY_BUCKET = "outreach_send_user_day";
 const UPLOAD_USER_HOUR_BUCKET = "upload_user_hour";
 const ROSTER_IMPORT_HOUR_BUCKET = "roster_import_user_hour";
 const ROSTER_DISPUTE_HOUR_BUCKET = "roster_dispute_user_hour";
+const MAGIC_START_IP_BUCKET = "magic_start_ip";
+const MAGIC_START_OUTREACH_BUCKET = "magic_start_outreach";
+const MAGIC_START_EMAIL_BUCKET = "magic_start_email";
 
 export type RateLimitFailureMode = "closed" | "open";
 
@@ -173,6 +177,36 @@ export function enforceAuthMagic(request: HeaderSource): Promise<NextResponse | 
         key: rateLimitClientIp(request.headers),
         max: LOGIN_CODE_SEND_IP_MAX,
         windowSeconds: LOGIN_CODE_SEND_IP_WINDOW_SEC,
+      },
+    ],
+  });
+}
+
+/** POST /api/auth/magic/start. IP, then outreach, then email. Closed on failure. */
+export function enforceMagicStart(
+  request: HeaderSource,
+  input: { outreachId: string; email: string },
+): Promise<NextResponse | null> {
+  return enforceRules({
+    failureMode: "closed",
+    rules: [
+      {
+        bucket: MAGIC_START_IP_BUCKET,
+        key: rateLimitClientIp(request.headers),
+        max: LOGIN_CODE_SEND_IP_MAX,
+        windowSeconds: LOGIN_CODE_SEND_IP_WINDOW_SEC,
+      },
+      {
+        bucket: MAGIC_START_OUTREACH_BUCKET,
+        key: input.outreachId,
+        max: MAGIC_START_OUTREACH_MAX,
+        windowSeconds: LOGIN_CODE_SEND_IP_WINDOW_SEC,
+      },
+      {
+        bucket: MAGIC_START_EMAIL_BUCKET,
+        key: hashRateLimitEmail(input.email),
+        max: LOGIN_CODE_SEND_EMAIL_MAX,
+        windowSeconds: LOGIN_CODE_SEND_EMAIL_WINDOW_SEC,
       },
     ],
   });

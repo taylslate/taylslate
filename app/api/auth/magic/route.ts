@@ -5,15 +5,45 @@
 // will be honored after onboarding completes.
 
 import { NextRequest, NextResponse } from "next/server";
-import { verifyMagicLinkToken } from "@/lib/io/tokens";
+import { verifyMagicLinkToken, verifyOutreachToken } from "@/lib/io/tokens";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { listAuthUserIdsByEmail } from "@/lib/auth/auth-email";
+import { normalizeLoginEmail } from "@/lib/auth/login-magic";
+import { getOutreachById } from "@/lib/data/queries";
 import {
   ONBOARDING_RETURN_COOKIE,
   ONBOARDING_RETURN_COOKIE_OPTIONS,
   sanitizeReturnPath,
 } from "@/lib/auth/onboarding-return";
 import { enforceAuthMagic } from "@/lib/security/rate-limit";
+
+/**
+ * The link is valid only when return_url is this origin and its path is
+ * exactly /outreach/<token>, that token verifies, and the magic email is
+ * that outreach's sent_to_email. Anything else is treated as expired.
+ */
+async function magicOutreachBinding(
+  returnUrl: string,
+  origin: string,
+  email: string,
+): Promise<{ url: URL } | null> {
+  try {
+    const url = new URL(returnUrl);
+    if (url.origin !== origin) return null;
+    const match = url.pathname.match(/^\/outreach\/([^/]+)$/);
+    if (!match?.[1]) return null;
+    const outreachToken = decodeURIComponent(match[1]);
+    const tokenPayload = verifyOutreachToken(outreachToken);
+    if (!tokenPayload) return null;
+    const outreach = await getOutreachById(tokenPayload.outreach_id);
+    if (!outreach) return null;
+    if (normalizeLoginEmail(outreach.sent_to_email) !== email) return null;
+    return { url };
+  } catch {
+    console.error("[magic] outreach binding failed");
+    return null;
+  }
+}
 
 function siteOrigin(req: NextRequest): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
@@ -38,9 +68,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/auth/magic?error=invalid_or_expired`);
   }
 
+  const email = payload.email.trim().toLowerCase();
+  const bound = await magicOutreachBinding(payload.return_url, origin, email);
+  if (!bound) {
+    return NextResponse.redirect(`${origin}/auth/magic?error=invalid_or_expired`);
+  }
+
   // Find or create the auth user. The token email is matched on auth.users.
   // A profiles.email copy of that address is not an account.
-  const email = payload.email.trim().toLowerCase();
   const directory = await listAuthUserIdsByEmail(email);
   if (!directory.ok || directory.ids.length > 1) {
     console.error("[magic] auth user lookup failed");
@@ -103,14 +138,10 @@ export async function GET(request: NextRequest) {
 
   // Carry the originating pitch URL (validated same-origin) so onboarding
   // completion can bounce the show straight back to accept/counter/decline.
+  // The URL was parsed while binding the token to the outreach recipient.
   let returnPath: string | null = null;
-  try {
-    const u = new URL(payload.return_url);
-    if (u.origin === origin) {
-      returnPath = sanitizeReturnPath(`${u.pathname}${u.search}`, origin);
-    }
-  } catch {
-    returnPath = null;
+  if (bound.url.origin === origin) {
+    returnPath = sanitizeReturnPath(`${bound.url.pathname}${bound.url.search}`, origin);
   }
   if (returnPath) {
     response.cookies.set(ONBOARDING_RETURN_COOKIE, returnPath, ONBOARDING_RETURN_COOKIE_OPTIONS);
