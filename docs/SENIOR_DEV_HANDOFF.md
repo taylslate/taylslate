@@ -2563,9 +2563,7 @@ Precheck (read only, Nov 11, 2026): outreaches 1, outreaches without a recipient
 
 `npx tsc --noEmit` is clean.
 
-`npx vitest run app/api/auth lib/security app/outreach components/auth`: 10 files, 152 passed.
-
-`npx vitest run`: 351 files, 3018 passed, 41 skipped. `npx next build` compiled and generated 142 pages.
+`npx vitest run` after the rebase onto main (`3c11f4f`): 358 files, 3061 passed, 41 skipped. `npx next build` compiled and generated 142 pages.
 
 Covers a mismatch with a body identical to the match and no send, case and whitespace on the recipient, an empty recipient, the 6th outreach call, the 4th email call, the 11th IP call, a mismatch filling the outreach and IP buckets, a limiter error returning 503, unchanged 400/401/404, a failed send still returning `{ ok: true }`, and an emailed token that lands on `/callback` with `token_hash` and `next=/onboarding/show`. GET refuses a different email, another origin, a path that is not `/outreach/<token>`, and a bad outreach signature, and does not call `createUser`, `generateLink`, or the profiles insert. A match still sets the return cookie. `enforceMagicStart` sends the three buckets and fails closed.
 
@@ -2579,7 +2577,7 @@ Covers a mismatch with a body identical to the match and no send, case and white
 - `siteOrigin` uses the request host when `NEXT_PUBLIC_SITE_URL` is unset. Confirm that variable is set in production.
 - Magic links are reusable until they expire. Not single-use, so a scanner prefetch does not burn the link.
 - A show whose real inbox differs from the address the brand typed gets no link and no error. The brand resends to the right address.
-- SEC5 follow-up "magic/start sends to any address" was not in `S-A_FINDINGS.md` on main `2732ccd` (087 / SEC5 is not merged). SA-29 records it closed by SEC6. Marking `docs/jobs/SEC5.md` waits until PR 92 lands.
+- SEC5 follow-up "magic/start sends to any address" is closed by SEC6. SA-29 records it. `docs/jobs/SEC5.md` marks that follow-up closed by SEC6 (PR 93).
 - This PR does not merge. Paul reviews.
 
 

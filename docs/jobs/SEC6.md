@@ -75,4 +75,4 @@ Not in this PR.
 - `siteOrigin` falls back to the request host when `NEXT_PUBLIC_SITE_URL` is unset. Confirm it is set in production.
 - `docs/security/RATE_LIMITS.md` still says this route has no limit. That file is outside this job.
 
-SEC5 follow-up "magic/start sends to any address": closed by SEC6. The sentence was not in `docs/security/S-A_FINDINGS.md` on main `2732ccd` (087 / SEC5 is not merged). SA-29 records the close.
+SEC5 follow-up "magic/start sends to any address": closed by SEC6. SA-29 records the close. `docs/jobs/SEC5.md` marks that follow-up closed by SEC6 (PR 93).
