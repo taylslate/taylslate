@@ -158,6 +158,8 @@ export interface YoutubeLibraryStore {
   /** True when migration 076's email and quota tables are present. */
   yt2Ready(): Promise<boolean>;
   quotaLedger(): QuotaLedger;
+  /** Caption reserve for a Pacific day. Missing column or table is 0. */
+  aircheckReserve?(day: string): Promise<number>;
   enqueue(items: { kind: QueueKind; value: string; page_token?: string }[]): Promise<number>;
   pendingQueue(): Promise<QueueItem[]>;
   listQueue(): Promise<QueueItem[]>;
@@ -776,6 +778,23 @@ export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
     },
     quotaLedger() {
       return ledger;
+    },
+    async aircheckReserve(day) {
+      const { data, error } = await supabaseAdmin
+        .from("youtube_quota_days")
+        .select("aircheck_reserve")
+        .eq("pacific_day", day)
+        .maybeSingle();
+      if (error) {
+        const code = error.code ?? "";
+        const message = error.message ?? "";
+        if (code === "42703" || code === "42P01" || /\b42703\b|\b42P01\b/.test(message)) return 0;
+        return 1_800;
+      }
+      if (!data || data.aircheck_reserve == null) return 0;
+      const value = Number(data.aircheck_reserve);
+      if (!Number.isFinite(value) || value < 0) return 1_800;
+      return value;
     },
     async enqueue(items) {
       if (items.length === 0) return 0;

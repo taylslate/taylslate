@@ -12,6 +12,8 @@ import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { runAutomatedAirchecks } from "@/lib/airchecks/run";
 import { redactSecretParams } from "@/lib/discovery/redact-secrets";
+import { runYoutubeCaptionAirchecks } from "@/lib/youtube-oauth/feed";
+import type { YoutubeCaptionReport } from "@/lib/youtube-oauth/feed";
 
 export const maxDuration = 300;
 
@@ -36,9 +38,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  let youtube: YoutubeCaptionReport | { error: "unavailable" } = { error: "unavailable" };
+  try {
+    youtube = await runYoutubeCaptionAirchecks();
+  } catch (err) {
+    console.error("[aircheck] youtube failed", safeError(err));
+  }
+
   try {
     const result = await runAutomatedAirchecks();
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, youtube });
   } catch (err) {
     console.error("[aircheck] run failed", safeError(err));
     return NextResponse.json({ error: "airchecks failed" }, { status: 500 });

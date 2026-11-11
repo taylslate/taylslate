@@ -103,4 +103,84 @@ describe("Pacific YouTube quota day", () => {
     expect(done?.emailReserve).toBe(0);
     expect(done?.spendCap).toBe(7000);
   });
+
+  it("keeps today's spend caps when there is no aircheck reserve", async () => {
+    const store = createMemoryYoutubeStore();
+    await savePendingChannel(store);
+    expect(store.aircheckReserve).toBeUndefined();
+    const pull = await openLibraryQuota(store, new Date("2026-11-02T18:00:00.000Z"), "pull");
+    expect(pull?.cap).toBe(8000);
+    expect(pull?.spendCap).toBe(5000);
+    store.aircheckReserve = async () => 0;
+    const zero = await openLibraryQuota(store, new Date("2026-11-02T18:00:00.000Z"), "pull");
+    expect(zero?.cap).toBe(8000);
+    expect(zero?.spendCap).toBe(5000);
+  });
+
+  it("lowers the library cap when caption checks have reserved units", async () => {
+    const store = createMemoryYoutubeStore();
+    await savePendingChannel(store);
+    store.aircheckReserve = async () => 3000;
+    const pull = await openLibraryQuota(store, new Date("2026-11-02T18:00:00.000Z"), "pull");
+    expect(pull?.cap).toBe(6800);
+    expect(pull?.spendCap).toBe(3800);
+  });
+
+  it("uses 1,800 when the reserve read fails and keeps today's caps", async () => {
+    const store = createMemoryYoutubeStore();
+    await savePendingChannel(store);
+    store.aircheckReserve = async () => {
+      throw new Error("read failed");
+    };
+    const pull = await openLibraryQuota(store, new Date("2026-11-02T18:00:00.000Z"), "pull");
+    expect(pull?.cap).toBe(8000);
+    expect(pull?.emailReserve).toBe(2000);
+    expect(pull?.refreshReserve).toBe(1000);
+    expect(pull?.spendCap).toBe(5000);
+  });
+
+  it("respects an env cap above 8,000 after the reserve", async () => {
+    const store = createMemoryYoutubeStore();
+    await savePendingChannel(store);
+    store.aircheckReserve = async () => 1000;
+    const previous = process.env.YOUTUBE_DAILY_QUOTA_CAP;
+    process.env.YOUTUBE_DAILY_QUOTA_CAP = "9800";
+    try {
+      const pull = await openLibraryQuota(store, new Date("2026-11-02T18:00:00.000Z"), "pull");
+      expect(pull?.cap).toBe(8800);
+    } finally {
+      if (previous === undefined) delete process.env.YOUTUBE_DAILY_QUOTA_CAP;
+      else process.env.YOUTUBE_DAILY_QUOTA_CAP = previous;
+    }
+  });
 });
+
+async function savePendingChannel(store: ReturnType<typeof createMemoryYoutubeStore>) {
+  await store.saveChannel({
+    channel_id: "UCaaaaaaaaaaaaaaaaaaaaaa",
+    title: "Fit",
+    description: "ads@show.com",
+    thumbnail_url: null,
+    country: "US",
+    default_language: "en",
+    subscriber_count: 10,
+    video_count: 10,
+    total_view_count: 1000,
+    avg_recent_views: 100,
+    avg_views_method: "recent",
+    topic_categories: [],
+    keywords: [],
+    niche_tags: [],
+    niche_tags_version: 1,
+    tagged_at: "2026-11-02T00:00:00.000Z",
+    passed_market_filter: true,
+    brand_flag: null,
+    show_id: null,
+    source: "category",
+    source_query: "fitness",
+    first_seen_at: "2026-11-02T00:00:00.000Z",
+    stats_refreshed_at: "2026-11-02T00:00:00.000Z",
+    created_at: "2026-11-02T00:00:00.000Z",
+    updated_at: "2026-11-02T00:00:00.000Z",
+  });
+}

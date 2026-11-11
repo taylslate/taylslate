@@ -11,8 +11,16 @@ export const YOUTUBE_DAILY_QUOTA_CAP_DEFAULT = 8_000;
 export const YOUTUBE_REFRESH_QUOTA_RESERVE = 1_000;
 /** Video-description backfill units held aside while scans are pending. */
 export const YOUTUBE_EMAIL_BACKFILL_DAILY = 2_000;
+/**
+ * Shared project ceiling for the caption feed. The library hard cap is
+ * min(readDailyQuotaCap(), this minus the aircheck reserve), so caption
+ * checks keep `reserve` units after the library jobs.
+ */
+export const YOUTUBE_SHARED_CEILING = 9_800;
+/** Used when the reserve read fails for a reason other than a missing column. */
+export const YOUTUBE_AIRCHECK_RESERVE_FALLBACK = 1_800;
 
-export type QuotaJob = "pull" | "refresh" | "email_backfill";
+export type QuotaJob = "pull" | "refresh" | "email_backfill" | "aircheck_captions";
 
 export interface QuotaCommit {
   accepted: number;
@@ -40,6 +48,12 @@ export interface QuotaStore {
   yt2Ready(): Promise<boolean>;
   quotaLedger(): QuotaLedger;
   countUncheckedVideos(): Promise<number>;
+  /**
+   * Caption reserve for a Pacific day. No method means 0.
+   * A throw, or a non-finite value, means the fallback (1,800),
+   * which keeps today's 8,000 library cap.
+   */
+  aircheckReserve?(day: string): Promise<number>;
 }
 
 /** Pacific calendar day, YYYY-MM-DD. YouTube's quota resets at midnight PT. */
@@ -95,12 +109,36 @@ export function createMemoryQuotaLedger(): QuotaLedger & {
 }
 
 /**
+ * Library hard cap after the caption reserve. Reserve 0, or up to
+ * 1,800, leaves an 8,000 env cap unchanged. A read error uses 1,800
+ * for the same reason.
+ */
+export function libraryQuotaCap(reserve: number, daily = readDailyQuotaCap()): number {
+  const held = Number.isFinite(reserve) && reserve > 0 ? reserve : 0;
+  return Math.min(daily, Math.max(0, YOUTUBE_SHARED_CEILING - held));
+}
+
+async function readAircheckReserve(store: QuotaStore, day: string): Promise<number> {
+  if (!store.aircheckReserve) return 0;
+  try {
+    const raw = await store.aircheckReserve(day);
+    if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
+      return YOUTUBE_AIRCHECK_RESERVE_FALLBACK;
+    }
+    return raw;
+  } catch {
+    return YOUTUBE_AIRCHECK_RESERVE_FALLBACK;
+  }
+}
+
+/**
  * Open the shared ledger when migration 076 is present.
  * Returns null when the YT2 tables are not there yet.
  * Pull keeps 1,000 units for refresh, and 2,000 more while video
  * email scans are still pending. Refresh keeps the email reserve.
  * The email job may spend up to 2,000 units above the total it sees
- * at start, and never past the hard cap.
+ * at start, and never past the hard cap. The hard cap yields the
+ * caption reserve, down to min(the env cap, 9,800 - reserve).
  */
 export async function openLibraryQuota(
   store: QuotaStore,
@@ -108,8 +146,8 @@ export async function openLibraryQuota(
   job: QuotaJob
 ): Promise<QuotaSpend | null> {
   if (!(await store.yt2Ready())) return null;
-  const cap = readDailyQuotaCap();
   const day = pacificDay(now);
+  const cap = libraryQuotaCap(await readAircheckReserve(store, day));
   const ledger = store.quotaLedger();
   const unchecked = job === "email_backfill" ? 0 : await store.countUncheckedVideos();
   const emailReserve = unchecked > 0 ? Math.min(YOUTUBE_EMAIL_BACKFILL_DAILY, cap) : 0;

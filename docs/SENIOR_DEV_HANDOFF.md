@@ -2954,3 +2954,59 @@ Screenshots are the real review component (unchanged source) and the new queue, 
 - The queue is not linked from the admin dashboard or any existing screen.
 - No auto-confirm, auto-reject, or batch confirm. The cron still does not charge.
 - This PR does not merge. Paul reviews.
+
+## AC-YT: Creator YouTube connection for caption airchecks
+
+### What was built
+
+A show user can connect their own YouTube channel. For a booked YouTube spot on a deal where that user's `show_profiles.id` is `deals.show_profile_id` and the connected channel is the show's channel, the daily aircheck cron downloads the creator's caption track, judges it with `locateAdRead`, and stores the row through `saveAircheckRun` with provider `youtube-captions`. That is the exact string LRN-YT excludes from `lib/learning`. Raw YouTube Analytics (views, estimated minutes watched, average view duration, and the retention points around the ad read) go in `youtube_aircheck_metrics`. No derived score.
+
+One live connection per user. The partial unique index `youtube_oauth_connections_one_live_user` allows a single row in `active` or `reauth_required`. Switching channels retires the previous grant. The callback checks whether another user already holds the channel before that retire, so `channel_taken` leaves the working connection in place.
+
+Tokens are AES-256-GCM ciphertext in `youtube_oauth_connections`, which is service_role only. Disconnect revokes at Google, nulls both token columns, deletes metrics, and clears caption text and the excerpt. A daily OAuth refresh probe (no Data API quota) refreshes every active connection, including one verified yesterday. `invalid_grant` sets `status` to `reauth_required`, nulls `refresh_token_enc`, `access_token_enc`, and `access_token_expires_at`, sets `reauth_required_at`, and updates only a row that is still `active`. Reconnect clears `reauth_required_at`. Housekeeping deletes that connection, its metrics, and its captions 30 days after `reauth_required_at`. A revoked row is deleted after 7 days. Those caption clears skip a show profile that still has an active connection, so a retired row does not wipe the new channel's captions. Caption text is also purged from `created_at` 30 days after fetch, not `updated_at`. The code only reads. `youtube.force-ssl` is requested because captions.list and captions.download accept no narrower scope. Taylslate never uploads, edits, deletes, or posts.
+
+The analytics pass is separate from caption download. It loads transcribed `youtube-captions` rows with `airchecks.created_at` inside 16 days. A complete row, and a row outside the 48-hour to 14-day publish window, is skipped before `videos.list` and before a ledger unit. `videos.list` must return the connected `channelId` before `reports.query`. `reports.query` is not written to the Data API ledger.
+
+`www.taylslate.com` is the canonical host. Vercel 307s the bare domain to www at the domain level. `readYoutubeOauthConfig` rewrites an apex `NEXT_PUBLIC_SITE_URL` to www, so the redirect URI, the disconnect Origin check, and the callback cookie use www. `proxy.ts` does not redirect.
+
+`/settings/youtube` is a new show-only page. It is not linked from any existing screen. Consent copy says what is read, why, that staff review sponsor-read excerpts, that analytics values stay while the channel is connected, that the grant is checked every day, and how to disconnect here or at Google's permissions page. It links the YouTube Terms and the Google Privacy Policy. The button says Connect YouTube. When the daily check finds the grant has lapsed, the page says reconnect.
+
+The library quota cap becomes `min(daily cap, 9800 - aircheck_reserve)`. Caption checks commit with job `aircheck_captions` against 9,800. A missing reserve read stays at today's 8,000 cap. Analytics `reports.query` is not written to the Data API ledger.
+
+No live write. Migration 088 is in the PR and is not applied. Read-only precheck on `ldtmhafewfifdizgfrnn` (Nov 11, 2026): 0 YouTube IO lines, 0 airchecks, 14 shows with a channel id, 2 library channels linked to a show, no oauth tables, job check `pull` / `refresh` / `email_backfill`, max units 6693, no `aircheck_reserve` column. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. No existing screen, style, or animation was changed. No Vercel env change.
+
+`DEEPGRAM_API_KEY` is named in `.env.example` because this job owns that file.
+
+### Where
+
+- `supabase/migrations/088_youtube_oauth.sql` and `088_youtube_oauth.test.ts`
+- `lib/youtube-oauth/` (`config`, `crypto`, `google`, `store`, `captions`, `analytics`, `quota`, `limits`, `feed`, and their tests)
+- `lib/youtube-library/quota.ts`, `quota.test.ts`, and `store.ts` (the `aircheckReserve` read only)
+- `app/api/youtube/connect`, `callback`, `disconnect`, `status`
+- `app/api/cron/airchecks/route.ts` (the caption feed runs first, then the existing transcription run)
+- `app/(dashboard)/settings/youtube/page.tsx` and `youtube-connect-client.tsx`
+- `.env.example`
+- `docs/jobs/AC-YT.md`
+- `docs/integrations/youtube-oauth-verification.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 384 files, 3227 passed, 41 skipped.
+
+`npx next build` compiled successfully. `/settings/youtube` is dynamic.
+
+Covers encrypted token round trip, tampered ciphertext, the two OAuth scopes, PKCE, the secret staying out of the authorize URL, connect 401 / 403 / 503 / cookie flags / 429, callback state mismatch with no token exchange, encrypted storage, channel taken before any retire, a channel switch that retires the old row once, disconnect revoke and cross-origin refusal, status without token fields, a caption row the runner then skips, quota shortfall, the 403 attempt prefix, the daily probe refreshing a connection verified yesterday, `invalid_grant` reauth with both tokens nulled, complete and 20-day-old analytics rows skipped before `videos.list`, raw retention points around the ad, the 30-day text purge, an active connection keeping captions when a retired row is cleaned up, library caps with and without a reserve, and PGlite grants plus applying 088 twice.
+
+### Known gaps
+
+- Migration 088 is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. Until then the routes return unavailable and the feed skips.
+- Chris sets `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and `YOUTUBE_TOKEN_ENC_KEY` in Vercel Production. This PR does not change Vercel env. The console steps are in `docs/integrations/youtube-oauth-verification.md`.
+- Launch mode is Testing. Creators must reconnect every 7 days. This job sends no email. The settings page shows reconnect when the daily check finds the grant has lapsed.
+- LG2 (PR 97) was still open. The settings consent follows that draft. After it merges, match `/settings/youtube` to the final `/privacy` text.
+- `/settings/youtube` is not linked from show settings. That would edit an existing screen.
+- `share_with_brand` is stored. No brand sees captions or analytics. A connected channel is not show-ownership verification. The log event is `youtube.channel_connected` only.
+- Live discovery searches and the runner's YouTube lookups still do not commit to `youtube_quota_days`. A Google `quotaExceeded` stops the feed for the day.
+- Screenshots are the rendered settings page (not connected, and connected). A signed-in production session was not available here. This PR does not merge. Paul reviews.
