@@ -2722,7 +2722,7 @@ Route tests: the send response has no `pitch_url` and `outreach.token` is `""`; 
 
 External URLs are the link text and open in the same tab.
 
-Paul's review on PR 97 labeled the store, use, and visibility paragraphs ("What we store:", "Why we use it:", "Who can see it:"). Disconnect is at www.taylslate.com/settings/youtube. Disconnecting revokes Taylslate's access at Google and deletes the tokens right away, and the remaining Google data still goes within 7 days. A lapsed authorization that is not reconnected is deleted 30 days later. Results from Google data are not used in pooled anonymized data or to improve Taylslate for other users.
+Paul's review on PR 97 labeled the store, use, and visibility paragraphs ("What we store:", "Why we use it:", "Who can see it:"), with a lowercase word after each colon. Disconnect is at www.taylslate.com/settings/youtube. If you disconnect in Taylslate, we revoke our access at Google. Either way, we delete your tokens right away and the remaining Google data within 7 days. A lapsed authorization that is not reconnected is deleted 30 days later. Results from Google data are not used in pooled anonymized data or to improve Taylslate for other users.
 
 ### Where
 

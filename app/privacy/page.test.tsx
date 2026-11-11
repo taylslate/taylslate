@@ -93,8 +93,14 @@ describe("Privacy Policy page", () => {
       "If your authorization lapses and you do not reconnect, we delete your Google data 30 days later.",
     );
     expect(google).toContain(
+      "If you disconnect in Taylslate, we revoke our access at Google. Either way, we delete your tokens right away and the remaining Google data within 7 days.",
+    );
+    expect(google).not.toContain(
       "We revoke our access at Google and delete your tokens right away.",
     );
+    expect(google).toContain("What we store: your channel ID");
+    expect(google).toContain("Why we use it: only to check");
+    expect(google).toContain("Who can see it: you, and Taylslate staff");
     expect(google).toContain(
       "Results from Google data are not used in pooled anonymized data or to improve Taylslate for other users.",
     );

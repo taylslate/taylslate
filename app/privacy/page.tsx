@@ -70,7 +70,7 @@ export default function PrivacyPage() {
           your videos.
         </p>
         <p>
-          What we store: Your channel ID and title; the caption text for a
+          What we store: your channel ID and title; the caption text for a
           video that is tied to one of your Taylslate deals, and the part of
           it that contains the sponsor read; for those videos only, views,
           estimated minutes watched, average view duration and the audience
@@ -78,14 +78,14 @@ export default function PrivacyPage() {
           refresh tokens, encrypted.
         </p>
         <p>
-          Why we use it: Only to check that a booked sponsor read aired as
+          Why we use it: only to check that a booked sponsor read aired as
           agreed and to record delivery for that deal. We do not use Google
           user data for advertising, we do not sell it, and we do not use it
           to train AI models. Results from Google data are not used in pooled
           anonymized data or to improve Taylslate for other users.
         </p>
         <p>
-          Who can see it: You, and Taylslate staff who review a sponsor read.
+          Who can see it: you, and Taylslate staff who review a sponsor read.
           Brands do not see your captions or analytics. [CONFIRM WITH COUNSEL]
           Whether staff review needs its own line under Google&apos;s
           human-reading rules.
@@ -97,8 +97,8 @@ export default function PrivacyPage() {
           are kept while your channel stays connected, and we re-check your
           authorization at least every 30 days. If your authorization lapses
           and you do not reconnect, we delete your Google data 30 days later.
-          If you disconnect, or revoke access at Google, we revoke our access
-          at Google and delete your tokens right away, and the remaining Google
+          If you disconnect in Taylslate, we revoke our access at Google.
+          Either way, we delete your tokens right away and the remaining Google
           data within 7 days.
         </p>
         <p>
@@ -110,7 +110,7 @@ export default function PrivacyPage() {
           <LegalBodyLink href="https://security.google.com/settings/security/permissions">
             https://security.google.com/settings/security/permissions
           </LegalBodyLink>
-          . We revoke our access at Google and delete your tokens right away.
+          .
         </p>
         <p>
           Taylslate&apos;s use and transfer to any other app of information
