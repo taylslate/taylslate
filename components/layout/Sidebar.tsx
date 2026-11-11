@@ -109,12 +109,14 @@ export default function Sidebar({
   isAdmin,
   displayName,
   testAccounts,
+  assistantEnabled = false,
 }: {
   role: UserRole;
   canSwitchTo?: UserRole | null;
   isAdmin?: boolean;
   displayName?: string;
   testAccounts?: { key: string; label: string }[];
+  assistantEnabled?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -170,7 +172,7 @@ export default function Sidebar({
     }
   };
 
-  const navItems = getNavItemsForRole(role);
+  const navItems = getNavItemsForRole(role, { assistant: assistantEnabled });
   const primary = getPrimaryCtaForRole(role);
 
   const switchAdminView = async (mode: "brand" | "show" | "agent") => {

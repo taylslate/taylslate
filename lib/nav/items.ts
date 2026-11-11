@@ -33,11 +33,27 @@ const INVOICES: NavItem = { label: "Invoices", href: "/invoices", iconKey: "invo
 const SHOWS: NavItem = { label: "Shows", href: "/shows", iconKey: "shows" };
 const SETTINGS: NavItem = { label: "Settings", href: "/settings", iconKey: "settings" };
 const CRM: NavItem = { label: "CRM", href: "/crm", iconKey: "shows" };
+const SEARCH: NavItem = { label: "Search", href: "/shows/search", iconKey: "shows" };
+const TAY: NavItem = { label: "Tay", href: "/assistant", iconKey: "shows" };
 
-const BRAND_NAV: NavItem[] = [DASHBOARD, CAMPAIGNS, DEALS, CRM, { label: "Search", href: "/shows/search", iconKey: "shows" }, INVOICES, SETTINGS];
+const BRAND_NAV: NavItem[] = [DASHBOARD, CAMPAIGNS, DEALS, CRM, SEARCH, INVOICES, SETTINGS];
+const BRAND_NAV_WITH_TAY: NavItem[] = [
+  DASHBOARD,
+  CAMPAIGNS,
+  DEALS,
+  CRM,
+  SEARCH,
+  TAY,
+  INVOICES,
+  SETTINGS,
+];
 const SHOW_NAV: NavItem[] = [DASHBOARD, SHOWS, DEALS, INVOICES, SETTINGS];
 
-export function getNavItemsForRole(role: UserRole): NavItem[] {
+export function getNavItemsForRole(
+  role: UserRole,
+  options?: { assistant?: boolean }
+): NavItem[] {
+  if (role === "brand" && options?.assistant === true) return BRAND_NAV_WITH_TAY;
   if (role === "brand" || role === "agency") return BRAND_NAV;
   return SHOW_NAV;
 }

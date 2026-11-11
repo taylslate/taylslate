@@ -10,9 +10,9 @@ Booked means deal status `show_signed`, `delivering`, `signed`, `live`, or `comp
 
 Part 1. A podcast spot fetches that show's RSS and downloads the enclosure published inside the window, or the enclosure for the episode URL already on the line. A YouTube spot uses `YouTubeClient.recentUploadsStats` for that channel's recent long-form uploads, or `getVideo` when the line already names a video id. That is the same client the YouTube library uses. The library pull, the search catalog, and `youtube_pull_queue` are not called. The audio is written to a temp file and deleted when transcription finishes, including when transcription throws. The publisher URL is kept on `audio_url`. The file is not uploaded to storage.
 
-Transcription goes through `TranscriptProvider`. The first provider is OpenAI `whisper-1` (`lib/airchecks/openai-whisper.ts`). `OPENAI_API_KEY` is read from the environment. It is not set. The cron then returns 200 with `skipped: "missing_openai_api_key"` and writes nothing. An mp3 over 24MB is split on frame boundaries so each upload stays under Whisper's 25MB limit. A file that large that is not mp3 is stored as failed. Segments are `{ start_seconds, end_seconds, text }`.
+Transcription goes through `TranscriptProvider`. Deepgram Nova-3 (`lib/airchecks/deepgram.ts`) is used when `DEEPGRAM_API_KEY` is set. The request asks for utterances, so each segment still has a start and an end, and it sends `mip_opt_out=true` and `redact_usage=true`. Brand names, the promo code, and the brand URL host are keyterms (at most 20, each at most 60 characters). If that key is missing, `OPENAI_API_KEY` is set, and the date is before 2027-02-26T00:00:00Z, the runner uses whisper-1 (`lib/airchecks/openai-whisper.ts`) and logs the fallback. Otherwise the cron returns 200 with `skipped: "missing_transcription_api_key"` and writes nothing. An mp3 over 24MB is split on frame boundaries so each upload stays under 24MB. A file that large that is not mp3 is stored as failed. Segments are `{ start_seconds, end_seconds, text }`.
 
-Cost. whisper-1 is priced at $0.006 per minute in `WHISPER_USD_PER_MINUTE`. A 30-minute episode is $0.18. A 45-minute episode is $0.27. A 60-minute episode is $0.36. `AIRCHECK_RUN_COST_CAP_USD` defaults to $1 when unset, about 166 minutes, about three 45-minute episodes. `0` stops the run before any download. The next episode is skipped when its estimate would pass the cap. The log line is `[aircheck] line=... minutes=... estimated_cost_usd=... provider=openai-whisper`. The key and the transcript are not logged. The stored cost uses the duration Whisper returns. A guess from file size, at 128 kbps, is used only to decide whether to start.
+Cost. The cap and the stored estimate use the active provider's own rate. Deepgram Nova-3 with keyterms is $0.0056 per minute in `DEEPGRAM_USD_PER_MINUTE` ($0.0043 plus $0.0013). A 30-minute episode is $0.168. A 45-minute episode is $0.252. A 60-minute episode is $0.336. whisper-1 stays $0.006 per minute in `WHISPER_USD_PER_MINUTE` (30 minutes $0.18, 45 minutes $0.27, 60 minutes $0.36) and is priced only when that fallback is the provider. `AIRCHECK_RUN_COST_CAP_USD` defaults to $1 when unset. At the Deepgram rate that is about 178 minutes. `0` stops the run before any download. The next episode is skipped when its estimate would pass the cap. The log line is `[aircheck] line=... minutes=... estimated_cost_usd=... provider=...`. The key and the transcript are not logged. The stored cost uses the duration the provider returns. A guess from file size, at 128 kbps, is used only to decide whether to start.
 
 Part 2. The read is located from the brand name, `deals.promo_code`, the brand URL, and bullet lines in the outreach pitch. The IO has no talking-points column. The judgment checks placement (pre-roll, mid-roll, post-roll, by where the read starts in the episode) and approximate length (about 30s pre-roll, 60s mid-roll, 30s post-roll, counted when the measured span is between half and double that). Confidence is 0 to 1: brand 0.40, code or URL 0.30, placement 0.15, length 0.10, talking points 0.05. `ready_for_review` is set for `matched` and `not_matched`. A skipped row stays false. `review_decision` is not set. `io_line_items.verified` is not set. No payment row is written. The make-good hook is not called from this cron.
 
@@ -2750,3 +2750,139 @@ Signed-out before and after screenshots of `/privacy` and `/terms`.
 - Chris must approve every new sentence before merge. Merging is publishing. Legal copy: Chris must approve the text before merge.
 - The retention periods are the AC-YT periods. This copy does not promise a shorter one. AC-YT itself is not in this PR.
 - No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or send. This PR does not merge. Paul reviews.
+
+## CLEAN1: CSV catalog match, one API profile read, Tay nav link
+
+### What was built
+
+The legacy `/shows` import no longer inserts a second `shows` row when the catalog already has that show. `findCatalogDuplicates` matches a normalized name when the show is discoverable or owned by the caller, and matches a normalized feed against any show. A match is skipped. A new name still inserts one show and one pending `source` `import` link. The modal adds `data.shows` and closes. Skipped rows stay off the modal.
+
+`ApiAuthError` lives in `lib/api/errors.ts`. `plan-gate.ts` does not import `auth.ts`. `resolveApiRequest` reads `profiles` once (`id, role, plan`) and calls `assertProfileApiAccess` with that row. `assertBrandApiAccess` still reads, then calls the same rule. Outcomes are unchanged.
+
+Brand users whose profile role and effective role are both `brand` see Tay after Search and before Invoices. The item uses the existing link, icon, and active classes. The icon is the existing `shows` icon. Agency, show, agent, and view-as brand do not see it. No rendered "command agent" text was added, and none was found in `app` or `components` tsx.
+
+No migration. No live write. Precheck on `ldtmhafewfifdizgfrnn` (Nov 11, 2026, read only): 205 shows, 0 duplicate name keys, 0 import links, index `command_agent_conversations_one_turn_per_brand` present. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited.
+
+### Where
+
+- `lib/shows/import-catalog-match.ts` and `import-catalog-match.test.ts`
+- `lib/data/queries.ts` (`importShows` only) and `lib/data/roster-links.test.ts`
+- `app/api/shows/import/route.test.ts`
+- `app/(dashboard)/shows/shows-client.tsx` (the `onImported` argument) and `import-modal.test.tsx`
+- `lib/api/errors.ts`, `lib/api/auth.ts`, `lib/api/plan-gate.ts`, `lib/api/plan-gate.test.ts`, `lib/api/public-api.test.ts`
+- `lib/nav/items.ts`, `lib/nav/items.test.ts`
+- `components/layout/Sidebar.tsx`, `components/layout/Sidebar.test.tsx`
+- `app/(dashboard)/layout.tsx` (one prop)
+- `docs/jobs/CLEAN1.md`, `docs/jobs/A5.md`, `docs/jobs/A7.md`, `docs/jobs/CA1.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 360 files, 3079 passed, 41 skipped.
+
+`npx vitest run lib/shows lib/data/roster-links.test.ts app/api/shows lib/api lib/nav components/layout 'app/(dashboard)/shows'`: 31 files, 266 passed.
+
+`npx next build` compiled successfully and generated 142 static pages.
+
+Covers a discoverable normalized name, the caller's hidden show, another rep's hidden show, an http/https feed with a trailing slash, an empty set, a lookup error that does not log the show, a skipped catalog row with no insert, one insert for two normalized names in one file, the existing rollback, the import response counts and `skipped_names`, the modal closing on `{ imported: 2, shows: [a, b] }`, one profiles read, 401 before the plan check, 403 `plan_no_api_access` with no `last_used_at` and no `api_call` event, plan parity, Tay only for brand with the option, the same classes as Search, active on `/assistant`, and no rendered "command agent" text.
+
+### Known gaps
+
+- Pointing `/shows` at `/api/reps/roster/import` is still open (Q12 question 8). Chris decides.
+- SA-14 (no size or row cap, CSV formula cells) is a separate hardening job. The citation is `app/api/shows/import/route.ts:41`.
+- Skipped rows are not shown in the modal. Insert errors still include `showError.message`.
+- The legacy modal does not send `rss_url`, so a feed-only duplicate can still insert from that screen.
+- Name lookup is capped at 25 and feed lookup at 10. A full cap can miss a duplicate. This path does not fail closed on the cap.
+- Tay is not plan-gated. The icon is the shared `shows` icon.
+- CA1 claim race and the fallback usage test were already shipped in SEC2. Nothing changed there.
+- This PR does not merge. Paul reviews.
+
+## AC-TX: Deepgram Nova-3 for aircheck transcription
+
+### What was built
+
+The automated aircheck runner transcribes through Deepgram Nova-3 when `DEEPGRAM_API_KEY` is set. Utterances become timestamped segments, so `locateAdRead` still finds the ad start, checks placement and length, and the review screen is unchanged. The request sends `mip_opt_out=true` and `redact_usage=true`. Brand names, the promo code, and the brand URL host are keyterms, capped at 20 terms of 60 characters.
+
+If `DEEPGRAM_API_KEY` is missing, the runner uses whisper-1 only when `OPENAI_API_KEY` is set and the time is before `2027-02-26T00:00:00Z`, and it logs `[aircheck] provider=whisper-1 fallback (DEEPGRAM_API_KEY unset)` once per run. Otherwise it skips with `missing_transcription_api_key` and logs the reason. The cron route was not edited. It still returns the report with 200. A provider error on one spot stays on that spot.
+
+The cost cap and the stored `estimated_cost_usd` use the active provider's rate. Nova-3 with keyterms is $0.0056 per minute. whisper-1 stays $0.006 and is only priced when that fallback is selected. `openai-whisper.ts` was not edited.
+
+No migration. No live write. Read-only precheck on `ldtmhafewfifdizgfrnn` (Nov 11, 2026): 0 airchecks, no provider values, 0 booked lines with a post date in the last 14 days. `lib/stripe`, `lib/payouts`, `lib/billing`, and `plans.ts` were not edited. No screen, style, or animation was changed. No Vercel env change.
+
+### Where
+
+- `lib/airchecks/deepgram.ts` and `deepgram.test.ts`
+- `lib/airchecks/provider-select.ts` and `provider-select.test.ts`
+- `lib/airchecks/provider.ts` (`hints` on `TranscriptionAudio`)
+- `lib/airchecks/cost.ts` and `cost.test.ts` (`DEEPGRAM_USD_PER_MINUTE`, `estimateTranscriptCostUsd`)
+- `lib/airchecks/run.ts` and `run.test.ts` (provider choice, skip reason, cost lines, hints)
+- `docs/jobs/AC-TX.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (transcription and cost paragraphs, and this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 362 files, 3098 passed, 41 skipped.
+
+`npx vitest run lib/airchecks app/api/cron/airchecks app/api/admin/aircheck`: 18 files, 98 passed.
+
+`npx next build` compiled successfully and generated 142 static pages.
+
+Covers Nova-3 query params (`model`, `utterances`, `mip_opt_out`, `redact_usage`, one encoded keyterm per hint, capped at 20), the Token header, utterance segments, missing key with no fetch, redacted 4xx and 5xx, bad JSON, an empty transcript, and a timeout message that contains "timed out". Provider selection covers Deepgram when both keys are set, whisper before the shutdown, none on 2027-02-26, none with no keys, a whitespace key, and a throwing env. The runner skips with `missing_transcription_api_key` and fetches nothing when no key is set, logs and uses the whisper fallback when only `OPENAI_API_KEY` is set, keeps the next spot when one call throws, prices a 0.0056 provider inside a cap that 0.006 misses, passes hints, and still sums segment offsets across two split pieces.
+
+### Known gaps
+
+- `DEEPGRAM_API_KEY` is not set by this PR. Chris opens the Deepgram account, accepts the DPA, and sets the key in Vercel Production. Until then the cron skips, unless `OPENAI_API_KEY` is set before Feb 26, 2027.
+- `.env.example` is owned by AC-YT. This job does not add the key name there. `docs/jobs/AC-TX.md` lists `DEEPGRAM_API_KEY` as the one new env name.
+- After Feb 26, 2027: delete `openai-whisper.ts`, the `WHISPER_*` constants, and the Whisper name on the splitter. Keep the splitter.
+- `lib/airchecks/transcribe-audio.ts` (the admin step) still uses its own provider. It was not switched.
+- `AircheckRunReport.skipped` still includes the old `missing_openai_api_key` literal. The cron route test mocks that string. Nothing in the runner sets it now.
+- No page or component was edited. Screenshots are not applicable. This PR does not merge. Paul reviews.
+
+## STRIPE1: the charged line must belong to the deal
+
+### What was built
+
+`chargeForEpisode` now refuses to charge an `io_line_items` row unless that line's insertion order belongs to the deal passed in. A missing line (no row, or PostgREST `PGRST116`) throws `ChargeOwnershipError`. Any other line-read error logs only the error code and throws `Error("Charge lookup failed.")`. After the line loads (`id,gross_rate,io_id`) and before `loadBrandProfile`, it loads `insertion_orders` `id,deal_id` by `io_id`. `ChargeOwnershipError` (message `IO line item does not belong to this deal.`) is thrown when `io_id` is null, the insertion order is missing (no row, or PostgREST `PGRST116`), or `io.deal_id` is not `deal.id`. An insertion-order read error logs only `ioErr.code` and throws `Error("Charge lookup failed.")`. That message has no database text and no id. These throws happen before `customers.retrieve`, `paymentIntents.create`, and the payments insert.
+
+`findExistingPayment` stays first and unchanged. Amount math, fee, payment-method fallback, metadata, the payments row, the `23505` replay, and the idempotency key `pi:v3:{dealId}:{ioLineItemId}` are unchanged. The charged customer is still the deal's brand from `loadBrandProfile`. The input still does not supply a brand, customer, or amount.
+
+`POST /api/deals/[id]/charge-episode` catches `ChargeOwnershipError` and returns 404 `{ error: "IO line item not found" }` with no amount. A missing line gets that same body. The log is one line and does not include the foreign line's amount. A lookup failure is 502 `{ error: "Charge lookup failed." }`, with no database text and no id in the body. Other errors stay 502. The route still requires the session user to own `deals.brand_profile_id`, or to be an internal admin.
+
+No page or component was edited. Screenshots are not applicable. No migration. Nothing was written on `ldtmhafewfifdizgfrnn`. No Stripe call was made. `lib/payouts`, `lib/billing`, `lib/billing/plans.ts`, `lib/delivery/mark-delivered.ts`, and the rest of `lib/stripe` were not edited.
+
+Precheck (read only, Nov 11, 2026): payments 0, payments whose line belongs to another deal 0, insertion orders without a deal 0.
+
+### Where
+
+- `lib/stripe/payment-intent.ts` (`ChargeOwnershipError`, `IoLineItemRow.io_id`, the line select, and the ownership check)
+- `lib/stripe/payment-intent.test.ts`
+- `app/api/deals/[id]/charge-episode/route.ts` (map `ChargeOwnershipError` to 404 only)
+- `app/api/deals/[id]/charge-episode/route.test.ts`
+- `docs/jobs/STRIPE1.md`
+- `docs/security/S-A_FINDINGS.md` (SA-30)
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 358 files, 3069 passed, 41 skipped.
+
+`npx vitest run lib/stripe app/api/deals lib/delivery`: 15 files, 163 passed.
+
+`npx next build` compiled successfully and generated 142 pages.
+
+Existing charge cases still pass: $275 at 10%, $270 at 8%, $265 at 6%, the legacy default card, no card, no customer, the pre-check short-circuit, the pre-check error, the 23505 replay, and a non-23505 persist error. The happy path asserts `paymentIntents.create` once with today's params and idempotency key `pi:v3:deal_1:li_1`. New cases: another deal's insertion order, a null `io_id`, a missing insertion order, and a missing line (`PGRST116`) throw `ChargeOwnershipError` with no `customers.retrieve`, no `paymentIntents.create`, and no payments insert. An insertion-order read error and any other line-read error throw `Error("Charge lookup failed.")`, log only the error code, and do not call Stripe. That message does not contain the database text or the id. The route returns 404 `{ error: "IO line item not found" }` for `ChargeOwnershipError`. A lookup failure is 502 `{ error: "Charge lookup failed." }`, and that body does not contain the database text or the line id. A generic throw is still 502. The owning brand and admin cases are unchanged. `lib/delivery` has no test file. Review and admin mark-delivered tests mock the charge and passed with the full suite.
+
+### Known gaps
+
+- No database constraint ties `payments.deal_id` to the line's insertion order. A service-role insert outside `chargeForEpisode` could still write a mismatched pair. This job adds no migration.
+- `findExistingPayment` still returns before the ownership check. A mismatched row that already existed would short-circuit without a new charge. The precheck found none, and this path can no longer write one.
+- The deal load still throws `Deal ${id} not found: ${dealErr.message}`. The route copies that message into a 502. That line is outside this change. A later `lib/stripe` pass should log only the code and throw `Charge lookup failed.` there too.
+- `lib/delivery/mark-delivered.ts` already charges the line's own deal. It was not edited. A `ChargeOwnershipError` from that path still uses the existing delivery rollback.
+- SA-26 (Data API writes on `gross_rate` and deal columns) is migration 085, not this job.
+- No page or component was edited. Screenshots are not applicable. This PR does not merge. Paul reviews.
