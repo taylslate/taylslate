@@ -254,10 +254,12 @@ export async function chargeForEpisode(
     .select("id,gross_rate,io_id")
     .eq("id", input.ioLineItemId)
     .single<IoLineItemRow>();
-  if (liErr || !lineItem) {
-    throw new Error(
-      `IO line item ${input.ioLineItemId} not found: ${liErr?.message ?? "missing"}`
-    );
+  if (liErr && liErr.code !== "PGRST116") {
+    console.warn("[chargeForEpisode] line item lookup failed:", liErr.code ?? "unknown");
+    throw new Error("Charge lookup failed.");
+  }
+  if (!lineItem) {
+    throw new ChargeOwnershipError();
   }
 
   // The line's insertion order must belong to this deal. A missing IO,
@@ -272,9 +274,8 @@ export async function chargeForEpisode(
     .eq("id", lineItem.io_id)
     .single<{ id: string; deal_id: string | null }>();
   if (ioErr && ioErr.code !== "PGRST116") {
-    throw new Error(
-      `Failed to load insertion order ${lineItem.io_id} for deal ${deal.id}: ${ioErr.message}`
-    );
+    console.warn("[chargeForEpisode] insertion order lookup failed:", ioErr.code ?? "unknown");
+    throw new Error("Charge lookup failed.");
   }
   if (!io || io.deal_id !== deal.id) {
     throw new ChargeOwnershipError();

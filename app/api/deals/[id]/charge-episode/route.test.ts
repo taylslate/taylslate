@@ -151,6 +151,23 @@ describe("POST /api/deals/[id]/charge-episode", () => {
     errorSpy.mockRestore();
   });
 
+  it("returns 502 Charge lookup failed with no database text and no line id", async () => {
+    getAuthenticatedUser.mockResolvedValueOnce({ id: "u_owner", email: "brand@x.com" });
+    getWave12DealById.mockResolvedValueOnce({ id: "d1", brand_profile_id: "bp_owner" });
+    getBrandProfileByUserId.mockResolvedValueOnce({ id: "bp_owner" });
+    chargeForEpisode.mockRejectedValueOnce(new Error("Charge lookup failed."));
+    const res = await POST(
+      makeReq({ ioLineItemId: "io_foreign_9f3a" }) as never,
+      { params }
+    );
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Charge lookup failed." });
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain("db-secret-text");
+    expect(serialized).not.toContain("io_foreign_9f3a");
+  });
+
   it("returns 502 when chargeForEpisode throws", async () => {
     getAuthenticatedUser.mockResolvedValueOnce({ id: "u_owner", email: "brand@x.com" });
     getWave12DealById.mockResolvedValueOnce({ id: "d1", brand_profile_id: "bp_owner" });

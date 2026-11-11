@@ -59,7 +59,7 @@ That matches the Nov 11, 2026 expectation (0, 0, 0). Coding continued.
 
 `ChargeOwnershipError` is exported from `lib/stripe/payment-intent.ts`. Name `ChargeOwnershipError`. Message `IO line item does not belong to this deal.`
 
-The line select is `id,gross_rate,io_id`. Right after the line loads, and before `loadBrandProfile`, the helper loads `insertion_orders` `id,deal_id` by `line.io_id` with `supabaseAdmin`. It throws `ChargeOwnershipError` when `io_id` is null, the insertion order is missing (no row, or PostgREST `PGRST116`), or `io.deal_id` is not `deal.id`. A read error on that lookup throws a plain `Error` and does not call Stripe. Nothing before this point calls Stripe. `customers.retrieve` and `paymentIntents.create` stay later.
+The line select is `id,gross_rate,io_id`. A missing line (no row, or PostgREST `PGRST116`) throws `ChargeOwnershipError`, the same refusal as a foreign line. Any other line-read error logs only `liErr.code` and throws `Error("Charge lookup failed.")`. Right after the line loads, and before `loadBrandProfile`, the helper loads `insertion_orders` `id,deal_id` by `line.io_id` with `supabaseAdmin`. It throws `ChargeOwnershipError` when `io_id` is null, the insertion order is missing (no row, or PostgREST `PGRST116`), or `io.deal_id` is not `deal.id`. A read error on that lookup logs only `ioErr.code` and throws `Error("Charge lookup failed.")`. Neither message includes the database text or an id. Nothing before this point calls Stripe. `customers.retrieve` and `paymentIntents.create` stay later.
 
 `findExistingPayment` stays first and unchanged. It keys on `(deal, line)`. With this check a mismatched pair cannot get a payments row through `chargeForEpisode`. Live has none.
 
@@ -67,7 +67,7 @@ No other edit in `lib/stripe`. Amount math, fee, payment-method fallback, metada
 
 The charged customer is always the deal's brand from `loadBrandProfile`. The helper does not take a brand, customer, or amount from the input. Who may call is still the route: the session user owns `deals.brand_profile_id`, or `isInternalAdmin`. `lib/stripe` has no session.
 
-The charge-episode route catches `ChargeOwnershipError` before the generic 502 and returns 404 `{ error: "IO line item not found" }`. A foreign line and a missing parent insertion order get that same body, with no amount. The log is one line and does not include the foreign line's amount. Other errors stay 502.
+The charge-episode route catches `ChargeOwnershipError` before the generic 502 and returns 404 `{ error: "IO line item not found" }`. A foreign line, a missing line, and a missing parent insertion order get that same body, with no amount. The log is one line and does not include the foreign line's amount. A lookup failure is 502 `{ error: "Charge lookup failed." }`. That body has no database text and no id. Other errors stay 502.
 
 ## What did not change
 
@@ -83,6 +83,6 @@ Not in this PR.
 
 - There is still no database constraint that `payments.deal_id` equals the line's insertion order `deal_id`. A service-role insert outside `chargeForEpisode` could write a mismatched pair. This job adds no migration.
 - `findExistingPayment` still returns before the ownership check. A mismatched row that already existed would short-circuit. The precheck found none, and this path can no longer write one.
-- A line id that does not exist is still a plain `Error` and 502. Only the ownership failures (`null` `io_id`, missing insertion order, other deal) are 404.
+- The deal load at `chargeForEpisode` still puts `dealErr.message` in the thrown error, and the route still copies `err.message` into a 502. That line is outside this change. A later `lib/stripe` pass should log only the code and throw `Charge lookup failed.` there too.
 - `lib/delivery/mark-delivered.ts` already passes the line's own deal. It was not edited. If that charge throws `ChargeOwnershipError`, the existing rollback still runs.
 - SA-26 records the separate Data API write on `gross_rate`. That lock is migration 085, not this job.

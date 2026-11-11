@@ -479,8 +479,9 @@ describe("chargeForEpisode", () => {
   it("fails closed with a plain Error when the insertion order read errors, and does not call Stripe", async () => {
     supabaseTables.insertion_orders = {
       row: null,
-      error: { code: "XX000", message: "db down" },
+      error: { code: "XX000", message: "db-secret-text" },
     };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const err = await chargeForEpisode({
       dealId: "deal_1",
@@ -489,7 +490,59 @@ describe("chargeForEpisode", () => {
 
     expect(err).toBeInstanceOf(Error);
     expect(err).not.toBeInstanceOf(ChargeOwnershipError);
-    expect((err as Error).message).toMatch(/Failed to load insertion order/);
+    expect((err as Error).message).toBe("Charge lookup failed.");
+    expect((err as Error).message).not.toContain("db-secret-text");
+    expect((err as Error).message).not.toContain("io_1");
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[chargeForEpisode] insertion order lookup failed:",
+      "XX000"
+    );
+    expect(warnSpy.mock.calls.flat().join(" ")).not.toContain("db-secret-text");
+    expect(warnSpy.mock.calls.flat().join(" ")).not.toContain("io_1");
+    warnSpy.mockRestore();
+    expect(stripe.customers.retrieve).not.toHaveBeenCalled();
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    expect(supabaseAdmin._builders.payments_insert._inserted()).toBeNull();
+  });
+
+  it("rejects a missing line with ChargeOwnershipError and does not call Stripe or insert a payment", async () => {
+    supabaseTables.io_line_items = {
+      row: null,
+      error: { code: "PGRST116", message: "no rows" },
+    };
+
+    await expect(
+      chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_missing" })
+    ).rejects.toBeInstanceOf(ChargeOwnershipError);
+    expect(stripe.customers.retrieve).not.toHaveBeenCalled();
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    expect(supabaseAdmin._builders.payments_insert._inserted()).toBeNull();
+  });
+
+  it("fails closed with a fixed message when the line read errors", async () => {
+    supabaseTables.io_line_items = {
+      row: null,
+      error: { code: "XX000", message: "db-secret-text" },
+    };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const err = await chargeForEpisode({
+      dealId: "deal_1",
+      ioLineItemId: "li_foreign",
+    }).catch((caught: unknown) => caught);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ChargeOwnershipError);
+    expect((err as Error).message).toBe("Charge lookup failed.");
+    expect((err as Error).message).not.toContain("db-secret-text");
+    expect((err as Error).message).not.toContain("li_foreign");
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[chargeForEpisode] line item lookup failed:",
+      "XX000"
+    );
+    expect(warnSpy.mock.calls.flat().join(" ")).not.toContain("db-secret-text");
+    expect(warnSpy.mock.calls.flat().join(" ")).not.toContain("li_foreign");
+    warnSpy.mockRestore();
     expect(stripe.customers.retrieve).not.toHaveBeenCalled();
     expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
     expect(supabaseAdmin._builders.payments_insert._inserted()).toBeNull();
