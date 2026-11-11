@@ -3010,3 +3010,50 @@ Covers encrypted token round trip, tampered ciphertext, the two OAuth scopes, PK
 - `share_with_brand` is stored. No brand sees captions or analytics. A connected channel is not show-ownership verification. The log event is `youtube.channel_connected` only.
 - Live discovery searches and the runner's YouTube lookups still do not commit to `youtube_quota_days`. A Google `quotaExceeded` stops the feed for the day.
 - Screenshots are the rendered settings page (not connected, and connected). A signed-in production session was not available here. This PR does not merge. Paul reviews.
+
+## U1b
+
+### What was built
+
+A brand or agency search at `/shows/search` also lists matching YouTube creators from the L1 library. The creator must have passed the market filter, have no brand flag, have stats refreshed within 30 days (`statsFreshCutoff`, the YouTube III.E.4 stored-statistics window), and clear `channelPassesLibraryFloors`. A channel already linked by `youtube_channels.show_id` or `shows.youtube_channel_id` is dropped, so it does not appear twice next to its show row.
+
+The browser never queries `youtube_channels`. `lib/youtube-library/brand-read.ts` reads with `supabaseAdmin` and `SAFE_COLUMNS`, then returns a fixed public shape: channel id, title, thumbnail, country, subscribers, video count, average views, a recent or average label, niche tags, and a YouTube channel URL. The profile adds a description cut to 300 characters. No contact table, no source, no keywords, no brand flag, and no show id leave the server. There is no view and no migration. A `security definer` function for a later `/api/v1` read is described as migration 089 in `docs/jobs/U1b.md` and is not built.
+
+`GET /api/library/creators` is brand or agency only, rejects a query over 100 characters, and rate limits at 30 per minute and 1,000 per day per user. The limiter fails closed. The response is `Cache-Control: no-store`.
+
+`/shows/search/youtube/[channelId]` uses the same gate as the search page and calls `notFound()` when the channel is not eligible. It shows the public fields, a "View on YouTube" link, and "Channel data from YouTube". There is no outreach or add-to-campaign action. The existing show results, copy, 50-row cap, and CRM links are unchanged. A library error hides only the new group.
+
+Read-only precheck on `ldtmhafewfifdizgfrnn` (Nov 11, 2026): 5,442 passed with no brand flag, 2 library rows linked to a show, 14 shows with a channel id, 0 grants to anon, authenticated, or PUBLIC. No live write.
+
+### Where
+
+- `lib/youtube-library/brand-read.ts` and `brand-read.test.ts`
+- `app/api/library/creators/route.ts` and `route.test.ts`
+- `app/(dashboard)/shows/search/youtube/[channelId]/page.tsx` and `page.test.tsx`
+- `app/(dashboard)/shows/search/search-client.tsx` and `search-client.test.tsx`
+- `docs/jobs/U1b.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+`read.ts`, `store.ts`, `quota.ts`, `lib/nav`, `lib/security/rate-limit.ts`, `app/api/shows`, `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 387 files, 3262 passed, 41 skipped.
+
+`npx vitest run lib/youtube-library/brand-read.test.ts app/api/library 'app/(dashboard)/shows/search'`: 4 files, 47 passed.
+
+`npx next build` compiled successfully and generated 147 pages. `/shows/search`, `/shows/search/youtube/[channelId]`, and `/api/library/creators` are dynamic.
+
+Covers the allowlist, every exclusion (market filter, brand flag, 31-day stats, both floors, both link directions), wildcard escaping, the 20-row cap, a missing table, a bad channel id with no query, route 401 / 403 / 400 / 429 / 503 / 200 with exact keys and `no-store`, the profile gate and attribution, and a library failure that leaves the show list in place. No live write.
+
+Screenshots are the search page before the new group, the same page after, and the new profile. They use the production stylesheet. A signed-in session was not available, so the shots render the page markup rather than a live login.
+
+### Known gaps
+
+- The profile is read-only. There is no outreach, contact, or add-to-campaign action.
+- Title search is `ilike` only. The database page is 20 rows before the floor check and the show-link drop, so fewer than 20 can come back.
+- Migration 089 is not written. No view, policy, or grant. Apply nothing on `ldtmhafewfifdizgfrnn` for this job.
+- The Search nav item was not changed.
+- This PR does not merge. Paul reviews.
