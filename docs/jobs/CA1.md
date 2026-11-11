@@ -50,7 +50,7 @@ Name: Tay. Confirmed. Shown on the `/assistant` heading and empty state, in the 
 ## Known gaps
 
 - 083 is applied on `ldtmhafewfifdizgfrnn` at version 20261111004339 (Nov 11, 2026 UTC). Tay can insert pending rows. 084 is not applied. Merge first, then apply 084 any time after Chris names it.
-- `/assistant` is not in the nav. Adding it changes an existing screen, so it waits for a follow-up.
+- Tay is in the brand nav (CLEAN1).
 - There is no 90-day purge.
 - An API caller who deliberately reuses a `ca:{message id}:{n}` idempotency key can collide with Tay on the shared unique key. The API path was not changed.
 - A crashed turn keeps `turn_started_at` set until 120 seconds pass, and that fresh lock blocks every conversation for the brand. After 084, that lock is also the only non-null `turn_started_at` for the brand.

@@ -81,6 +81,11 @@ beforeEach(() => {
 });
 
 describe("assertBrandApiAccess", () => {
+  it("does not import auth.ts", () => {
+    const source = readFileSync(join(ROOT, "lib/api/plan-gate.ts"), "utf8");
+    expect(source).not.toMatch(/from ["']@\/lib\/api\/auth["']/);
+  });
+
   it("allows operator and agency brands", async () => {
     profile("brand", "operator");
     await expect(assertBrandApiAccess(BRAND)).resolves.toBeUndefined();

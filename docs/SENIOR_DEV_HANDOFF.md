@@ -2709,3 +2709,51 @@ Route tests: the send response has no `pitch_url` and `outreach.token` is `""`; 
 - `POST /api/auth/magic/start` still sends a magic link to any address for any valid outreach token. Behavior review, not this job.
 - `app/api/admin/seed-outreach/route.test.ts` is outside the Owns list. Only the token-persist assertion and the `single()` queue changed.
 - This PR does not merge. Paul reviews.
+
+## CLEAN1: CSV catalog match, one API profile read, Tay nav link
+
+### What was built
+
+The legacy `/shows` import no longer inserts a second `shows` row when the catalog already has that show. `findCatalogDuplicates` matches a normalized name when the show is discoverable or owned by the caller, and matches a normalized feed against any show. A match is skipped. A new name still inserts one show and one pending `source` `import` link. The modal adds `data.shows` and closes. Skipped rows stay off the modal.
+
+`ApiAuthError` lives in `lib/api/errors.ts`. `plan-gate.ts` does not import `auth.ts`. `resolveApiRequest` reads `profiles` once (`id, role, plan`) and calls `assertProfileApiAccess` with that row. `assertBrandApiAccess` still reads, then calls the same rule. Outcomes are unchanged.
+
+Brand users whose profile role and effective role are both `brand` see Tay after Search and before Invoices. The item uses the existing link, icon, and active classes. The icon is the existing `shows` icon. Agency, show, agent, and view-as brand do not see it. No rendered "command agent" text was added, and none was found in `app` or `components` tsx.
+
+No migration. No live write. Precheck on `ldtmhafewfifdizgfrnn` (Nov 11, 2026, read only): 205 shows, 0 duplicate name keys, 0 import links, index `command_agent_conversations_one_turn_per_brand` present. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited.
+
+### Where
+
+- `lib/shows/import-catalog-match.ts` and `import-catalog-match.test.ts`
+- `lib/data/queries.ts` (`importShows` only) and `lib/data/roster-links.test.ts`
+- `app/api/shows/import/route.test.ts`
+- `app/(dashboard)/shows/shows-client.tsx` (the `onImported` argument) and `import-modal.test.tsx`
+- `lib/api/errors.ts`, `lib/api/auth.ts`, `lib/api/plan-gate.ts`, `lib/api/plan-gate.test.ts`, `lib/api/public-api.test.ts`
+- `lib/nav/items.ts`, `lib/nav/items.test.ts`
+- `components/layout/Sidebar.tsx`, `components/layout/Sidebar.test.tsx`
+- `app/(dashboard)/layout.tsx` (one prop)
+- `docs/jobs/CLEAN1.md`, `docs/jobs/A5.md`, `docs/jobs/A7.md`, `docs/jobs/CA1.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 360 files, 3079 passed, 41 skipped.
+
+`npx vitest run lib/shows lib/data/roster-links.test.ts app/api/shows lib/api lib/nav components/layout 'app/(dashboard)/shows'`: 31 files, 266 passed.
+
+`npx next build` compiled successfully and generated 142 static pages.
+
+Covers a discoverable normalized name, the caller's hidden show, another rep's hidden show, an http/https feed with a trailing slash, an empty set, a lookup error that does not log the show, a skipped catalog row with no insert, one insert for two normalized names in one file, the existing rollback, the import response counts and `skipped_names`, the modal closing on `{ imported: 2, shows: [a, b] }`, one profiles read, 401 before the plan check, 403 `plan_no_api_access` with no `last_used_at` and no `api_call` event, plan parity, Tay only for brand with the option, the same classes as Search, active on `/assistant`, and no rendered "command agent" text.
+
+### Known gaps
+
+- Pointing `/shows` at `/api/reps/roster/import` is still open (Q12 question 8). Chris decides.
+- SA-14 (no size or row cap, CSV formula cells) is a separate hardening job. The citation is `app/api/shows/import/route.ts:41`.
+- Skipped rows are not shown in the modal. Insert errors still include `showError.message`.
+- The legacy modal does not send `rss_url`, so a feed-only duplicate can still insert from that screen.
+- Name lookup is capped at 25 and feed lookup at 10. A full cap can miss a duplicate. This path does not fail closed on the cap.
+- Tay is not plan-gated. The icon is the shared `shows` icon.
+- CA1 claim race and the fallback usage test were already shipped in SEC2. Nothing changed there.
+- This PR does not merge. Paul reviews.

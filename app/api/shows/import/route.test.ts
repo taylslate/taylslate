@@ -71,4 +71,23 @@ describe("POST /api/shows/import", () => {
     expect(admin.status).toBe(200);
     expect(importShows).toHaveBeenCalledTimes(2);
   });
+
+  it("returns imported as a count and lists a duplicate in skipped_names", async () => {
+    getUserProfile.mockResolvedValue({ role: "agent", email: "rep@taylslate.com" });
+    importShows.mockResolvedValue({
+      imported: [{ id: "show-1", name: "Night Desk" }],
+      skipped: ["The Daily Podcast"],
+      errors: ["Broken: insert failed"],
+    });
+    const res = await call();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      imported: 1,
+      skipped: 1,
+      errors: 1,
+      shows: [{ id: "show-1", name: "Night Desk" }],
+      skipped_names: ["The Daily Podcast"],
+      error_messages: ["Broken: insert failed"],
+    });
+  });
 });

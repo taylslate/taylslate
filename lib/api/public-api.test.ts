@@ -216,13 +216,17 @@ describe("api request resolver", () => {
     const created = await createKey({ brandId: BRAND, scopes: ["read"] });
     admin.profiles.length = 0;
     bridge.recordEvent.mockClear();
+    const gate = await import("@/lib/api/plan-gate");
+    const planCheck = vi.spyOn(gate, "assertProfileApiAccess");
 
     await expect(resolveApiRequest(request(created.secret))).rejects.toMatchObject({
       status: 401,
       message: "API key is not tied to a user.",
     });
+    expect(planCheck).not.toHaveBeenCalled();
     expect(admin.keys[0].last_used_at).toBeNull();
     expect(bridge.recordEvent).not.toHaveBeenCalled();
+    planCheck.mockRestore();
 
     admin.keys[0].brand_id = "not-a-user";
     admin.profiles.push({ id: BRAND });
@@ -230,6 +234,72 @@ describe("api request resolver", () => {
       status: 401,
       message: "API key is not tied to a user.",
     });
+  });
+
+  it("reads profiles once per resolved request", async () => {
+    const created = await createKey({ brandId: BRAND, scopes: ["read"] });
+    const before = admin.selects.length;
+    let profileReads = 0;
+    const original = admin.from;
+    admin.from = (table: string) => {
+      if (table === "profiles") profileReads += 1;
+      return original(table);
+    };
+    await resolveApiRequest(request(created.secret));
+    expect(profileReads).toBe(1);
+    expect(admin.selects.slice(before).filter((columns) => columns.includes("role"))).toEqual([
+      "id, role, plan",
+    ]);
+  });
+
+  it("denies a plan before last_used_at and before the api_call event", async () => {
+    admin.profiles[0].plan = "pay_as_you_go";
+    const created = await createKey({ brandId: BRAND, scopes: ["read"] });
+    bridge.recordEvent.mockClear();
+    const gate = await import("@/lib/api/plan-gate");
+    const planCheck = vi.spyOn(gate, "assertProfileApiAccess");
+    await expect(resolveApiRequest(request(created.secret))).rejects.toMatchObject({
+      status: 403,
+      code: "plan_no_api_access",
+      message: "Your plan does not include API access.",
+    });
+    expect(planCheck).toHaveBeenCalledTimes(1);
+    expect(admin.keys[0].last_used_at).toBeNull();
+    expect(bridge.recordEvent).not.toHaveBeenCalled();
+    planCheck.mockRestore();
+  });
+
+  it("throws a plain Error when the profile read fails", async () => {
+    const created = await createKey({ brandId: BRAND, scopes: ["read"] });
+    bridge.recordEvent.mockClear();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const original = admin.from;
+    admin.from = (table: string) => {
+      if (table !== "profiles") return original(table);
+      const builder = {
+        select() {
+          return builder;
+        },
+        eq() {
+          return builder;
+        },
+        maybeSingle: async () => ({
+          data: null,
+          error: { code: "57014", message: "show-9f3c secret-name" },
+        }),
+      };
+      return builder as unknown as ReturnType<MemoryAdmin["from"]>;
+    };
+    const err = await resolveApiRequest(request(created.secret)).catch(
+      (failure: unknown) => failure
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ApiAuthError);
+    expect((err as Error).message).toBe("API key lookup failed.");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("secret-name");
+    expect(admin.keys[0].last_used_at).toBeNull();
+    expect(bridge.recordEvent).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("requires the named scope", async () => {
