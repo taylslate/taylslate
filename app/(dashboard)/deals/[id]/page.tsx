@@ -16,6 +16,7 @@ import { listMakeGoodsFailSoft } from "@/lib/make-goods/propose";
 import { buildTrackingLink } from "@/lib/io/tracking-link";
 import { buildShowNotesBlurb } from "@/lib/io/show-notes";
 import { computeApplicationFeeCents } from "@/lib/stripe/payment-intent";
+import { getDealSetupSecret } from "@/lib/deals/payment-secrets";
 import type { BrandProfile, ShowProfile } from "@/lib/data/types";
 
 interface PageProps {
@@ -126,7 +127,7 @@ export default async function DealDetailPage({ params }: PageProps) {
     const makeGoods = await listMakeGoodsFailSoft(wave12.id);
     return (
       <Wave12DealClient
-        deal={wave12}
+        deal={{ ...wave12, setup_intent_client_secret: ownsAsBrand ? await getDealSetupSecret(wave12.id) : null }}
         showName={showName}
         brandName={brandName}
         viewerRole={ownsAsBrand ? "brand" : "show"}

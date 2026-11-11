@@ -2529,7 +2529,6 @@ PGlite covers two parallel claims on one brand with 084, the same case with migr
 - The two youtube route tests above are outside the Owns list. Only the source assertion changed.
 - No page or component was edited. This PR does not merge. Paul reviews.
 
-
 ## SEC3
 
 ### What was built
@@ -2566,3 +2565,48 @@ The PGlite suite loads on-disk migrations through 085 (059, 062, 063, 064, and 0
 - `chargeForEpisode` loads `io_line_items.gross_rate` by line id and does not check that the line belongs to the deal (`lib/stripe/payment-intent.ts:240-244`). Needs Chris's OK before a code change.
 - The legacy IO page's generate path uses the user client. On a DocuSign-flow deal that insert now fails. That default was accepted. The service-role create in `persistIoForDeal` is unchanged.
 - Invoices page and IO form: Generate invoice (POST /api/invoices/generate, createInvoiceFromIO, which inserts with the user client at lib/data/queries.ts:462) now fails on a DocuSign-flow deal. app/(dashboard)/invoices/page.tsx:100-124 offers it for any live or completed deal whose IO has a verified or posted line, and Wave12 deals reach live and completed. createInvoice returns null on the 42501, so the route answers 400 'No delivered line items found', which is misleading. Default: accept. DocuSign deals are charged per episode through Stripe, and no DocuSign invoice exists live (0 invoices). If Chris wants invoices on DocuSign deals, a follow-up job moves that insert to the service client behind a party check.
+
+## SEC4: card-setup client secret off deals
+
+### What was built
+
+`deals.setup_intent_client_secret` is a confirmable Stripe credential, and every deals SELECT policy returns it. It now lives on `deal_payment_secrets`, which is service_role only. RLS is on. There are no policies. Anon, public, and authenticated have nothing on the table, including truncate, references, and trigger.
+
+`getDealSetupSecret` and `saveDealSetupSecret` are the only server read and write. Both fail soft when the table is missing, which is the state until 086 is applied. They log a fixed outcome line and never log the secret or the driver error.
+
+The DocuSign webhook and `POST /api/deals/[id]/setup-intent` write `setup_intent_id` on deals and the secret on `deal_payment_secrets`. A failed secret save still returns the client secret to the brand. The deal page passes the stored secret only when the viewer owns the deal as the brand. The show viewer gets null. `Wave12DealClient` was not edited. It already POSTs the setup-intent route when the prop is null.
+
+086 is not applied. Nothing was written on `ldtmhafewfifdizgfrnn`. Read-only precheck on Nov 11, 2026: 0 deals, 0 secrets, `deal_payment_secrets` does not exist, and the three deals SELECT policies are unchanged.
+
+085 (SEC3, PR 90) grants deals INSERT on the legacy column list. That list does not include `setup_intent_client_secret`. 086 does not change deals grants. Either apply order works. If a later 085 draft adds the column to the GRANT, that draft has to drop the name, or the GRANT fails after 086. This PR does not edit 085.
+
+### Where
+
+- `supabase/migrations/086_deal_payment_secrets.sql` and `086_deal_payment_secrets.test.ts`
+- `lib/deals/payment-secrets.ts` and `payment-secrets.test.ts`
+- `app/api/deals/[id]/setup-intent/route.ts` and `route.test.ts`
+- `app/api/webhooks/docusign/route.ts` (the SetupIntent persist block) and `route.test.ts`
+- `app/(dashboard)/deals/[id]/page.tsx` (the `deal` prop only) and `page.test.tsx`
+- `docs/jobs/SEC4.md`
+- `docs/security/S-A_FINDINGS.md` (SA-27, after SA-26)
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+`page.test.tsx` is outside the Owns list. No deal page test existed. `STATUS.md` was reverted. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, `plans.ts`, `lib/data/types.ts`, `lib/data/queries.ts`, and `components/deals/Wave12DealClient.tsx` were not edited.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+PGlite covers the backfill, a second apply, 42703 on the dropped column, permission denied for the brand owner, the show owner, and anon, a deals `select *` with no secret column, service_role insert, upsert, and select, RLS with zero policies, service_role-only grants, and cascade on deal delete. A minimal database grants INSERT on another column and on the secret, then applies 086: the other grant remains, and a GRANT that names the dropped column fails. The full schema then grants 085's exact legacy list and inserts as the brand. Reapplying 086 leaves that grant working.
+
+The helper test checks that a missing-table error returns null or false and that the log never contains the secret. The route tests keep the old response bodies. A failed secret save is still 200. A non-brand caller is still 403. The page test checks the show and brand props. `Wave12DealClient.test.tsx` was not edited and passes.
+
+`npx vitest run`: 353 files, 3015 passed, 41 skipped. `npx next build` compiled successfully and generated 142 static pages. `/deals/[id]` stays dynamic.
+
+### Known gaps
+
+- 086 is not applied. Merge first, then apply it after Chris names it. Do not apply it before this code is live. Until it is applied, `GET /api/deals` and `GET /api/deals/[id]` can still return the column through `select *`. The precheck found no stored secret. The show viewer's page payload is null either way.
+- `outreaches.token` is still readable by the sending brand, including through `GET /api/deals/[id]`. That is a separate job, plus SEC3's write lock.
+- The page and `GET /api/deals/[id]` still send `setup_intent_id`, `payment_method_id`, and `docusign_envelope_id` to the show viewer. Those are ids. The show does not use them.
+- `app/api/admin/seed-deal/route.ts:529` mentions a `deal_setup_intents` table that does not exist.
+- No page markup changed. Screenshots are not applicable. This PR does not merge. Paul reviews.

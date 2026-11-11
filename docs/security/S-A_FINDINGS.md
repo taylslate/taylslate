@@ -550,6 +550,10 @@ Status: fixed by S-K for `GET /api/shows`, `GET /api/shows/[id]`, `GET /api/v1/s
 
 Status: written, not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
 
+**SA-27. A show can read the brand's SetupIntent client secret.** `deals.setup_intent_client_secret` (migration 018) and the three deals SELECT policies in section 1. `stripe.confirmCardSetup` accepts that value with the publishable key. Authenticated has table SELECT, so a signed-in show, rep, agency, or brand who can read the deal also receives the secret from `GET /api/deals`, `GET /api/deals/[id]`, and the deal page payload. Fix: store it on `deal_payment_secrets` (service_role only, RLS on, no policies) and stop writing it on `deals`. The brand card form still uses `POST /api/deals/[id]/setup-intent`. Lane: SEC4.
+
+Status: code is in the SEC4 PR. Migration 086 is not applied. Read-only precheck on `ldtmhafewfifdizgfrnn` (Nov 11, 2026): 0 deals, 0 secrets, `deal_payment_secrets` does not exist. Until 086 is applied, `select *` on deals still returns the column. Nothing is stored in it.
+
 ## What this pass did not do
 
 No exploit was sent against production. Policies and grants were read, not probed with a user JWT. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were read and not edited. Screenshot proof does not apply: no page or component was changed.

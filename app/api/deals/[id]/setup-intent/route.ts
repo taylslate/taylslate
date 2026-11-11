@@ -4,13 +4,13 @@
 // The AUTHORITATIVE creation path is the DocuSign Connect webhook, which
 // provisions a SetupIntent server-side the moment the brand signs
 // (lib/docusign webhook → provisionBrandSetupIntent). That is best-effort: if
-// Stripe was unreachable at signature time, deals.setup_intent_client_secret
+// Stripe was unreachable at signature time, the stored client secret
 // stays null and the brand UI would otherwise dead-end. This route lets the
 // brand UI (re)obtain a client secret without a second signature:
 //
 //   - reuse the existing SetupIntent when it's still open
 //     (requires_payment_method / requires_confirmation / requires_action /
-//     processing), keeping deals.setup_intent_client_secret in sync;
+//     processing), keeping the service-only secret in sync;
 //   - backfill payment_method_id if the SetupIntent already succeeded but the
 //     webhook lagged;
 //   - otherwise create a fresh SetupIntent (metadata { profile_id, deal_id },
@@ -29,6 +29,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe } from "@/lib/stripe/server";
 import { createSetupIntentForBrand } from "@/lib/stripe/setup-intent";
 import { logEvent } from "@/lib/data/events";
+import { getDealSetupSecret, saveDealSetupSecret } from "@/lib/deals/payment-secrets";
 import { rejectSwitchedViewMoneyAction } from "@/lib/admin/view-guard";
 
 export const runtime = "nodejs";
@@ -104,11 +105,9 @@ export async function POST(
         }
         return NextResponse.json({ status: "already_saved", payment_method_id: pmId });
       } else if (existing.client_secret && REUSABLE_STATUSES.has(existing.status)) {
-        if (deal.setup_intent_client_secret !== existing.client_secret) {
-          await supabaseAdmin
-            .from("deals")
-            .update({ setup_intent_client_secret: existing.client_secret })
-            .eq("id", deal.id);
+        const stored = await getDealSetupSecret(deal.id);
+        if (stored !== existing.client_secret) {
+          await saveDealSetupSecret(deal.id, existing.client_secret);
         }
         return NextResponse.json({
           status: "reused",
@@ -157,7 +156,6 @@ export async function POST(
       .from("deals")
       .update({
         setup_intent_id: result.setupIntentId,
-        setup_intent_client_secret: result.clientSecret,
       })
       .eq("id", deal.id);
     if (updErr) {
@@ -166,6 +164,9 @@ export async function POST(
         { status: 500 }
       );
     }
+    // A failed secret save must not fail the response. The body already
+    // returns client_secret, and a later reuse reads it from Stripe.
+    await saveDealSetupSecret(deal.id, result.clientSecret);
     await logEvent({
       eventType: "deal.setup_intent_created",
       entityType: "deal",
