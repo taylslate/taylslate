@@ -17,6 +17,8 @@ const {
   logEvent,
   stripe,
   supabaseAdmin,
+  getDealSetupSecret,
+  saveDealSetupSecret,
 } = vi.hoisted(() => {
   const builders: Record<string, Builder> = {};
   function makeBuilder(): Builder {
@@ -49,6 +51,8 @@ const {
     createSetupIntentForBrand: vi.fn(),
     logEvent: vi.fn().mockResolvedValue(null),
     stripe: { setupIntents: { retrieve: vi.fn() } },
+    getDealSetupSecret: vi.fn(),
+    saveDealSetupSecret: vi.fn(),
     supabaseAdmin: {
       from: vi.fn((table: string) => {
         if (!builders[table]) builders[table] = makeBuilder();
@@ -70,6 +74,10 @@ vi.mock("@/lib/stripe/setup-intent", () => ({
   createSetupIntentForBrand: (...a: unknown[]) => createSetupIntentForBrand(...a),
 }));
 vi.mock("@/lib/data/events", () => ({ logEvent: (...a: unknown[]) => logEvent(...a) }));
+vi.mock("@/lib/deals/payment-secrets", () => ({
+  getDealSetupSecret: (...a: unknown[]) => getDealSetupSecret(...a),
+  saveDealSetupSecret: (...a: unknown[]) => saveDealSetupSecret(...a),
+}));
 
 import { POST } from "./route";
 
@@ -92,6 +100,8 @@ function signedDeal(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getDealSetupSecret.mockResolvedValue(null);
+  saveDealSetupSecret.mockResolvedValue(true);
   for (const k of Object.keys(supabaseAdmin._builders)) delete supabaseAdmin._builders[k];
 });
 
@@ -116,6 +126,7 @@ describe("POST /api/deals/[id]/setup-intent", () => {
     const res = await POST(req() as never, { params });
     expect(res.status).toBe(403);
     expect(createSetupIntentForBrand).not.toHaveBeenCalled();
+    expect(saveDealSetupSecret).not.toHaveBeenCalled();
   });
 
   it("409 — an unsigned IO cannot create a SetupIntent", async () => {
@@ -141,8 +152,9 @@ describe("POST /api/deals/[id]/setup-intent", () => {
   it("reuses an existing open SetupIntent instead of minting a new one", async () => {
     getAuthenticatedUser.mockResolvedValueOnce({ id: "u1", email: "b@x.com" });
     getWave12DealById.mockResolvedValueOnce(
-      signedDeal({ setup_intent_id: "seti_1", setup_intent_client_secret: "old_secret" })
+      signedDeal({ setup_intent_id: "seti_1", setup_intent_client_secret: "stale_column_value" })
     );
+    getDealSetupSecret.mockResolvedValueOnce("old_secret");
     getBrandProfileByUserId.mockResolvedValueOnce({ id: "bp_1" });
     stripe.setupIntents.retrieve.mockResolvedValueOnce({
       id: "seti_1",
@@ -156,10 +168,10 @@ describe("POST /api/deals/[id]/setup-intent", () => {
     expect(body.status).toBe("reused");
     expect(body.client_secret).toBe("seti_1_secret_new");
     expect(createSetupIntentForBrand).not.toHaveBeenCalled();
-    // Re-synced the drifted client secret onto the deal.
-    expect(supabaseAdmin._builders.deals._updates).toContainEqual({
-      setup_intent_client_secret: "seti_1_secret_new",
-    });
+    expect(saveDealSetupSecret).toHaveBeenCalledWith("deal_1", "seti_1_secret_new");
+    const dealUpdates = supabaseAdmin._builders.deals?._updates ?? [];
+    expect(dealUpdates).toEqual([]);
+    expect(JSON.stringify(dealUpdates)).not.toContain("seti_1_secret_new");
   });
 
   it("backfills payment_method_id when the existing SetupIntent already succeeded", async () => {
@@ -210,8 +222,11 @@ describe("POST /api/deals/[id]/setup-intent", () => {
     );
     expect(supabaseAdmin._builders.deals._updates).toContainEqual({
       setup_intent_id: "seti_new",
-      setup_intent_client_secret: "seti_new_secret",
     });
+    expect(saveDealSetupSecret).toHaveBeenCalledWith("deal_1", "seti_new_secret");
+    expect(JSON.stringify(supabaseAdmin._builders.deals._updates)).not.toContain(
+      "seti_new_secret"
+    );
     const types = logEvent.mock.calls.map((c) => (c[0] as { eventType: string }).eventType);
     expect(types).toContain("deal.setup_intent_created");
   });
@@ -252,6 +267,9 @@ describe("POST /api/deals/[id]/setup-intent", () => {
     // Crucially: the other deal's card was never bound to this deal.
     const dealUpdates = supabaseAdmin._builders.deals?._updates ?? [];
     expect(dealUpdates).not.toContainEqual({ payment_method_id: "pm_wrong_deal" });
+    expect(dealUpdates).toContainEqual({ setup_intent_id: "seti_fresh" });
+    expect(saveDealSetupSecret).toHaveBeenCalledWith("deal_1", "seti_fresh_secret");
+    expect(JSON.stringify(dealUpdates)).not.toContain("seti_fresh_secret");
   });
 
   it("falls through to create when retrieving a stale SetupIntent throws", async () => {
@@ -276,5 +294,36 @@ describe("POST /api/deals/[id]/setup-intent", () => {
     const body = await res.json();
     expect(body.status).toBe("created");
     expect(createSetupIntentForBrand).toHaveBeenCalled();
+    expect(supabaseAdmin._builders.deals._updates).toContainEqual({
+      setup_intent_id: "seti_fresh",
+    });
+    expect(saveDealSetupSecret).toHaveBeenCalledWith("deal_1", "seti_fresh_secret");
+  });
+
+  it("returns the client secret when the secret save fails", async () => {
+    getAuthenticatedUser.mockResolvedValueOnce({ id: "u_brand", email: "b@x.com" });
+    getWave12DealById.mockResolvedValueOnce(signedDeal());
+    getBrandProfileByUserId.mockResolvedValueOnce({ id: "bp_1", brand_identity: "Acme Co." });
+    supabaseAdmin.from("profiles")._setSingle({
+      id: "u_brand",
+      email: "b@x.com",
+      full_name: null,
+      company_name: null,
+      stripe_customer_id: "cus_1",
+    });
+    createSetupIntentForBrand.mockResolvedValueOnce({
+      setupIntentId: "seti_new",
+      clientSecret: "seti_new_secret",
+      stripeCustomerId: "cus_1",
+    });
+    saveDealSetupSecret.mockResolvedValueOnce(false);
+    const res = await POST(req() as never, { params });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("created");
+    expect(body.client_secret).toBe("seti_new_secret");
+    expect(supabaseAdmin._builders.deals._updates).toContainEqual({
+      setup_intent_id: "seti_new",
+    });
   });
 });

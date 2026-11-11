@@ -29,6 +29,7 @@ const downloadCompletedDocument = vi.fn();
 const downloadCertificate = vi.fn();
 const sendEmail = vi.fn().mockResolvedValue({ ok: true });
 const createSetupIntentForBrand = vi.fn();
+const saveDealSetupSecret = vi.fn();
 
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin }));
 vi.mock("@/lib/data/queries", () => ({
@@ -49,6 +50,9 @@ vi.mock("@/lib/email/send", () => ({
 }));
 vi.mock("@/lib/stripe/setup-intent", () => ({
   createSetupIntentForBrand: (...a: unknown[]) => createSetupIntentForBrand(...a),
+}));
+vi.mock("@/lib/deals/payment-secrets", () => ({
+  saveDealSetupSecret: (...a: unknown[]) => saveDealSetupSecret(...a),
 }));
 
 import { POST } from "./route";
@@ -106,6 +110,7 @@ describe("POST /api/webhooks/docusign", () => {
       clientSecret: "si_test_secret",
       stripeCustomerId: "cus_test",
     });
+    saveDealSetupSecret.mockResolvedValue(true);
   });
 
   it("rejects requests with a bad signature", async () => {
@@ -438,9 +443,17 @@ describe("POST /api/webhooks/docusign", () => {
     expect(createSetupIntentForBrand).toHaveBeenCalledWith(
       expect.objectContaining({ dealId: "deal-1" })
     );
+    expect(adminBuilder.update).toHaveBeenCalledWith({ setup_intent_id: "si_test" });
+    expect(saveDealSetupSecret).toHaveBeenCalledWith("deal-1", "si_test_secret");
+    const dealPayloads = adminBuilder.update.mock.calls.map((call) => call[0]);
+    expect(JSON.stringify(dealPayloads)).not.toContain("si_test_secret");
     const types = logEvent.mock.calls.map((c) => c[0].eventType);
     expect(types).toContain("io.brand_signed");
     expect(types).toContain("deal.setup_intent_created");
+    const setupEvent = logEvent.mock.calls
+      .map((c) => c[0])
+      .find((event) => event.eventType === "deal.setup_intent_created");
+    expect(JSON.stringify(setupEvent)).not.toContain("si_test_secret");
   });
 
   it("is idempotent — replayed brand_signed is a no-op", async () => {

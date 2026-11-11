@@ -30,6 +30,7 @@ import {
 import { brandNameFromProfile } from "@/lib/brand/display-name";
 import { sendEmail } from "@/lib/email/send";
 import { createSetupIntentForBrand } from "@/lib/stripe/setup-intent";
+import { saveDealSetupSecret } from "@/lib/deals/payment-secrets";
 import type { BrandProfile, ShowProfile } from "@/lib/data/types";
 
 const STORAGE_BUCKET = "signed-ios";
@@ -129,7 +130,6 @@ async function provisionBrandSetupIntent(
       .from("deals")
       .update({
         setup_intent_id: result.setupIntentId,
-        setup_intent_client_secret: result.clientSecret,
       })
       .eq("id", dealId);
     if (updErr) {
@@ -139,6 +139,7 @@ async function provisionBrandSetupIntent(
       );
       return;
     }
+    await saveDealSetupSecret(dealId, result.clientSecret);
     await logEvent({
       eventType: "deal.setup_intent_created",
       entityType: "deal",
