@@ -50,6 +50,7 @@ const ACTION_COLUMNS = [
   "result_campaign_id",
   "execution_error",
   "api_key_id",
+  "source",
   "payload",
 ].join(", ");
 
@@ -107,7 +108,8 @@ interface RawAction {
   executed_at: string | null;
   result_campaign_id: string | null;
   execution_error: string | null;
-  api_key_id: string;
+  api_key_id: string | null;
+  source: "api_key" | "command_agent";
   payload: unknown;
 }
 
@@ -181,9 +183,11 @@ export async function listBrandActions(
 
   const hasMore = rows.rows.length > limit.limit;
   const page = hasMore ? rows.rows.slice(0, limit.limit) : rows.rows;
-  const keys = await loadKeys(userId, page.map((row) => row.api_key_id));
+  const keys = await loadKeys(userId, keyIdsToLoad(page));
   const shows = await loadShowNames(userId, page);
-  const data = page.map((row) => toListed(row, keys.get(row.api_key_id) ?? null, shows, now));
+  const data = page.map((row) =>
+    toListed(row, row.api_key_id ? keys.get(row.api_key_id) ?? null : null, shows, now)
+  );
   let nextCursor: string | null = null;
   if (hasMore && page.length > 0) {
     const last = page[page.length - 1];
@@ -207,9 +211,9 @@ export async function getBrandAction(
   if (error || !data) return null;
   const row = asRaw(data as unknown as Record<string, unknown>);
   if (!row) return null;
-  const keys = await loadKeys(userId, [row.api_key_id]);
+  const keys = await loadKeys(userId, keyIdsToLoad([row]));
   const shows = await loadShowNames(userId, [row]);
-  return toListed(row, keys.get(row.api_key_id) ?? null, shows, now);
+  return toListed(row, row.api_key_id ? keys.get(row.api_key_id) ?? null : null, shows, now);
 }
 
 function parseStatus(
@@ -310,6 +314,17 @@ async function loadShowNames(
   return names;
 }
 
+function keyIdsToLoad(rows: RawAction[]): string[] {
+  const ids: string[] = [];
+  for (const row of rows) {
+    if (row.source === "command_agent") continue;
+    if (row.api_key_id && isUuid(row.api_key_id) && !ids.includes(row.api_key_id)) {
+      ids.push(row.api_key_id);
+    }
+  }
+  return ids;
+}
+
 function toListed(
   row: RawAction,
   key: ActionKeySummary | null,
@@ -330,7 +345,7 @@ function toListed(
     executed_at: row.executed_at,
     result_campaign_id: row.result_campaign_id,
     execution_error: row.execution_error,
-    key: key ?? { name: null, prefix: null },
+    key: row.source === "command_agent" ? { name: "Tay", prefix: null } : (key ?? { name: null, prefix: null }),
     summary: summaryOf(kind, row.payload, shows),
   };
 }
@@ -393,7 +408,8 @@ function showIdOf(payload: unknown): string | null {
 
 function asRaw(row: Record<string, unknown>): RawAction | null {
   if (typeof row.id !== "string" || !isUuid(row.id)) return null;
-  if (typeof row.api_key_id !== "string") return null;
+  const apiKeyId = row.api_key_id == null ? null : row.api_key_id;
+  if (apiKeyId !== null && typeof apiKeyId !== "string") return null;
   return {
     id: row.id,
     kind: typeof row.kind === "string" ? row.kind : "",
@@ -407,7 +423,8 @@ function asRaw(row: Record<string, unknown>): RawAction | null {
         ? row.result_campaign_id
         : null,
     execution_error: typeof row.execution_error === "string" ? row.execution_error : null,
-    api_key_id: row.api_key_id,
+    api_key_id: apiKeyId,
+    source: row.source === "command_agent" ? "command_agent" : "api_key",
     payload: row.payload ?? null,
   };
 }

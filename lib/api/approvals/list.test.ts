@@ -8,7 +8,7 @@ const NOW = "2026-06-15T15:00:00.000Z";
 
 const { getShow, tables } = vi.hoisted(() => ({
   getShow: vi.fn(),
-  tables: { rows: [] as Record<string, unknown>[] },
+  tables: { rows: [] as Record<string, unknown>[], keyLookups: [] as unknown[][] },
 }));
 
 vi.mock("@/lib/api/v1/reads", () => ({
@@ -39,6 +39,7 @@ function query(table: string) {
       return api;
     },
     in(column: string, values: unknown[]) {
+      if (table === "api_keys") tables.keyLookups.push(values);
       filters.push((row) => values.includes(row[column]));
       return api;
     },
@@ -108,6 +109,7 @@ beforeEach(() => {
   getShow.mockReset();
   getShow.mockResolvedValue({ name: "Visible Show" });
   tables.rows = [action()];
+  tables.keyLookups = [];
 });
 
 describe("listBrandActions", () => {
@@ -185,6 +187,23 @@ describe("listBrandActions", () => {
       show_name: null,
       subject: "<script>alert(1)</script>",
     });
+  });
+
+  it("labels a command agent row Tay and skips the key lookup", async () => {
+    const agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5";
+    tables.rows = [
+      action({ id: agentId, source: "command_agent", api_key_id: null }),
+      action(),
+    ];
+    const result = await listBrandActions(BRAND, new Request("http://localhost/api/settings/agent-actions"));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.map((row) => row.key)).toEqual([
+      { name: "Tay", prefix: null },
+      { name: "Planner", prefix: "0123456789abcdef" },
+    ]);
+    expect(tables.keyLookups).toEqual([[KEY]]);
+    expect(JSON.stringify(result)).not.toContain("Unnamed key");
   });
 
   it("rejects an unknown status", async () => {
