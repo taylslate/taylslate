@@ -59,6 +59,8 @@ Chris sets these in Vercel Production. This PR does not change Vercel env.
 
 Caption text is purged from `created_at`, not `updated_at`, because the airchecks trigger rewrites `updated_at`. A daily OAuth refresh probe (no Data API quota) nulls tokens on `invalid_grant` and sets `reauth_required_at`. Housekeeping deletes that connection, its metrics, and its captions 30 days later. Analytics run in a separate pass after captions, for transcribed `youtube-captions` rows from 48 hours to 14 days after publish.
 
+Housekeeping caption clears for a retired or lapsed channel are per channel as of migration 089. See [AC-YT2](AC-YT2.md).
+
 ## Follow-ups
 
 - A link to `/settings/youtube` from show settings (that edits an existing screen).
