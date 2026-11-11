@@ -21,6 +21,7 @@ import type {
 import { formatDateOnly } from "@/lib/format/date-only";
 import { CADENCE_DAYS, DEFAULT_CADENCE_DAYS } from "@/lib/io/cadence-days";
 import { dealIoNumber } from "@/lib/io/io-number";
+import { normalizePromoCode } from "@/lib/io/promo-code";
 import { SIGNATURE_ANCHORS } from "@/lib/docusign/anchors";
 import { brandNameFromProfile } from "@/lib/brand/display-name";
 import {
@@ -517,6 +518,24 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     const valLines = doc.splitTextToSize(value, CONTENT_WIDTH - 110);
     doc.text(valLines, MARGIN + 110, y);
     y += valLines.length * 11 + 6;
+  }
+
+  // Blank, missing, and whitespace-only codes draw nothing and do not move y.
+  // normalizePromoCode is the check. The printed value is the stored code,
+  // trimmed, so a long code wraps in the value column.
+  const storedPromo =
+    typeof deal.promo_code === "string" ? deal.promo_code.trim() : "";
+  if (normalizePromoCode(storedPromo)) {
+    checkPage(36);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...NAVY);
+    doc.text("Promo Code:", MARGIN, y);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...TEXT);
+    const promoLines = doc.splitTextToSize(storedPromo, CONTENT_WIDTH - 110);
+    doc.text(promoLines, MARGIN + 110, y);
+    y += promoLines.length * 11 + 6;
   }
 
   // ---- Standard legal clauses ----
