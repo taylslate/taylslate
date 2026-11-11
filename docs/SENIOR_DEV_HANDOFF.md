@@ -2643,9 +2643,9 @@ No markup or copy changed. Screenshots are not included. The two page edits are 
 
 `npx tsc --noEmit` is clean.
 
-`npx vitest run`: 353 files, 3011 passed, 47 skipped. `npx next build` completed.
+`npx vitest run` after the rebase onto main (`cb12449`): 357 files, 3042 passed, 41 skipped. `npx next build` completed.
 
-PGlite loads migrations 001 through 084, seeds two JWT-shaped tokens, and applies 087. Both become `retired:<id>`, `token` is nullable, and `outreaches_token_key` remains. A brand JWT sees only `retired:` values. Show A sees only the row sent to its login email. Anon is permission denied. `service_role` can select and can insert a row with no token. A second apply leaves the retired values unchanged. 085 is not on disk, so that case is skipped. No hosted database.
+PGlite loads migrations 001 through 084, seeds two JWT-shaped tokens, and applies 087. The same assertions pass after loading through 085, which is on main. Both tokens become `retired:<id>`, `token` is nullable, and `outreaches_token_key` remains. A brand JWT sees only `retired:` values. Show A sees only the row sent to its login email. Anon is permission denied. `service_role` can select and can insert a row with no token. A second apply leaves the retired values unchanged. No hosted database.
 
 Route tests: the send response has no `pitch_url` and `outreach.token` is `""`; the update payload has no `token`; the insert placeholder starts with `retired:`; the email html and text contain `/outreach/<jwt>` and `verifyOutreachToken` returns the new outreach id. Accept, counter, and decline still return 200 with the same status transitions and emails, with `token: ""`. A bad signature is still 401. The campaign outreach owner gets empty tokens; a non-owner gets 404. The Wave 12 deal GET redacts `outreach.token` for the brand and for the show.
 
