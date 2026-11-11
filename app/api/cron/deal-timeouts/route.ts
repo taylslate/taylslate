@@ -9,6 +9,7 @@
 // Auth: Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`.
 
 import { NextRequest, NextResponse } from "next/server";
+import { isCronAuthorized } from "@/lib/security/cron-auth";
 import { isBrandProfileManaged } from "@/lib/accounts/managed";
 import {
   findDealsToTimeoutCancel,
@@ -29,13 +30,8 @@ const REMINDER_DAYS = 3;
 const CANCEL_DAYS = 14;
 
 function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    // Allow local dev without a CRON_SECRET set so manual testing works.
-    return process.env.NODE_ENV !== "production";
-  }
-  const header = req.headers.get("authorization");
-  return header === `Bearer ${secret}`;
+  // Allow local dev without a CRON_SECRET set so manual testing works.
+  return isCronAuthorized(req, { allowUnsetSecretOutsideProduction: true });
 }
 
 function siteOrigin(): string {

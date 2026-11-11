@@ -1,6 +1,6 @@
 # CA1: brand command agent
 
-Migration number is **083**. 080 is reserved for AC3. 081 is Q12. 082 is A4 and is live. 083 is applied on `ldtmhafewfifdizgfrnn` at version 20261111004339 (Nov 11, 2026 UTC).
+Migration number is **083**, and it is applied on the live database at version 20261111004339 (Nov 11, 2026 UTC). 080 is reserved for AC3. 081 is Q12. 082 is A4 and is live. 084 adds the one-turn index and is not applied. Merge first, then apply 084 any time after Chris names it.
 
 The user-facing name is **Tay**. Chris named it. Internal identifiers stay `command_agent`, `lib/command-agent`, and `/assistant`.
 
@@ -16,7 +16,7 @@ Approving an agent `campaign.create` still creates one draft through the unchang
 
 083 drops `NOT NULL` on `api_write_actions.api_key_id`, adds `source` (`api_key` or `command_agent`, default `api_key`), and adds `requested_by`. The actor check requires an API key row to have a key and a null `requested_by`, and a command agent row to have a null key with `requested_by` equal to `brand_id`. Existing rows take `source` `api_key` from the column default. There is no other backfill. The `api_key_id` foreign key stays.
 
-`command_agent_conversations`, `command_agent_messages`, and `command_agent_usage` are new. `turn_started_at` is the in-row marker so the brand runs one turn at a time. A claim older than 120 seconds can be taken again. `command_agent_usage` stores one row per model call and has no foreign key to a conversation. RLS is on for all four tables (`api_write_actions`, `command_agent_conversations`, `command_agent_messages`, and `command_agent_usage`). There are 0 policies. `service_role` is the only grant. `anon`, `public`, and `authenticated` have no privileges, including `truncate`, `references`, and `trigger` on `authenticated`. Every read and write filters `brand_id` to the session user id.
+`command_agent_conversations`, `command_agent_messages`, and `command_agent_usage` are new. `turn_started_at` is the in-row marker so the brand runs one turn at a time. A claim older than 120 seconds can be taken again. Migration 084 adds partial unique index `command_agent_conversations_one_turn_per_brand` on `brand_id` where `turn_started_at` is not null, so only one conversation of a brand can hold a turn. A second claim gets unique violation 23505 and returns busy. The fresh pre-check stays. After a successful claim, the earliest-turn post-check still breaks a tie when 084 is absent. With 084 applied that post-check finds only one row. 084 is not applied yet. `command_agent_usage` stores one row per model call and has no foreign key to a conversation. RLS is on for all four tables (`api_write_actions`, `command_agent_conversations`, `command_agent_messages`, and `command_agent_usage`). There are 0 policies. `service_role` is the only grant. `anon`, `public`, and `authenticated` have no privileges, including `truncate`, `references`, and `trigger` on `authenticated`. Every read and write filters `brand_id` to the session user id.
 
 ## Routes
 
@@ -49,10 +49,10 @@ Name: Tay. Confirmed. Shown on the `/assistant` heading and empty state, in the 
 
 ## Known gaps
 
-- 083 is applied on `ldtmhafewfifdizgfrnn` at version 20261111004339 (Nov 11, 2026 UTC). Tay can insert pending rows.
+- 083 is applied on `ldtmhafewfifdizgfrnn` at version 20261111004339 (Nov 11, 2026 UTC). Tay can insert pending rows. 084 is not applied. Merge first, then apply 084 any time after Chris names it.
 - `/assistant` is not in the nav. Adding it changes an existing screen, so it waits for a follow-up.
 - There is no 90-day purge.
 - An API caller who deliberately reuses a `ca:{message id}:{n}` idempotency key can collide with Tay on the shared unique key. The API path was not changed.
-- A crashed turn keeps `turn_started_at` set until 120 seconds pass, and that fresh lock blocks every conversation for the brand.
+- A crashed turn keeps `turn_started_at` set until 120 seconds pass, and that fresh lock blocks every conversation for the brand. After 084, that lock is also the only non-null `turn_started_at` for the brand.
 - A model call killed before its usage row is inserted is not counted. The next call is checked against the rows that were written.
 - Plan caps are still not enforced on approval.

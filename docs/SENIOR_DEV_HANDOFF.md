@@ -2483,3 +2483,50 @@ Local fixture PDFs: with no code, page 1 and page 2 pixels match the pre-change 
 - (a) `app/(dashboard)/deals/deals-client.tsx` line 192, View IO, opens the legacy PDF at `/deals/${id}/io` even on DocuSign deals. It should point at `/preview` or the signed PDF.
 - (b) Legacy `lib/pdf/io-pdf.ts` (the `io/pdf` download and the `io/send` email attachment) has no promo code.
 
+## SEC2: constant-time cron auth and a race-free turn lock
+
+### What was built
+
+Five crons now compare `Authorization: Bearer <CRON_SECRET>` with `timingSafeEqual` through `isCronAuthorized`. A missing secret is unauthorized. Both sides are buffered, and a different length returns false before the compare. The header and the secret are not logged. `conversion-alerts` and `deal-timeouts` still allow an unset secret when `NODE_ENV` is not `production`. `pooled-priors`, `youtube-library-pull`, and `youtube-library-refresh` stay fail-closed. Status codes and 401 bodies are unchanged. `airchecks`, `roster-owner-notices`, and `youtube-library-emails` were not edited.
+
+`claimTurn` nulls this brand's locks older than 120 seconds, keeps the fresh pre-check, then sets `turn_started_at` only where it is null. A unique violation 23505 is busy. Zero rows still falls back to the conversation check. After a successful claim, the earliest-turn post-check remains. Without 084 it releases the later lock. With 084 it sees one row and changes nothing. Return values are unchanged. The assistant route and `run.ts` were not edited.
+
+A refusal fallback now has a test. The primary call records 11 in and 7 out. The fallback call records 13 in and 5 out on `FALLBACK_MODEL`, and that text is the turn reply. `command_agent_usage` has no model column, so the model is asserted on the fallback `messages.create` call that produced the second usage row.
+
+No page or component was edited. Screenshots are not applicable.
+
+083 is applied on `ldtmhafewfifdizgfrnn`. 084 is in this PR and was not applied to any database. Merge first, then apply 084 any time after Chris names it.
+
+### Where
+
+- `lib/security/cron-auth.ts` and `cron-auth.test.ts`
+- `app/api/cron/conversion-alerts/route.ts`
+- `app/api/cron/deal-timeouts/route.ts`
+- `app/api/cron/pooled-priors/route.ts`
+- `app/api/cron/youtube-library-pull/route.ts`
+- `app/api/cron/youtube-library-refresh/route.ts`
+- `app/api/cron/cron-auth.routes.test.ts`
+- `app/api/cron/youtube-library-pull/route.test.ts` and `youtube-library-refresh/route.test.ts` (one assertion each: the source check now looks for `isCronAuthorized`, because `` Bearer ${secret} `` moved into the helper)
+- `lib/command-agent/store.ts`
+- `lib/command-agent/claim-turn.test.ts` (084 suite, plus one case on migrations through 083 only)
+- `lib/command-agent/run.test.ts` (one new test)
+- `supabase/migrations/084_command_agent_turn_lock.sql` and its test
+- `docs/jobs/SEC2.md`
+- `docs/jobs/CA1.md` (turn-lock note)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 347 files, 2982 passed, 40 skipped.
+
+PGlite covers two parallel claims on one brand with 084, the same case with migrations through 083 only, the same conversation twice, a lock older than 120 seconds, release then claim, and a second brand. 084 applies twice. The index is unique and partial. Anon holds nothing on `command_agent_conversations`. No live database write. `npx next build` was not rerun for this review fix.
+
+### Known gaps
+
+- 084 is not applied. Merge first, then apply 084 any time after Chris names it. Do not apply 084 before this code is live. The claim path on production today treats 23505 as an error, so a stale lock under the new index would return 503.
+- A crashed turn still holds `turn_started_at` for up to 120 seconds, and that fresh lock still blocks every conversation for the brand.
+- The two youtube route tests above are outside the Owns list. Only the source assertion changed.
+- No page or component was edited. This PR does not merge. Paul reviews.
+
+

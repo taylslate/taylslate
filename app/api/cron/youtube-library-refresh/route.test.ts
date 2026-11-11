@@ -65,7 +65,7 @@ describe("GET /api/cron/youtube-library-refresh", () => {
     await expect(timed.json()).resolves.toMatchObject({ stopped: "time", elapsedMs: 200_000, chunks: 1 });
 
     const src = readFileSync(join(process.cwd(), "app/api/cron/youtube-library-refresh/route.ts"), "utf8");
-    expect(src).toContain("Bearer ${secret}");
+    expect(src).toContain("isCronAuthorized");
     expect(src).toContain("export const maxDuration = 300");
     expect(src).toContain("Do not raise it");
     expect(src).not.toContain("\u2014");

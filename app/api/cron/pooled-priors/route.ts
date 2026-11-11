@@ -8,13 +8,12 @@
 // A missing table or function is fail-soft and does not block the other.
 
 import { NextRequest, NextResponse } from "next/server";
+import { isCronAuthorized } from "@/lib/security/cron-auth";
 import { refreshPooledDealPriors } from "@/lib/learning/pooled-deal-priors";
 import { refreshPooledImportPriors } from "@/lib/learning/pooled-priors";
 
 function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
+  return isCronAuthorized(req);
 }
 
 export async function GET(request: NextRequest) {
