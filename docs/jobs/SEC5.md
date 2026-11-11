@@ -75,6 +75,7 @@ Contract step, its own PR after 087 is live and this code is deployed: remove th
 Not folded in. They touch files SEC4 owns, or they need a behavior review.
 
 - Contract migration: drop `outreaches.token` and remove the placeholder writes, after 087 is live and SEC5 is deployed.
+- domain_events keeps copies of the token. app/api/outreach/[token]/accept-counter/route.ts:159 and :169 log the full outreach row (io.counter_accepted, deal.created). Live has 3 domain_events payloads with a JWT-shaped string. domain_events is service-only (no anon or authenticated grant), so this is not reachable through the Data API. After 087, new rows log the retired placeholder. Cleanup: a one-off scrub of payload->outreach->token, plus redactOutreach in those two logEvent payloads, in the contract PR.
 - `setup_intent_id`, `payment_method_id`, and `docusign_envelope_id` still reach the show viewer through `app/(dashboard)/deals/[id]/page.tsx` (SEC4 owns that line) and `GET /api/deals/[id]`. Ids, not credentials. Strip them for the show viewer after SEC4 lands.
 - `app/api/admin/seed-deal/route.ts` comment names a `deal_setup_intents` table that does not exist.
 - `POST /api/auth/magic/start` sends a magic link to any email address for any valid outreach token. It does not check `outreach.sent_to_email`, and the route has no rate limit. Review whether it should require the sent-to address.

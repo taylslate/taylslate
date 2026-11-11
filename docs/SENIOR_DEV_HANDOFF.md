@@ -2637,7 +2637,7 @@ No markup or copy changed. Screenshots are not included. The two page edits are 
 - `app/api/admin/seed-outreach/route.test.ts` (outside the Owns list: the old assertion required storing the signed token, and the `single()` queue assumed that update)
 - `supabase/migrations/087_outreach_token_retire.sql` and its test
 - `docs/jobs/SEC5.md`
-- `docs/security/S-A_FINDINGS.md` (SA-26)
+- `docs/security/S-A_FINDINGS.md` (SA-28)
 
 ### Tests
 
