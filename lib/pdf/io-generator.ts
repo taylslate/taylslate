@@ -21,6 +21,7 @@ import type {
 import { formatDateOnly } from "@/lib/format/date-only";
 import { CADENCE_DAYS, DEFAULT_CADENCE_DAYS } from "@/lib/io/cadence-days";
 import { dealIoNumber } from "@/lib/io/io-number";
+import { normalizePromoCode } from "@/lib/io/promo-code";
 import { SIGNATURE_ANCHORS } from "@/lib/docusign/anchors";
 import { brandNameFromProfile } from "@/lib/brand/display-name";
 import {
@@ -517,6 +518,23 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     const valLines = doc.splitTextToSize(value, CONTENT_WIDTH - 110);
     doc.text(valLines, MARGIN + 110, y);
     y += valLines.length * 11 + 6;
+  }
+
+  // Blank, missing, and whitespace-only codes draw nothing and do not move y.
+  // The printed value is the normalized slug ([A-Z0-9], at most 24 characters,
+  // no spaces). The raw stored string is not drawn, so it cannot add an anchor.
+  const promo = normalizePromoCode(deal.promo_code);
+  if (promo) {
+    checkPage(36);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...NAVY);
+    doc.text("Promo Code:", MARGIN, y);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...TEXT);
+    const promoLines = doc.splitTextToSize(promo, CONTENT_WIDTH - 110);
+    doc.text(promoLines, MARGIN + 110, y);
+    y += promoLines.length * 11 + 6;
   }
 
   // ---- Standard legal clauses ----

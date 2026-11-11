@@ -1,0 +1,641 @@
+[
+  {
+    "text": "INSERTION ORDER",
+    "x": 40,
+    "y": 36,
+    "page": 1
+  },
+  {
+    "text": "TS-IO-FIXTURE-0001",
+    "x": 40,
+    "y": 54,
+    "page": 1
+  },
+  {
+    "text": "Issued: Apr 23, 2026",
+    "x": 480.29999999999995,
+    "y": 36,
+    "page": 1
+  },
+  {
+    "text": "Flight: May 1, 2026 – May 31, 2026",
+    "x": 416.09999999999997,
+    "y": 54,
+    "page": 1
+  },
+  {
+    "text": "ADVERTISER",
+    "x": 40,
+    "y": 100,
+    "page": 1
+  },
+  {
+    "text": "Company:",
+    "x": 40,
+    "y": 114,
+    "page": 1
+  },
+  {
+    "text": [
+      "Northwind"
+    ],
+    "x": 118,
+    "y": 114,
+    "page": 1
+  },
+  {
+    "text": "Brand URL:",
+    "x": 40,
+    "y": 126,
+    "page": 1
+  },
+  {
+    "text": [
+      "https://northwind.example"
+    ],
+    "x": 118,
+    "y": 126,
+    "page": 1
+  },
+  {
+    "text": "Media Contact:",
+    "x": 40,
+    "y": 138,
+    "page": 1
+  },
+  {
+    "text": [
+      "brand@northwind.example"
+    ],
+    "x": 118,
+    "y": 138,
+    "page": 1
+  },
+  {
+    "text": "Billing Contact:",
+    "x": 40,
+    "y": 150,
+    "page": 1
+  },
+  {
+    "text": [
+      "brand@northwind.example"
+    ],
+    "x": 118,
+    "y": 150,
+    "page": 1
+  },
+  {
+    "text": "PUBLISHER",
+    "x": 316,
+    "y": 100,
+    "page": 1
+  },
+  {
+    "text": "Show:",
+    "x": 316,
+    "y": 114,
+    "page": 1
+  },
+  {
+    "text": [
+      "Harbor Light"
+    ],
+    "x": 394,
+    "y": 114,
+    "page": 1
+  },
+  {
+    "text": "Activation Contact:",
+    "x": 316,
+    "y": 126,
+    "page": 1
+  },
+  {
+    "text": [
+      "ads@harbor.example"
+    ],
+    "x": 394,
+    "y": 126,
+    "page": 1
+  },
+  {
+    "text": "Billing Contact:",
+    "x": 316,
+    "y": 138,
+    "page": 1
+  },
+  {
+    "text": [
+      "billing@harbor.example"
+    ],
+    "x": 394,
+    "y": 138,
+    "page": 1
+  },
+  {
+    "text": "BILL TO / AGENCY",
+    "x": 40,
+    "y": 186,
+    "page": 1
+  },
+  {
+    "text": "Company:",
+    "x": 40,
+    "y": 200,
+    "page": 1
+  },
+  {
+    "text": [
+      "Taylslate"
+    ],
+    "x": 118,
+    "y": 200,
+    "page": 1
+  },
+  {
+    "text": "Role:",
+    "x": 40,
+    "y": 212,
+    "page": 1
+  },
+  {
+    "text": [
+      "Billing entity (pay-as-delivers)"
+    ],
+    "x": 118,
+    "y": 212,
+    "page": 1
+  },
+  {
+    "text": "Invoices to:",
+    "x": 40,
+    "y": 224,
+    "page": 1
+  },
+  {
+    "text": [
+      "billing@taylslate.com"
+    ],
+    "x": 118,
+    "y": 224,
+    "page": 1
+  },
+  {
+    "text": "LINE ITEMS",
+    "x": 40,
+    "y": 266,
+    "page": 1
+  },
+  {
+    "text": "#",
+    "x": 44,
+    "y": 282,
+    "page": 1
+  },
+  {
+    "text": "Show",
+    "x": 68.60115606936417,
+    "y": 282,
+    "page": 1
+  },
+  {
+    "text": "Post Date",
+    "x": 191.60693641618496,
+    "y": 282,
+    "page": 1
+  },
+  {
+    "text": "Placement",
+    "x": 268.485549132948,
+    "y": 282,
+    "page": 1
+  },
+  {
+    "text": "DLs Guar.",
+    "x": 340.23892100192677,
+    "y": 282,
+    "page": 1
+  },
+  {
+    "text": "CPM",
+    "x": 401.74181117533715,
+    "y": 282,
+    "page": 1
+  },
+  {
+    "text": "Gross",
+    "x": 452.99421965317913,
+    "y": 282,
+    "page": 1
+  },
+  {
+    "text": "Net Due",
+    "x": 514.4971098265895,
+    "y": 282,
+    "page": 1
+  },
+  {
+    "text": "1",
+    "x": 44,
+    "y": 296,
+    "page": 1
+  },
+  {
+    "text": "Harbor Light",
+    "x": 68.60115606936417,
+    "y": 296,
+    "page": 1
+  },
+  {
+    "text": "May 1, 2026",
+    "x": 191.60693641618496,
+    "y": 296,
+    "page": 1
+  },
+  {
+    "text": "Mid-roll",
+    "x": 268.485549132948,
+    "y": 296,
+    "page": 1
+  },
+  {
+    "text": "10,000",
+    "x": 373.50181117533714,
+    "y": 296,
+    "page": 1
+  },
+  {
+    "text": "$25.00",
+    "x": 424.7542196531791,
+    "y": 296,
+    "page": 1
+  },
+  {
+    "text": "$250.00",
+    "x": 481.8571098265895,
+    "y": 296,
+    "page": 1
+  },
+  {
+    "text": "$250.00",
+    "x": 543.3599999999999,
+    "y": 296,
+    "page": 1
+  },
+  {
+    "text": "2",
+    "x": 44,
+    "y": 310,
+    "page": 1
+  },
+  {
+    "text": "Harbor Light",
+    "x": 68.60115606936417,
+    "y": 310,
+    "page": 1
+  },
+  {
+    "text": "May 8, 2026",
+    "x": 191.60693641618496,
+    "y": 310,
+    "page": 1
+  },
+  {
+    "text": "Mid-roll",
+    "x": 268.485549132948,
+    "y": 310,
+    "page": 1
+  },
+  {
+    "text": "10,000",
+    "x": 373.50181117533714,
+    "y": 310,
+    "page": 1
+  },
+  {
+    "text": "$25.00",
+    "x": 424.7542196531791,
+    "y": 310,
+    "page": 1
+  },
+  {
+    "text": "$250.00",
+    "x": 481.8571098265895,
+    "y": 310,
+    "page": 1
+  },
+  {
+    "text": "$250.00",
+    "x": 543.3599999999999,
+    "y": 310,
+    "page": 1
+  },
+  {
+    "text": "3",
+    "x": 44,
+    "y": 324,
+    "page": 1
+  },
+  {
+    "text": "Harbor Light",
+    "x": 68.60115606936417,
+    "y": 324,
+    "page": 1
+  },
+  {
+    "text": "May 15, 2026",
+    "x": 191.60693641618496,
+    "y": 324,
+    "page": 1
+  },
+  {
+    "text": "Mid-roll",
+    "x": 268.485549132948,
+    "y": 324,
+    "page": 1
+  },
+  {
+    "text": "10,000",
+    "x": 373.50181117533714,
+    "y": 324,
+    "page": 1
+  },
+  {
+    "text": "$25.00",
+    "x": 424.7542196531791,
+    "y": 324,
+    "page": 1
+  },
+  {
+    "text": "$250.00",
+    "x": 481.8571098265895,
+    "y": 324,
+    "page": 1
+  },
+  {
+    "text": "$250.00",
+    "x": 543.3599999999999,
+    "y": 324,
+    "page": 1
+  },
+  {
+    "text": "Podcast  |  Host-read baked-in  |  Host-read (personal)  |  Evergreen  |  No pixel required",
+    "x": 44,
+    "y": 344,
+    "page": 1
+  },
+  {
+    "text": "Total Downloads:",
+    "x": 332.6,
+    "y": 360,
+    "page": 1
+  },
+  {
+    "text": "30,000",
+    "x": 539.76,
+    "y": 360,
+    "page": 1
+  },
+  {
+    "text": "Total Gross:",
+    "x": 332.6,
+    "y": 374,
+    "page": 1
+  },
+  {
+    "text": "$750.00",
+    "x": 535.36,
+    "y": 374,
+    "page": 1
+  },
+  {
+    "text": "Total Net Due:",
+    "x": 332.6,
+    "y": 390,
+    "page": 1
+  },
+  {
+    "text": "$750.00",
+    "x": 531.78,
+    "y": 390,
+    "page": 1
+  },
+  {
+    "text": "TERMS & CONDITIONS",
+    "x": 40,
+    "y": 438,
+    "page": 1
+  },
+  {
+    "text": "Payment:",
+    "x": 40,
+    "y": 456,
+    "page": 1
+  },
+  {
+    "text": [
+      "Pay-as-delivers via Taylslate. Each verified episode charges the brand the rate on this IO plus the platform fee on top.",
+      "The show is paid the full rate on this IO."
+    ],
+    "x": 150,
+    "y": 456,
+    "page": 1
+  },
+  {
+    "text": "Exclusivity:",
+    "x": 40,
+    "y": 484,
+    "page": 1
+  },
+  {
+    "text": [
+      "90 days competitor exclusivity from first air date in the brand's stated category."
+    ],
+    "x": 150,
+    "y": 484,
+    "page": 1
+  },
+  {
+    "text": "ROFR:",
+    "x": 40,
+    "y": 501,
+    "page": 1
+  },
+  {
+    "text": [
+      "30-day right of first refusal on renewed placements at the same CPM."
+    ],
+    "x": 150,
+    "y": 501,
+    "page": 1
+  },
+  {
+    "text": "Cancellation:",
+    "x": 40,
+    "y": 518,
+    "page": 1
+  },
+  {
+    "text": [
+      "14 calendar days written notice required prior to next scheduled post date."
+    ],
+    "x": 150,
+    "y": 518,
+    "page": 1
+  },
+  {
+    "text": "Download Tracking:",
+    "x": 40,
+    "y": 535,
+    "page": 1
+  },
+  {
+    "text": [
+      "45-day tracking window from original post date for verification and make-good calculation."
+    ],
+    "x": 150,
+    "y": 535,
+    "page": 1
+  },
+  {
+    "text": "Make-Good:",
+    "x": 40,
+    "y": 552,
+    "page": 1
+  },
+  {
+    "text": [
+      "If actual downloads fall more than 10% below the guaranteed downloads above, publisher will provide a make-good",
+      "episode at no additional cost."
+    ],
+    "x": 150,
+    "y": 552,
+    "page": 1
+  },
+  {
+    "text": "STANDARD TERMS",
+    "x": 40,
+    "y": 590,
+    "page": 1
+  },
+  {
+    "text": [
+      "FTC Compliance: All sponsored content must comply with FTC endorsement guidelines. Host must clearly and conspicuously disclose the material connection with the",
+      "advertiser within the ad read."
+    ],
+    "x": 40,
+    "y": 602,
+    "page": 1
+  },
+  {
+    "text": [
+      "Editorial Control: Publisher retains editorial control over ad delivery. Publisher may decline ads that conflict with their editorial standards or audience expectations."
+    ],
+    "x": 40,
+    "y": 626,
+    "page": 1
+  },
+  {
+    "text": [
+      "Morality / Take-Down: Either party may terminate this IO if the other party engages in conduct that brings them into public disrepute."
+    ],
+    "x": 40,
+    "y": 641,
+    "page": 1
+  },
+  {
+    "text": [
+      "Intellectual Property: Advertiser grants publisher a limited, non-exclusive license to use brand name, trademarks, and talking points solely for the ad reads specified."
+    ],
+    "x": 40,
+    "y": 656,
+    "page": 1
+  },
+  {
+    "text": [
+      "Indemnification: Each party indemnifies the other against claims arising from their respective obligations under this IO."
+    ],
+    "x": 40,
+    "y": 671,
+    "page": 1
+  },
+  {
+    "text": "SIGNATURES",
+    "x": 40,
+    "y": 70,
+    "page": 2
+  },
+  {
+    "text": "ADVERTISER",
+    "x": 40,
+    "y": 90,
+    "page": 2
+  },
+  {
+    "text": "Advertiser Signature Tab",
+    "x": 40,
+    "y": 120,
+    "page": 2
+  },
+  {
+    "text": "Signature",
+    "x": 40,
+    "y": 130,
+    "page": 2
+  },
+  {
+    "text": "Advertiser Date Tab",
+    "x": 40,
+    "y": 150,
+    "page": 2
+  },
+  {
+    "text": "Date",
+    "x": 40,
+    "y": 160,
+    "page": 2
+  },
+  {
+    "text": "PUBLISHER",
+    "x": 316,
+    "y": 90,
+    "page": 2
+  },
+  {
+    "text": "Publisher Signature Tab",
+    "x": 316,
+    "y": 120,
+    "page": 2
+  },
+  {
+    "text": "Signature",
+    "x": 316,
+    "y": 130,
+    "page": 2
+  },
+  {
+    "text": "Publisher Date Tab",
+    "x": 316,
+    "y": 150,
+    "page": 2
+  },
+  {
+    "text": "Date",
+    "x": 316,
+    "y": 160,
+    "page": 2
+  },
+  {
+    "text": "Generated by Taylslate · TS-IO-FIXTURE-0001 · Page 1 of 2",
+    "x": 40,
+    "y": 772,
+    "page": 1
+  },
+  {
+    "text": "Generated by Taylslate · TS-IO-FIXTURE-0001 · Page 2 of 2",
+    "x": 40,
+    "y": 772,
+    "page": 2
+  }
+]

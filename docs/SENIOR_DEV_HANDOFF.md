@@ -2444,3 +2444,42 @@ No page or component changed, so there are no before/after screenshots.
 - `plans.ts` was not edited.
 - No migration and no live data write.
 
+## IO1
+
+### What was built
+
+The deal IO PDF prints `deals.promo_code` when the brand and show have agreed one. `generateIoPdfFromDeal` draws one terms row, label `Promo Code:`, after the last term and before Standard Terms. The printed value is the normalized slug (`[A-Z0-9]`, at most 24 characters, no spaces), in the same value column as the other terms.
+
+`normalizePromoCode` is the blank check and the value that is drawn. Null, a missing field, an empty string, whitespace, and punctuation-only input draw nothing, and `y` does not move. The raw stored string is not drawn. An authenticated user can update `deals.promo_code` through the Data API, so a value such as `X Publisher Signature Tab` must not become a second DocuSign anchor. That input prints `X`. The full jsPDF text-call list for a blank code equals `lib/pdf/__fixtures__/io-anchor-baseline.json`, recorded from the generator on `dc67a96` before this row existed. Each anchor string, x, y, and page is in that list.
+
+Preview and send already pass the deal from `getWave12DealById` (`select *`), which includes `promo_code`. Those routes were not edited. No screen was edited.
+
+### Where
+
+- `lib/pdf/io-generator.ts` (one row after the terms loop)
+- `lib/pdf/io-generator.anchors.test.ts`
+- `lib/pdf/__fixtures__/io-anchor-baseline.json` (committed from the pre-change generator)
+- `docs/jobs/IO1.md`
+
+`lib/docusign`, `lib/pdf/io-terms.ts`, `lib/pdf/io-pdf.ts`, `lib/stripe`, `lib/payouts`, `lib/billing`, and `plans.ts` were not edited. No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or DocuSign send.
+
+### Tests
+
+`npx tsc --noEmit` is clean. `npx vitest run`: 346 files, 2982 passed, 41 skipped. `npx next build` completed and generated 142 pages before the slug fix.
+
+`lib/pdf/io-generator.anchors.test.ts` covers a null, missing, empty, and blank code against the baseline, the four anchor strings, `SHOW20` once between Make-Good and Standard Terms, anchor x/y/page/font/color, a 64-character code printing as its 24-character slug on one line, and the injection input `X Advertiser Signature Tab Publisher Date Tab` drawing `X` with each of the four anchor strings present exactly once. `lib/pdf/io-generator.test.ts` was not edited.
+
+`RECORD_IO_BASELINE=1` rewrites the fixture. It is skipped otherwise. The committed fixture was taken before the generator change.
+
+Local fixture PDFs: with no code, page 1 and page 2 pixels match the pre-change PDF. With `SHOW20`, the code is a terms row and the signature page pixels still match.
+
+### Known gaps
+
+- The backlog line for this gap is left for a later docs pass. `PRODUCT_BACKLOG.md` was not edited.
+- No envelope was sent. Preview and send pick the code up because they already pass the deal row.
+
+### Follow-ups, not built here
+
+- (a) `app/(dashboard)/deals/deals-client.tsx` line 192, View IO, opens the legacy PDF at `/deals/${id}/io` even on DocuSign deals. It should point at `/preview` or the signed PDF.
+- (b) Legacy `lib/pdf/io-pdf.ts` (the `io/pdf` download and the `io/send` email attachment) has no promo code.
+
