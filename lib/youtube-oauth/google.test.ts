@@ -18,7 +18,7 @@ describe("google oauth", () => {
     const url = new URL(
       buildAuthorizeUrl({
         clientId: "client-id",
-        redirectUri: "https://taylslate.com/api/youtube/callback",
+        redirectUri: "https://www.taylslate.com/api/youtube/callback",
         state: "state-value",
         verifier: "verifier-value",
       })
@@ -68,7 +68,7 @@ describe("google oauth", () => {
         code: "code",
         clientId: "client-id",
         clientSecret: SECRET,
-        redirectUri: "https://taylslate.com/api/youtube/callback",
+        redirectUri: "https://www.taylslate.com/api/youtube/callback",
         verifier: "verifier",
       },
       fetchImpl

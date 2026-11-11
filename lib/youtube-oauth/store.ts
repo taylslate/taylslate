@@ -166,6 +166,22 @@ export async function loadDealShowProfiles(
   }));
 }
 
+export async function activeChannelOwner(
+  channelId: string
+): Promise<{ ok: true; userId: string | null } | { ok: false; reason: "missing" }> {
+  const { data, error } = await supabaseAdmin
+    .from("youtube_oauth_connections")
+    .select("user_id")
+    .eq("channel_id", channelId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (error) {
+    if (missingRelation(error)) return { ok: false, reason: "missing" };
+    throw new Error("youtube connection lookup failed");
+  }
+  return { ok: true, userId: typeof data?.user_id === "string" ? data.user_id : null };
+}
+
 export async function upsertConnection(input: {
   userId: string;
   showProfileId: string;
@@ -177,17 +193,9 @@ export async function upsertConnection(input: {
   accessTokenExpiresAt: string | null;
   now: string;
 }): Promise<{ ok: true; id: string } | { ok: false; reason: "channel_taken" | "missing" }> {
-  const { data: holder, error: holderError } = await supabaseAdmin
-    .from("youtube_oauth_connections")
-    .select("user_id")
-    .eq("channel_id", input.channelId)
-    .eq("status", "active")
-    .maybeSingle();
-  if (holderError) {
-    if (missingRelation(holderError)) return { ok: false, reason: "missing" };
-    throw new Error("youtube connection lookup failed");
-  }
-  if (holder && holder.user_id !== input.userId) return { ok: false, reason: "channel_taken" };
+  const holder = await activeChannelOwner(input.channelId);
+  if (!holder.ok) return holder;
+  if (holder.userId && holder.userId !== input.userId) return { ok: false, reason: "channel_taken" };
 
   const { data, error } = await supabaseAdmin
     .from("youtube_oauth_connections")
@@ -207,6 +215,7 @@ export async function upsertConnection(input: {
         last_refreshed_at: input.now,
         last_verified_at: input.now,
         revoked_at: null,
+        reauth_required_at: null,
       },
       { onConflict: "user_id,channel_id" }
     )
@@ -365,12 +374,16 @@ export interface AnalyticsCandidateRow {
   hasRetention: boolean;
 }
 
-export async function loadAnalyticsCandidateRows(): Promise<AnalyticsCandidateRow[]> {
+const ANALYTICS_CANDIDATE_WINDOW_MS = 16 * 24 * 60 * 60 * 1000;
+
+export async function loadAnalyticsCandidateRows(now: Date): Promise<AnalyticsCandidateRow[]> {
+  const since = new Date(now.getTime() - ANALYTICS_CANDIDATE_WINDOW_MS).toISOString();
   const { data, error } = await supabaseAdmin
     .from("airchecks")
     .select("io_line_item_id, episode_identifier, duration_seconds, ad_start_seconds, ad_end_seconds")
     .eq("provider", "youtube-captions")
-    .eq("status", "transcribed");
+    .eq("status", "transcribed")
+    .gt("created_at", since);
   if (error) {
     if (missingRelation(error)) return [];
     throw new Error("youtube analytics candidates failed");

@@ -23,7 +23,7 @@ Taylslate reads views, estimated minutes watched, average view duration, and the
 
 ## Demo video script
 
-Record on `https://www.taylslate.com` after this job is deployed, in English. `www.taylslate.com` is the canonical host. `https://taylslate.com` returns 308 to www, keeping the path and query, so the OAuth redirect URI, the disconnect Origin check, and the callback cookie all use www. `NEXT_PUBLIC_SITE_URL` should be `https://www.taylslate.com`. Upload the video to YouTube as Unlisted.
+Record on `https://www.taylslate.com` after this job is deployed, in English. `www.taylslate.com` is the canonical host. Vercel 307s `https://taylslate.com` to www at the domain level, keeping the path and query, so the OAuth redirect URI, the disconnect Origin check, and the callback cookie all use www. `readYoutubeOauthConfig` also rewrites an apex `NEXT_PUBLIC_SITE_URL` to www. `NEXT_PUBLIC_SITE_URL` should be `https://www.taylslate.com`. Upload the video to YouTube as Unlisted.
 
 1. Open `/settings/youtube` while signed in as a show. Show the app name Taylslate on the consent screen.
 2. Click Connect YouTube. On the Google consent screen, keep the address bar visible so the OAuth client id is readable. Show both scopes.

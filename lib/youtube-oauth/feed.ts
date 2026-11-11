@@ -211,39 +211,60 @@ function timedOut(deps: YoutubeCaptionDeps, startedMs: number): boolean {
   return deps.clock() - startedMs >= deps.timeBudgetMs;
 }
 
+export async function reverifyActiveConnections(
+  connections: FeedConnection[],
+  at: Date,
+  startedMs: number,
+  hooks: {
+    clock: () => number;
+    timeBudgetMs: number;
+    refresh: YoutubeCaptionDeps["refresh"];
+    markReauth: (id: string, at: string) => Promise<void>;
+    markVerified: (id: string, at: string) => Promise<void>;
+  }
+): Promise<string[]> {
+  const dead: string[] = [];
+  for (let index = connections.length - 1; index >= 0; index -= 1) {
+    const connection = connections[index];
+    if (!connection) continue;
+    if (hooks.clock() - startedMs >= hooks.timeBudgetMs) break;
+    const outcome = await hooks.refresh(connection);
+    if (!outcome.ok) {
+      if (outcome.invalidGrant) {
+        await hooks.markReauth(connection.id, at.toISOString());
+        connections.splice(index, 1);
+        dead.push(connection.id);
+      }
+      continue;
+    }
+    connection.accessToken = outcome.accessToken;
+    connection.accessTokenExpiresAt = outcome.expiresAt;
+    connection.lastVerifiedAt = at.toISOString();
+    await hooks.markVerified(connection.id, at.toISOString());
+  }
+  return dead;
+}
+
 function defaultDeps(now: Date): YoutubeCaptionDeps {
   const tokens = new Map<string, string>();
   const config = () => readYoutubeOauthConfig();
+  const clock = () => Date.now();
   return {
     now,
     configured: youtubeOauthConfigured,
     tablesReady: youtubeOauthTablesReady,
     housekeeping: (at) => runYoutubeHousekeeping(at),
-    reverify: async (connections, at, startedMs) => {
-      const dead: string[] = [];
-      for (let index = connections.length - 1; index >= 0; index -= 1) {
-        const connection = connections[index];
-        if (!connection) continue;
-        if (Date.now() - startedMs >= YOUTUBE_CAPTION_BUDGET_MS) break;
-        const outcome = await refreshConnection(connection, tokens, at, true);
-        if (!outcome.ok) {
-          if (outcome.invalidGrant) {
-            await markConnectionReauth(connection.id, at.toISOString());
-            connections.splice(index, 1);
-            dead.push(connection.id);
-          }
-          continue;
-        }
-        connection.accessToken = outcome.accessToken;
-        connection.accessTokenExpiresAt = outcome.expiresAt;
-        connection.lastVerifiedAt = at.toISOString();
-        await markConnectionVerified(connection.id, at.toISOString());
-      }
-      return dead;
-    },
+    reverify: (connections, at, startedMs) =>
+      reverifyActiveConnections(connections, at, startedMs, {
+        clock,
+        timeBudgetMs: YOUTUBE_CAPTION_BUDGET_MS,
+        refresh: (connection) => refreshConnection(connection, tokens, at, true),
+        markReauth: (id, when) => markConnectionReauth(id, when),
+        markVerified: markConnectionVerified,
+      }),
     loadStoredCaption: readStoredCaption,
     loadAnalyticsCandidates: async () => {
-      const rows = await loadAnalyticsCandidateRows();
+      const rows = await loadAnalyticsCandidateRows(now);
       return rows.map((row) => ({ ...row, publishedAt: null }));
     },
     loadSpots: loadDueSpots,
@@ -289,7 +310,7 @@ function defaultDeps(now: Date): YoutubeCaptionDeps {
     record: writeEvent,
     saveMetrics,
     loadMetrics: loadMetricsAttempt,
-    clock: () => Date.now(),
+    clock,
     timeBudgetMs: YOUTUBE_CAPTION_BUDGET_MS,
     log: (line) => console.info(clip(line)),
   };
@@ -652,6 +673,10 @@ async function saveJudgment(
   return { ready: located.readyForReview };
 }
 
+function analyticsRowComplete(item: AnalyticsWork): boolean {
+  return item.views != null && (item.hasRetention || item.adStartSeconds == null || item.adEndSeconds == null);
+}
+
 async function runAnalyticsPass(
   deps: YoutubeCaptionDeps,
   connections: FeedConnection[],
@@ -660,7 +685,16 @@ async function runAnalyticsPass(
   const candidates = await deps.loadAnalyticsCandidates();
   let saved = 0;
   for (const item of candidates) {
-    if (item.attempts >= 10) continue;
+    if (item.attempts >= 10 || analyticsRowComplete(item)) continue;
+    if (item.publishedAt) {
+      const knownWindow = analyticsWindow({
+        now: deps.now,
+        publishedAt: item.publishedAt,
+        attempts: item.attempts,
+        hasViews: false,
+      });
+      if (knownWindow !== "due") continue;
+    }
     const connection = connections.find(
       (row) => row.analytics && row.showProfileId && row.showProfileId === item.showProfileId
     );
@@ -669,25 +703,22 @@ async function runAnalyticsPass(
     const token = await ensureToken(connection, deps);
     if (!token.ok) continue;
 
-    let publishedAt = item.publishedAt;
-    if (!publishedAt) {
-      if (timedOut(deps, started)) return { saved, stop: "time" };
-      const lookup = await takeQuota(deps, pacificDay(deps.now), 1);
-      if (!lookup.ok) return { saved, stop: "quota" };
-      const details = await deps.videoDetails(token.accessToken, item.videoId);
-      if (!details.ok) {
-        if (details.reason === "quota") return { saved, stop: "quota" };
-        continue;
-      }
-      publishedAt = details.details.publishedAt;
+    if (timedOut(deps, started)) return { saved, stop: "time" };
+    const lookup = await takeQuota(deps, pacificDay(deps.now), 1);
+    if (!lookup.ok) return { saved, stop: "quota" };
+    const details = await deps.videoDetails(token.accessToken, item.videoId);
+    if (!details.ok) {
+      if (details.reason === "quota") return { saved, stop: "quota" };
+      continue;
     }
+    if (details.details.channelId !== connection.channelId) continue;
+    const publishedAt = item.publishedAt ?? details.details.publishedAt;
     if (!publishedAt) continue;
-    const complete = item.views != null && (item.hasRetention || item.adStartSeconds == null || item.adEndSeconds == null);
     const window = analyticsWindow({
       now: deps.now,
       publishedAt,
       attempts: item.attempts,
-      hasViews: complete,
+      hasViews: false,
     });
     if (window !== "due") continue;
 

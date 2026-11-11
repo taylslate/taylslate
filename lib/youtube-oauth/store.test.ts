@@ -1,7 +1,20 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { analyticsEnabled, toYoutubeStatus } from "./store";
+import { describe, expect, it, vi } from "vitest";
+
+const chain = vi.hoisted(() => {
+  const eqStatus = vi.fn(async () => ({ error: null }));
+  const eqId = vi.fn(() => ({ eq: eqStatus }));
+  const update = vi.fn(() => ({ eq: eqId }));
+  const from = vi.fn(() => ({ update }));
+  return { eqStatus, eqId, update, from };
+});
+
+vi.mock("@/lib/supabase/admin", () => ({
+  supabaseAdmin: { from: chain.from },
+}));
+
+import { analyticsEnabled, markConnectionReauth, toYoutubeStatus } from "./store";
 
 describe("youtube connection status", () => {
   it("returns only the caller's public fields", () => {
@@ -47,5 +60,20 @@ describe("youtube connection status", () => {
     expect(src).toContain('const STATUS_COLUMNS = "channel_id, channel_title, status, scopes"');
     expect(body).toContain("select(STATUS_COLUMNS)");
     expect(body).not.toMatch(/token/);
+  });
+
+  it("sets reauth_required, nulls both tokens, and only updates an active row", async () => {
+    const at = "2026-11-11T20:00:00.000Z";
+    await markConnectionReauth("conn-1", at);
+    expect(chain.from).toHaveBeenCalledWith("youtube_oauth_connections");
+    expect(chain.update).toHaveBeenCalledWith({
+      status: "reauth_required",
+      refresh_token_enc: null,
+      access_token_enc: null,
+      access_token_expires_at: null,
+      reauth_required_at: at,
+    });
+    expect(chain.eqId).toHaveBeenCalledWith("id", "conn-1");
+    expect(chain.eqStatus).toHaveBeenCalledWith("status", "active");
   });
 });

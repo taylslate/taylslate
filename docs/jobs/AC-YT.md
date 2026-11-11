@@ -55,7 +55,7 @@ Chris sets these in Vercel Production. This PR does not change Vercel env.
 - `YOUTUBE_TOKEN_ENC_KEY` (32 random bytes, base64)
 - `DEEPGRAM_API_KEY` (named here for AC-TX; AC-TX does not own `.env.example`)
 
-`www.taylslate.com` is the canonical host. The bare domain 308s to www in `proxy.ts`, and `readYoutubeOauthConfig` rewrites an apex `NEXT_PUBLIC_SITE_URL` to www. The redirect URI, the disconnect Origin check, and the callback cookie all use www. Set `NEXT_PUBLIC_SITE_URL` to `https://www.taylslate.com`. The callback path is `/api/youtube/callback`.
+`www.taylslate.com` is the canonical host. Vercel already 307s the bare domain to www at the domain level, and `readYoutubeOauthConfig` rewrites an apex `NEXT_PUBLIC_SITE_URL` to www. The redirect URI, the disconnect Origin check, and the callback cookie all use www. Set `NEXT_PUBLIC_SITE_URL` to `https://www.taylslate.com`. The callback path is `/api/youtube/callback`.
 
 Caption text is purged from `created_at`, not `updated_at`, because the airchecks trigger rewrites `updated_at`. A daily OAuth refresh probe (no Data API quota) nulls tokens on `invalid_grant` and sets `reauth_required_at`. Housekeeping deletes that connection, its metrics, and its captions 30 days later. Analytics run in a separate pass after captions, for transcribed `youtube-captions` rows from 48 hours to 14 days after publish.
 

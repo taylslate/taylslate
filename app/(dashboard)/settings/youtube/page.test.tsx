@@ -55,7 +55,15 @@ describe("/settings/youtube", () => {
     render(page);
     expect(screen.getByRole("link", { name: "Connect YouTube" })).toHaveAttribute("href", "/api/youtube/connect");
     expect(screen.getByText(/caption tracks of/i)).toBeInTheDocument();
-    expect(screen.getByText(/Nothing is posted or changed on YouTube/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing is posted or changed on YouTube/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Analytics values are kept while your channel stays connected/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /If you remove Taylslate at Google, we treat that as a lapsed authorization and delete your tokens when our daily check detects it/i
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByText(/We check the grant every day/i)).toBeInTheDocument();
+    expect(screen.queryByText(/or a refresh fails/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Taylslate staff review sponsor-read excerpts/i)).toBeInTheDocument();
     expect(screen.getByText(/never uploads, edits, deletes, or posts/i)).toBeInTheDocument();
     expect(screen.getByText(/do not use it to train AI models or in pooled data/i)).toBeInTheDocument();

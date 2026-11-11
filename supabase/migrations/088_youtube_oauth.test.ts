@@ -277,6 +277,8 @@ describe("migration 088 on PGlite", () => {
         '${conn}', '${USER}', '${profile}', 'UCkeep', 'Keep', array['https://www.googleapis.com/auth/youtube.force-ssl'],
         'v1.keep', 'v1.access', 'active'
       );
+      insert into public.youtube_aircheck_metrics (io_line_item_id, connection_id, video_id, views, attempts)
+      values ('${line}', '${conn}', 'disconnect1', 3, 1);
     `);
 
     expect(await attempt("service_role", `select public.youtube_oauth_housekeeping(now())`)).toBe("allowed");
@@ -310,6 +312,23 @@ describe("migration 088 on PGlite", () => {
     expect(disconnected.rows[0]?.status).toBe("revoked");
     expect(disconnected.rows[0]?.refresh_token_enc).toBeNull();
     expect(disconnected.rows[0]?.access_token_enc).toBeNull();
+    const disconnectedMetrics = await db.query<{ count: string }>(
+      `select count(*)::text as count from public.youtube_aircheck_metrics where connection_id = '${conn}'`
+    );
+    expect(disconnectedMetrics.rows[0]?.count).toBe("0");
+
+    await db.exec(`
+      update public.airchecks
+         set transcript_text = 'reauth caption',
+             transcript_segments = '[]'::jsonb,
+             match_evidence = '{"excerpt":"reauth caption","brand":"found"}'::jsonb
+       where io_line_item_id = '${lineReauth}';
+      update public.airchecks
+         set transcript_text = 'revoked caption',
+             transcript_segments = '[]'::jsonb,
+             match_evidence = '{"excerpt":"revoked caption","brand":"missing"}'::jsonb
+       where io_line_item_id = '${lineRevoked}';
+    `);
 
     await db.exec(`
       insert into public.youtube_oauth_connections (
@@ -354,6 +373,46 @@ describe("migration 088 on PGlite", () => {
     );
     expect(revokedCaption.rows[0]?.transcript_text).toBeNull();
     expect(revokedCaption.rows[0]?.match_result).toBe("not_matched");
+
+    const connActive = "13131313-1313-4313-8313-131313131313";
+    await db.exec(`
+      update public.airchecks
+         set transcript_text = 'kept by active',
+             transcript_segments = '[]'::jsonb,
+             match_evidence = '{"excerpt":"kept by active","brand":"found"}'::jsonb
+       where io_line_item_id in ('${lineReauth}', '${lineRevoked}');
+      insert into public.youtube_oauth_connections (
+        id, user_id, show_profile_id, channel_id, channel_title, scopes, refresh_token_enc, status
+      ) values (
+        '${connActive}', '${USER}', '${profile}', 'UCactive', 'Current', array['https://www.googleapis.com/auth/youtube.force-ssl'],
+        'v1.live', 'active'
+      );
+      insert into public.youtube_oauth_connections (
+        id, user_id, show_profile_id, channel_id, channel_title, scopes, status, reauth_required_at
+      ) values (
+        '${connReauth}', '${OTHER}', '${profile}', 'UCreauth2', 'Lapsed', array['https://www.googleapis.com/auth/youtube.force-ssl'],
+        'reauth_required', now() - interval '31 days'
+      );
+      insert into public.youtube_oauth_connections (
+        id, user_id, show_profile_id, channel_id, channel_title, scopes, status, revoked_at
+      ) values (
+        '${connRevoked}', '${OTHER}', '${profile}', 'UCrevoked2', 'Gone again', array['https://www.googleapis.com/auth/youtube.force-ssl'],
+        'revoked', now() - interval '8 days'
+      );
+    `);
+    expect(await attempt("service_role", `select public.youtube_oauth_housekeeping(now())`)).toBe("allowed");
+    const kept = await db.query<{ transcript_text: string | null }>(
+      `select transcript_text from public.airchecks where io_line_item_id in ('${lineReauth}', '${lineRevoked}') order by io_line_item_id`
+    );
+    expect(kept.rows.map((row) => row.transcript_text)).toEqual(["kept by active", "kept by active"]);
+    const retiredGone = await db.query<{ count: string }>(
+      `select count(*)::text as count from public.youtube_oauth_connections where id in ('${connReauth}', '${connRevoked}')`
+    );
+    expect(retiredGone.rows[0]?.count).toBe("0");
+    const activeLeft = await db.query<{ status: string }>(
+      `select status from public.youtube_oauth_connections where id = '${connActive}'`
+    );
+    expect(activeLeft.rows[0]?.status).toBe("active");
 
     const secondLive = await attempt(
       "service_role",

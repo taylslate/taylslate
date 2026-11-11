@@ -473,6 +473,12 @@ begin
      where c.status = 'reauth_required'
        and c.reauth_required_at is not null
        and c.reauth_required_at < v_reauth_before
+       and not exists (
+         select 1
+           from public.youtube_oauth_connections l
+          where l.show_profile_id = c.show_profile_id
+            and l.status = 'active'
+       )
   ));
 
   delete from public.youtube_oauth_connections
@@ -496,6 +502,12 @@ begin
      where c.status = 'revoked'
        and c.revoked_at is not null
        and c.revoked_at < v_revoked_before
+       and not exists (
+         select 1
+           from public.youtube_oauth_connections l
+          where l.show_profile_id = c.show_profile_id
+            and l.status = 'active'
+       )
   ));
 
   delete from public.youtube_oauth_connections

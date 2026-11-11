@@ -16,6 +16,7 @@ export interface VideoDetails {
   durationSeconds: number | null;
   publishedAt: string | null;
   defaultLanguage: string | null;
+  channelId: string | null;
 }
 
 export type CaptionFetchFailure = "owner" | "quota" | "http" | "empty";
@@ -216,7 +217,12 @@ export async function fetchVideoDetails(
   const items = Array.isArray(body?.items) ? body.items : [];
   const item = items[0] as
     | {
-        snippet?: { publishedAt?: unknown; defaultLanguage?: unknown; defaultAudioLanguage?: unknown };
+        snippet?: {
+          publishedAt?: unknown;
+          defaultLanguage?: unknown;
+          defaultAudioLanguage?: unknown;
+          channelId?: unknown;
+        };
         contentDetails?: { duration?: unknown };
       }
     | undefined;
@@ -235,6 +241,7 @@ export async function fetchVideoDetails(
       ),
       publishedAt: typeof item.snippet?.publishedAt === "string" ? item.snippet.publishedAt : null,
       defaultLanguage: language,
+      channelId: typeof item.snippet?.channelId === "string" ? item.snippet.channelId : null,
     },
   };
 }

@@ -127,9 +127,9 @@ export default function YoutubeConnectClient({
           Taylslate asks Google for two permissions. youtube.force-ssl lets us read the caption tracks of
           videos on your channel. Google does not offer a narrower permission for captions, and it also
           allows changes to your channel. Taylslate never uploads, edits, deletes, or posts anything.
-          Nothing is posted or changed on YouTube. yt-analytics.readonly lets us read YouTube Analytics for
-          videos on your Taylslate deals: views, estimated minutes watched, average view duration, and the
-          audience retention points around the sponsor read.
+          yt-analytics.readonly lets us read YouTube Analytics for videos on your Taylslate deals: views,
+          estimated minutes watched, average view duration, and the audience retention points around the
+          sponsor read.
         </p>
         <p>
           We store your channel ID and title. We read captions and analytics to verify that a booked sponsor
@@ -139,10 +139,12 @@ export default function YoutubeConnectClient({
         </p>
         <p>
           Caption text and the sponsor-read excerpt are deleted 30 days after we fetch them. The match result
-          stays with the deal. If Google testing access lapses, or a refresh fails, reconnect here. After 30
-          days without a working grant we delete the stored Google data, including the channel ID and title.
-          Disconnect revokes Taylslate at Google, deletes the tokens right away, and deletes the remaining
-          Google data within 7 days.
+          stays with the deal. Analytics values are kept while your channel stays connected. We check the
+          grant every day. If that check finds the grant has lapsed, reconnect here. If you remove Taylslate
+          at Google, we treat that as a lapsed authorization and delete your tokens when our daily check
+          detects it. After 30 days without a working grant we delete the stored Google data, including the
+          channel ID and title. Disconnect revokes Taylslate at Google, deletes the tokens right away, and
+          deletes the remaining Google data within 7 days.
         </p>
         <p>
           Disconnect here, or remove Taylslate at{" "}

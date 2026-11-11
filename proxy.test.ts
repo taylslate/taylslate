@@ -10,7 +10,7 @@ vi.mock("@supabase/ssr", () => ({
   createServerClient: vi.fn(() => ({ auth: { getUser } })),
 }));
 
-import { proxy, redirectApexToWww } from "./proxy";
+import { proxy } from "./proxy";
 
 const run = (path: string) =>
   proxy(new NextRequest(`https://www.taylslate.com${path}`));
@@ -92,22 +92,5 @@ describe("proxy passes authenticated users through to protected routes", () => {
     getUser.mockResolvedValue({ data: { user: { id: "u1" } } });
     const res = await run("/admin");
     expect(redirectedToLogin(res)).toBe(false);
-  });
-});
-
-describe("canonical host", () => {
-  it("sends the bare domain to www and keeps the path and query", () => {
-    const res = redirectApexToWww(
-      new NextRequest("https://taylslate.com/api/youtube/callback?code=abc&state=xyz")
-    );
-    expect(res?.status).toBe(308);
-    expect(res?.headers.get("location")).toBe(
-      "https://www.taylslate.com/api/youtube/callback?code=abc&state=xyz"
-    );
-  });
-
-  it("leaves www and other hosts alone", () => {
-    expect(redirectApexToWww(new NextRequest("https://www.taylslate.com/settings/youtube"))).toBeNull();
-    expect(redirectApexToWww(new NextRequest("http://localhost:3000/settings/youtube"))).toBeNull();
   });
 });

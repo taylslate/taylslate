@@ -6,6 +6,7 @@ import { GOOGLE_DERIVED_AIRCHECK_PROVIDERS } from "@/lib/learning/google-data";
 import {
   YOUTUBE_CAPTION_PROVIDER,
   clearCaptionText,
+  reverifyActiveConnections,
   runYoutubeCaptionAirchecks,
   type FeedConnection,
   type YoutubeCaptionDeps,
@@ -97,6 +98,7 @@ This read is from Sauna Box. Use code HUBERMAN at saunabox.com.
         durationSeconds: 100,
         publishedAt: NOW.toISOString(),
         defaultLanguage: "en",
+        channelId: "UCchannel",
       },
     }),
     fetchAnalytics: async () => ({
@@ -334,7 +336,7 @@ This read is from Sauna Box. Use code HUBERMAN at saunabox.com.
         downloadCaption: download,
         videoDetails: async () => ({
           ok: true,
-          details: { durationSeconds: 100, publishedAt: published, defaultLanguage: "en" },
+          details: { durationSeconds: 100, publishedAt: published, defaultLanguage: "en", channelId: "UCchannel" },
         }),
         loadAnalyticsCandidates: async () => [
           {
@@ -409,6 +411,105 @@ This read is from Sauna Box. Use code HUBERMAN at saunabox.com.
     expect(download).not.toHaveBeenCalled();
     expect(save.mock.calls[0]?.[0].transcript_text).toContain("Sauna Box");
     expect(save.mock.calls[0]?.[0].provider).toBe("youtube-captions");
+  });
+
+  it("skips a complete row and a 20-day-old row before videos.list", async () => {
+    const videoDetails = vi.fn();
+    const commitQuota = vi.fn();
+    const old = new Date(NOW.getTime() - 20 * 24 * 60 * 60 * 1000).toISOString();
+    const result = await runYoutubeCaptionAirchecks(
+      deps({
+        loadSpots: async () => [],
+        videoDetails,
+        commitQuota,
+        loadAnalyticsCandidates: async () => [
+          {
+            ioLineItemId: "line-complete",
+            videoId: VIDEO,
+            showProfileId: "profile-1",
+            publishedAt: null,
+            durationSeconds: 100,
+            adStartSeconds: 40,
+            adEndSeconds: 50,
+            attempts: 1,
+            views: 100,
+            hasRetention: true,
+          },
+          {
+            ioLineItemId: "line-old",
+            videoId: VIDEO,
+            showProfileId: "profile-1",
+            publishedAt: old,
+            durationSeconds: 100,
+            adStartSeconds: 40,
+            adEndSeconds: 50,
+            attempts: 0,
+            views: null,
+            hasRetention: false,
+          },
+        ],
+      }),
+      NOW
+    );
+    expect(result.analytics).toBe(0);
+    expect(videoDetails).not.toHaveBeenCalled();
+    expect(commitQuota).not.toHaveBeenCalled();
+  });
+
+  it("refreshes a connection verified yesterday and drops invalid_grant", async () => {
+    const yesterday = new Date(NOW.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const connection = (): FeedConnection => ({
+      id: "conn-1",
+      showProfileId: "profile-1",
+      channelId: "UCchannel",
+      analytics: true,
+      accessToken: "old",
+      accessTokenExpiresAt: yesterday,
+      lastVerifiedAt: yesterday,
+    });
+    const seenVerifiedAt: Array<string | null> = [];
+    let invalidGrant = false;
+    const refresh = vi.fn(async (row: FeedConnection) => {
+      seenVerifiedAt.push(row.lastVerifiedAt);
+      if (invalidGrant) return { ok: false as const, invalidGrant: true };
+      return {
+        ok: true as const,
+        accessToken: "new-access",
+        expiresAt: "2026-11-11T21:00:00.000Z",
+      };
+    });
+    const markReauth = vi.fn(async () => undefined);
+    const markVerified = vi.fn(async () => undefined);
+    const hooks = {
+      clock: () => NOW.getTime(),
+      timeBudgetMs: 60_000,
+      refresh,
+      markReauth,
+      markVerified,
+    };
+    const live = [connection()];
+    const kept = await reverifyActiveConnections(live, NOW, NOW.getTime(), hooks);
+    expect(kept).toEqual([]);
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(seenVerifiedAt[0]).toBe(yesterday);
+    expect(markVerified).toHaveBeenCalledWith("conn-1", NOW.toISOString());
+    expect(live[0]?.accessToken).toBe("new-access");
+
+    invalidGrant = true;
+    const lapsed = [connection()];
+    const dropped = await reverifyActiveConnections(lapsed, NOW, NOW.getTime(), hooks);
+    expect(markReauth).toHaveBeenCalledWith("conn-1", NOW.toISOString());
+    expect(dropped).toEqual(["conn-1"]);
+    expect(lapsed).toHaveLength(0);
+
+    const late = vi.fn();
+    const started = Date.now();
+    await reverifyActiveConnections([connection()], NOW, started, {
+      ...hooks,
+      clock: () => started + 70_000,
+      refresh: late,
+    });
+    expect(late).not.toHaveBeenCalled();
   });
 
   it("drops a connection from the list after the daily probe marks reauth", async () => {

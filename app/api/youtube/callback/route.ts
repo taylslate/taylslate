@@ -24,6 +24,7 @@ import {
 } from "@/lib/youtube-oauth/google";
 import { enforceYoutubeCallback } from "@/lib/youtube-oauth/limits";
 import {
+  activeChannelOwner,
   listLiveCiphertexts,
   requireShowProfile,
   retireConnection,
@@ -111,6 +112,16 @@ export async function GET(request: NextRequest) {
     if (!channel.ok) {
       await revokeGoogleToken(refreshPlain);
       return redirectError(channel.reason === "channel" ? "channel" : "exchange");
+    }
+
+    const owner = await activeChannelOwner(channel.channel.channelId);
+    if (!owner.ok) {
+      await revokeGoogleToken(refreshPlain);
+      return redirectError("exchange");
+    }
+    if (owner.userId && owner.userId !== user.id) {
+      await revokeGoogleToken(refreshPlain);
+      return redirectError("channel_taken");
     }
 
     const live = await listLiveCiphertexts(user.id);

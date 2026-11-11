@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sealJson, sha256Hex } from "@/lib/youtube-oauth/crypto";
+import { encryptString, sealJson, sha256Hex } from "@/lib/youtube-oauth/crypto";
 
 const auth = vi.fn();
 const show = vi.fn();
@@ -11,6 +11,9 @@ const listChannel = vi.fn();
 const revoke = vi.fn();
 const upsert = vi.fn();
 const logEvent = vi.fn();
+const live = vi.fn();
+const retire = vi.fn();
+const owner = vi.fn();
 
 vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: () => auth(),
@@ -28,8 +31,9 @@ vi.mock("@/lib/youtube-oauth/store", () => ({
   requireShowProfile: (...args: unknown[]) => show(...args),
   youtubeOauthTablesReady: () => tables(),
   upsertConnection: (...args: unknown[]) => upsert(...args),
-  listLiveCiphertexts: async () => [],
-  retireConnection: async () => undefined,
+  listLiveCiphertexts: (...args: unknown[]) => live(...args),
+  retireConnection: (...args: unknown[]) => retire(...args),
+  activeChannelOwner: (...args: unknown[]) => owner(...args),
 }));
 
 vi.mock("@/lib/youtube-oauth/google", async () => {
@@ -46,6 +50,13 @@ import { GET } from "./route";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
+const held: Array<{
+  id: string;
+  channel_id: string;
+  refresh_token_enc: string | null;
+  access_token_enc: string | null;
+  status: string;
+}> = [];
 const KEY = Buffer.alloc(32, 5);
 const STATE = "state-value";
 const VERIFIER = "verifier-value";
@@ -83,6 +94,16 @@ describe("GET /api/youtube/callback", () => {
     revoke.mockResolvedValue(undefined);
     upsert.mockResolvedValue({ ok: true, id: "conn-1" });
     logEvent.mockResolvedValue(null);
+    live.mockResolvedValue([]);
+    retire.mockImplementation(async (id: string) => {
+      const row = held.find((item) => item.id === id);
+      if (!row || row.status !== "active") return;
+      row.status = "revoked";
+      row.refresh_token_enc = null;
+      row.access_token_enc = null;
+    });
+    owner.mockResolvedValue({ ok: true, userId: null });
+    held.length = 0;
     process.env.GOOGLE_OAUTH_CLIENT_ID = "client-id";
     process.env.GOOGLE_OAUTH_CLIENT_SECRET = "client-secret-value";
     process.env.YOUTUBE_TOKEN_ENC_KEY = KEY.toString("base64");
@@ -132,5 +153,47 @@ describe("GET /api/youtube/callback", () => {
     const taken = await callback(cookieFor(USER));
     expect(new URL(taken.headers.get("location") ?? "").searchParams.get("error")).toBe("channel_taken");
     expect(revoke).toHaveBeenCalledTimes(2);
+    expect(retire).not.toHaveBeenCalled();
+  });
+
+  it("retires the previous channel once on a switch, and leaves it when the channel is taken", async () => {
+    held.push({
+      id: "old-row",
+      channel_id: "UCold",
+      refresh_token_enc: encryptString("old-refresh", KEY),
+      access_token_enc: null,
+      status: "active",
+    });
+    live.mockImplementation(async () => held.filter((row) => row.status !== "revoked"));
+    listChannel.mockResolvedValue({ ok: true, channel: { channelId: "UCnew", title: "New Show" } });
+    const switched = await callback(cookieFor(USER));
+    expect(new URL(switched.headers.get("location") ?? "").searchParams.get("connected")).toBe("1");
+    expect(retire).toHaveBeenCalledTimes(1);
+    expect(retire).toHaveBeenCalledWith("old-row");
+    expect(held[0]?.status).toBe("revoked");
+    expect(held[0]?.refresh_token_enc).toBeNull();
+    expect(revoke).toHaveBeenCalledWith("old-refresh");
+    expect(upsert).toHaveBeenCalledOnce();
+
+    held[0] = {
+      id: "old-row",
+      channel_id: "UCmine",
+      refresh_token_enc: encryptString("keep-refresh", KEY),
+      access_token_enc: null,
+      status: "active",
+    };
+    retire.mockClear();
+    revoke.mockClear();
+    upsert.mockClear();
+    owner.mockResolvedValue({ ok: true, userId: OTHER });
+    listChannel.mockResolvedValue({ ok: true, channel: { channelId: "UCtaken", title: "Taken" } });
+    const taken = await callback(cookieFor(USER));
+    expect(new URL(taken.headers.get("location") ?? "").searchParams.get("error")).toBe("channel_taken");
+    expect(retire).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+    expect(held[0]?.status).toBe("active");
+    expect(held[0]?.refresh_token_enc).not.toBeNull();
+    expect(revoke).toHaveBeenCalledWith(REFRESH);
+    expect(revoke).not.toHaveBeenCalledWith("keep-refresh");
   });
 });

@@ -1,22 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { CANONICAL_SITE_HOST } from "@/lib/youtube-oauth/config";
-
-/** 308 the bare domain to www so OAuth, cookies, and Origin share one host. */
-export function redirectApexToWww(request: NextRequest): NextResponse | null {
-  const raw = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? request.nextUrl.host;
-  const host = raw.split(",")[0]?.trim().split(":")[0]?.toLowerCase() ?? "";
-  if (host !== "taylslate.com") return null;
-  const url = request.nextUrl.clone();
-  url.hostname = CANONICAL_SITE_HOST;
-  url.protocol = "https:";
-  return NextResponse.redirect(url, 308);
-}
 
 export async function proxy(request: NextRequest) {
-  const apex = redirectApexToWww(request);
-  if (apex) return apex;
-
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
