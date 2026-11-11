@@ -521,11 +521,10 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
   }
 
   // Blank, missing, and whitespace-only codes draw nothing and do not move y.
-  // normalizePromoCode is the check. The printed value is the stored code,
-  // trimmed, so a long code wraps in the value column.
-  const storedPromo =
-    typeof deal.promo_code === "string" ? deal.promo_code.trim() : "";
-  if (normalizePromoCode(storedPromo)) {
+  // The printed value is the normalized slug ([A-Z0-9], at most 24 characters,
+  // no spaces). The raw stored string is not drawn, so it cannot add an anchor.
+  const promo = normalizePromoCode(deal.promo_code);
+  if (promo) {
     checkPage(36);
     doc.setFontSize(8);
     doc.setFont("helvetica", "bold");
@@ -533,7 +532,7 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     doc.text("Promo Code:", MARGIN, y);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(...TEXT);
-    const promoLines = doc.splitTextToSize(storedPromo, CONTENT_WIDTH - 110);
+    const promoLines = doc.splitTextToSize(promo, CONTENT_WIDTH - 110);
     doc.text(promoLines, MARGIN + 110, y);
     y += promoLines.length * 11 + 6;
   }

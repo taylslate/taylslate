@@ -19,9 +19,6 @@ import type { BrandProfile, Outreach, ShowProfile, Wave12Deal } from "@/lib/data
 import { generateIoPdfFromDeal, type IoPdfInput } from "./io-generator";
 
 const MARGIN = 40;
-const PAGE_WIDTH = 612;
-const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
-const VALUE_COLUMN_WIDTH = CONTENT_WIDTH - 110;
 const PAGE_BOTTOM = 752;
 
 type DrawnText = string | string[];
@@ -367,41 +364,34 @@ describe("IO PDF promo code and DocuSign anchors", () => {
     expect(advertiser.y).toBe(publisher.y);
   });
 
-  it("wraps a 64-character promo code inside the value column", async () => {
-    const code = "W".repeat(64);
-    const calls = render(code);
-    const value = calls.find(
-      (call) => Array.isArray(call.text) && call.text.join("") === code
-    );
-    expect(value).toBeTruthy();
-    const lines = linesOf(value!);
-    expect(lines.length).toBeGreaterThan(1);
-    expect(value!.x).toBe(MARGIN + 110);
-    expect(lines.every((line) => line.length < code.length)).toBe(true);
+  it("prints a 64-character promo code as its 24-character slug on one line", () => {
+    const slug = "W".repeat(24);
+    const calls = render("W".repeat(64));
+    const promoLabelAt = calls.findIndex((call) => call.text === "Promo Code:");
+    expect(promoLabelAt).toBeGreaterThanOrEqual(0);
+    const value = calls[promoLabelAt + 1];
+    expect(linesOf(value)).toEqual([slug]);
+    expect(value.x).toBe(MARGIN + 110);
+    expect(value.y).toBe(calls[promoLabelAt].y);
+  });
 
-    const { jsPDF } = await vi.importActual<typeof import("jspdf")>("jspdf");
-    const measure = new jsPDF({ unit: "pt", format: "letter" });
-    measure.setFont("helvetica", "normal");
-    measure.setFontSize(8);
-    for (const line of lines) {
-      expect(measure.getTextWidth(line)).toBeLessThanOrEqual(VALUE_COLUMN_WIDTH);
-    }
+  it("draws the slug X and does not add a second copy of any anchor", () => {
+    const calls = render("X Advertiser Signature Tab Publisher Date Tab");
+    const promoLabelAt = calls.findIndex((call) => call.text === "Promo Code:");
+    expect(promoLabelAt).toBeGreaterThanOrEqual(0);
+    expect(linesOf(calls[promoLabelAt + 1])).toEqual(["X"]);
 
-    const standard = calls.find((call) => call.text === "STANDARD TERMS");
-    expect(standard).toBeTruthy();
-    const lineHeight = 8 * 1.15;
-    if (standard!.page === value!.page) {
-      expect(standard!.y).toBeGreaterThan(
-        value!.y + (lines.length - 1) * lineHeight
+    const anchors = [
+      SIGNATURE_ANCHORS.advertiser,
+      SIGNATURE_ANCHORS.publisher,
+      SIGNATURE_ANCHORS.advertiserDate,
+      SIGNATURE_ANCHORS.publisherDate,
+    ] as const;
+    for (const anchor of anchors) {
+      const hits = calls.filter((call) =>
+        linesOf(call).some((line) => line.includes(anchor))
       );
-    } else {
-      expect(standard!.page).toBeGreaterThan(value!.page);
+      expect(hits).toHaveLength(1);
     }
-
-    const promoLabel = calls.find((call) => call.text === "Promo Code:");
-    expect(promoLabel).toBeTruthy();
-    expect(standard!.page > promoLabel!.page || standard!.y > promoLabel!.y).toBe(
-      true
-    );
   });
 });
