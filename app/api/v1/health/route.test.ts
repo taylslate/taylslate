@@ -55,7 +55,7 @@ function call(token?: string) {
 
 beforeEach(() => {
   admin = createMemoryAdmin();
-  admin.profiles.push({ id: BRAND });
+  admin.profiles.push({ id: BRAND, role: "brand", plan: "operator" });
   bridge.current = admin;
   bridge.recordEvent.mockClear();
   getUser.mockResolvedValue({ data: { user: null } });

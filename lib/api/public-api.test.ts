@@ -73,7 +73,7 @@ function request(token?: string, path = "/api/v1/health"): Request {
 
 beforeEach(() => {
   admin = createMemoryAdmin();
-  admin.profiles.push({ id: BRAND });
+  admin.profiles.push({ id: BRAND, role: "brand", plan: "operator" });
   bridge.current = admin;
   bridge.recordEvent.mockClear();
   _setApiRateClockForTests(() => FIXED_NOW);
