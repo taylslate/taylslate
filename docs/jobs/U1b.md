@@ -69,9 +69,9 @@ A `security_invoker` view needs `authenticated` to hold `SELECT` on `youtube_cha
 
 The read model is a server module. `lib/youtube-library/brand-read.ts` uses `supabaseAdmin` and `SAFE_COLUMNS`. The search page and the profile page both require a brand or agency effective role before they call it. The route does the same.
 
-## Migration 089, not built
+## The next free migration (090 at the time of writing), not built
 
-A database function is the right shape if `/api/v1` or PostgREST ever needs this read. It is not in this PR. When it is needed, migration 089 should add:
+A database function is the right shape if `/api/v1` or PostgREST ever needs this read. It is not in this PR. When it is needed, the next free migration (090 at the time of writing) should add:
 
 `public.library_creators_search(p_query text, p_limit integer)`
 
@@ -132,7 +132,7 @@ The search client keeps every previous assertion. The new group renders under th
 - A library creator has no outreach, contact, or add-to-campaign action. The profile is read-only.
 - The match is `ilike` on `title` only.
 - The database page is capped at 20 before the in-code floor check and the show-link drop, so a page can come back shorter than 20.
-- Migration 089 is not written. No view, no policy, and no grant.
+- The next free migration (090 at the time of writing) is not written. No view, no policy, and no grant.
 - `youtube_channels` and `youtube_channel_emails` stay service_role only.
 - The Search nav item was not changed. `read.ts`, `store.ts`, `quota.ts`, `lib/nav`, `lib/security/rate-limit.ts`, and `app/api/shows` were not edited.
 - No live write.

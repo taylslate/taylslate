@@ -3011,13 +3011,55 @@ Covers encrypted token round trip, tampered ciphertext, the two OAuth scopes, PK
 - Live discovery searches and the runner's YouTube lookups still do not commit to `youtube_quota_days`. A Google `quotaExceeded` stops the feed for the day.
 - Screenshots are the rendered settings page (not connected, and connected). A signed-in production session was not available here. This PR does not merge. Paul reviews.
 
+## AC-YT2: clear a retired or lapsed channel's captions by channel
+
+### What was built
+
+`youtube_oauth_housekeeping` now clears caption text and the sponsor-read excerpt for the channel on a revoked or lapsed connection, not for every line on that show profile. After a channel switch, the old channel's captions are cleared 7 days after `revoked_at`, or 30 days after `reauth_required_at`. Captions whose resolved channel is the one that is active now stay. A line whose channel resolves to null is left for the 30-day `created_at` purge. Match judgments stay.
+
+The resolved channel is `shows.youtube_channel_id` (trimmed, non-empty) for `deals.show_id`, otherwise the lowest `youtube_channels.channel_id` for that show. That is the same resolution the caption feed uses. `airchecks` has no channel column. The clear also requires the deal's `show_profile_id` to be the connection's, a `youtube-captions` aircheck on the line, and no active connection on that `channel_id`.
+
+The rest of the function is the 088 body, in the same order: the 30-day `created_at` purge, the metric deletes, and the connection row deletes. `youtube_oauth_disconnect` and `youtube_oauth_clear_captions` are unchanged. No table, column, table grant, or policy. `anon` and `authenticated` cannot execute the function. `service_role` can. Running 089 twice is a no-op.
+
+`loadAnalyticsCandidateRows` was not edited. Its test now checks the real 16-day `created_at` filter and that a non-11-character `episode_identifier` is dropped.
+
+No screen, style, or animation changed. No UI, so there are no screenshots. No live write. Read-only precheck on `ldtmhafewfifdizgfrnn`: `youtube_oauth_connections` is absent, and `airchecks` count is 0. 088 is not applied.
+
+### Where
+
+- `supabase/migrations/089_youtube_caption_clear_by_channel.sql`
+- `supabase/migrations/089_youtube_caption_clear_by_channel.test.ts`
+- `lib/youtube-oauth/store.test.ts` (cases only)
+- `docs/jobs/AC-YT2.md`
+- `docs/jobs/AC-YT.md` (one housekeeping line)
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 385 files, 3231 passed, 41 skipped.
+
+`npx vitest run supabase/migrations/088_youtube_oauth.test.ts supabase/migrations/089_youtube_caption_clear_by_channel.test.ts lib/youtube-oauth`: 11 files, 42 passed.
+
+`npx next build` compiled successfully.
+
+PGlite loads 001 through 088, then 089 twice. A profile with a revoked `UCold` connection and an active `UCnew` connection clears the old channel (including a show that resolves `UCold` only through `youtube_channels`) and leaves `UCnew` and a null channel alone. Judgments stay. The same split holds for `reauth_required_at` 31 days ago. An active connection on `UCold` blocks that clear. The 30-day `created_at` purge still runs. anon and authenticated are denied. service_role can execute.
+
+### Known gaps
+
+- 088 and 089 are not applied. Apply 088, then 089, on `ldtmhafewfifdizgfrnn` only after merge and only after Chris names each file.
+- `youtube_oauth_disconnect` still clears caption text for the whole show profile at disconnect time. This job does not change that function. A channel switch uses `retireConnection`, which leaves captions for this housekeeping pass.
+- A line whose channel resolves to null still waits for the 30-day `created_at` purge.
+- No screen changed. Screenshots are not applicable. This PR does not merge. Paul reviews.
+
 ## U1b
 
 ### What was built
 
 A brand or agency search at `/shows/search` also lists matching YouTube creators from the L1 library. The creator must have passed the market filter, have no brand flag, have stats refreshed within 30 days (`statsFreshCutoff`, the YouTube III.E.4 stored-statistics window), and clear `channelPassesLibraryFloors`. A channel already linked by `youtube_channels.show_id` or `shows.youtube_channel_id` is dropped, so it does not appear twice next to its show row.
 
-The browser never queries `youtube_channels`. `lib/youtube-library/brand-read.ts` reads with `supabaseAdmin` and `SAFE_COLUMNS`, then returns a fixed public shape: channel id, title, thumbnail, country, subscribers, video count, average views, a recent or average label, niche tags, and a YouTube channel URL. The profile adds a description cut to 300 characters. No contact table, no source, no keywords, no brand flag, and no show id leave the server. There is no view and no migration. A `security definer` function for a later `/api/v1` read is described as migration 089 in `docs/jobs/U1b.md` and is not built.
+The browser never queries `youtube_channels`. `lib/youtube-library/brand-read.ts` reads with `supabaseAdmin` and `SAFE_COLUMNS`, then returns a fixed public shape: channel id, title, thumbnail, country, subscribers, video count, average views, a recent or average label, niche tags, and a YouTube channel URL. The profile adds a description cut to 300 characters. No contact table, no source, no keywords, no brand flag, and no show id leave the server. There is no view and no migration. A `security definer` function for a later `/api/v1` read is described as the next free migration (090 at the time of writing) in `docs/jobs/U1b.md` and is not built.
 
 `GET /api/library/creators` is brand or agency only, rejects a query over 100 characters, and rate limits at 30 per minute and 1,000 per day per user. The limiter fails closed. The response is `Cache-Control: no-store`.
 
@@ -3054,6 +3096,6 @@ Screenshots are the search page before the new group, the same page after, and t
 
 - The profile is read-only. There is no outreach, contact, or add-to-campaign action.
 - Title search is `ilike` only. The database page is 20 rows before the floor check and the show-link drop, so fewer than 20 can come back.
-- Migration 089 is not written. No view, policy, or grant. Apply nothing on `ldtmhafewfifdizgfrnn` for this job.
+- The next free migration (090 at the time of writing) is not written. No view, policy, or grant. Apply nothing on `ldtmhafewfifdizgfrnn` for this job.
 - The Search nav item was not changed.
 - This PR does not merge. Paul reviews.

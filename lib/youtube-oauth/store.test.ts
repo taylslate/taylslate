@@ -6,15 +6,31 @@ const chain = vi.hoisted(() => {
   const eqStatus = vi.fn(async () => ({ error: null }));
   const eqId = vi.fn(() => ({ eq: eqStatus }));
   const update = vi.fn(() => ({ eq: eqId }));
-  const from = vi.fn(() => ({ update }));
-  return { eqStatus, eqId, update, from };
+  const badEpisodeId = "short-id";
+  const gt = vi.fn(async () => ({
+    data: [
+      {
+        io_line_item_id: "line-bad",
+        episode_identifier: badEpisodeId,
+        duration_seconds: 90,
+        ad_start_seconds: 10,
+        ad_end_seconds: 40,
+      },
+    ],
+    error: null,
+  }));
+  const eqTranscribed = vi.fn(() => ({ gt }));
+  const eqProvider = vi.fn(() => ({ eq: eqTranscribed }));
+  const select = vi.fn(() => ({ eq: eqProvider }));
+  const from = vi.fn(() => ({ update, select }));
+  return { eqStatus, eqId, update, from, select, eqProvider, eqTranscribed, gt, badEpisodeId };
 });
 
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: { from: chain.from },
 }));
 
-import { analyticsEnabled, markConnectionReauth, toYoutubeStatus } from "./store";
+import { analyticsEnabled, loadAnalyticsCandidateRows, markConnectionReauth, toYoutubeStatus } from "./store";
 
 describe("youtube connection status", () => {
   it("returns only the caller's public fields", () => {
@@ -75,5 +91,30 @@ describe("youtube connection status", () => {
     });
     expect(chain.eqId).toHaveBeenCalledWith("id", "conn-1");
     expect(chain.eqStatus).toHaveBeenCalledWith("status", "active");
+  });
+
+  it("loads analytics candidates created in the last 16 days and drops a non-video id", async () => {
+    const now = new Date("2026-11-11T15:04:05.678Z");
+    const since = new Date(now.getTime() - 16 * 24 * 60 * 60 * 1000).toISOString();
+    expect(since).toBe("2026-10-26T15:04:05.678Z");
+    expect(chain.badEpisodeId).not.toMatch(/^[A-Za-z0-9_-]{11}$/);
+
+    chain.from.mockClear();
+    chain.select.mockClear();
+    chain.eqProvider.mockClear();
+    chain.eqTranscribed.mockClear();
+    chain.gt.mockClear();
+
+    const rows = await loadAnalyticsCandidateRows(now);
+
+    expect(chain.from).toHaveBeenCalledWith("airchecks");
+    expect(chain.select).toHaveBeenCalledWith(
+      "io_line_item_id, episode_identifier, duration_seconds, ad_start_seconds, ad_end_seconds"
+    );
+    expect(chain.eqProvider).toHaveBeenCalledWith("provider", "youtube-captions");
+    expect(chain.eqTranscribed).toHaveBeenCalledWith("status", "transcribed");
+    expect(chain.gt).toHaveBeenCalledWith("created_at", since);
+    expect(chain.from).toHaveBeenCalledTimes(1);
+    expect(rows).toEqual([]);
   });
 });
