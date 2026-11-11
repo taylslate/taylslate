@@ -10,6 +10,7 @@ import {
 } from "@/lib/data/queries";
 import { getLatestCampaignPatternForCampaign } from "@/lib/data/reasoning-log";
 import type { Campaign, UserRole } from "@/lib/data/types";
+import { isGoogleDerivedAircheck } from "./google-data";
 import { loadConfirmedImportRecords } from "./past-imports";
 import {
   assembleLearningInput,
@@ -179,17 +180,30 @@ async function loadRaw(campaign: Campaign): Promise<AssembleLearningInput> {
   const lineIds = lines.map((line) => line.id);
   // match_evidence is migration 039 (applied). review_decision is migration
   // 040 (not applied yet). Ask for them separately so a missing decision
-  // column does not drop the code/URL check.
-  const airchecks = await selectInOptional<RawAircheck>(
-    "airchecks",
-    "io_line_item_id",
-    lineIds,
-    "io_line_item_id, match_evidence"
+  // column does not drop the code/URL check. Both selects include provider
+  // (migration 038, live). Google-derived rows are dropped before the merge.
+  // If the provider column cannot be read, selectInOptional already returns
+  // []. Do not add a second read that omits provider.
+  const airchecks = filterLearningAirchecks(
+    await selectInOptional<RawAircheck>(
+      "airchecks",
+      "io_line_item_id",
+      lineIds,
+      "io_line_item_id, provider, match_evidence"
+    )
   );
-  const decisions = await selectInOptional<{
-    io_line_item_id: string;
-    review_decision: string | null;
-  }>("airchecks", "io_line_item_id", lineIds, "io_line_item_id, review_decision");
+  const decisions = filterLearningAirchecks(
+    await selectInOptional<{
+      io_line_item_id: string;
+      provider?: string | null;
+      review_decision: string | null;
+    }>(
+      "airchecks",
+      "io_line_item_id",
+      lineIds,
+      "io_line_item_id, provider, review_decision"
+    )
+  );
   const decisionByLine = new Map(
     decisions.map((row) => [row.io_line_item_id, row.review_decision ?? null])
   );
@@ -376,6 +390,13 @@ function dedupeDeals(deals: DealRow[]): DealRow[] {
     if (deal.id) byId.set(deal.id, deal);
   }
   return [...byId.values()];
+}
+
+/** Drop Google-derived airchecks before they can enter a learning review. */
+export function filterLearningAirchecks<T extends { provider?: string | null }>(
+  rows: T[]
+): T[] {
+  return rows.filter((row) => !isGoogleDerivedAircheck(row));
 }
 
 async function selectIn<T>(
