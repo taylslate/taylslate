@@ -59,6 +59,7 @@ Defaults, used as specified.
 - Single-use magic tokens. Possible with no migration (one hit, key a hash of the token, window equal to the TTL). A mail scanner that prefetches the GET would burn the only use and the show would land on an error. Default: not single-use. 1 hour TTL instead.
 - Rate limit numbers. Default: 10 per IP per hour, 5 per outreach per hour, 3 per email per 15 minutes.
 - A show whose real inbox differs from what the brand typed gets no link and no error. Default: accept that, same as the email-code path. The brand resends to the right address.
+- Anyone who knows a show's address can exhaust its limits and block that show's sign-in link for up to 1 hour.
 
 ## Apply order
 
@@ -72,7 +73,6 @@ Not in this PR.
 - The mismatch path skips the brand lookup and the send, so it answers faster. Moot while the address is on the page. Revisit with the masking job.
 - GET still creates `role` `show` for a new address that passes the binding. The brand chooses `sent_to_email`, so one invite can target any inbox. Same as the email-code path. Consider a confirm step before account creation.
 - `siteOrigin` falls back to the request host when `NEXT_PUBLIC_SITE_URL` is unset. Confirm it is set in production.
-- The setup email still says the link expires in 24 hours (`lib/email/templates/magic-link.ts`). That file is outside this job. The token expires in 1 hour.
 - `docs/security/RATE_LIMITS.md` still says this route has no limit. That file is outside this job.
 
-SEC5 follow-up "magic/start sends to any address": closed by SEC6. The sentence was not in `docs/security/S-A_FINDINGS.md` on main `2732ccd`. The SEC6 finding there records the close.
+SEC5 follow-up "magic/start sends to any address": closed by SEC6. The sentence was not in `docs/security/S-A_FINDINGS.md` on main `2732ccd` (087 / SEC5 is not merged). SA-29 records the close.

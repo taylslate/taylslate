@@ -2539,9 +2539,11 @@ The limit is `enforceMagicStart`, failure closed, in this order: IP (`magic_star
 
 `GET /api/auth/magic` checks the magic token, then parses `return_url` before any user lookup or create. The URL must be this origin and the path must be exactly `/outreach/<token>`. That token must verify, the outreach must exist, and `sent_to_email` must be the magic email. Any failure redirects to `/auth/magic?error=invalid_or_expired` and creates nothing. A match still signs in, still sets the onboarding return cookie from that URL, and still sends the browser to `/callback` with `next=/onboarding/show`.
 
-Links are not single-use. Mail scanners that prefetch GET links would burn a one-time token. The expiry is 1 hour instead. The token helper's default stays 24 hours. This caller passes 3600.
+Links are not single-use. Mail scanners that prefetch GET links would burn a one-time token. The expiry is 1 hour instead. The token helper's default stays 24 hours. This caller passes 3600. The setup email and `/auth/magic` now say 1 hour. Supabase confirm, magic, and recovery copy, and the account-handoff login link, still say 24 hours.
 
-No page or component was edited. Screenshots are not applicable. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, `lib/io/tokens.ts`, and the callback route were not edited. No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write and no email send.
+Anyone who knows a show's address can exhaust its limits and block that show's sign-in link for up to 1 hour.
+
+Copy only on `/auth/magic`. No style change. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, `lib/io/tokens.ts`, `lib/email/templates/auth.ts`, and `lib/email/templates/login-magic.ts` were not edited. No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write and no email send. `scripts/apply-auth-email-templates.ts` was not run.
 
 Precheck (read only, Nov 11, 2026): outreaches 1, outreaches without a recipient 0, magic_link users 0, `rate_limit_hit(text,text,integer,integer)` present, `rate_limit_events` 5.
 
@@ -2551,7 +2553,10 @@ Precheck (read only, Nov 11, 2026): outreaches 1, outreaches without a recipient
 - `app/api/auth/magic/route.ts` and `app/api/auth/magic/route.test.ts`
 - `lib/security/rate-limit.ts` (`enforceMagicStart` and `MAGIC_START_OUTREACH_MAX` only) and `lib/security/rate-limit.test.ts`
 - `docs/jobs/SEC6.md`
-- `docs/security/S-A_FINDINGS.md` (SA-09 status, SEC6 finding)
+- `docs/security/S-A_FINDINGS.md` (SA-09 status, SA-29)
+- `lib/email/templates/magic-link.ts` and `lib/email/templates/outreach.test.ts` (1 hour)
+- `app/auth/magic/page.tsx` (1 hour, no em dash)
+- `docs/email-previews/show-setup-magic.html`
 - `docs/SENIOR_DEV_HANDOFF.md`
 
 ### Tests
@@ -2566,15 +2571,15 @@ Covers a mismatch with a body identical to the match and no send, case and white
 
 ### Known gaps
 
-- The setup email still says the link expires in 24 hours (`lib/email/templates/magic-link.ts`). That file is outside this job. The token expires in 1 hour.
 - `docs/security/RATE_LIMITS.md` still lists `POST /api/auth/magic/start` as unlimited. That file is outside this job. The limit is `enforceMagicStart`.
+- Anyone who knows a show's address can exhaust its limits and block that show's sign-in link for up to 1 hour.
 - The pitch page still shows `sent_to_email` to anyone holding the outreach token. Masking it is a later UI job. SEC5 owns `app/outreach/[token]/page.tsx`.
 - The mismatch path skips the brand lookup and the send, so it answers faster. That matters once the address is no longer on the page.
 - A brand chooses `sent_to_email`, so one invite can still open a show account at that inbox. Same as the email-code path. A confirm step before account creation is not in this job.
 - `siteOrigin` uses the request host when `NEXT_PUBLIC_SITE_URL` is unset. Confirm that variable is set in production.
 - Magic links are reusable until they expire. Not single-use, so a scanner prefetch does not burn the link.
 - A show whose real inbox differs from the address the brand typed gets no link and no error. The brand resends to the right address.
-- SEC5 follow-up "magic/start sends to any address" was not in `S-A_FINDINGS.md` on main `2732ccd`. This section and the SEC6 finding mark it closed by SEC6.
+- SEC5 follow-up "magic/start sends to any address" was not in `S-A_FINDINGS.md` on main `2732ccd` (087 / SEC5 is not merged). SA-29 records it closed by SEC6. Marking `docs/jobs/SEC5.md` waits until PR 92 lands.
 - This PR does not merge. Paul reviews.
 
 

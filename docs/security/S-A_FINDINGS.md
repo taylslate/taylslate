@@ -534,6 +534,14 @@ Status: fixed by S-K for `GET /api/shows`, `GET /api/shows/[id]`, `GET /api/v1/s
 
 **SA-18. Password login is still enabled, and MFA is not.** `app/(auth)/login/page.tsx:37`. The advisor reports leaked-password protection disabled (`auth_leaked_password_protection`). Nothing in the app calls an MFA enroll API. Fix: remove the password form if codes are the only sign-in, turn on leaked-password protection while any password remains, and decide whether MFA is required for admin and payout actions. Lane: new (session hardening).
 
+**SA-29. Pitch setup mail went to any address, with no limit.** Medium. `POST /api/auth/magic/start` accepted any email on a valid outreach token and sent a Taylslate login link from `EMAIL_FROM_AUTH` with `bypassManagedReroute`. `GET /api/auth/magic` then created or signed in that address. Closed by SEC6, in route code only. No migration.
+
+Start emails only `outreaches.sent_to_email`. A different address, including an empty recipient, gets `{ ok: true }` and no mail. The same limit runs either way: 10 per IP per hour, 5 per outreach per hour, 3 per email per 15 minutes. A counter error is 503 and sends nothing. `GET /api/auth/magic` requires the magic email to be that outreach's recipient, with `return_url` on this origin and a path of exactly `/outreach/<token>`. Anything else redirects to `error=invalid_or_expired` and creates no user. New links expire in 1 hour. They are not single-use.
+
+SEC5 follow-up "magic/start sends to any address": closed by SEC6. That sentence was not in this file on main `2732ccd` (087 / SEC5 is not merged). This section records the close.
+
+Precheck on `ldtmhafewfifdizgfrnn` (read only, Nov 11, 2026): outreaches 1, outreaches without a recipient 0, magic_link users 0, `rate_limit_hit(text,text,integer,integer)` present, `rate_limit_events` 5. No rows were written.
+
 ### Low
 
 **SA-19. Extra EXECUTE grants on public and private functions.** `persist_confirmation`, `persist_interpretation`, `persist_refinement`, and `reset_monthly_campaigns` are invoker and executable by anon. RLS or missing table grants make them fail, and `reset_monthly_campaigns` can still zero the caller's own `campaigns_this_month` when `campaigns_reset_at` is before this month. `private.show_profiles_guard_podscan_id` is `SECURITY DEFINER` and executable by anon and authenticated. `update_updated_at`, `get_avg_negotiated_cpm`, and `reset_monthly_campaigns` have a mutable search_path (advisor). Fix: revoke anon and authenticated execute except on functions the browser must call (`user_owns_show`, `normalize_show_match_key`). Lane: S-G. SA-06 is the definer case that matters now.
@@ -565,13 +573,3 @@ No exploit was sent against production. Policies and grants were read, not probe
 **SA-28. The outreach response token was stored and returned to the sending brand.** `outreaches.token` (NOT NULL, unique `outreaches_token_key`) and the serializers in `POST /api/outreach`, `GET /api/campaigns/[id]/outreach`, the campaign outreach page prop, `GET /api/deals/[id]`, and the pitch page prop. Accept, counter, and decline trust that HMAC alone (`app/api/outreach/[token]/_shared.ts`). A brand who can read their outreach row holds the show's bearer token and can accept or counter as the show. The column is never read to verify or resend. Fix: do not write the signed token, and return `token: ""` from every response and page prop. Migration 087 overwrites stored values with `retired:<id>` and drops NOT NULL. Lane: SEC5.
 
 Status: fixed in code by SEC5. Migration 087 is in the PR and is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. Revocation, expiry, and secret rotation are unchanged (see `docs/jobs/SEC5.md`).
-
-## SEC6
-
-**SEC6. Pitch setup mail went to any address, with no limit.** Medium. `POST /api/auth/magic/start` accepted any email on a valid outreach token and sent a Taylslate login link from `EMAIL_FROM_AUTH` with `bypassManagedReroute`. `GET /api/auth/magic` then created or signed in that address. Closed in this PR, in route code only. No migration.
-
-Start emails only `outreaches.sent_to_email`. A different address, including an empty recipient, gets `{ ok: true }` and no mail. The same limit runs either way: 10 per IP per hour, 5 per outreach per hour, 3 per email per 15 minutes. A counter error is 503 and sends nothing. `GET /api/auth/magic` requires the magic email to be that outreach's recipient, with `return_url` on this origin and a path of exactly `/outreach/<token>`. Anything else redirects to `error=invalid_or_expired` and creates no user. New links expire in 1 hour. They are not single-use.
-
-SEC5 follow-up "magic/start sends to any address": closed by SEC6. That sentence was not in this file on main `2732ccd` (087 / SEC5 is not merged). This section records the close.
-
-Precheck on `ldtmhafewfifdizgfrnn` (read only, Nov 11, 2026): outreaches 1, outreaches without a recipient 0, magic_link users 0, `rate_limit_hit(text,text,integer,integer)` present, `rate_limit_events` 5. No rows were written.
