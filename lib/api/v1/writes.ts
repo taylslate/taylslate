@@ -6,7 +6,7 @@
 
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { ApiReadError, ApiWriteError, type ApiWriteContext } from "@/lib/api/v1/handler";
+import { ApiReadError, ApiWriteError } from "@/lib/api/v1/handler";
 import {
   cursorFilter,
   encodeCursor,
@@ -250,22 +250,32 @@ export function validateOutreachDraft(body: unknown): OutreachDraftPayload {
   return { show_id: record.show_id.toLowerCase(), subject, body: message };
 }
 
-export async function recordCampaignCreate(ctx: ApiWriteContext): Promise<RecordedAction> {
+export interface RecordWriteInput {
+  brandId: string;
+  keyId: string | null;
+  idempotencyKey: string;
+  body: unknown;
+  source?: "api_key" | "command_agent";
+}
+
+export async function recordCampaignCreate(ctx: RecordWriteInput): Promise<RecordedAction> {
   const payload = validateCampaignCreate(ctx.body);
   return recordAction({
     brandId: ctx.brandId,
     keyId: ctx.keyId,
+    source: ctx.source,
     kind: "campaign.create",
     payload,
     idempotencyKey: ctx.idempotencyKey,
   });
 }
 
-export async function recordOutreachDraft(ctx: ApiWriteContext): Promise<RecordedAction> {
+export async function recordOutreachDraft(ctx: RecordWriteInput): Promise<RecordedAction> {
   const payload = validateOutreachDraft(ctx.body);
   return recordAction({
     brandId: ctx.brandId,
     keyId: ctx.keyId,
+    source: ctx.source,
     kind: "outreach.draft",
     payload,
     idempotencyKey: ctx.idempotencyKey,
@@ -317,28 +327,39 @@ export async function getWriteAction(
 
 async function recordAction(input: {
   brandId: string;
-  keyId: string;
+  keyId: string | null;
+  source?: "api_key" | "command_agent";
   kind: ActionKind;
   payload: CampaignCreatePayload | OutreachDraftPayload;
   idempotencyKey: string;
   beforeInsert?: () => Promise<void>;
 }): Promise<RecordedAction> {
   assertBrand(input.brandId);
-  if (!isUuid(input.keyId)) throw new Error("API write failed.");
+  const commandAgent = input.source === "command_agent";
+  if (commandAgent) {
+    if (input.keyId !== null) throw new Error("API write failed.");
+  } else if (typeof input.keyId !== "string" || !isUuid(input.keyId)) {
+    throw new Error("API write failed.");
+  }
   const hash = payloadHash(input.payload);
   const existing = await findAction(input.brandId, input.idempotencyKey);
   if (existing) return settle(existing, input.kind, hash);
   if (input.beforeInsert) await input.beforeInsert();
+  const row: Record<string, unknown> = {
+    brand_id: input.brandId,
+    api_key_id: commandAgent ? null : input.keyId,
+    kind: input.kind,
+    payload: input.payload,
+    payload_hash: hash,
+    idempotency_key: input.idempotencyKey,
+    status: "pending",
+  };
+  if (commandAgent) {
+    row.source = "command_agent";
+    row.requested_by = input.brandId;
+  }
   const inserted = await (
-    supabaseAdmin.from("api_write_actions").insert({
-      brand_id: input.brandId,
-      api_key_id: input.keyId,
-      kind: input.kind,
-      payload: input.payload,
-      payload_hash: hash,
-      idempotency_key: input.idempotencyKey,
-      status: "pending",
-    }) as unknown as InsertQuery
+    supabaseAdmin.from("api_write_actions").insert(row) as unknown as InsertQuery
   )
     .select("id, status")
     .single();

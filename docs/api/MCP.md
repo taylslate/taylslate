@@ -215,4 +215,4 @@ Tool errors do not include a stack, a SQL message, a key, a prefix, or a hash. L
 
 ## In process
 
-`callTool` in `lib/mcp/tools.ts` runs the same tool without HTTP. Pass `{ brandId, keyId, scopes }` and the arguments object. The command agent has no `api_keys` row today, and `api_write_actions.api_key_id` is not nullable, so that job needs a migration before it can record a pending action this way.
+`callTool` in `lib/mcp/tools.ts` runs the same tool without HTTP. Pass `{ brandId, keyId, scopes }` and the arguments object. A command agent caller passes `keyId: null` and `source: "command_agent"`. `recordAction` then stores `api_key_id` null, `source` `command_agent`, and `requested_by` equal to `brandId`. That insert needs migration 083, which is not applied. An API key caller leaves `source` unset and still stores `api_key_id`. The caller cannot set `source` through tool arguments. CA1 is the in-process caller. Its user-facing name is Tay.

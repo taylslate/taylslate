@@ -875,7 +875,10 @@ export type DomainEventType =
   | "api_action.approved"
   | "api_action.rejected"
   | "api_action.executed"
-  | "api_action.execution_failed";
+  | "api_action.execution_failed"
+  // Command agent turn finished, or the daily token cap stopped a turn.
+  | "command_agent.turn"
+  | "command_agent.cap_hit";
 
 export type DomainEntityType =
   | "deal"
@@ -899,7 +902,9 @@ export type DomainEntityType =
   // Wave 14 Phase 2A — brief derivation/interpretation events hang off campaigns
   | "campaign"
   // A recorded public API write waiting for a brand decision.
-  | "api_action";
+  | "api_action"
+  // A brand's command agent conversation.
+  | "command_agent_conversation";
 
 export interface DomainEvent {
   id: string;

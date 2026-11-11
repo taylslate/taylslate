@@ -2130,7 +2130,7 @@ Each request logs one line: method, tool name, outcome code, elapsed ms. Argumen
 
 ### Known gaps
 
-- The command agent has no `api_keys` row. `api_write_actions.api_key_id` is `NOT NULL`, and `recordCampaignCreate` / `recordOutreachDraft` require a uuid key id. `callTool` can record a pending action only when the caller already has a real key id. The command agent job needs its own migration before an in-process caller without a key can insert.
+- CA1 records a command-agent action with `api_key_id` null, `source` `command_agent`, and `requested_by` equal to the brand id. `callTool` accepts that actor. The insert needs migration 083, which is not applied. An API key caller is unchanged.
 - No OAuth, dynamic client registration, or protected-resource metadata.
 - No tool approves, sends, signs, charges, or pays.
 - `tools/list` is one page. A non-empty cursor is invalid params.
@@ -2293,4 +2293,52 @@ Covers 401, 403 for show and agent, 403 without `apiAccess`, 422 on a bad name a
 - Two overlapping revokes can both see the key as active and both return 200. A later revoke is 404.
 - No migration. If `api_keys` from A1 is not on the database, the page shows a generic load error and the routes return 500.
 - A brand whose plan is the legacy agency record can create keys, because that plan's `apiAccess` is true. The agency role cannot open the page.
+
+## CA1: brand command agent (Tay)
+
+### What was built
+
+A signed-in brand can open `/assistant` and talk to Tay. Tay calls the M1 registry in process. Reads answer directly. `propose_campaign` and `propose_outreach` insert one pending `api_write_actions` row with `source` `command_agent`, `api_key_id` null, and `requested_by` equal to the brand. The brand approves or rejects it on the existing `/settings/agent-actions` screen, which was not edited. The row's key name is Tay. Approving `campaign.create` still creates one draft through A4. Approving `outreach.draft` still sends nothing.
+
+The page is URL-only. Nav, layout, settings, and the inbox client were not edited. Discovery, `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. `lib/llm/client.ts` was not edited. The model is `getLLMModel()`.
+
+083 is in the PR and is not applied. It makes `api_key_id` nullable, adds `source` and `requested_by` with the actor check, and adds `command_agent_conversations`, `command_agent_messages`, and `command_agent_usage`. `turn_started_at` is the one-turn marker for the whole brand. Usage rows are append-only and are not tied to a conversation. RLS is on, there are no policies, and only `service_role` is granted. `anon`, `public`, and `authenticated` have nothing, including `truncate`, `references`, and `trigger`.
+
+Caps: 20 messages an hour, 60 a day, 300000 tokens a day, 6 model calls and 8 tool calls a turn, 90 second deadline. The daily cap sums `command_agent_usage`, which has no conversation foreign key, so a delete does not reset it. The loop checks that sum before every model call and writes one usage row after each call. A fresh turn anywhere for the brand is 409. A foreign conversation is 404. `DELETE` checks Origin and returns 409 while that conversation's turn is fresh. Full tool results are `tool_result` blocks only in the turn that produced them. Later turns send the tool name and status as their own turn, not concatenated with the brand's message, and not copied into the system prompt. The thread shows a short line such as "Looked up a show" instead of the raw tool JSON.
+
+Chris named the agent Tay. Decisions (a) through (f) in `docs/jobs/CA1.md` are defaults pending confirmation.
+
+### Where
+
+- `supabase/migrations/083_command_agent.sql` and `083_command_agent.test.ts`
+- `lib/command-agent/run.ts`, `tools.ts`, `store.ts`, `limits.ts`, and their tests
+- `lib/prompts/command-agent.md`
+- `app/api/assistant/route.ts`, `app/api/assistant/[id]/route.ts`, `app/api/assistant/[id]/messages/route.ts`, and their tests
+- `app/(dashboard)/assistant/page.tsx`, `assistant-client.tsx`, `assistant.test.tsx`
+- `lib/mcp/tools.ts` (`ToolContext.source`, propose handlers pass the actor)
+- `lib/api/v1/writes.ts` (command agent actor on `recordAction`; API key inserts are unchanged)
+- `lib/api/approvals/list.ts` (null `api_key_id` kept, Tay label, key lookup skipped)
+- `lib/data/types.ts` (`command_agent.turn`, `command_agent.cap_hit`, `command_agent_conversation`)
+- `docs/api/MCP.md`, `docs/jobs/M1.md`, `docs/jobs/A4.md`, `docs/jobs/CA1.md`
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run supabase/migrations/083_command_agent.test.ts lib/command-agent lib/mcp lib/api/v1 lib/api/approvals app/api/assistant app/api/v1 app/api/settings/agent-actions "app/(dashboard)/assistant" "app/(dashboard)/settings/agent-actions"` passed. The PGlite suite applies on-disk migrations through 083 (059, 062, 063, 064, and 080 are absent), applies 083 again, and checks columns, both actor checks, a valid command agent insert as `service_role`, permission denied for `anon` and `authenticated`, RLS, zero policies, and `service_role`-only grants.
+
+Security coverage: 401 and 403 for show, agent, and admin on every assistant handler and the page gate; foreign Origin 403 on both POSTs; brand B's id is 404; tool context brand id is the session user when the model sends `brand_id`; unknown tools never reach `callTool`; the tool list matches the M1 names; a propose inserts one pending command agent row and nothing into campaigns, outreach, deals, or shows; the same message id replays the action id; approving that outreach row returns "Approved. Nothing was sent." with Resend, email, and outreach generate/send uncalled; `lib/command-agent` does not import decide or execute; an injected tool result stays inside a `tool_result` block and out of the system prompt; a stored tool result does not appear in user-role content on the next turn; a script tag renders as text and a tool row renders as a short line; hour and day buckets return 429 with Retry-After; the token cap returns 429 at 300000 and 503 on a read error; deleting a conversation leaves the usage sum in place; the loop stops before the next model call once the cap is reached; per-turn caps store the stop message; a second conversation is 409 while a turn runs; `DELETE` is 403 for a foreign Origin and 409 during a fresh turn; console output and events omit message text.
+
+`npx vitest run`: 343 files, 2965 passed, 40 skipped. `npx next build` completed. `/assistant` and `/api/assistant` are dynamic. The messages route `maxDuration` is 120.
+
+### Known gaps
+
+- 083 is not applied. Do not expect Tay to insert a pending row until Chris applies it.
+- `/assistant` is not in the nav and is not linked from an existing screen.
+- No 90-day purge. The brand deletes a conversation with DELETE.
+- An API caller who sends the same `ca:{message id}:{n}` idempotency key can collide with Tay. The API key insert path was not changed.
+- A crashed turn holds `turn_started_at` for up to 120 seconds, and that fresh lock blocks every conversation for the brand.
+- A model call killed before its usage row is inserted is not counted. The next call is checked against the rows that were written.
+- Plan campaign caps are still not enforced on approval. That pairs with A7.
+- This environment has no Supabase or app env, so the signed-in `/assistant` and inbox screenshots could not be taken against a live session. The page tests cover the gate, the Tay empty state, literal model text, and the approval link.
 

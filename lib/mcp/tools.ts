@@ -34,8 +34,9 @@ export type { McpToolName };
 
 export interface ToolContext {
   brandId: string;
-  keyId: string;
+  keyId: string | null;
   scopes: readonly ApiScope[];
+  source?: "api_key" | "command_agent";
 }
 
 export interface ToolResult {
@@ -428,6 +429,7 @@ async function proposeCampaignTool(ctx: ToolContext, args: ValidatedArgs): Promi
   const recorded = await recordCampaignCreate({
     brandId: ctx.brandId,
     keyId: ctx.keyId,
+    source: ctx.source,
     idempotencyKey: proposed.idempotencyKey,
     body: proposed.body,
   });
@@ -443,6 +445,7 @@ async function proposeOutreachTool(ctx: ToolContext, args: ValidatedArgs): Promi
   const recorded = await recordOutreachDraft({
     brandId: ctx.brandId,
     keyId: ctx.keyId,
+    source: ctx.source,
     idempotencyKey: proposed.idempotencyKey,
     body: proposed.body,
   });
