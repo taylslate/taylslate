@@ -2401,3 +2401,46 @@ Commands: `git diff --stat main` (five Owns files only), `rg -n -i "not applied|
 - `OPENAI_API_KEY` is confirmed not set in Vercel as of November 10, 2026 (Chris). The airchecks cron cannot transcribe yet.
 - STATUS.md:154 still contains the words "not yet applied" inside a superseded note about migration 033. 033 is applied. That line was left.
 
+## A7: Plan gate on every API key use
+
+### What was built
+
+Every API key request now checks the brand's plan at request time. `assertBrandApiAccess` reads `profiles.role` and `profiles.plan` with the service-role client. The key is allowed only when the role is `brand` and `PLANS[plan].features.apiAccess` is true, the same rule as `brandHasApiAccess`. Operator and the legacy agency plan pass. Free, Starter, an unknown plan, a missing profile, and any other role are HTTP 403 `{ "error": "Your plan does not include API access.", "code": "plan_no_api_access" }`. Auth errors without a code still return `{ "error": "<message>" }`.
+
+The check runs after the key is tied to a user and before `last_used_at` and the `api_call` event. A denied call does not touch either. A profiles read error throws a plain Error and the route returns 500. The key and the brand email are not logged.
+
+Tay is unchanged. It calls `callTool` in process with `keyId: null` and does not go through `resolveApiRequest`, so it still works on Free. `lib/billing/plans.ts` was not edited. No migration.
+
+This closes the A5 gap where a key minted on Operator kept resolving after a downgrade.
+
+### Where
+
+- `lib/api/plan-gate.ts` and `lib/api/plan-gate.test.ts`
+- `lib/api/plan-gate.route.test.ts`
+- `lib/api/auth.ts` (`ApiAuthError` optional `code`, gate before `last_used_at`)
+- `lib/api/v1/handler.ts`, `app/api/v1/mcp/route.ts`, `app/api/v1/health/route.ts` (include `code` only when set)
+- `lib/api/memory-admin.ts` (profile selects return the requested columns, so a fixture's `role` and `plan` are visible)
+- `docs/api/MCP.md`, `docs/jobs/A5.md`, `docs/jobs/A7.md`
+
+Existing v1 and MCP fixtures that seeded `{ id }` now seed `{ id, role: "brand", plan: "operator" }`. Assertions were not changed. The same data-only edit is in `app/api/settings/api-keys/route.test.ts` because that file calls `GET /api/v1/health`.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run lib/api app/api/v1 lib/command-agent` passed 153 tests.
+
+`npx vitest run` passed 2974 tests (40 skipped). `npx next build` completed.
+
+Covers operator and agency allowed; Free, Starter, unknown plan, missing row, agent, and admin denied with 403 `plan_no_api_access`; a profiles read error is not an `ApiAuthError` and does not log the email; `brandHasApiAccess` and the gate agree for every `PlanId` plus an unknown plan; a starter key is 403 with `code` on a v1 read, a v1 write, MCP `tools/call`, and `/api/v1/health`, with `last_used_at` unchanged and no `api_call` event; the same key returns 200 on health, the read, and MCP after the plan is operator, and the write returns 202 then 200 on replay; a revoked key is still 401 with no `code`. Tay's `list_campaigns` call succeeds for a Free brand with `keyId: null` and does not call the gate. `lib/command-agent` and `lib/mcp/tools.ts` do not import `lib/api/auth` or `lib/api/plan-gate`.
+
+No page or component changed, so there are no before/after screenshots.
+
+### Known gaps
+
+- Tay is not plan-gated. Every brand plan can use the assistant.
+- Key creation is still A5. This job does not change who can mint a key.
+- The per-key rate limit is unchanged.
+- `plans.ts` was not edited.
+- No migration and no live data write.
+

@@ -1,10 +1,12 @@
 // Resolves Authorization: Bearer ts_live_<prefix>_<secret> to a brand.
 // Lookup is by prefix. The digest is compared in constant time. Revoked
-// keys are rejected. A resolved call writes an api_call event_log row.
+// keys are rejected. A brand without API access is rejected before
+// last_used_at. A resolved call writes an api_call event_log row.
 
 import { timingSafeEqual } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { recordEvent } from "@/lib/data/event-log";
+import { assertBrandApiAccess } from "@/lib/api/plan-gate";
 import {
   hashKey,
   parseApiToken,
@@ -20,11 +22,13 @@ export interface ResolvedApiRequest {
 
 export class ApiAuthError extends Error {
   readonly status: 401 | 403;
+  readonly code?: string;
 
-  constructor(status: 401 | 403, message: string) {
+  constructor(status: 401 | 403, message: string, code?: string) {
     super(message);
     this.name = "ApiAuthError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -125,6 +129,8 @@ export async function resolveApiRequest(req: Request): Promise<ResolvedApiReques
   if (!(await keyTiedToUser(row.brand_id))) {
     throw new ApiAuthError(401, "API key is not tied to a user.");
   }
+
+  await assertBrandApiAccess(row.brand_id);
 
   const { error: touchError } = await supabaseAdmin
     .from("api_keys")

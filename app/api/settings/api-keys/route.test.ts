@@ -125,7 +125,10 @@ function callHealth(token?: string) {
 
 beforeEach(() => {
   admin = createMemoryAdmin();
-  admin.profiles.push({ id: BRAND }, { id: OTHER });
+  admin.profiles.push(
+    { id: BRAND, role: "brand", plan: "operator" },
+    { id: OTHER, role: "brand", plan: "operator" }
+  );
   harness.admin = admin;
   harness.events = [];
   harness.rate.mode = "count";

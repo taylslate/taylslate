@@ -55,7 +55,8 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err) {
     if (err instanceof ApiAuthError) {
       const extra = err.status === 401 ? { "WWW-Authenticate": "Bearer" } : undefined;
-      return finish(started, null, null, err.status, apiJson({ error: err.message }, err.status, extra));
+      const body = err.code ? { error: err.message, code: err.code } : { error: err.message };
+      return finish(started, null, null, err.status, apiJson(body, err.status, extra));
     }
     if (err instanceof ApiWriteError) {
       return finish(started, null, null, err.status, apiJson({ error: err.message }, err.status));

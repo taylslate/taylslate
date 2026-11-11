@@ -195,6 +195,7 @@ A pending campaign looks like this:
 | Situation | HTTP | Body |
 | --- | --- | --- |
 | Missing, malformed, revoked, or untied key | 401 | `{ "error": "<ApiAuthError message>" }` and `WWW-Authenticate: Bearer` |
+| Brand plan does not include API access | 403 | `{ "error": "Your plan does not include API access.", "code": "plan_no_api_access" }` |
 | `Origin` host is not the request host | 403 | JSON-RPC `-32600`, no `id` |
 | Over 60 requests for this key in the UTC minute | 429 | `{ "error": "Rate limit exceeded." }` and `Retry-After` |
 | Body over 64 KB | 413 | `{ "error": "Request body is too large." }` |

@@ -202,7 +202,7 @@ function campaignBody(budget = 25000) {
 
 async function keyFor(brandId: string, scopes: string[]) {
   if (!bridge.keys!.profiles.some((row) => row.id === brandId)) {
-    bridge.keys!.profiles.push({ id: brandId });
+    bridge.keys!.profiles.push({ id: brandId, role: "brand", plan: "operator" });
   }
   const created = await createKey({ brandId, scopes });
   return created.secret;
@@ -306,7 +306,7 @@ describe("POST /api/v1/mcp", () => {
     expect(bad.status).toBe(401);
     expect(await bad.json()).toEqual({ error: "Missing or invalid API key." });
 
-    bridge.keys!.profiles.push({ id: BRAND });
+    bridge.keys!.profiles.push({ id: BRAND, role: "brand", plan: "operator" });
     const created = await createKey({ brandId: BRAND, scopes: ["read"] });
     await revokeKey(created.id, BRAND);
     const revoked = await rpc(created.secret, legacy("2025-11-25", "ping").message, legacy("2025-11-25", "ping").headers);

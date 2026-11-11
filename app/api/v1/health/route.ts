@@ -34,7 +34,8 @@ export async function GET(req: Request) {
     return json({ brandId: resolved.brandId, scopes: resolved.scopes }, 200);
   } catch (err) {
     if (err instanceof ApiAuthError) {
-      return json({ error: err.message }, err.status);
+      const body = err.code ? { error: err.message, code: err.code } : { error: err.message };
+      return json(body, err.status);
     }
     console.warn(
       "[api.v1.health] failed:",

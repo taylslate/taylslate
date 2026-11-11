@@ -121,7 +121,7 @@ function getById(
 }
 
 async function keyFor(brandId: string, scopes: string[]) {
-  bridge.keys!.profiles.push({ id: brandId });
+  bridge.keys!.profiles.push({ id: brandId, role: "brand", plan: "operator" });
   const created = await createKey({ brandId, scopes });
   return created.secret;
 }

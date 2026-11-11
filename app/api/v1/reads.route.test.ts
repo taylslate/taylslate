@@ -135,7 +135,7 @@ beforeEach(() => {
   bridge.keys = createMemoryAdmin();
   bridge.data = createDomainAdmin();
   bridge.authUsers = [];
-  bridge.data.tables.profiles.push({ id: BRAND });
+  bridge.data.tables.profiles.push({ id: BRAND, role: "brand", plan: "operator" });
   bridge.recordEvent.mockClear();
   _setApiRateClockForTests(() => FIXED_NOW);
 });

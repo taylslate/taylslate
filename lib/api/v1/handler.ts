@@ -57,7 +57,11 @@ export function withApiRead<Route = EmptyRoute>(
       return response;
     } catch (err) {
       if (err instanceof ApiAuthError || err instanceof ApiReadError) {
-        return apiJson({ error: err.message }, err.status);
+        const body =
+          err instanceof ApiAuthError && err.code
+            ? { error: err.message, code: err.code }
+            : { error: err.message };
+        return apiJson(body, err.status);
       }
       console.warn(
         "[api.v1] failed:",
@@ -123,7 +127,11 @@ export function withApiWrite<Route = EmptyRoute>(
         err instanceof ApiReadError ||
         err instanceof ApiWriteError
       ) {
-        return apiJson({ error: err.message }, err.status);
+        const body =
+          err instanceof ApiAuthError && err.code
+            ? { error: err.message, code: err.code }
+            : { error: err.message };
+        return apiJson(body, err.status);
       }
       console.warn(
         "[api.v1] failed:",
