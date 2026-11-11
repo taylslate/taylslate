@@ -70,40 +70,47 @@ export default function PrivacyPage() {
           your videos.
         </p>
         <p>
-          Your channel ID and title; the caption text for a video that is tied
-          to one of your Taylslate deals, and the part of it that contains the
-          sponsor read; for those videos only, views, estimated minutes
-          watched, average view duration and the audience retention points
-          around the sponsor read; and the Google access and refresh tokens,
-          encrypted.
+          What we store: Your channel ID and title; the caption text for a
+          video that is tied to one of your Taylslate deals, and the part of
+          it that contains the sponsor read; for those videos only, views,
+          estimated minutes watched, average view duration and the audience
+          retention points around the sponsor read; and the Google access and
+          refresh tokens, encrypted.
         </p>
         <p>
-          Only to check that a booked sponsor read aired as agreed and to
-          record delivery for that deal. We do not use Google user data for
-          advertising, we do not sell it, and we do not use it to train AI
-          models.
+          Why we use it: Only to check that a booked sponsor read aired as
+          agreed and to record delivery for that deal. We do not use Google
+          user data for advertising, we do not sell it, and we do not use it
+          to train AI models. Results from Google data are not used in pooled
+          anonymized data or to improve Taylslate for other users.
         </p>
         <p>
-          You, and Taylslate staff who review a sponsor read. Brands do not see
-          your captions or analytics. [CONFIRM WITH COUNSEL] Whether staff
-          review needs its own line under Google&apos;s human-reading rules.
+          Who can see it: You, and Taylslate staff who review a sponsor read.
+          Brands do not see your captions or analytics. [CONFIRM WITH COUNSEL]
+          Whether staff review needs its own line under Google&apos;s
+          human-reading rules.
         </p>
         <p>
           Caption text and the sponsor-read excerpt are deleted 30 days after
           we fetch them. The result of the check (whether the read was found,
           its position and length) stays with the deal record. Analytics values
           are kept while your channel stays connected, and we re-check your
-          authorization at least every 30 days. If you disconnect, or revoke
-          access at Google, we delete your tokens right away and the remaining
-          Google data within 7 days.
+          authorization at least every 30 days. If your authorization lapses
+          and you do not reconnect, we delete your Google data 30 days later.
+          If you disconnect, or revoke access at Google, we revoke our access
+          at Google and delete your tokens right away, and the remaining Google
+          data within 7 days.
         </p>
         <p>
-          Disconnect at any time on the YouTube page in your Taylslate
-          settings, or remove Taylslate at{" "}
+          Disconnect at any time on{" "}
+          <LegalBodyLink href="https://www.taylslate.com/settings/youtube">
+            www.taylslate.com/settings/youtube
+          </LegalBodyLink>
+          , or remove Taylslate at{" "}
           <LegalBodyLink href="https://security.google.com/settings/security/permissions">
             https://security.google.com/settings/security/permissions
           </LegalBodyLink>
-          .
+          . We revoke our access at Google and delete your tokens right away.
         </p>
         <p>
           Taylslate&apos;s use and transfer to any other app of information

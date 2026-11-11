@@ -86,9 +86,25 @@ describe("Privacy Policy page", () => {
     expect(google).toContain(
       "Taylslate's use and transfer to any other app of information received from Google APIs will adhere to the Google API Services User Data Policy (https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.",
     );
+    expect(google).toContain("What we store:");
+    expect(google).toContain("Why we use it:");
+    expect(google).toContain("Who can see it:");
+    expect(google).toContain(
+      "If your authorization lapses and you do not reconnect, we delete your Google data 30 days later.",
+    );
+    expect(google).toContain(
+      "We revoke our access at Google and delete your tokens right away.",
+    );
+    expect(google).toContain(
+      "Results from Google data are not used in pooled anonymized data or to improve Taylslate for other users.",
+    );
     expect(google).toContain("30 days");
     expect(google).toContain("7 days");
+    expect(google).not.toContain("the YouTube page in your Taylslate settings");
     expect(google).not.toContain("\u2014");
+    expect(
+      screen.getByRole("link", { name: "www.taylslate.com/settings/youtube" }),
+    ).toHaveAttribute("href", "https://www.taylslate.com/settings/youtube");
 
     for (const href of [
       "https://www.youtube.com/t/terms",
