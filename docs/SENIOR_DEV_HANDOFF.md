@@ -2554,7 +2554,7 @@ No route, lib, or component file was edited. `lib/stripe`, `lib/payouts`, `lib/b
 
 `npx vitest run supabase/migrations/085_lock_deal_io_writes.test.ts supabase/migrations/072_lock_money_columns.test.ts supabase/migrations/083_command_agent.test.ts app/api/deals app/api/invoices app/api/campaigns lib/data` passed 393 tests in 40 files.
 
-`npx vitest run`: 347 files, 2991 passed, 41 skipped. `npx next build` completed and generated 142 pages.
+`npx vitest run`: 351 files, 3008 passed, 41 skipped. `npx next build` completed and generated 142 pages.
 
 The PGlite suite loads on-disk migrations through 085 (059, 062, 063, 064, and 080 may be absent; 084 is on main), applies 085 again, and checks the legacy insert key sets, the legacy IO and invoice writes, the DocuSign-flow rejections, outreach and payout denials, the profile money-column regression, and `service_role` writes. No hosted database is used.
 
