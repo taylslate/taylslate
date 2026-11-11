@@ -2529,6 +2529,54 @@ PGlite covers two parallel claims on one brand with 084, the same case with migr
 - The two youtube route tests above are outside the Owns list. Only the source assertion changed.
 - No page or component was edited. This PR does not merge. Paul reviews.
 
+## SEC6: Bind the pitch magic link to the outreach recipient
+
+### What was built
+
+`POST /api/auth/magic/start` emails a sign-in link only to `outreaches.sent_to_email`. The posted address is normalized the same way as the email-code route. A missing address, bad JSON, or an invalid address is still 400. A bad outreach token is still 401. An unknown outreach is still 404. After the outreach loads, the route limits the request and then compares the address. A mismatch, including an empty recipient, logs `[magic.start] recipient mismatch` with the outreach id only, sends nothing, and returns `{ ok: true }`. A match signs a magic token for the recipient with a 1 hour expiry, sends it to that address, and returns `{ ok: true }` even when the send fails. `email_sent` and `email_reason` are gone. The pitch page still treats `res.ok` as "check your inbox".
+
+The limit is `enforceMagicStart`, failure closed, in this order: IP (`magic_start_ip`, 10 per hour), outreach (`magic_start_outreach`, 5 per hour, key the outreach id), email (`magic_start_email`, 3 per 15 minutes, key the email hash). A mismatch consumes those buckets too. A `rate_limit_hit` error is 503 and sends nothing. No new table. `rate_limit_hit` already accepts a bucket name.
+
+`GET /api/auth/magic` checks the magic token, then parses `return_url` before any user lookup or create. The URL must be this origin and the path must be exactly `/outreach/<token>`. That token must verify, the outreach must exist, and `sent_to_email` must be the magic email. Any failure redirects to `/auth/magic?error=invalid_or_expired` and creates nothing. A match still signs in, still sets the onboarding return cookie from that URL, and still sends the browser to `/callback` with `next=/onboarding/show`.
+
+Links are not single-use. Mail scanners that prefetch GET links would burn a one-time token. The expiry is 1 hour instead. The token helper's default stays 24 hours. This caller passes 3600.
+
+No page or component was edited. Screenshots are not applicable. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, `lib/io/tokens.ts`, and the callback route were not edited. No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write and no email send.
+
+Precheck (read only, Nov 11, 2026): outreaches 1, outreaches without a recipient 0, magic_link users 0, `rate_limit_hit(text,text,integer,integer)` present, `rate_limit_events` 5.
+
+### Where
+
+- `app/api/auth/magic/start/route.ts` and `app/api/auth/magic/start/route.test.ts`
+- `app/api/auth/magic/route.ts` and `app/api/auth/magic/route.test.ts`
+- `lib/security/rate-limit.ts` (`enforceMagicStart` and `MAGIC_START_OUTREACH_MAX` only) and `lib/security/rate-limit.test.ts`
+- `docs/jobs/SEC6.md`
+- `docs/security/S-A_FINDINGS.md` (SA-09 status, SEC6 finding)
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run app/api/auth lib/security app/outreach components/auth`: 10 files, 152 passed.
+
+`npx vitest run`: 351 files, 3018 passed, 41 skipped. `npx next build` compiled and generated 142 pages.
+
+Covers a mismatch with a body identical to the match and no send, case and whitespace on the recipient, an empty recipient, the 6th outreach call, the 4th email call, the 11th IP call, a mismatch filling the outreach and IP buckets, a limiter error returning 503, unchanged 400/401/404, a failed send still returning `{ ok: true }`, and an emailed token that lands on `/callback` with `token_hash` and `next=/onboarding/show`. GET refuses a different email, another origin, a path that is not `/outreach/<token>`, and a bad outreach signature, and does not call `createUser`, `generateLink`, or the profiles insert. A match still sets the return cookie. `enforceMagicStart` sends the three buckets and fails closed.
+
+### Known gaps
+
+- The setup email still says the link expires in 24 hours (`lib/email/templates/magic-link.ts`). That file is outside this job. The token expires in 1 hour.
+- `docs/security/RATE_LIMITS.md` still lists `POST /api/auth/magic/start` as unlimited. That file is outside this job. The limit is `enforceMagicStart`.
+- The pitch page still shows `sent_to_email` to anyone holding the outreach token. Masking it is a later UI job. SEC5 owns `app/outreach/[token]/page.tsx`.
+- The mismatch path skips the brand lookup and the send, so it answers faster. That matters once the address is no longer on the page.
+- A brand chooses `sent_to_email`, so one invite can still open a show account at that inbox. Same as the email-code path. A confirm step before account creation is not in this job.
+- `siteOrigin` uses the request host when `NEXT_PUBLIC_SITE_URL` is unset. Confirm that variable is set in production.
+- Magic links are reusable until they expire. Not single-use, so a scanner prefetch does not burn the link.
+- A show whose real inbox differs from the address the brand typed gets no link and no error. The brand resends to the right address.
+- SEC5 follow-up "magic/start sends to any address" was not in `S-A_FINDINGS.md` on main `2732ccd`. This section and the SEC6 finding mark it closed by SEC6.
+- This PR does not merge. Paul reviews.
+
 
 ## SEC3
 
