@@ -16,7 +16,10 @@ import {
 } from "@/lib/data/queries";
 import { isInternalAdmin } from "@/lib/auth/admin";
 import { rejectSwitchedViewMoneyAction } from "@/lib/admin/view-guard";
-import { chargeForEpisode } from "@/lib/stripe/payment-intent";
+import {
+  ChargeOwnershipError,
+  chargeForEpisode,
+} from "@/lib/stripe/payment-intent";
 
 export const runtime = "nodejs";
 
@@ -72,6 +75,15 @@ export async function POST(
     });
     return NextResponse.json(result);
   } catch (err) {
+    if (err instanceof ChargeOwnershipError) {
+      console.error(
+        `[charge-episode] deal ${dealId} line ${body.ioLineItemId}: IO line item not found`
+      );
+      return NextResponse.json(
+        { error: "IO line item not found" },
+        { status: 404 }
+      );
+    }
     const message = err instanceof Error ? err.message : "Charge failed";
     console.error(
       `[charge-episode] deal ${dealId} line ${body.ioLineItemId}:`,
