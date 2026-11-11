@@ -10,7 +10,7 @@ import { revokeGoogleToken } from "@/lib/youtube-oauth/google";
 import { enforceYoutubeDisconnect } from "@/lib/youtube-oauth/limits";
 import {
   disconnectYoutubeUser,
-  readConnectionCiphertext,
+  listLiveCiphertexts,
   requireShowProfile,
 } from "@/lib/youtube-oauth/store";
 
@@ -49,8 +49,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const cipher = await readConnectionCiphertext(user.id);
-    if (cipher?.refresh_token_enc || cipher?.access_token_enc) {
+    const live = await listLiveCiphertexts(user.id);
+    for (const cipher of live) {
       let token = "";
       try {
         if (cipher.refresh_token_enc) token = decryptString(cipher.refresh_token_enc, config.encryptionKey);

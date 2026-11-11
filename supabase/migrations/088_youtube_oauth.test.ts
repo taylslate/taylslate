@@ -199,4 +199,169 @@ describe("migration 088 on PGlite", () => {
       await attempt("service_role", `delete from public.youtube_oauth_connections where user_id = '${USER}'`)
     ).toBe("allowed");
   });
+
+  it("denies anon and authenticated on the oauth functions and allows service_role", async () => {
+    for (const role of ["anon", "authenticated"]) {
+      expect(await attempt(role, `select public.youtube_oauth_disconnect('${USER}')`)).toMatch(/permission denied/i);
+      expect(await attempt(role, `select public.youtube_oauth_housekeeping(now())`)).toMatch(/permission denied/i);
+      expect(await attempt(role, `select public.youtube_oauth_clear_captions('{}'::uuid[])`)).toMatch(
+        /permission denied/i
+      );
+    }
+    expect(await attempt("service_role", `select public.youtube_oauth_housekeeping(now())`)).toBe("allowed");
+    expect(await attempt("service_role", `select public.youtube_oauth_clear_captions('{}'::uuid[])`)).toBe("allowed");
+  });
+
+  it("purges captions from created_at, disconnects, and deletes lapsed and revoked rows", async () => {
+    const show = "33333333-3333-4333-8333-333333333333";
+    const profile = "44444444-4444-4444-8444-444444444444";
+    const deal = "55555555-5555-4555-8555-555555555555";
+    const io = "66666666-6666-4666-8666-666666666666";
+    const line = "77777777-7777-4777-8777-777777777777";
+    const lineReauth = "88888888-8888-4888-8888-888888888888";
+    const lineRevoked = "99999999-9999-4999-8999-999999999999";
+    const ioReauth = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const ioRevoked = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const dealReauth = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const dealRevoked = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const conn = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    const connReauth = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    const connRevoked = "12121212-1212-4212-8212-121212121212";
+
+    await db.exec(`
+      insert into public.profiles (id, email, role) values ('${USER}', 'show@example.com', 'show');
+      insert into public.shows (id, name, platform) values ('${show}', 'Show', 'youtube');
+      insert into public.show_profiles (id, user_id) values ('${profile}', '${USER}');
+      insert into public.deals (
+        id, show_id, brand_id, show_profile_id, status, num_episodes, placement, ad_format,
+        price_type, cpm_rate, guaranteed_downloads, net_per_episode, total_net, flight_start, flight_end
+      ) values
+        ('${deal}', '${show}', '${USER}', '${profile}', 'signed', 1, 'mid-roll', 'host_read', 'flat_rate', 25, 1000, 100, 100, '2026-11-01', '2026-11-30'),
+        ('${dealReauth}', '${show}', '${USER}', '${profile}', 'signed', 1, 'mid-roll', 'host_read', 'flat_rate', 25, 1000, 100, 100, '2026-11-01', '2026-11-30'),
+        ('${dealRevoked}', '${show}', '${USER}', '${profile}', 'signed', 1, 'mid-roll', 'host_read', 'flat_rate', 25, 1000, 100, 100, '2026-11-01', '2026-11-30');
+      insert into public.insertion_orders (
+        id, io_number, deal_id, advertiser_name, publisher_name, publisher_contact_name,
+        publisher_contact_email, total_downloads, total_gross, total_net
+      ) values
+        ('${io}', 'IO-1', '${deal}', 'Brand', 'Show', 'Host', 'show@example.com', 1000, 100, 100),
+        ('${ioReauth}', 'IO-2', '${dealReauth}', 'Brand', 'Show', 'Host', 'show@example.com', 1000, 100, 100),
+        ('${ioRevoked}', 'IO-3', '${dealRevoked}', 'Brand', 'Show', 'Host', 'show@example.com', 1000, 100, 100);
+      insert into public.io_line_items (
+        id, io_id, format, post_date, guaranteed_downloads, show_name, placement, gross_rate, gross_cpm, price_type, net_due
+      ) values
+        ('${line}', '${io}', 'youtube', '2026-10-01', 1000, 'Show', 'mid-roll', 100, 25, 'flat_rate', 100),
+        ('${lineReauth}', '${ioReauth}', 'youtube', '2026-10-01', 1000, 'Show', 'mid-roll', 100, 25, 'flat_rate', 100),
+        ('${lineRevoked}', '${ioRevoked}', 'youtube', '2026-10-01', 1000, 'Show', 'mid-roll', 100, 25, 'flat_rate', 100);
+      insert into public.airchecks (
+        io_line_item_id, provider, status, transcript_text, transcript_segments, match_result, confidence,
+        ad_start_seconds, ad_end_seconds, match_reasons, match_evidence, created_at, updated_at
+      ) values
+        (
+          '${line}', 'youtube-captions', 'transcribed', 'secret caption', '[]'::jsonb, 'matched', 0.9,
+          40, 50, '["Brand found."]'::jsonb, '{"excerpt":"secret caption","brand":"found"}'::jsonb,
+          now() - interval '31 days', now() - interval '1 day'
+        ),
+        (
+          '${lineReauth}', 'youtube-captions', 'transcribed', 'reauth caption', '[]'::jsonb, 'matched', 0.8,
+          10, 20, '["Kept."]'::jsonb, '{"excerpt":"reauth caption","brand":"found"}'::jsonb,
+          now() - interval '1 day', now()
+        ),
+        (
+          '${lineRevoked}', 'youtube-captions', 'transcribed', 'revoked caption', '[]'::jsonb, 'not_matched', 0.2,
+          1, 2, '["Kept."]'::jsonb, '{"excerpt":"revoked caption","brand":"missing"}'::jsonb,
+          now() - interval '1 day', now()
+        );
+      insert into public.youtube_oauth_connections (
+        id, user_id, show_profile_id, channel_id, channel_title, scopes, refresh_token_enc, access_token_enc, status
+      ) values (
+        '${conn}', '${USER}', '${profile}', 'UCkeep', 'Keep', array['https://www.googleapis.com/auth/youtube.force-ssl'],
+        'v1.keep', 'v1.access', 'active'
+      );
+    `);
+
+    expect(await attempt("service_role", `select public.youtube_oauth_housekeeping(now())`)).toBe("allowed");
+    const purged = await db.query<{
+      transcript_text: string | null;
+      segments: string | null;
+      excerpt: string | null;
+      match_result: string;
+      confidence: string;
+      ad_start_seconds: number;
+      match_reasons: string;
+    }>(`
+      select transcript_text, transcript_segments::text as segments, match_evidence->>'excerpt' as excerpt,
+             match_result, confidence::text, ad_start_seconds, match_reasons::text
+        from public.airchecks where io_line_item_id = '${line}'
+    `);
+    expect(purged.rows[0]?.transcript_text).toBeNull();
+    expect(purged.rows[0]?.segments).toBeNull();
+    expect(purged.rows[0]?.excerpt).toBeNull();
+    expect(purged.rows[0]?.match_result).toBe("matched");
+    expect(Number(purged.rows[0]?.confidence)).toBeCloseTo(0.9);
+    expect(Number(purged.rows[0]?.ad_start_seconds)).toBe(40);
+    expect(purged.rows[0]?.match_reasons).toContain("Brand found.");
+
+    expect(await attempt("service_role", `select public.youtube_oauth_disconnect('${USER}')`)).toBe("allowed");
+    const disconnected = await db.query<{
+      status: string;
+      refresh_token_enc: string | null;
+      access_token_enc: string | null;
+    }>(`select status, refresh_token_enc, access_token_enc from public.youtube_oauth_connections where id = '${conn}'`);
+    expect(disconnected.rows[0]?.status).toBe("revoked");
+    expect(disconnected.rows[0]?.refresh_token_enc).toBeNull();
+    expect(disconnected.rows[0]?.access_token_enc).toBeNull();
+
+    await db.exec(`
+      insert into public.youtube_oauth_connections (
+        id, user_id, show_profile_id, channel_id, channel_title, scopes, status, reauth_required_at
+      ) values (
+        '${connReauth}', '${USER}', '${profile}', 'UCreauth', 'Old title', array['https://www.googleapis.com/auth/youtube.force-ssl'],
+        'reauth_required', now() - interval '31 days'
+      );
+      insert into public.youtube_aircheck_metrics (io_line_item_id, connection_id, video_id, views, attempts)
+      values ('${lineReauth}', '${connReauth}', 'abcdefghijk', 10, 1);
+      insert into public.youtube_oauth_connections (
+        id, user_id, show_profile_id, channel_id, channel_title, scopes, status, revoked_at
+      ) values (
+        '${connRevoked}', '${OTHER}', '${profile}', 'UCrevoked', 'Gone', array['https://www.googleapis.com/auth/youtube.force-ssl'],
+        'revoked', now() - interval '8 days'
+      );
+      insert into public.youtube_aircheck_metrics (io_line_item_id, connection_id, video_id, views, attempts)
+      values ('${lineRevoked}', '${connRevoked}', 'bbcdefghijk', 4, 1);
+    `);
+    expect(await attempt("service_role", `select public.youtube_oauth_housekeeping(now())`)).toBe("allowed");
+
+    const reauthGone = await db.query<{ count: string }>(
+      `select count(*)::text as count from public.youtube_oauth_connections where id = '${connReauth}'`
+    );
+    expect(reauthGone.rows[0]?.count).toBe("0");
+    const reauthMetrics = await db.query<{ count: string }>(
+      `select count(*)::text as count from public.youtube_aircheck_metrics where connection_id = '${connReauth}'`
+    );
+    expect(reauthMetrics.rows[0]?.count).toBe("0");
+    const reauthCaption = await db.query<{ transcript_text: string | null; match_result: string }>(
+      `select transcript_text, match_result from public.airchecks where io_line_item_id = '${lineReauth}'`
+    );
+    expect(reauthCaption.rows[0]?.transcript_text).toBeNull();
+    expect(reauthCaption.rows[0]?.match_result).toBe("matched");
+
+    const revokedGone = await db.query<{ count: string }>(
+      `select count(*)::text as count from public.youtube_oauth_connections where id = '${connRevoked}'`
+    );
+    expect(revokedGone.rows[0]?.count).toBe("0");
+    const revokedCaption = await db.query<{ transcript_text: string | null; match_result: string }>(
+      `select transcript_text, match_result from public.airchecks where io_line_item_id = '${lineRevoked}'`
+    );
+    expect(revokedCaption.rows[0]?.transcript_text).toBeNull();
+    expect(revokedCaption.rows[0]?.match_result).toBe("not_matched");
+
+    const secondLive = await attempt(
+      "service_role",
+      `insert into public.youtube_oauth_connections
+        (user_id, show_profile_id, channel_id, scopes, refresh_token_enc, status)
+       values ('${USER}', '${profile}', 'UCone', array['https://www.googleapis.com/auth/youtube.force-ssl'], 'v1.a', 'active'),
+              ('${USER}', '${profile}', 'UCtwo', array['https://www.googleapis.com/auth/youtube.force-ssl'], 'v1.b', 'reauth_required')`
+    );
+    expect(secondLive).toMatch(/duplicate key|unique/i);
+  });
 });

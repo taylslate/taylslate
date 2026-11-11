@@ -5,7 +5,7 @@ import { encryptString } from "@/lib/youtube-oauth/crypto";
 const auth = vi.fn();
 const show = vi.fn();
 const enforce = vi.fn();
-const readCipher = vi.fn();
+const listLive = vi.fn();
 const disconnect = vi.fn();
 const revoke = vi.fn();
 
@@ -19,7 +19,7 @@ vi.mock("@/lib/youtube-oauth/limits", () => ({
 
 vi.mock("@/lib/youtube-oauth/store", () => ({
   requireShowProfile: (...args: unknown[]) => show(...args),
-  readConnectionCiphertext: (...args: unknown[]) => readCipher(...args),
+  listLiveCiphertexts: (...args: unknown[]) => listLive(...args),
   disconnectYoutubeUser: (...args: unknown[]) => disconnect(...args),
 }));
 
@@ -48,18 +48,22 @@ describe("POST /api/youtube/disconnect", () => {
     enforce.mockResolvedValue(null);
     disconnect.mockResolvedValue("ok");
     revoke.mockResolvedValue(undefined);
-    readCipher.mockResolvedValue({
-      refresh_token_enc: encryptString(REFRESH, KEY),
-      access_token_enc: encryptString("access-plain", KEY),
-    });
+    listLive.mockResolvedValue([
+      {
+        id: "conn-1",
+        channel_id: "UCone",
+        refresh_token_enc: encryptString(REFRESH, KEY),
+        access_token_enc: encryptString("access-plain", KEY),
+      },
+    ]);
     process.env.GOOGLE_OAUTH_CLIENT_ID = "client-id";
     process.env.GOOGLE_OAUTH_CLIENT_SECRET = "client-secret-value";
     process.env.YOUTUBE_TOKEN_ENC_KEY = KEY.toString("base64");
-    process.env.NEXT_PUBLIC_SITE_URL = "https://taylslate.com";
+    process.env.NEXT_PUBLIC_SITE_URL = "https://www.taylslate.com";
   });
 
   it("revokes at Google and clears the local connection", async () => {
-    const res = await post("https://taylslate.com");
+    const res = await post("https://www.taylslate.com");
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ ok: true });
@@ -75,5 +79,29 @@ describe("POST /api/youtube/disconnect", () => {
     expect(other.status).toBe(403);
     expect(revoke).not.toHaveBeenCalled();
     expect(disconnect).not.toHaveBeenCalled();
+  });
+
+  it("revokes every live grant and nulls both rows", async () => {
+    const second = "second-refresh-token";
+    listLive.mockResolvedValue([
+      {
+        id: "conn-1",
+        channel_id: "UCone",
+        refresh_token_enc: encryptString(REFRESH, KEY),
+        access_token_enc: null,
+      },
+      {
+        id: "conn-2",
+        channel_id: "UCtwo",
+        refresh_token_enc: encryptString(second, KEY),
+        access_token_enc: null,
+      },
+    ]);
+    const res = await post("https://www.taylslate.com");
+    expect(res.status).toBe(200);
+    expect(revoke).toHaveBeenCalledTimes(2);
+    expect(revoke).toHaveBeenCalledWith(REFRESH);
+    expect(revoke).toHaveBeenCalledWith(second);
+    expect(disconnect).toHaveBeenCalledWith(USER);
   });
 });

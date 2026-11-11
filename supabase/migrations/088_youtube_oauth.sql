@@ -80,6 +80,7 @@ create table if not exists public.youtube_oauth_connections (
   last_refreshed_at timestamptz,
   last_verified_at timestamptz,
   revoked_at timestamptz,
+  reauth_required_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -99,6 +100,7 @@ alter table public.youtube_oauth_connections add column if not exists connected_
 alter table public.youtube_oauth_connections add column if not exists last_refreshed_at timestamptz;
 alter table public.youtube_oauth_connections add column if not exists last_verified_at timestamptz;
 alter table public.youtube_oauth_connections add column if not exists revoked_at timestamptz;
+alter table public.youtube_oauth_connections add column if not exists reauth_required_at timestamptz;
 alter table public.youtube_oauth_connections add column if not exists created_at timestamptz default now();
 alter table public.youtube_oauth_connections add column if not exists updated_at timestamptz default now();
 
@@ -140,6 +142,11 @@ end $$;
 create unique index if not exists youtube_oauth_connections_one_active_channel
   on public.youtube_oauth_connections (channel_id)
   where status = 'active';
+
+-- One live grant per user. A second channel must revoke the first.
+create unique index if not exists youtube_oauth_connections_one_live_user
+  on public.youtube_oauth_connections (user_id)
+  where status in ('active', 'reauth_required');
 
 drop trigger if exists update_youtube_oauth_connections_timestamp on public.youtube_oauth_connections;
 create trigger update_youtube_oauth_connections_timestamp
@@ -440,19 +447,22 @@ begin
   v_reauth_before := p_now - interval '30 days';
   v_revoked_before := p_now - interval '7 days';
 
+  -- created_at, not updated_at. The airchecks trigger rewrites
+  -- updated_at on every update, which would keep captions forever.
   perform public.youtube_oauth_clear_captions(array(
     select io_line_item_id
       from public.airchecks
      where provider = 'youtube-captions'
        and transcript_text is not null
-       and updated_at < v_caption_before
+       and created_at < v_caption_before
   ));
 
   delete from public.youtube_aircheck_metrics m
    using public.youtube_oauth_connections c
    where m.connection_id = c.id
      and c.status = 'reauth_required'
-     and c.updated_at < v_reauth_before;
+     and c.reauth_required_at is not null
+     and c.reauth_required_at < v_reauth_before;
 
   perform public.youtube_oauth_clear_captions(array(
     select li.id
@@ -461,8 +471,14 @@ begin
       join public.deals d on d.id = io.deal_id
       join public.youtube_oauth_connections c on c.show_profile_id = d.show_profile_id
      where c.status = 'reauth_required'
-       and c.updated_at < v_reauth_before
+       and c.reauth_required_at is not null
+       and c.reauth_required_at < v_reauth_before
   ));
+
+  delete from public.youtube_oauth_connections
+   where status = 'reauth_required'
+     and reauth_required_at is not null
+     and reauth_required_at < v_reauth_before;
 
   delete from public.youtube_aircheck_metrics m
    using public.youtube_oauth_connections c

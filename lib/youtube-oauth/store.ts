@@ -237,10 +237,16 @@ export async function storeRefreshedAccess(input: {
   if (error && !missingRelation(error)) throw new Error("youtube token update failed");
 }
 
-export async function markConnectionReauth(id: string): Promise<void> {
+export async function markConnectionReauth(id: string, at = new Date().toISOString()): Promise<void> {
   const { error } = await supabaseAdmin
     .from("youtube_oauth_connections")
-    .update({ status: "reauth_required" })
+    .update({
+      status: "reauth_required",
+      refresh_token_enc: null,
+      access_token_enc: null,
+      access_token_expires_at: null,
+      reauth_required_at: at,
+    })
     .eq("id", id)
     .eq("status", "active");
   if (error && !missingRelation(error)) throw new Error("youtube reauth failed");
@@ -311,24 +317,127 @@ export async function saveMetrics(row: MetricsWrite): Promise<void> {
   if (error && !missingRelation(error)) throw new Error("youtube metrics save failed");
 }
 
-/** Ciphertext for one connection. Used only to revoke at Google before nulling. */
-export async function readConnectionCiphertext(
-  userId: string
-): Promise<{ refresh_token_enc: string | null; access_token_enc: string | null } | null> {
+export interface LiveCiphertext {
+  id: string;
+  channel_id: string;
+  refresh_token_enc: string | null;
+  access_token_enc: string | null;
+}
+
+/** Every non-revoked grant for the user. Disconnect revokes each one. */
+export async function listLiveCiphertexts(userId: string): Promise<LiveCiphertext[]> {
   const { data, error } = await supabaseAdmin
     .from("youtube_oauth_connections")
-    .select("refresh_token_enc, access_token_enc, status")
+    .select("id, channel_id, refresh_token_enc, access_token_enc")
     .eq("user_id", userId)
-    .in("status", ["active", "reauth_required"])
-    .limit(1)
+    .in("status", ["active", "reauth_required"]);
+  if (error) {
+    if (missingRelation(error)) return [];
+    throw new Error("youtube connection read failed");
+  }
+  return (data ?? []) as LiveCiphertext[];
+}
+
+export async function retireConnection(id: string, at = new Date().toISOString()): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("youtube_oauth_connections")
+    .update({
+      status: "revoked",
+      refresh_token_enc: null,
+      access_token_enc: null,
+      access_token_expires_at: null,
+      revoked_at: at,
+    })
+    .eq("id", id)
+    .in("status", ["active", "reauth_required"]);
+  if (error && !missingRelation(error)) throw new Error("youtube retire failed");
+}
+
+export interface AnalyticsCandidateRow {
+  ioLineItemId: string;
+  videoId: string;
+  showProfileId: string | null;
+  durationSeconds: number | null;
+  adStartSeconds: number | null;
+  adEndSeconds: number | null;
+  attempts: number;
+  views: number | null;
+  hasRetention: boolean;
+}
+
+export async function loadAnalyticsCandidateRows(): Promise<AnalyticsCandidateRow[]> {
+  const { data, error } = await supabaseAdmin
+    .from("airchecks")
+    .select("io_line_item_id, episode_identifier, duration_seconds, ad_start_seconds, ad_end_seconds")
+    .eq("provider", "youtube-captions")
+    .eq("status", "transcribed");
+  if (error) {
+    if (missingRelation(error)) return [];
+    throw new Error("youtube analytics candidates failed");
+  }
+  const airchecks = (data ?? []).filter(
+    (row) => typeof row.episode_identifier === "string" && /^[A-Za-z0-9_-]{11}$/.test(row.episode_identifier)
+  );
+  if (airchecks.length === 0) return [];
+  const lineIds = airchecks.map((row) => row.io_line_item_id as string);
+  const lines = await supabaseAdmin.from("io_line_items").select("id, io_id").in("id", lineIds);
+  if (lines.error) throw new Error("youtube analytics lines failed");
+  const ioIds = [...new Set((lines.data ?? []).map((row) => row.io_id as string).filter(Boolean))];
+  const ios = ioIds.length
+    ? await supabaseAdmin.from("insertion_orders").select("id, deal_id").in("id", ioIds)
+    : { data: [], error: null };
+  if (ios.error) throw new Error("youtube analytics orders failed");
+  const dealIds = [...new Set((ios.data ?? []).map((row) => row.deal_id as string).filter(Boolean))];
+  const deals = dealIds.length
+    ? await supabaseAdmin.from("deals").select("id, show_profile_id").in("id", dealIds)
+    : { data: [], error: null };
+  if (deals.error) throw new Error("youtube analytics deals failed");
+  const metrics = await supabaseAdmin
+    .from("youtube_aircheck_metrics")
+    .select("io_line_item_id, attempts, views, retention")
+    .in("io_line_item_id", lineIds);
+  if (metrics.error && !missingRelation(metrics.error)) throw new Error("youtube analytics metrics failed");
+
+  const lineToIo = new Map((lines.data ?? []).map((row) => [row.id as string, row.io_id as string]));
+  const ioToDeal = new Map((ios.data ?? []).map((row) => [row.id as string, row.deal_id as string]));
+  const dealToProfile = new Map(
+    (deals.data ?? []).map((row) => [row.id as string, (row.show_profile_id as string | null) ?? null])
+  );
+  const metricByLine = new Map((metrics.data ?? []).map((row) => [row.io_line_item_id as string, row]));
+
+  return airchecks.map((row) => {
+    const lineId = row.io_line_item_id as string;
+    const dealId = ioToDeal.get(lineToIo.get(lineId) ?? "");
+    const metric = metricByLine.get(lineId);
+    return {
+      ioLineItemId: lineId,
+      videoId: row.episode_identifier as string,
+      showProfileId: dealId ? (dealToProfile.get(dealId) ?? null) : null,
+      durationSeconds: row.duration_seconds == null ? null : Number(row.duration_seconds),
+      adStartSeconds: row.ad_start_seconds == null ? null : Number(row.ad_start_seconds),
+      adEndSeconds: row.ad_end_seconds == null ? null : Number(row.ad_end_seconds),
+      attempts: Number(metric?.attempts ?? 0),
+      views: metric?.views == null ? null : Number(metric.views),
+      hasRetention: Array.isArray(metric?.retention) && metric.retention.length > 0,
+    };
+  });
+}
+
+export async function loadStoredCaption(
+  ioLineItemId: string
+): Promise<{ transcript: string; segments: { start_seconds: number; end_seconds: number; text: string }[] } | null> {
+  const { data, error } = await supabaseAdmin
+    .from("airchecks")
+    .select("transcript_text, transcript_segments, provider")
+    .eq("io_line_item_id", ioLineItemId)
+    .eq("provider", "youtube-captions")
     .maybeSingle();
   if (error) {
     if (missingRelation(error)) return null;
-    throw new Error("youtube connection read failed");
+    throw new Error("youtube caption read failed");
   }
-  if (!data) return null;
-  return {
-    refresh_token_enc: (data.refresh_token_enc as string | null) ?? null,
-    access_token_enc: (data.access_token_enc as string | null) ?? null,
-  };
+  const text = typeof data?.transcript_text === "string" ? data.transcript_text.trim() : "";
+  if (!text) return null;
+  const segments = Array.isArray(data?.transcript_segments) ? data.transcript_segments : [];
+  return { transcript: text, segments };
 }

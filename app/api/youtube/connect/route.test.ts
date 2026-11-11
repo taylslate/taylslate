@@ -68,7 +68,7 @@ describe("GET /api/youtube/connect", () => {
     const location = res.headers.get("location") ?? "";
     const url = new URL(location);
     expect(url.origin).toBe("https://accounts.google.com");
-    expect(url.searchParams.get("redirect_uri")).toBe("https://taylslate.com/api/youtube/callback");
+    expect(url.searchParams.get("redirect_uri")).toBe("https://www.taylslate.com/api/youtube/callback");
     expect(url.searchParams.get("scope")?.split(" ")).toHaveLength(2);
     expect(location).not.toContain("client-secret-value");
     const cookie = res.headers.get("set-cookie") ?? "";

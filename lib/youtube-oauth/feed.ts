@@ -11,6 +11,7 @@ import { locateAdRead } from "@/lib/airchecks/locate";
 import { saveAircheckRun, type AircheckPersist } from "@/lib/airchecks/persist";
 import { redactAircheckError } from "@/lib/airchecks/redact";
 import { loadDueSpots, type DueSpot } from "@/lib/airchecks/select";
+import type { AircheckSegment } from "@/lib/airchecks/types";
 import { analyticsWindow, fetchRetention, fetchVideoAnalytics, retentionPointsForAd } from "./analytics";
 import type { RetentionPoint } from "./analytics";
 import {
@@ -37,8 +38,10 @@ import { pacificDay } from "@/lib/youtube-library/quota";
 import {
   countActiveConnections,
   listActiveConnections,
+  loadAnalyticsCandidateRows,
   loadDealShowProfiles,
   loadMetricsAttempt,
+  loadStoredCaption as readStoredCaption,
   markConnectionReauth,
   markConnectionVerified,
   runYoutubeHousekeeping,
@@ -52,7 +55,6 @@ import { GoogleOAuthError } from "./google";
 
 export const YOUTUBE_CAPTION_PROVIDER = "youtube-captions";
 export const YOUTUBE_CAPTION_BUDGET_MS = 60_000;
-const VERIFY_MS = 30 * 24 * 60 * 60 * 1000;
 const REFRESH_SKEW_MS = 2 * 60 * 1000;
 const MAX_ERROR = 2000;
 
@@ -82,12 +84,32 @@ export interface MetricsSnapshot {
   hasRetention: boolean;
 }
 
+export interface AnalyticsWork {
+  ioLineItemId: string;
+  videoId: string;
+  showProfileId: string | null;
+  publishedAt: string | null;
+  durationSeconds: number | null;
+  adStartSeconds: number | null;
+  adEndSeconds: number | null;
+  attempts: number;
+  views: number | null;
+  hasRetention: boolean;
+}
+
+export interface StoredCaption {
+  transcript: string;
+  segments: AircheckSegment[];
+}
+
 export interface YoutubeCaptionDeps {
   now: Date;
   configured: () => boolean;
   tablesReady: () => Promise<boolean>;
   housekeeping: (now: Date) => Promise<void>;
-  reverify: (connections: FeedConnection[], now: Date) => Promise<void>;
+  reverify: (connections: FeedConnection[], now: Date, startedMs: number) => Promise<string[]>;
+  loadStoredCaption: (ioLineItemId: string) => Promise<StoredCaption | null>;
+  loadAnalyticsCandidates: () => Promise<AnalyticsWork[]>;
   loadSpots: (now: Date) => Promise<DueSpot[]>;
   loadDealProfiles: (dealIds: string[]) => Promise<{ dealId: string; showProfileId: string | null }[]>;
   loadConnections: () => Promise<FeedConnection[]>;
@@ -185,10 +207,8 @@ function tokenDue(connection: FeedConnection, now: Date): boolean {
   return expires - now.getTime() <= REFRESH_SKEW_MS;
 }
 
-function verifyDue(connection: FeedConnection, now: Date): boolean {
-  const verified = Date.parse(connection.lastVerifiedAt ?? "");
-  if (!Number.isFinite(verified)) return true;
-  return now.getTime() - verified >= VERIFY_MS;
+function timedOut(deps: YoutubeCaptionDeps, startedMs: number): boolean {
+  return deps.clock() - startedMs >= deps.timeBudgetMs;
 }
 
 function defaultDeps(now: Date): YoutubeCaptionDeps {
@@ -199,12 +219,19 @@ function defaultDeps(now: Date): YoutubeCaptionDeps {
     configured: youtubeOauthConfigured,
     tablesReady: youtubeOauthTablesReady,
     housekeeping: (at) => runYoutubeHousekeeping(at),
-    reverify: async (connections, at) => {
-      for (const connection of connections) {
-        if (!verifyDue(connection, at)) continue;
+    reverify: async (connections, at, startedMs) => {
+      const dead: string[] = [];
+      for (let index = connections.length - 1; index >= 0; index -= 1) {
+        const connection = connections[index];
+        if (!connection) continue;
+        if (Date.now() - startedMs >= YOUTUBE_CAPTION_BUDGET_MS) break;
         const outcome = await refreshConnection(connection, tokens, at, true);
         if (!outcome.ok) {
-          if (outcome.invalidGrant) await markConnectionReauth(connection.id);
+          if (outcome.invalidGrant) {
+            await markConnectionReauth(connection.id, at.toISOString());
+            connections.splice(index, 1);
+            dead.push(connection.id);
+          }
           continue;
         }
         connection.accessToken = outcome.accessToken;
@@ -212,6 +239,12 @@ function defaultDeps(now: Date): YoutubeCaptionDeps {
         connection.lastVerifiedAt = at.toISOString();
         await markConnectionVerified(connection.id, at.toISOString());
       }
+      return dead;
+    },
+    loadStoredCaption: readStoredCaption,
+    loadAnalyticsCandidates: async () => {
+      const rows = await loadAnalyticsCandidateRows();
+      return rows.map((row) => ({ ...row, publishedAt: null }));
     },
     loadSpots: loadDueSpots,
     loadDealProfiles: loadDealShowProfiles,
@@ -343,10 +376,12 @@ export async function runYoutubeCaptionAirchecks(
     deps.log(`[youtube-oauth] housekeeping ${clip(err instanceof Error ? err.message : "failed")}`);
   }
 
+  const started = deps.clock();
   let connections: FeedConnection[] = [];
   try {
     connections = await deps.loadConnections();
-    await deps.reverify(connections, deps.now);
+    const dropped = new Set(await deps.reverify(connections, deps.now, started));
+    connections = connections.filter((connection) => !dropped.has(connection.id));
   } catch (err) {
     deps.log(`[youtube-oauth] connections ${clip(err instanceof Error ? err.message : "failed")}`);
     connections = [];
@@ -373,12 +408,11 @@ export async function runYoutubeCaptionAirchecks(
 
   const matched = spots.filter((spot) => connectionFor(spot, profiles, connections));
   const captioned = new Set<string>();
-  const started = deps.clock();
   const day = pacificDay(deps.now);
   const dead = new Set<string>();
 
   for (const spot of matched) {
-    if (deps.clock() - started >= deps.timeBudgetMs) {
+    if (timedOut(deps, started)) {
       report.stopped = "time";
       deps.log("[youtube-oauth] stopped time");
       break;
@@ -387,7 +421,7 @@ export async function runYoutubeCaptionAirchecks(
     if (!connection || dead.has(connection.id)) continue;
     report.considered += 1;
     try {
-      const outcome = await processSpot(spot, connection, deps, day);
+      const outcome = await processSpot(spot, connection, deps, day, started);
       if (outcome.stop) {
         report.stopped = outcome.stop;
         if (outcome.missing) report.skipped = "missing_tables";
@@ -412,6 +446,16 @@ export async function runYoutubeCaptionAirchecks(
           `[youtube-oauth] line=${spot.ioLineItemId} save failed ${clip(saveErr instanceof Error ? saveErr.message : "save failed")}`
         );
       }
+    }
+  }
+
+  if (!report.stopped && report.skipped !== "missing_tables") {
+    try {
+      const analytics = await runAnalyticsPass(deps, connections, started);
+      report.analytics += analytics.saved;
+      if (analytics.stop) report.stopped = analytics.stop;
+    } catch (err) {
+      deps.log(`[youtube-oauth] analytics ${clip(err instanceof Error ? err.message : "failed")}`);
     }
   }
 
@@ -483,7 +527,8 @@ async function processSpot(
   spot: DueSpot,
   connection: FeedConnection,
   deps: YoutubeCaptionDeps,
-  day: string
+  day: string,
+  started: number
 ): Promise<SpotOutcome> {
   const none: SpotOutcome = {
     stop: false,
@@ -494,24 +539,35 @@ async function processSpot(
     failed: false,
     analytics: false,
   };
+  if (timedOut(deps, started)) return { ...none, stop: "time" };
   const episodeQuota = await takeQuota(deps, day, AIRCHECK_EPISODE_UNITS);
   if (!episodeQuota.ok) return { ...none, stop: "quota", missing: episodeQuota.missing };
 
+  if (timedOut(deps, started)) return { ...none, stop: "time" };
   const token = await ensureToken(connection, deps);
   if (!token.ok) return { ...none, reauth: token.reauth };
 
+  if (timedOut(deps, started)) return { ...none, stop: "time" };
   const found = await deps.findEpisode(spot);
   if (!isFound(found) || !isVideoId(found.episodeIdentifier)) return none;
 
+  if (timedOut(deps, started)) return { ...none, stop: "time" };
   const details = await deps.videoDetails(token.accessToken, found.episodeIdentifier);
   if (!details.ok && details.reason === "quota") return { ...none, stop: "quota" };
   const durationSeconds = found.durationSeconds ?? (details.ok ? details.details.durationSeconds : null);
-  const publishedAt = details.ok ? details.details.publishedAt : null;
   const defaultLanguage = details.ok ? details.details.defaultLanguage : null;
 
+  const stored = await deps.loadStoredCaption(spot.ioLineItemId);
+  if (stored) {
+    const judged = await saveJudgment(deps, spot, found.episodeIdentifier, stored.transcript, stored.segments, durationSeconds);
+    return { ...none, captioned: true, ready: judged.ready };
+  }
+
+  if (timedOut(deps, started)) return { ...none, stop: "time" };
   const captionQuota = await takeQuota(deps, day, AIRCHECK_CAPTION_UNITS);
   if (!captionQuota.ok) return { ...none, stop: "quota", missing: captionQuota.missing };
 
+  if (timedOut(deps, started)) return { ...none, stop: "time" };
   const listed = await deps.listCaptions(token.accessToken, found.episodeIdentifier);
   if (!listed.ok) {
     if (listed.reason === "quota") return { ...none, stop: "quota" };
@@ -523,6 +579,7 @@ async function processSpot(
     await deps.save(failureRow(spot, "no caption track", found.episodeIdentifier));
     return { ...none, failed: true };
   }
+  if (timedOut(deps, started)) return { ...none, stop: "time" };
   const downloaded = await deps.downloadCaption(token.accessToken, track.id);
   if (!downloaded.ok) {
     if (downloaded.reason === "quota") return { ...none, stop: "quota" };
@@ -536,6 +593,18 @@ async function processSpot(
     return { ...none, failed: true };
   }
 
+  const judged = await saveJudgment(deps, spot, found.episodeIdentifier, transcript, segments, durationSeconds);
+  return { ...none, captioned: true, ready: judged.ready };
+}
+
+async function saveJudgment(
+  deps: YoutubeCaptionDeps,
+  spot: DueSpot,
+  videoId: string,
+  transcript: string,
+  segments: AircheckSegment[],
+  durationSeconds: number | null
+): Promise<{ ready: boolean }> {
   const located = locateAdRead({
     status: "transcribed",
     transcript,
@@ -545,7 +614,7 @@ async function processSpot(
   });
   const saved = await deps.save({
     io_line_item_id: spot.ioLineItemId,
-    episode_identifier: found.episodeIdentifier,
+    episode_identifier: videoId,
     audio_url: null,
     transcript_text: transcript,
     transcript_segments: segments,
@@ -580,105 +649,106 @@ async function processSpot(
       },
     });
   }
-
-  const analytics = await maybeAnalytics({
-    deps,
-    connection,
-    accessToken: token.accessToken,
-    spot,
-    videoId: found.episodeIdentifier,
-    publishedAt,
-    durationSeconds,
-    adStart: located.adStartSeconds,
-    adEnd: located.adEndSeconds,
-  });
-  if (analytics === "quota") return { ...none, stop: "quota", captioned: true, ready: located.readyForReview };
-  return {
-    ...none,
-    captioned: true,
-    ready: located.readyForReview,
-    analytics: analytics === "saved",
-  };
+  return { ready: located.readyForReview };
 }
 
-async function maybeAnalytics(input: {
-  deps: YoutubeCaptionDeps;
-  connection: FeedConnection;
-  accessToken: string;
-  spot: DueSpot;
-  videoId: string;
-  publishedAt: string | null;
-  durationSeconds: number | null;
-  adStart: number | null;
-  adEnd: number | null;
-}): Promise<"saved" | "quota" | "skipped"> {
-  if (!input.connection.analytics || !input.publishedAt) return "skipped";
-  const existing = await input.deps.loadMetrics(input.spot.ioLineItemId);
-  const attempts = existing?.attempts ?? 0;
-  const hasViews = existing?.views != null;
-  const complete = hasViews && (existing?.hasRetention || input.adStart == null || input.adEnd == null);
-  const window = analyticsWindow({
-    now: input.deps.now,
-    publishedAt: input.publishedAt,
-    attempts,
-    hasViews: complete,
-  });
-  if (window !== "due") return "skipped";
+async function runAnalyticsPass(
+  deps: YoutubeCaptionDeps,
+  connections: FeedConnection[],
+  started: number
+): Promise<{ saved: number; stop: null | "quota" | "time" }> {
+  const candidates = await deps.loadAnalyticsCandidates();
+  let saved = 0;
+  for (const item of candidates) {
+    if (item.attempts >= 10) continue;
+    const connection = connections.find(
+      (row) => row.analytics && row.showProfileId && row.showProfileId === item.showProfileId
+    );
+    if (!connection) continue;
+    if (timedOut(deps, started)) return { saved, stop: "time" };
+    const token = await ensureToken(connection, deps);
+    if (!token.ok) continue;
 
-  const summary = await input.deps.fetchAnalytics({
-    accessToken: input.accessToken,
-    videoId: input.videoId,
-    publishedAt: input.publishedAt,
-    now: input.deps.now,
-  });
-  if (!summary.ok) {
-    if (summary.reason === "quota") return "quota";
-    await input.deps.saveMetrics({
-      io_line_item_id: input.spot.ioLineItemId,
-      connection_id: input.connection.id,
-      video_id: input.videoId,
-      views: existing?.views ?? null,
-      estimated_minutes_watched: null,
-      average_view_duration_seconds: null,
-      retention: null,
-      video_duration_seconds: input.durationSeconds,
-      fetched_at: input.deps.now.toISOString(),
-      attempts: attempts + 1,
-    });
-    return "skipped";
-  }
-
-  let retention: RetentionPoint[] | null = null;
-  if (input.durationSeconds && input.adStart != null && input.adEnd != null) {
-    const points = await input.deps.fetchRetention({
-      accessToken: input.accessToken,
-      videoId: input.videoId,
-      publishedAt: input.publishedAt,
-      now: input.deps.now,
-    });
-    if (!points.ok) {
-      if (points.reason === "quota") return "quota";
-    } else {
-      retention = retentionPointsForAd({
-        points: points.points,
-        durationSeconds: input.durationSeconds,
-        adStartSeconds: input.adStart,
-        adEndSeconds: input.adEnd,
-      });
+    let publishedAt = item.publishedAt;
+    if (!publishedAt) {
+      if (timedOut(deps, started)) return { saved, stop: "time" };
+      const lookup = await takeQuota(deps, pacificDay(deps.now), 1);
+      if (!lookup.ok) return { saved, stop: "quota" };
+      const details = await deps.videoDetails(token.accessToken, item.videoId);
+      if (!details.ok) {
+        if (details.reason === "quota") return { saved, stop: "quota" };
+        continue;
+      }
+      publishedAt = details.details.publishedAt;
     }
-  }
+    if (!publishedAt) continue;
+    const complete = item.views != null && (item.hasRetention || item.adStartSeconds == null || item.adEndSeconds == null);
+    const window = analyticsWindow({
+      now: deps.now,
+      publishedAt,
+      attempts: item.attempts,
+      hasViews: complete,
+    });
+    if (window !== "due") continue;
 
-  await input.deps.saveMetrics({
-    io_line_item_id: input.spot.ioLineItemId,
-    connection_id: input.connection.id,
-    video_id: input.videoId,
-    views: summary.analytics.views,
-    estimated_minutes_watched: summary.analytics.estimatedMinutesWatched,
-    average_view_duration_seconds: summary.analytics.averageViewDurationSeconds,
-    retention,
-    video_duration_seconds: input.durationSeconds,
-    fetched_at: input.deps.now.toISOString(),
-    attempts: attempts + 1,
-  });
-  return "saved";
+    if (timedOut(deps, started)) return { saved, stop: "time" };
+    const summary = await deps.fetchAnalytics({
+      accessToken: token.accessToken,
+      videoId: item.videoId,
+      publishedAt,
+      now: deps.now,
+    });
+    if (!summary.ok) {
+      if (summary.reason === "quota") return { saved, stop: "quota" };
+      await deps.saveMetrics({
+        io_line_item_id: item.ioLineItemId,
+        connection_id: connection.id,
+        video_id: item.videoId,
+        views: item.views,
+        estimated_minutes_watched: null,
+        average_view_duration_seconds: null,
+        retention: null,
+        video_duration_seconds: item.durationSeconds,
+        fetched_at: deps.now.toISOString(),
+        attempts: item.attempts + 1,
+      });
+      continue;
+    }
+
+    let retention: RetentionPoint[] | null = null;
+    if (item.durationSeconds && item.adStartSeconds != null && item.adEndSeconds != null) {
+      if (timedOut(deps, started)) return { saved, stop: "time" };
+      const points = await deps.fetchRetention({
+        accessToken: token.accessToken,
+        videoId: item.videoId,
+        publishedAt,
+        now: deps.now,
+      });
+      if (!points.ok) {
+        if (points.reason === "quota") return { saved, stop: "quota" };
+      } else {
+        retention = retentionPointsForAd({
+          points: points.points,
+          durationSeconds: item.durationSeconds,
+          adStartSeconds: item.adStartSeconds,
+          adEndSeconds: item.adEndSeconds,
+        });
+      }
+    }
+
+    await deps.saveMetrics({
+      io_line_item_id: item.ioLineItemId,
+      connection_id: connection.id,
+      video_id: item.videoId,
+      views: summary.analytics.views,
+      estimated_minutes_watched: summary.analytics.estimatedMinutesWatched,
+      average_view_duration_seconds: summary.analytics.averageViewDurationSeconds,
+      retention,
+      video_duration_seconds: item.durationSeconds,
+      fetched_at: deps.now.toISOString(),
+      attempts: item.attempts + 1,
+    });
+    saved += 1;
+  }
+  return { saved, stop: null };
 }

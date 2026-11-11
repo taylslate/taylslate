@@ -56,7 +56,11 @@ describe("/settings/youtube", () => {
     expect(screen.getByRole("link", { name: "Connect YouTube" })).toHaveAttribute("href", "/api/youtube/connect");
     expect(screen.getByText(/caption tracks of/i)).toBeInTheDocument();
     expect(screen.getByText(/Nothing is posted or changed on YouTube/i)).toBeInTheDocument();
-    expect(screen.getByText(/Taylslate staff review ad-read excerpts/i)).toBeInTheDocument();
+    expect(screen.getByText(/Taylslate staff review sponsor-read excerpts/i)).toBeInTheDocument();
+    expect(screen.getByText(/never uploads, edits, deletes, or posts/i)).toBeInTheDocument();
+    expect(screen.getByText(/do not use it to train AI models or in pooled data/i)).toBeInTheDocument();
+    expect(screen.getByText(/We store your channel ID and title/i)).toBeInTheDocument();
+    expect(screen.getByText(/Disconnect revokes Taylslate at Google/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "YouTube Terms of Service" })).toHaveAttribute(
       "href",
       "https://www.youtube.com/t/terms"

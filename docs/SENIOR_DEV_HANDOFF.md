@@ -2988,9 +2988,9 @@ No live write. Migration 088 is in the PR and is not applied. Read-only precheck
 
 `npx tsc --noEmit` is clean.
 
-`npx vitest run`: 379 files, 3166 passed, 41 skipped.
+`npx vitest run`: 384 files, 3225 passed, 41 skipped.
 
-`npx next build` compiled successfully and generated 146 static pages. `/settings/youtube` is dynamic.
+`npx next build` compiled successfully. `/settings/youtube` is dynamic.
 
 Covers encrypted token round trip, tampered ciphertext, the two OAuth scopes, PKCE, the secret staying out of the authorize URL, connect 401 / 403 / 503 / cookie flags / 429, callback state mismatch with no token exchange, encrypted storage, channel taken, disconnect revoke and cross-origin refusal, status without token fields, a caption row the runner then skips, quota shortfall, the 403 attempt prefix, `invalid_grant` reauth, raw retention points around the ad, the 30-day text purge, library caps with and without a reserve, and PGlite grants plus applying 088 twice.
 

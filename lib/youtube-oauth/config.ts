@@ -20,16 +20,30 @@ export interface YoutubeOauthConfig {
   siteBase: string;
 }
 
-function siteBase(): string | null {
-  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, "") ?? "";
-  if (!raw) return null;
+/** Apex always redirects here. OAuth, cookies, and Origin checks use this host. */
+export const CANONICAL_SITE_HOST = "www.taylslate.com";
+
+export function canonicalSiteUrl(raw: string): URL | null {
   try {
-    const url = new URL(raw);
+    const url = new URL(raw.trim());
     if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-    return `${url.origin}${url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "")}`;
+    if (url.hostname === "taylslate.com") {
+      url.hostname = CANONICAL_SITE_HOST;
+      url.protocol = "https:";
+    }
+    return url;
   } catch {
     return null;
   }
+}
+
+function siteBase(): string | null {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, "") ?? "";
+  if (!raw) return null;
+  const url = canonicalSiteUrl(raw);
+  if (!url) return null;
+  const path = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "");
+  return `${url.origin}${path}`;
 }
 
 /** 32-byte key. Accepts standard base64 or base64url. */

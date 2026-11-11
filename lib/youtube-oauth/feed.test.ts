@@ -61,7 +61,9 @@ function deps(overrides: Partial<YoutubeCaptionDeps> = {}): YoutubeCaptionDeps {
     configured: () => true,
     tablesReady: async () => true,
     housekeeping: async () => undefined,
-    reverify: async () => undefined,
+    reverify: async () => [],
+    loadStoredCaption: async () => null,
+    loadAnalyticsCandidates: async () => [],
     loadSpots: async () => [spot()],
     loadDealProfiles: async () => [{ dealId: "deal-1", showProfileId: "profile-1" }],
     loadConnections: async () => [connection()],
@@ -93,7 +95,7 @@ This read is from Sauna Box. Use code HUBERMAN at saunabox.com.
       ok: true,
       details: {
         durationSeconds: 100,
-        publishedAt: "2026-11-05T00:00:00.000Z",
+        publishedAt: NOW.toISOString(),
         defaultLanguage: "en",
       },
     }),
@@ -182,15 +184,7 @@ describe("youtube caption feed", () => {
         entityId: "aircheck-1",
       })
     );
-    const metrics = saveMetrics.mock.calls[0]?.[0];
-    if (!metrics) throw new Error("analytics were not saved");
-    expect(metrics.retention?.map((point) => point.ratio)).toEqual([0.4, 0.49, 0.5, 0.51]);
-    expect(JSON.stringify(metrics)).not.toMatch(/score/i);
-    expect(metrics).toMatchObject({
-      views: 1000,
-      estimated_minutes_watched: 400,
-      average_view_duration_seconds: 90,
-    });
+    expect(saveMetrics).not.toHaveBeenCalled();
 
     const due = buildDueSpots({
       today: "2026-11-11",
@@ -295,7 +289,8 @@ describe("youtube caption feed", () => {
       ad_start_seconds: 1800,
       ad_end_seconds: 1860,
       match_reasons: ["Brand found at 30:00."],
-      updated_at: "2026-09-01T00:00:00.000Z",
+      created_at: "2026-09-01T00:00:00.000Z",
+      updated_at: "2026-11-10T00:00:00.000Z",
       provider: "youtube-captions",
     };
     await runYoutubeCaptionAirchecks(
@@ -303,7 +298,7 @@ describe("youtube caption feed", () => {
         loadSpots: async () => [],
         housekeeping: async (now) => {
           const before = now.getTime() - 30 * 24 * 60 * 60 * 1000;
-          if (Date.parse(row.updated_at) < before && row.provider === "youtube-captions") {
+          if (Date.parse(row.created_at) < before && row.provider === "youtube-captions") {
             Object.assign(row, clearCaptionText(row));
           }
         },
@@ -319,5 +314,116 @@ describe("youtube caption feed", () => {
     expect(row.ad_start_seconds).toBe(1800);
     expect(row.ad_end_seconds).toBe(1860);
     expect(row.match_reasons).toEqual(["Brand found at 30:00."]);
+  });
+
+  it("stores captions on publish day and raw metrics three days later", async () => {
+    const published = "2026-11-11T12:00:00.000Z";
+    const saveMetrics = vi.fn(async (_row: MetricsRow) => undefined);
+    const download = vi.fn(async () => ({
+      ok: true as const,
+      vtt: `WEBVTT
+
+00:00:40.000 --> 00:00:50.000
+This read is from Sauna Box. Use code HUBERMAN at saunabox.com.
+`,
+    }));
+    const first = await runYoutubeCaptionAirchecks(
+      deps({
+        now: new Date("2026-11-11T20:00:00.000Z"),
+        saveMetrics,
+        downloadCaption: download,
+        videoDetails: async () => ({
+          ok: true,
+          details: { durationSeconds: 100, publishedAt: published, defaultLanguage: "en" },
+        }),
+        loadAnalyticsCandidates: async () => [
+          {
+            ioLineItemId: "line-1",
+            videoId: VIDEO,
+            showProfileId: "profile-1",
+            publishedAt: published,
+            durationSeconds: 100,
+            adStartSeconds: 40,
+            adEndSeconds: 50,
+            attempts: 0,
+            views: null,
+            hasRetention: false,
+          },
+        ],
+      }),
+      new Date("2026-11-11T20:00:00.000Z")
+    );
+    expect(first.captioned).toBe(1);
+    expect(saveMetrics).not.toHaveBeenCalled();
+    expect(download).toHaveBeenCalled();
+
+    const second = await runYoutubeCaptionAirchecks(
+      deps({
+        now: new Date("2026-11-14T20:00:00.000Z"),
+        loadSpots: async () => [],
+        saveMetrics,
+        loadAnalyticsCandidates: async () => [
+          {
+            ioLineItemId: "line-1",
+            videoId: VIDEO,
+            showProfileId: "profile-1",
+            publishedAt: published,
+            durationSeconds: 100,
+            adStartSeconds: 40,
+            adEndSeconds: 50,
+            attempts: 0,
+            views: null,
+            hasRetention: false,
+          },
+        ],
+      }),
+      new Date("2026-11-14T20:00:00.000Z")
+    );
+    expect(second.considered).toBe(0);
+    expect(second.analytics).toBe(1);
+    const metrics = saveMetrics.mock.calls[0]?.[0];
+    expect(metrics).toMatchObject({
+      views: 1000,
+      estimated_minutes_watched: 400,
+      average_view_duration_seconds: 90,
+      video_id: VIDEO,
+    });
+    expect(metrics?.retention?.map((point) => point.ratio)).toEqual([0.4, 0.49, 0.5, 0.51]);
+    expect(JSON.stringify(metrics)).not.toMatch(/score/i);
+  });
+
+  it("reuses a stored youtube-captions transcript instead of downloading it again", async () => {
+    const download = vi.fn();
+    const save = vi.fn(async (_row: AircheckPersist) => ({ id: "aircheck-1" }));
+    await runYoutubeCaptionAirchecks(
+      deps({
+        save,
+        downloadCaption: download,
+        loadStoredCaption: async () => ({
+          transcript: "Sauna Box code HUBERMAN",
+          segments: [{ start_seconds: 40, end_seconds: 50, text: "Sauna Box code HUBERMAN" }],
+        }),
+      }),
+      NOW
+    );
+    expect(download).not.toHaveBeenCalled();
+    expect(save.mock.calls[0]?.[0].transcript_text).toContain("Sauna Box");
+    expect(save.mock.calls[0]?.[0].provider).toBe("youtube-captions");
+  });
+
+  it("drops a connection from the list after the daily probe marks reauth", async () => {
+    const save = vi.fn();
+    await runYoutubeCaptionAirchecks(
+      deps({
+        save,
+        reverify: async (connections) => {
+          const id = connections[0]?.id ?? "conn-1";
+          connections.splice(0, connections.length);
+          return [id];
+        },
+      }),
+      NOW
+    );
+    expect(save).not.toHaveBeenCalled();
   });
 });

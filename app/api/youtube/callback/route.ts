@@ -15,7 +15,7 @@ import {
   youtubeSettingsUrl,
   type YoutubeOauthErrorCode,
 } from "@/lib/youtube-oauth/config";
-import { encryptString, openJson, safeEqual, sha256Hex } from "@/lib/youtube-oauth/crypto";
+import { decryptString, encryptString, openJson, safeEqual, sha256Hex } from "@/lib/youtube-oauth/crypto";
 import {
   exchangeAuthorizationCode,
   listOwnedChannel,
@@ -23,7 +23,13 @@ import {
   revokeGoogleToken,
 } from "@/lib/youtube-oauth/google";
 import { enforceYoutubeCallback } from "@/lib/youtube-oauth/limits";
-import { requireShowProfile, upsertConnection, youtubeOauthTablesReady } from "@/lib/youtube-oauth/store";
+import {
+  listLiveCiphertexts,
+  requireShowProfile,
+  retireConnection,
+  upsertConnection,
+  youtubeOauthTablesReady,
+} from "@/lib/youtube-oauth/store";
 
 export const runtime = "nodejs";
 
@@ -35,7 +41,7 @@ function unavailable(): NextResponse {
 
 function redirectError(code: YoutubeOauthErrorCode): NextResponse {
   const target = youtubeSettingsUrl({ error: code });
-  const response = NextResponse.redirect(target ?? "https://taylslate.com/settings/youtube");
+  const response = NextResponse.redirect(target ?? "https://www.taylslate.com/settings/youtube");
   clearYoutubeOauthCookie(response);
   return response;
 }
@@ -107,6 +113,20 @@ export async function GET(request: NextRequest) {
       return redirectError(channel.reason === "channel" ? "channel" : "exchange");
     }
 
+    const live = await listLiveCiphertexts(user.id);
+    for (const row of live) {
+      if (row.channel_id === channel.channel.channelId) continue;
+      let oldToken = "";
+      try {
+        if (row.refresh_token_enc) oldToken = decryptString(row.refresh_token_enc, config.encryptionKey);
+        else if (row.access_token_enc) oldToken = decryptString(row.access_token_enc, config.encryptionKey);
+      } catch {
+        oldToken = "";
+      }
+      if (oldToken) await revokeGoogleToken(oldToken);
+      await retireConnection(row.id);
+    }
+
     const saved = await upsertConnection({
       userId: user.id,
       showProfileId: show.showProfileId,
@@ -136,7 +156,7 @@ export async function GET(request: NextRequest) {
     });
 
     const connected = youtubeSettingsUrl({ connected: true });
-    const response = NextResponse.redirect(connected ?? "https://taylslate.com/settings/youtube?connected=1");
+    const response = NextResponse.redirect(connected ?? "https://www.taylslate.com/settings/youtube?connected=1");
     clearYoutubeOauthCookie(response);
     return response;
   } catch {

@@ -28,6 +28,8 @@ vi.mock("@/lib/youtube-oauth/store", () => ({
   requireShowProfile: (...args: unknown[]) => show(...args),
   youtubeOauthTablesReady: () => tables(),
   upsertConnection: (...args: unknown[]) => upsert(...args),
+  listLiveCiphertexts: async () => [],
+  retireConnection: async () => undefined,
 }));
 
 vi.mock("@/lib/youtube-oauth/google", async () => {
@@ -106,7 +108,7 @@ describe("GET /api/youtube/callback", () => {
   it("stores encrypted tokens and redirects only to the settings page", async () => {
     const res = await callback(cookieFor(USER), `code=auth-code&state=${STATE}&next=https://evil.example/phish`);
     const location = new URL(res.headers.get("location") ?? "");
-    expect(location.origin).toBe("https://taylslate.com");
+    expect(location.origin).toBe("https://www.taylslate.com");
     expect(location.pathname).toBe("/settings/youtube");
     expect(location.searchParams.get("connected")).toBe("1");
     expect(location.searchParams.has("next")).toBe(false);

@@ -22,10 +22,11 @@ describe("youtube oauth config", () => {
     process.env.YOUTUBE_TOKEN_ENC_KEY = KEY;
     process.env.NEXT_PUBLIC_SITE_URL = "https://taylslate.com/";
     expect(youtubeOauthConfigured()).toBe(true);
-    expect(readYoutubeOauthConfig()?.redirectUri).toBe("https://taylslate.com/api/youtube/callback");
-    expect(youtubeSettingsUrl({ connected: true })).toBe("https://taylslate.com/settings/youtube?connected=1");
+    expect(readYoutubeOauthConfig()?.redirectUri).toBe("https://www.taylslate.com/api/youtube/callback");
+    expect(readYoutubeOauthConfig()?.siteBase).toBe("https://www.taylslate.com");
+    expect(youtubeSettingsUrl({ connected: true })).toBe("https://www.taylslate.com/settings/youtube?connected=1");
     expect(youtubeSettingsUrl({ error: "channel_taken" })).toBe(
-      "https://taylslate.com/settings/youtube?error=channel_taken"
+      "https://www.taylslate.com/settings/youtube?error=channel_taken"
     );
     expect(YOUTUBE_OAUTH_SCOPES).toEqual([
       "https://www.googleapis.com/auth/youtube.force-ssl",
