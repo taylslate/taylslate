@@ -2709,3 +2709,48 @@ Route tests: the send response has no `pitch_url` and `outreach.token` is `""`; 
 - `POST /api/auth/magic/start` still sends a magic link to any address for any valid outreach token. Behavior review, not this job.
 - `app/api/admin/seed-outreach/route.test.ts` is outside the Owns list. Only the token-persist assertion and the `single()` queue changed.
 - This PR does not merge. Paul reviews.
+
+## STRIPE1: the charged line must belong to the deal
+
+### What was built
+
+`chargeForEpisode` now refuses to charge an `io_line_items` row unless that line's insertion order belongs to the deal passed in. After the line loads (`id,gross_rate,io_id`) and before `loadBrandProfile`, it loads `insertion_orders` `id,deal_id` by `io_id`. `ChargeOwnershipError` (message `IO line item does not belong to this deal.`) is thrown when `io_id` is null, the insertion order is missing (no row, or PostgREST `PGRST116`), or `io.deal_id` is not `deal.id`. A read error on that lookup throws a plain `Error`. Both throws happen before `customers.retrieve`, `paymentIntents.create`, and the payments insert.
+
+`findExistingPayment` stays first and unchanged. Amount math, fee, payment-method fallback, metadata, the payments row, the `23505` replay, and the idempotency key `pi:v3:{dealId}:{ioLineItemId}` are unchanged. The charged customer is still the deal's brand from `loadBrandProfile`. The input still does not supply a brand, customer, or amount.
+
+`POST /api/deals/[id]/charge-episode` catches `ChargeOwnershipError` and returns 404 `{ error: "IO line item not found" }` with no amount. The log is one line and does not include the foreign line's amount. Other errors stay 502. The route still requires the session user to own `deals.brand_profile_id`, or to be an internal admin.
+
+No page or component was edited. Screenshots are not applicable. No migration. Nothing was written on `ldtmhafewfifdizgfrnn`. No Stripe call was made. `lib/payouts`, `lib/billing`, `lib/billing/plans.ts`, `lib/delivery/mark-delivered.ts`, and the rest of `lib/stripe` were not edited.
+
+Precheck (read only, Nov 11, 2026): payments 0, payments whose line belongs to another deal 0, insertion orders without a deal 0.
+
+### Where
+
+- `lib/stripe/payment-intent.ts` (`ChargeOwnershipError`, `IoLineItemRow.io_id`, the line select, and the ownership check)
+- `lib/stripe/payment-intent.test.ts`
+- `app/api/deals/[id]/charge-episode/route.ts` (map `ChargeOwnershipError` to 404 only)
+- `app/api/deals/[id]/charge-episode/route.test.ts`
+- `docs/jobs/STRIPE1.md`
+- `docs/security/S-A_FINDINGS.md` (SA-30)
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 358 files, 3066 passed, 41 skipped.
+
+`npx vitest run lib/stripe app/api/deals lib/delivery`: 15 files, 160 passed.
+
+`npx next build` compiled successfully and generated 142 pages.
+
+Existing charge cases still pass: $275 at 10%, $270 at 8%, $265 at 6%, the legacy default card, no card, no customer, the pre-check short-circuit, the pre-check error, the 23505 replay, and a non-23505 persist error. The happy path asserts `paymentIntents.create` once with today's params and idempotency key `pi:v3:deal_1:li_1`. New cases: another deal's insertion order, a null `io_id`, and a missing insertion order throw `ChargeOwnershipError` with no `customers.retrieve`, no `paymentIntents.create`, and no payments insert. An insertion-order read error throws a plain `Error` and does not call Stripe. The route returns 404 `{ error: "IO line item not found" }` for `ChargeOwnershipError` and still returns 502 for a generic throw. The owning brand and admin cases are unchanged. `lib/delivery` has no test file. Review and admin mark-delivered tests mock the charge and passed with the full suite.
+
+### Known gaps
+
+- No database constraint ties `payments.deal_id` to the line's insertion order. A service-role insert outside `chargeForEpisode` could still write a mismatched pair. This job adds no migration.
+- `findExistingPayment` still returns before the ownership check. A mismatched row that already existed would short-circuit without a new charge. The precheck found none, and this path can no longer write one.
+- A line id that does not exist is still a plain `Error` and 502. The 404 is only for `ChargeOwnershipError` (null `io_id`, missing insertion order, or another deal).
+- `lib/delivery/mark-delivered.ts` already charges the line's own deal. It was not edited. A `ChargeOwnershipError` from that path still uses the existing delivery rollback.
+- SA-26 (Data API writes on `gross_rate` and deal columns) is migration 085, not this job.
+- No page or component was edited. Screenshots are not applicable. This PR does not merge. Paul reviews.

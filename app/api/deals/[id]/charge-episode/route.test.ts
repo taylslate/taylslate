@@ -5,12 +5,22 @@ const {
   getBrandProfileByUserId,
   getWave12DealById,
   chargeForEpisode,
-} = vi.hoisted(() => ({
-  getAuthenticatedUser: vi.fn(),
-  getBrandProfileByUserId: vi.fn(),
-  getWave12DealById: vi.fn(),
-  chargeForEpisode: vi.fn(),
-}));
+  ChargeOwnershipError,
+} = vi.hoisted(() => {
+  class ChargeOwnershipError extends Error {
+    constructor() {
+      super("IO line item does not belong to this deal.");
+      this.name = "ChargeOwnershipError";
+    }
+  }
+  return {
+    getAuthenticatedUser: vi.fn(),
+    getBrandProfileByUserId: vi.fn(),
+    getWave12DealById: vi.fn(),
+    chargeForEpisode: vi.fn(),
+    ChargeOwnershipError,
+  };
+});
 
 vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: (...a: unknown[]) => getAuthenticatedUser(...a),
@@ -19,6 +29,7 @@ vi.mock("@/lib/data/queries", () => ({
 }));
 vi.mock("@/lib/stripe/payment-intent", () => ({
   chargeForEpisode: (...a: unknown[]) => chargeForEpisode(...a),
+  ChargeOwnershipError,
 }));
 
 import { POST } from "./route";
@@ -121,6 +132,23 @@ describe("POST /api/deals/[id]/charge-episode", () => {
     );
     expect(res.status).toBe(200);
     expect(getBrandProfileByUserId).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 with no amount when the line does not belong to the deal", async () => {
+    getAuthenticatedUser.mockResolvedValueOnce({ id: "u_owner", email: "brand@x.com" });
+    getWave12DealById.mockResolvedValueOnce({ id: "d1", brand_profile_id: "bp_owner" });
+    getBrandProfileByUserId.mockResolvedValueOnce({ id: "bp_owner" });
+    chargeForEpisode.mockRejectedValueOnce(new ChargeOwnershipError());
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await POST(
+      makeReq({ ioLineItemId: "li_foreign" }) as never,
+      { params }
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "IO line item not found" });
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy.mock.calls[0].join(" ")).not.toMatch(/amount|\$|gross/i);
+    errorSpy.mockRestore();
   });
 
   it("returns 502 when chargeForEpisode throws", async () => {

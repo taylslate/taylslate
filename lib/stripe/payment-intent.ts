@@ -67,6 +67,17 @@ export interface ChargeForEpisodeResult {
 }
 
 /**
+ * The IO line item is not on the deal being charged. Thrown before any
+ * Stripe call and before any write. The message carries no amount.
+ */
+export class ChargeOwnershipError extends Error {
+  constructor() {
+    super("IO line item does not belong to this deal.");
+    this.name = "ChargeOwnershipError";
+  }
+}
+
+/**
  * Computes the platform fee for a gross amount in cents. Pure function —
  * exported so the test suite can hammer it without a Stripe mock.
  *
@@ -111,6 +122,7 @@ interface ProfileRow {
 interface IoLineItemRow {
   id: string;
   gross_rate: number | string;
+  io_id: string | null;
 }
 
 interface ExistingPaymentRow {
@@ -239,13 +251,33 @@ export async function chargeForEpisode(
   // ---- Load the IO line item to get the gross dollar amount ----
   const { data: lineItem, error: liErr } = await supabaseAdmin
     .from("io_line_items")
-    .select("id,gross_rate")
+    .select("id,gross_rate,io_id")
     .eq("id", input.ioLineItemId)
     .single<IoLineItemRow>();
   if (liErr || !lineItem) {
     throw new Error(
       `IO line item ${input.ioLineItemId} not found: ${liErr?.message ?? "missing"}`
     );
+  }
+
+  // The line's insertion order must belong to this deal. A missing IO,
+  // a null io_id, or a different deal_id is refused here, before the
+  // brand profile load and before any Stripe call or payments write.
+  if (lineItem.io_id == null) {
+    throw new ChargeOwnershipError();
+  }
+  const { data: io, error: ioErr } = await supabaseAdmin
+    .from("insertion_orders")
+    .select("id,deal_id")
+    .eq("id", lineItem.io_id)
+    .single<{ id: string; deal_id: string | null }>();
+  if (ioErr && ioErr.code !== "PGRST116") {
+    throw new Error(
+      `Failed to load insertion order ${lineItem.io_id} for deal ${deal.id}: ${ioErr.message}`
+    );
+  }
+  if (!io || io.deal_id !== deal.id) {
+    throw new ChargeOwnershipError();
   }
 
   // ---- Resolve the brand profile and read fee percentage AT CHARGE TIME ----

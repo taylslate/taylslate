@@ -98,6 +98,7 @@ vi.mock("@/lib/data/events", () => ({ logEvent }));
 import {
   computeApplicationFeeCents,
   chargeForEpisode,
+  ChargeOwnershipError,
 } from "./payment-intent";
 
 describe("computeApplicationFeeCents", () => {
@@ -160,8 +161,12 @@ describe("chargeForEpisode", () => {
       },
       error: null,
     };
+    supabaseTables.insertion_orders = {
+      row: { id: "io_1", deal_id: "deal_1" },
+      error: null,
+    };
     supabaseTables.io_line_items = {
-      row: { id: "li_1", gross_rate: "250.00" },
+      row: { id: "li_1", gross_rate: "250.00", io_id: "io_1" },
       error: null,
     };
     supabaseTables.profiles = {
@@ -214,6 +219,23 @@ describe("chargeForEpisode", () => {
     // Idempotency key collapses retries on (deal_id, io_line_item_id).
     // v3: the amount is gross + fee. v2 charged the gross alone.
     expect(createOpts).toMatchObject({ idempotencyKey: "pi:v3:deal_1:li_1" });
+    expect(stripe.paymentIntents.create).toHaveBeenCalledWith(
+      {
+        amount: 27500,
+        currency: "usd",
+        customer: "cus_brand_1",
+        payment_method: "pm_deal_card",
+        off_session: true,
+        confirm: true,
+        metadata: {
+          deal_id: "deal_1",
+          io_line_item_id: "li_1",
+          platform_fee_percentage_at_charge: "0.1",
+          application_fee_amount_cents: "2500",
+        },
+      },
+      { idempotencyKey: "pi:v3:deal_1:li_1" }
+    );
 
     // payments row carries the snapshot. amount is the legacy dollar gross.
     const paymentsBuilder = supabaseAdmin._builders.payments_insert;
@@ -409,5 +431,67 @@ describe("chargeForEpisode", () => {
     await expect(
       chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" })
     ).rejects.toThrow(/Failed to persist payments row/);
+  });
+
+  it("rejects a line whose insertion order belongs to another deal before any Stripe call or payments insert", async () => {
+    supabaseTables.insertion_orders.row = { id: "io_1", deal_id: "deal_2" };
+
+    await expect(
+      chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" })
+    ).rejects.toBeInstanceOf(ChargeOwnershipError);
+    expect(stripe.customers.retrieve).not.toHaveBeenCalled();
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    expect(supabaseAdmin._builders.payments_insert._inserted()).toBeNull();
+  });
+
+  it("rejects a line with a null io_id the same way", async () => {
+    supabaseTables.io_line_items.row = {
+      id: "li_1",
+      gross_rate: "250.00",
+      io_id: null,
+    };
+
+    await expect(
+      chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" })
+    ).rejects.toBeInstanceOf(ChargeOwnershipError);
+    expect(stripe.customers.retrieve).not.toHaveBeenCalled();
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    expect(supabaseAdmin._builders.payments_insert._inserted()).toBeNull();
+  });
+
+  it("rejects a missing insertion order the same way", async () => {
+    supabaseTables.insertion_orders = {
+      row: null,
+      error: {
+        code: "PGRST116",
+        message: "JSON object requested, multiple (or no) rows returned",
+      },
+    };
+
+    await expect(
+      chargeForEpisode({ dealId: "deal_1", ioLineItemId: "li_1" })
+    ).rejects.toBeInstanceOf(ChargeOwnershipError);
+    expect(stripe.customers.retrieve).not.toHaveBeenCalled();
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    expect(supabaseAdmin._builders.payments_insert._inserted()).toBeNull();
+  });
+
+  it("fails closed with a plain Error when the insertion order read errors, and does not call Stripe", async () => {
+    supabaseTables.insertion_orders = {
+      row: null,
+      error: { code: "XX000", message: "db down" },
+    };
+
+    const err = await chargeForEpisode({
+      dealId: "deal_1",
+      ioLineItemId: "li_1",
+    }).catch((caught: unknown) => caught);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ChargeOwnershipError);
+    expect((err as Error).message).toMatch(/Failed to load insertion order/);
+    expect(stripe.customers.retrieve).not.toHaveBeenCalled();
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    expect(supabaseAdmin._builders.payments_insert._inserted()).toBeNull();
   });
 });
