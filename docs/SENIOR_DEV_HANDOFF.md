@@ -2530,3 +2530,39 @@ PGlite covers two parallel claims on one brand with 084, the same case with migr
 - No page or component was edited. This PR does not merge. Paul reviews.
 
 
+## SEC3
+
+### What was built
+
+Migration 085 locks Data API writes on deals, insertion orders, IO line items, invoices, invoice line items, and outreaches. `authenticated` loses UPDATE and DELETE on deals, and INSERT is limited to the legacy columns `createDeal` and `addDeals` write. The two deal UPDATE policies and the two outreach write policies are dropped. A security definer trigger, `private.reject_client_write_on_docusign_deal`, rejects an insert or update of an IO, line, invoice, or invoice line when the parent deal is missing or has `outreach_id`, `brand_profile_id`, or `docusign_envelope_id` set. `service_role`, `postgres`, and `supabase_admin` are allowed, and so is a `service_role` JWT. The legacy IO editor can still update `IO_FIELDS`, the three totals, `updated_at`, and `LINE_FIELDS` on a legacy deal. `updateInvoiceStatus` can still set `status`, `sent_at`, `paid_at`, `payment_method`, and `updated_at`. Outreach and payout writes are revoked. SELECT grants and SELECT policies stay. `service_role` grants are untouched.
+
+085 is written and not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. The live precheck on 2026-11-11 was SELECT only: 0 deals, 0 line items, 0 invoices, 0 payouts. No backfill.
+
+No route, lib, or component file was edited. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. No screen, style, or animation was changed.
+
+### Where
+
+- `supabase/migrations/085_lock_deal_io_writes.sql` (not applied)
+- `supabase/migrations/085_lock_deal_io_writes.test.ts`
+- `docs/jobs/SEC3.md`
+- `docs/security/S-A_FINDINGS.md` (SA-26 under section 6)
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run supabase/migrations/085_lock_deal_io_writes.test.ts supabase/migrations/072_lock_money_columns.test.ts supabase/migrations/083_command_agent.test.ts app/api/deals app/api/invoices app/api/campaigns lib/data` passed 393 tests in 40 files.
+
+`npx vitest run`: 347 files, 2991 passed, 41 skipped. `npx next build` completed and generated 142 pages.
+
+The PGlite suite loads on-disk migrations through 085 (059, 062, 063, 064, and 080 may be absent; 084 is on main), applies 085 again, and checks the legacy insert key sets, the legacy IO and invoice writes, the DocuSign-flow rejections, outreach and payout denials, the profile money-column regression, and `service_role` writes. No hosted database is used.
+
+### Known gaps
+
+- 085 is not applied. Do not paste it until Chris says so.
+- Service-only tables with stray authenticated grants stay as they are: `analog_matches`, `campaign_patterns`, `conviction_scores`, `discovery_locks`, `founder_annotations`, `interpretation_locks`, `ring_hypotheses`, `show_sponsors`. RLS blocks them. Grant hygiene is a follow-up.
+- `deals.setup_intent_client_secret` is still selected by a participant. Column-level SELECT is a follow-up.
+- `chargeForEpisode` loads `io_line_items.gross_rate` by line id and does not check that the line belongs to the deal (`lib/stripe/payment-intent.ts:240-244`). Needs Chris's OK before a code change.
+- The legacy IO page's generate path uses the user client. On a DocuSign-flow deal that insert now fails. That default was accepted. The service-role create in `persistIoForDeal` is unchanged.
+- Invoices page and IO form: Generate invoice (POST /api/invoices/generate, createInvoiceFromIO, which inserts with the user client at lib/data/queries.ts:462) now fails on a DocuSign-flow deal. app/(dashboard)/invoices/page.tsx:100-124 offers it for any live or completed deal whose IO has a verified or posted line, and Wave12 deals reach live and completed. createInvoice returns null on the 42501, so the route answers 400 'No delivered line items found', which is misleading. Default: accept. DocuSign deals are charged per episode through Stripe, and no DocuSign invoice exists live (0 invoices). If Chris wants invoices on DocuSign deals, a follow-up job moves that insert to the service client behind a party check.
