@@ -4,6 +4,7 @@ import {
   getCampaignById,
   getOutreachesForCampaign,
 } from "@/lib/data/queries";
+import { redactOutreaches } from "@/lib/outreach/public";
 
 export async function GET(
   _req: NextRequest,
@@ -19,5 +20,5 @@ export async function GET(
   }
 
   const outreaches = await getOutreachesForCampaign(id);
-  return NextResponse.json({ outreaches });
+  return NextResponse.json({ outreaches: redactOutreaches(outreaches) });
 }

@@ -5,6 +5,7 @@ import {
 } from "@/lib/data/queries";
 import type { ScoredShowRecord, MediaPlanLineItem } from "@/lib/data/types";
 import ShowListWithOutreach from "@/components/outreach/ShowListWithOutreach";
+import { redactOutreaches } from "@/lib/outreach/public";
 import { tokens } from "@/lib/brand/tokens";
 import Link from "next/link";
 
@@ -72,7 +73,7 @@ export default async function CampaignOutreachPage({
         ) : (
           <ShowListWithOutreach
             campaignId={id}
-            initialOutreaches={outreaches}
+            initialOutreaches={redactOutreaches(outreaches)}
             selectedShows={selectedShows.map((s) => ({
               show: s,
               line_item: lineItemByShow.get(s.podcastId),

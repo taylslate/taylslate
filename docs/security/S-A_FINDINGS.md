@@ -557,3 +557,9 @@ Status: code is in the SEC4 PR. Migration 086 is not applied. Read-only precheck
 ## What this pass did not do
 
 No exploit was sent against production. Policies and grants were read, not probed with a user JWT. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were read and not edited. Screenshot proof does not apply: no page or component was changed.
+
+## SEC5
+
+**SA-26. The outreach response token was stored and returned to the sending brand.** `outreaches.token` (NOT NULL, unique `outreaches_token_key`) and the serializers in `POST /api/outreach`, `GET /api/campaigns/[id]/outreach`, the campaign outreach page prop, `GET /api/deals/[id]`, and the pitch page prop. Accept, counter, and decline trust that HMAC alone (`app/api/outreach/[token]/_shared.ts`). A brand who can read their outreach row holds the show's bearer token and can accept or counter as the show. The column is never read to verify or resend. Fix: do not write the signed token, and return `token: ""` from every response and page prop. Migration 087 overwrites stored values with `retired:<id>` and drops NOT NULL. Lane: SEC5.
+
+Status: fixed in code by SEC5. Migration 087 is in the PR and is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. Revocation, expiry, and secret rotation are unchanged (see `docs/jobs/SEC5.md`).

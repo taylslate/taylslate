@@ -12,6 +12,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { profileByLoginEmail } from "@/lib/auth/auth-email";
 import { brandNameFromProfile } from "@/lib/brand/display-name";
 import type { BrandProfile, Outreach } from "@/lib/data/types";
+import { redactOutreach } from "@/lib/outreach/public";
 import PitchClient from "./pitch-client";
 
 interface PageProps {
@@ -88,7 +89,7 @@ export default async function PitchPage({ params }: PageProps) {
   return (
     <PitchClient
       token={token}
-      outreach={outreach}
+      outreach={redactOutreach(outreach)}
       brand={brand}
       isOnboarded={showContext.is_onboarded}
       showStandardCpm={showContext.show_standard_cpm}

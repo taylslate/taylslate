@@ -30,10 +30,7 @@ vi.mock("@/lib/email/send", () => ({
   sendEmail: (...args: unknown[]) => sendEmail(...args),
 }));
 
-vi.mock("@/lib/io/tokens", () => ({
-  signOutreachToken: (id: string) => `signed.${id}`,
-}));
-
+import { verifyOutreachToken } from "@/lib/io/tokens";
 import { POST } from "./route";
 
 function jsonReq(body: unknown): Request {
@@ -122,13 +119,28 @@ describe("POST /api/outreach", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.outreach.id).toBe("o1");
-    expect(body.pitch_url).toMatch(/\/outreach\/signed\.o1$/);
+    expect(body.pitch_url).toBeUndefined();
+    expect(body.outreach.token).toBe("");
     expect(body.email_sent).toBe(true);
     expect(createOutreach).toHaveBeenCalledOnce();
     const draft = createOutreach.mock.calls[0][0];
     expect(draft.brand_profile_id).toBe("bp1");
     expect(draft.sent_to_email).toBe("host@daily.fm");
     expect(draft.proposed_cpm).toBe(28);
+    expect(draft.token).toMatch(/^retired:/);
+    for (const call of adminFromBuilder.update.mock.calls) {
+      expect(call[0]).not.toHaveProperty("token");
+    }
+    expect(adminFromBuilder.update.mock.calls[0][0]).toHaveProperty("sent_at");
+
+    const sent = sendEmail.mock.calls[0][0] as { html: string; text: string };
+    const jwtMatch = sent.html.match(
+      /\/outreach\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/
+    );
+    expect(jwtMatch).not.toBeNull();
+    const jwt = jwtMatch![1];
+    expect(sent.text).toContain(`/outreach/${jwt}`);
+    expect(verifyOutreachToken(jwt)?.outreach_id).toBe("o1");
 
     // The from-name is the brand-confirmed brief product name, not the
     // brand-identity paragraph (the original GTM-blocking bug).
