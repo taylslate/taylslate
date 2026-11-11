@@ -45,3 +45,16 @@ Use the template in [MAINTENANCE.md](MAINTENANCE.md). Assign `CB-D-002` onward f
 - **Suggested revisit trigger:** Proven core transaction workflow plus repeated customer demand for a bounded multi-step job. This trigger is a planning suggestion.
 - **Detailed direction:** [Sponsorship harness note](../docs/SPONSORSHIP_HARNESS_DIRECTION.md).
 - **Supersession:** None; extends existing agent-native direction and preserves transaction-before-MCP sequencing.
+
+## CB-D-002 - LG1 data-pooling narrowing
+
+- **Status:** Approved.
+- **Recorded / effective:** 2026-11-04.
+- **Decision-maker and source:** Chris Taylor, approval on 2026-11-04 as relayed by Angus. There is no first-hand record in the repo.
+- **Choice:** (1) An uploaded past-campaign file stays private to the uploading brand and joins the pool only through the import-screen opt-in checkbox (default off, terms version pooling-v1). (2) An imported signed insertion order becomes an ordinary deal and pools like any other deal.
+- **Source evidence:** docs/jobs/LG1.md (Product sentences next to the consent line), docs/jobs/I3.md (consent checkbox), docs/jobs/L2.md (deal pool and consent line), lib/imports/review.ts (POOLING_TERMS_VERSION).
+- **Rationale:** Keep an upload private by default, and treat a signed IO like any other booked deal.
+- **Alternatives considered:** None recorded in the repo.
+- **Supersession:** None. It does not change the approved L2 consent line (CONSENT_LINE in app/terms/page.tsx).
+- **Affected documents:** docs/jobs/LG1.md. The /terms and /privacy copy already matches and is not edited here.
+- **Not decided here:** The legal review ([CONFIRM WITH COUNSEL] items), the draft banner, and the placeholders in LG1. They stay as they are.
