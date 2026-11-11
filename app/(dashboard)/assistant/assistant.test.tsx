@@ -162,4 +162,51 @@ describe("AssistantClient", () => {
     expect(screen.getByText("Waiting for your approval.")).toBeInTheDocument();
     expect(view.container.innerHTML).not.toContain("dangerouslySetInnerHTML");
   });
+
+  it("shows a short line for a tool row and hides the raw result", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url) === "/api/assistant") {
+          return {
+            ok: true,
+            json: async () => ({
+              conversations: [
+                {
+                  id: CONV,
+                  title: "Lookup",
+                  created_at: "2026-11-10T00:00:00.000Z",
+                  updated_at: "2026-11-10T00:00:00.000Z",
+                },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            messages: [
+              {
+                id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2",
+                role: "tool",
+                content: {
+                  name: "get_show",
+                  status: "ok",
+                  result: `${SCRIPT} https://evil.example/phish`,
+                },
+                action_ids: [],
+                created_at: "2026-11-10T00:00:00.000Z",
+              },
+            ],
+          }),
+        };
+      })
+    );
+    const view = render(<AssistantClient />);
+    fireEvent.click(await screen.findByRole("button", { name: "Lookup" }));
+    expect(await screen.findByText("Looked up a show")).toBeInTheDocument();
+    expect(view.container.querySelector("script")).toBeNull();
+    expect(view.container.querySelector('a[href*="evil.example"]')).toBeNull();
+    expect(view.container.textContent).not.toContain("evil.example");
+  });
 });

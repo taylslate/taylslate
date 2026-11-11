@@ -20,6 +20,7 @@ import {
   insertMessage,
   listConversations,
   listMessages,
+  recordModelUsage,
   releaseTurn,
   sumTokensSince,
 } from "@/lib/command-agent/store";
@@ -236,6 +237,13 @@ describe("command agent store", () => {
     expect(await claimTurn(BRAND, id, new Date("2026-11-10T00:01:00.000Z"))).toBe("claimed");
   });
 
+  it("refuses a second conversation while a turn is fresh", async () => {
+    const first = await createConversation(BRAND, "First");
+    const second = await createConversation(BRAND, "Second");
+    expect(await claimTurn(BRAND, first?.id ?? "", new Date("2026-11-10T00:00:00.000Z"))).toBe("claimed");
+    expect(await claimTurn(BRAND, second?.id ?? "", new Date("2026-11-10T00:00:10.000Z"))).toBe("busy");
+  });
+
   it("lets a stale claim be taken after 120 seconds", async () => {
     const mine = await createConversation(BRAND, null);
     const id = mine?.id ?? "";
@@ -258,7 +266,7 @@ describe("command agent store", () => {
     expect(tables.ops.some((op) => op.table === "api_write_actions")).toBe(false);
   });
 
-  it("sums tokens since the cutoff and fails closed on a read error", async () => {
+  it("sums usage rows and keeps them after the conversation is deleted", async () => {
     const mine = await createConversation(BRAND, null);
     await insertMessage({
       brandId: BRAND,
@@ -268,9 +276,11 @@ describe("command agent store", () => {
       inputTokens: 20,
       outputTokens: 5,
     });
+    expect(await recordModelUsage({ brandId: BRAND, inputTokens: 300_000, outputTokens: 0 })).toBe(true);
+    expect(await deleteConversation(BRAND, mine?.id ?? "")).toBe("deleted");
     const sum = await sumTokensSince(BRAND, "2000-01-01T00:00:00.000Z");
-    expect(sum).toEqual({ ok: true, total: 25 });
-    tables.failTable = "command_agent_messages";
+    expect(sum).toEqual({ ok: true, total: 300_000 });
+    tables.failTable = "command_agent_usage";
     expect(await sumTokensSince(BRAND, "2000-01-01T00:00:00.000Z")).toEqual({ ok: false });
   });
 

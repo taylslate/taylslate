@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const BRAND = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
 const CONV = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+const CONV2 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
 
 const mocks = vi.hoisted(() => ({
   user: null as { id: string } | null,
@@ -103,11 +104,11 @@ beforeEach(() => {
   mocks.logEvent.mockReset();
   mocks.rpc.mockResolvedValue({ data: true, error: null });
   mocks.getConversation.mockImplementation(async (brandId: string, id: string) => {
-    if (brandId !== BRAND || id !== CONV) return { ok: true, row: null };
+    if (brandId !== BRAND || (id !== CONV && id !== CONV2)) return { ok: true, row: null };
     return {
       ok: true,
       row: {
-        id: CONV,
+        id,
         brand_id: BRAND,
         title: null,
         created_at: "2026-11-10T00:00:00.000Z",
@@ -196,6 +197,26 @@ describe("POST /api/assistant/[id]/messages", () => {
     expect(day.status).toBe(429);
     expect(day.headers.get("Retry-After")).toBe("86400");
     expect(mocks.runAgentTurn).not.toHaveBeenCalled();
+  });
+
+  it("stays capped on the next post after a conversation delete", async () => {
+    mocks.sumTokensSince.mockResolvedValue({ ok: true, total: 300_000 });
+    const response = await post();
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({
+      error: "Daily assistant limit reached. Try again tomorrow.",
+    });
+    expect(mocks.runAgentTurn).not.toHaveBeenCalled();
+    expect(mocks.sumTokensSince).toHaveBeenCalledWith(BRAND, expect.any(String));
+  });
+
+  it("returns 409 for a second conversation while a turn is running", async () => {
+    mocks.runAgentTurn.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, messages: [] }), 40))
+    );
+    const [first, second] = await Promise.all([post(CONV), post(CONV2)]);
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
+    expect(mocks.runAgentTurn).toHaveBeenCalledTimes(1);
   });
 
   it("returns 429 at 300000 tokens and 503 when the cap cannot be read", async () => {

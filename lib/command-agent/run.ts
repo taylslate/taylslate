@@ -8,13 +8,22 @@ import { logEvent } from "@/lib/data/events";
 import {
   CALL_MAX_RETRIES,
   CALL_TIMEOUT_MS,
+  DAILY_CAP_MESSAGE,
+  DAILY_TOKEN_CAP,
   HISTORY_LIMIT,
   MAX_MODEL_CALLS,
   MAX_OUTPUT_TOKENS,
   MAX_TOOL_CALLS,
   TURN_DEADLINE_MS,
+  utcDayStart,
 } from "@/lib/command-agent/limits";
-import { insertMessage, listMessages, type MessageRow } from "@/lib/command-agent/store";
+import {
+  insertMessage,
+  listMessages,
+  recordModelUsage,
+  sumTokensSince,
+  type MessageRow,
+} from "@/lib/command-agent/store";
 import {
   agentToolDefinitions,
   dispatchAgentTool,
@@ -95,12 +104,28 @@ export async function runAgentTurn(input: {
   try {
     while (modelCalls < MAX_MODEL_CALLS) {
       if (now() > deadline) return finish(STOP_DEADLINE);
+      const room = await tokenRoom(input.brandId);
+      if (room === "error") return finish(STOP_ERROR);
+      if (room === "cap") {
+        await logCap(input.brandId, input.conversationId);
+        return finish(DAILY_CAP_MESSAGE);
+      }
       modelCalls += 1;
-      const created = await createMessage(client, system, messages, tools, modelCalls < MAX_MODEL_CALLS);
+      const created = await createMessage(
+        client,
+        system,
+        messages,
+        tools,
+        modelCalls < MAX_MODEL_CALLS,
+        input.brandId
+      );
+      if (created.failed) return finish(STOP_ERROR);
       if (created.usedFallback) modelCalls += 1;
+      for (const call of created.calls) {
+        inputTokens += call.inputTokens;
+        outputTokens += call.outputTokens;
+      }
       const response = created.message;
-      inputTokens += created.inputTokens;
-      outputTokens += created.outputTokens;
       if (now() > deadline) return finish(STOP_DEADLINE);
       const toolUses = response.content.filter(
         (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
@@ -150,8 +175,17 @@ async function createMessage(
   system: string,
   messages: ModelMessage[],
   tools: Anthropic.Tool[],
-  allowFallback: boolean
-): Promise<{ message: Anthropic.Message; usedFallback: boolean; inputTokens: number; outputTokens: number }> {
+  allowFallback: boolean,
+  brandId: string
+): Promise<
+  | {
+      failed: false;
+      message: Anthropic.Message;
+      usedFallback: boolean;
+      calls: { inputTokens: number; outputTokens: number }[];
+    }
+  | { failed: true }
+> {
   const options = { timeout: CALL_TIMEOUT_MS, maxRetries: CALL_MAX_RETRIES };
   const model = getLLMModel();
   const primary = await client.messages.create(
@@ -164,10 +198,10 @@ async function createMessage(
     },
     options
   );
-  let inputTokens = primary.usage?.input_tokens ?? 0;
-  let outputTokens = primary.usage?.output_tokens ?? 0;
+  const primaryUsage = usageOf(primary);
+  if (!(await recordUsage(brandId, primaryUsage))) return { failed: true };
   if (primary.stop_reason !== "refusal" || model === FALLBACK_MODEL || !allowFallback) {
-    return { message: primary, usedFallback: false, inputTokens, outputTokens };
+    return { failed: false, message: primary, usedFallback: false, calls: [primaryUsage] };
   }
   console.info("[command-agent] outcome=refusal");
   const fallback = await client.messages.create(
@@ -180,9 +214,20 @@ async function createMessage(
     },
     options
   );
-  inputTokens += fallback.usage?.input_tokens ?? 0;
-  outputTokens += fallback.usage?.output_tokens ?? 0;
-  return { message: fallback, usedFallback: true, inputTokens, outputTokens };
+  const fallbackUsage = usageOf(fallback);
+  if (!(await recordUsage(brandId, fallbackUsage))) return { failed: true };
+  return { failed: false, message: fallback, usedFallback: true, calls: [primaryUsage, fallbackUsage] };
+}
+
+async function recordUsage(
+  brandId: string,
+  usage: { inputTokens: number; outputTokens: number }
+): Promise<boolean> {
+  return recordModelUsage({
+    brandId,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+  });
 }
 
 async function storeTool(
@@ -208,14 +253,12 @@ async function storeTool(
 function toModelMessages(history: MessageRow[]): ModelMessage[] {
   const out: ModelMessage[] = [];
   for (const message of history) {
-    const role = message.role === "assistant" ? "assistant" : "user";
-    const text = historyText(message);
-    const last = out[out.length - 1];
-    if (last && last.role === role && typeof last.content === "string") {
-      last.content = `${last.content}\n${text}`;
+    if (message.role === "tool") {
+      pushTurn(out, "user", toolStatus(message));
       continue;
     }
-    out.push({ role, content: text });
+    const role = message.role === "assistant" ? "assistant" : "user";
+    pushTurn(out, role, textField(message.content.text));
   }
   if (out.length > 0 && out[0].role === "assistant") {
     out.unshift({ role: "user", content: "Continue." });
@@ -223,13 +266,42 @@ function toModelMessages(history: MessageRow[]): ModelMessage[] {
   return out;
 }
 
-function historyText(message: MessageRow): string {
-  if (message.role === "user") return textField(message.content.text);
-  if (message.role === "assistant") return textField(message.content.text);
+function pushTurn(out: ModelMessage[], role: "user" | "assistant", content: string): void {
+  const last = out[out.length - 1];
+  if (last && last.role === role) {
+    out.push({ role: role === "user" ? "assistant" : "user", content: "Continue." });
+  }
+  out.push({ role, content });
+}
+
+function toolStatus(message: MessageRow): string {
   const name = textField(message.content.name) || "tool";
-  const status = textField(message.content.status) || "ok";
-  const result = textField(message.content.result);
-  return `Tool data (${name}, ${status}): ${result}`;
+  const status = textField(message.content.status) === "error" ? "error" : "ok";
+  return JSON.stringify({ tool: name, status });
+}
+
+async function tokenRoom(brandId: string): Promise<"ok" | "cap" | "error"> {
+  const spent = await sumTokensSince(brandId, utcDayStart());
+  if (!spent.ok) return "error";
+  return spent.total >= DAILY_TOKEN_CAP ? "cap" : "ok";
+}
+
+async function logCap(brandId: string, conversationId: string): Promise<void> {
+  console.info("[command-agent] outcome=cap_hit");
+  await logEvent({
+    eventType: "command_agent.cap_hit",
+    entityType: "command_agent_conversation",
+    entityId: conversationId,
+    actorId: brandId,
+    payload: { limit: "daily_tokens" },
+  });
+}
+
+function usageOf(message: Anthropic.Message): { inputTokens: number; outputTokens: number } {
+  return {
+    inputTokens: message.usage?.input_tokens ?? 0,
+    outputTokens: message.usage?.output_tokens ?? 0,
+  };
 }
 
 function textOf(content: Anthropic.Message["content"]): string {

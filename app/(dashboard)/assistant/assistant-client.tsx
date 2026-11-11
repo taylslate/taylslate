@@ -300,15 +300,28 @@ function roleLabel(role: AgentMessage["role"]): string {
   return "Tay";
 }
 
+const TOOL_LINES: Record<string, string> = {
+  list_shows: "Looked up shows",
+  get_show: "Looked up a show",
+  list_campaigns: "Looked up campaigns",
+  get_campaign: "Looked up a campaign",
+  list_campaign_scores: "Looked up scores",
+  get_campaign_plan: "Looked up a plan",
+  list_deals: "Looked up deals",
+  get_deal: "Looked up a deal",
+  list_actions: "Looked up actions",
+  get_action: "Looked up an action",
+  propose_campaign: "Proposed a campaign",
+  propose_outreach: "Proposed an outreach draft",
+};
+
 function messageText(message: AgentMessage): string {
-  const content = message.content;
-  if (typeof content.text === "string") return content.text;
-  if (typeof content.result === "string") {
-    const name = typeof content.name === "string" ? content.name : "tool";
-    const status = typeof content.status === "string" ? content.status : "";
-    return status ? `${name} (${status})\n${content.result}` : `${name}\n${content.result}`;
+  if (message.role === "tool") {
+    if (message.content.status === "error") return "Could not finish that lookup.";
+    const name = typeof message.content.name === "string" ? message.content.name : "";
+    return TOOL_LINES[name] ?? "Looked something up";
   }
-  return "";
+  return typeof message.content.text === "string" ? message.content.text : "";
 }
 
 function mergeMessages(current: AgentMessage[], next: AgentMessage[]): AgentMessage[] {

@@ -20,11 +20,17 @@ vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: { from: () => profileQuery() },
 }));
 
-vi.mock("@/lib/command-agent/store", () => ({
-  getConversation: (...args: unknown[]) => mocks.getConversation(...args),
-  listMessages: (...args: unknown[]) => mocks.listMessages(...args),
-  deleteConversation: (...args: unknown[]) => mocks.deleteConversation(...args),
-}));
+vi.mock("@/lib/command-agent/store", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/command-agent/store")>(
+    "@/lib/command-agent/store"
+  );
+  return {
+    getConversation: (...args: unknown[]) => mocks.getConversation(...args),
+    listMessages: (...args: unknown[]) => mocks.listMessages(...args),
+    deleteConversation: (...args: unknown[]) => mocks.deleteConversation(...args),
+    turnIsFresh: actual.turnIsFresh,
+  };
+});
 
 import { DELETE, GET } from "./route";
 
@@ -43,11 +49,19 @@ function profileQuery() {
   return api;
 }
 
-function call(method: "GET" | "DELETE", id = CONV) {
+function call(method: "GET" | "DELETE", id = CONV, headers: Record<string, string> = {}) {
   const handler = method === "GET" ? GET : DELETE;
-  return handler(new Request(`http://localhost/api/assistant/${id}`, { method }), {
-    params: Promise.resolve({ id }),
-  });
+  return handler(
+    new Request(`http://localhost/api/assistant/${id}`, {
+      method,
+      headers: {
+        origin: "http://localhost",
+        host: "localhost",
+        ...headers,
+      },
+    }),
+    { params: Promise.resolve({ id }) }
+  );
 }
 
 beforeEach(() => {
@@ -109,7 +123,27 @@ describe("GET and DELETE /api/assistant/[id]", () => {
     const body = await (await call("GET")).json();
     expect(JSON.stringify(body)).not.toContain("BRAND_B_SECRET");
     expect(mocks.listMessages).not.toHaveBeenCalled();
-    expect(mocks.deleteConversation).toHaveBeenCalledWith(OTHER, CONV);
+    expect(mocks.deleteConversation).not.toHaveBeenCalled();
+  });
+
+  it("rejects a foreign Origin and a delete while a turn is running", async () => {
+    const foreign = await call("DELETE", CONV, { origin: "https://evil.example" });
+    expect(foreign.status).toBe(403);
+    expect(mocks.deleteConversation).not.toHaveBeenCalled();
+    mocks.getConversation.mockResolvedValueOnce({
+      ok: true,
+      row: {
+        id: CONV,
+        brand_id: BRAND,
+        title: "Quarter test",
+        created_at: "2026-11-10T00:00:00.000Z",
+        updated_at: "2026-11-10T00:00:00.000Z",
+        turn_started_at: new Date().toISOString(),
+      },
+    });
+    const busy = await call("DELETE");
+    expect(busy.status).toBe(409);
+    expect(mocks.deleteConversation).not.toHaveBeenCalled();
   });
 
   it("returns the thread and deletes without touching write actions", async () => {

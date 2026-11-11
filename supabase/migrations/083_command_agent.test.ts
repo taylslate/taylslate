@@ -19,6 +19,7 @@ const TABLES = [
   "api_write_actions",
   "command_agent_conversations",
   "command_agent_messages",
+  "command_agent_usage",
 ] as const;
 
 function migrationFiles(): string[] {
@@ -75,6 +76,13 @@ describe("migration 083 command agent", () => {
     expect(statements).toMatch(/\(brand_id, updated_at desc\)/i);
     expect(statements).toMatch(/\(conversation_id, created_at\)/i);
     expect(statements).toMatch(/\(brand_id, created_at\)/i);
+    expect(statements).toMatch(/create table if not exists public\.command_agent_usage/i);
+    const usageStart = statements.toLowerCase().indexOf("create table if not exists public.command_agent_usage");
+    const grantsStart = statements.toLowerCase().indexOf("revoke all on table public.api_write_actions");
+    const usageSql = statements.slice(usageStart, grantsStart);
+    expect(usageSql).not.toMatch(/conversation_id/i);
+    expect(usageSql).not.toMatch(/command_agent_conversations/i);
+    expect(usageSql).toMatch(/\(brand_id, created_at\)/i);
   });
 
   it("keeps RLS with no policies and grants only service_role", () => {
@@ -238,6 +246,36 @@ describe("migration 083 on PGlite", () => {
            'input_tokens', 'output_tokens', 'created_at'
          );
     `)).toBe("action_ids,brand_id,content,conversation_id,created_at,id,input_tokens,output_tokens,role");
+    expect(await query(`
+      select string_agg(column_name, ',' order by column_name) as value
+        from information_schema.columns
+       where table_schema = 'public'
+         and table_name = 'command_agent_usage'
+         and column_name in (
+           'id', 'brand_id', 'input_tokens', 'output_tokens', 'created_at'
+         );
+    `)).toBe("brand_id,created_at,id,input_tokens,output_tokens");
+    expect(await query(`
+      select count(*)::text as value
+        from information_schema.columns
+       where table_schema = 'public'
+         and table_name = 'command_agent_usage'
+         and column_name = 'conversation_id';
+    `)).toBe("0");
+    expect(await query(`
+      select count(*)::text as value
+        from pg_constraint
+       where conrelid = 'public.command_agent_usage'::regclass
+         and contype = 'f'
+         and pg_get_constraintdef(oid) ilike '%command_agent_conversations%';
+    `)).toBe("0");
+    expect(await query(`
+      select indexname as value
+        from pg_indexes
+       where schemaname = 'public'
+         and tablename = 'command_agent_usage'
+         and indexdef ilike '%(brand_id, created_at)%';
+    `)).toBe("command_agent_usage_brand_created_idx");
     expect(await query(`
       select string_agg(conname, ',' order by conname) as value
         from pg_constraint

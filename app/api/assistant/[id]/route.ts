@@ -4,10 +4,12 @@
 
 import { NextResponse } from "next/server";
 import { requireBrand } from "@/lib/api/approvals/list";
+import { isSameOriginRequest } from "@/lib/api/approvals/decide";
 import {
   deleteConversation,
   getConversation,
   listMessages,
+  turnIsFresh,
   type ConversationRow,
   type MessageRow,
 } from "@/lib/command-agent/store";
@@ -32,10 +34,17 @@ export async function GET(_request: Request, route: ConversationRoute) {
   });
 }
 
-export async function DELETE(_request: Request, route: ConversationRoute) {
+export async function DELETE(request: Request, route: ConversationRoute) {
   const actor = await requireBrand();
   if (!actor.ok) return json({ error: actor.error }, actor.httpStatus);
+  if (!isSameOriginRequest(request)) return json({ error: "Forbidden" }, 403);
   const { id } = await route.params;
+  const found = await getConversation(actor.userId, id);
+  if (!found.ok) return json({ error: "Could not load the conversation." }, 500);
+  if (!found.row) return json({ error: "Not found." }, 404);
+  if (turnIsFresh(found.row.turn_started_at)) {
+    return json({ error: "Tay is already working on a message." }, 409);
+  }
   const removed = await deleteConversation(actor.userId, id);
   if (removed === "error") return json({ error: "Could not delete the conversation." }, 500);
   if (removed === "missing") return json({ error: "Not found." }, 404);

@@ -106,6 +106,13 @@ export async function deleteConversation(
   return data && data.length > 0 ? "deleted" : "missing";
 }
 
+export function turnIsFresh(value: string | null, now = Date.now()): boolean {
+  if (!value) return false;
+  const started = Date.parse(value);
+  if (!Number.isFinite(started)) return false;
+  return now - started < TURN_LOCK_MS;
+}
+
 export async function claimTurn(
   brandId: string,
   conversationId: string,
@@ -113,6 +120,9 @@ export async function claimTurn(
 ): Promise<"claimed" | "busy" | "missing" | "error"> {
   if (!isUuid(brandId) || !isUuid(conversationId)) return "missing";
   const stale = new Date(now.getTime() - TURN_LOCK_MS).toISOString();
+  const fresh = await freshTurns(brandId, stale);
+  if (!fresh.ok) return "error";
+  if (fresh.rows.length > 0) return "busy";
   const { data, error } = await supabaseAdmin
     .from("command_agent_conversations")
     .update({ turn_started_at: now.toISOString() })
@@ -124,10 +134,21 @@ export async function claimTurn(
     console.error("[command-agent] outcome=claim_failed");
     return "error";
   }
-  if (data && data.length > 0) return "claimed";
-  const existing = await getConversation(brandId, conversationId);
-  if (!existing.ok) return "error";
-  return existing.row ? "busy" : "missing";
+  if (!data || data.length === 0) {
+    const existing = await getConversation(brandId, conversationId);
+    if (!existing.ok) return "error";
+    return existing.row ? "busy" : "missing";
+  }
+  const after = await freshTurns(brandId, stale);
+  if (!after.ok) {
+    await releaseTurn(brandId, conversationId, now);
+    return "error";
+  }
+  if (earliestTurn(after.rows) !== conversationId) {
+    await releaseTurn(brandId, conversationId, now);
+    return "busy";
+  }
+  return "claimed";
 }
 
 export async function releaseTurn(
@@ -214,13 +235,31 @@ export async function listMessages(
   return limit != null ? rows.reverse() : rows;
 }
 
+export async function recordModelUsage(input: {
+  brandId: string;
+  inputTokens: number;
+  outputTokens: number;
+}): Promise<boolean> {
+  if (!isUuid(input.brandId)) return false;
+  const { error } = await supabaseAdmin.from("command_agent_usage").insert({
+    brand_id: input.brandId,
+    input_tokens: nonNegative(input.inputTokens),
+    output_tokens: nonNegative(input.outputTokens),
+  });
+  if (error) {
+    console.error("[command-agent] outcome=usage_failed");
+    return false;
+  }
+  return true;
+}
+
 export async function sumTokensSince(
   brandId: string,
   sinceIso: string
 ): Promise<{ ok: true; total: number } | { ok: false }> {
   if (!isUuid(brandId)) return { ok: false };
   const { data, error } = await supabaseAdmin
-    .from("command_agent_messages")
+    .from("command_agent_usage")
     .select("input_tokens, output_tokens")
     .eq("brand_id", brandId)
     .gte("created_at", sinceIso);
@@ -234,6 +273,37 @@ export async function sumTokensSince(
     total += numberOf(record.input_tokens) + numberOf(record.output_tokens);
   }
   return { ok: true, total };
+}
+
+async function freshTurns(
+  brandId: string,
+  staleIso: string
+): Promise<{ ok: true; rows: { id: string; turn_started_at: string }[] } | { ok: false }> {
+  const { data, error } = await supabaseAdmin
+    .from("command_agent_conversations")
+    .select("id, turn_started_at")
+    .eq("brand_id", brandId)
+    .gte("turn_started_at", staleIso);
+  if (error) {
+    console.error("[command-agent] outcome=claim_failed");
+    return { ok: false };
+  }
+  const rows: { id: string; turn_started_at: string }[] = [];
+  for (const item of data ?? []) {
+    const row = item as Record<string, unknown>;
+    if (typeof row.id !== "string" || row.turn_started_at == null) continue;
+    rows.push({ id: row.id, turn_started_at: timestampOf(row.turn_started_at) });
+  }
+  return { ok: true, rows };
+}
+
+function earliestTurn(rows: { id: string; turn_started_at: string }[]): string {
+  return [...rows].sort((left, right) => {
+    if (left.turn_started_at !== right.turn_started_at) {
+      return left.turn_started_at < right.turn_started_at ? -1 : 1;
+    }
+    return left.id < right.id ? -1 : 1;
+  })[0]?.id ?? "";
 }
 
 function quoteFilter(value: string): string {
@@ -293,6 +363,11 @@ function asMessage(row: Record<string, unknown>): MessageRow | null {
 
 function numberOf(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function nonNegative(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.round(value);
 }
 
 function timestampOf(value: unknown): string {

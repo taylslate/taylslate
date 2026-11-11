@@ -2302,9 +2302,9 @@ A signed-in brand can open `/assistant` and talk to Tay. Tay calls the M1 regist
 
 The page is URL-only. Nav, layout, settings, and the inbox client were not edited. Discovery, `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. `lib/llm/client.ts` was not edited. The model is `getLLMModel()`.
 
-083 is in the PR and is not applied. It makes `api_key_id` nullable, adds `source` and `requested_by` with the actor check, and adds `command_agent_conversations` and `command_agent_messages`. `turn_started_at` is the one-turn marker. RLS is on, there are no policies, and only `service_role` is granted. `anon`, `public`, and `authenticated` have nothing, including `truncate`, `references`, and `trigger`.
+083 is in the PR and is not applied. It makes `api_key_id` nullable, adds `source` and `requested_by` with the actor check, and adds `command_agent_conversations`, `command_agent_messages`, and `command_agent_usage`. `turn_started_at` is the one-turn marker for the whole brand. Usage rows are append-only and are not tied to a conversation. RLS is on, there are no policies, and only `service_role` is granted. `anon`, `public`, and `authenticated` have nothing, including `truncate`, `references`, and `trigger`.
 
-Caps: 20 messages an hour, 60 a day, 300000 tokens a day, 6 model calls and 8 tool calls a turn, 90 second deadline. A foreign conversation is 404. A second turn is 409. Tool results are data, truncated, and never merged into the system prompt.
+Caps: 20 messages an hour, 60 a day, 300000 tokens a day, 6 model calls and 8 tool calls a turn, 90 second deadline. The daily cap sums `command_agent_usage`, which has no conversation foreign key, so a delete does not reset it. The loop checks that sum before every model call and writes one usage row after each call. A fresh turn anywhere for the brand is 409. A foreign conversation is 404. `DELETE` checks Origin and returns 409 while that conversation's turn is fresh. Full tool results are `tool_result` blocks only in the turn that produced them. Later turns send the tool name and status as their own turn, not concatenated with the brand's message, and not copied into the system prompt. The thread shows a short line such as "Looked up a show" instead of the raw tool JSON.
 
 Chris named the agent Tay. Decisions (a) through (f) in `docs/jobs/CA1.md` are defaults pending confirmation.
 
@@ -2327,9 +2327,9 @@ Chris named the agent Tay. Decisions (a) through (f) in `docs/jobs/CA1.md` are d
 
 `npx vitest run supabase/migrations/083_command_agent.test.ts lib/command-agent lib/mcp lib/api/v1 lib/api/approvals app/api/assistant app/api/v1 app/api/settings/agent-actions "app/(dashboard)/assistant" "app/(dashboard)/settings/agent-actions"` passed. The PGlite suite applies on-disk migrations through 083 (059, 062, 063, 064, and 080 are absent), applies 083 again, and checks columns, both actor checks, a valid command agent insert as `service_role`, permission denied for `anon` and `authenticated`, RLS, zero policies, and `service_role`-only grants.
 
-Security coverage: 401 and 403 for show, agent, and admin on every assistant handler and the page gate; foreign Origin 403 on both POSTs; brand B's id is 404; tool context brand id is the session user when the model sends `brand_id`; unknown tools never reach `callTool`; the tool list matches the M1 names; a propose inserts one pending command agent row and nothing into campaigns, outreach, deals, or shows; the same message id replays the action id; approving that outreach row returns "Approved. Nothing was sent." with Resend, email, and outreach generate/send uncalled; `lib/command-agent` does not import decide or execute; an injected tool result stays inside a `tool_result` block and out of the system prompt; a script tag renders as text; hour and day buckets return 429 with Retry-After; the token cap returns 429 at 300000 and 503 on a read error; per-turn caps store the stop message; two posts give one turn and one 409; console output and events omit message text.
+Security coverage: 401 and 403 for show, agent, and admin on every assistant handler and the page gate; foreign Origin 403 on both POSTs; brand B's id is 404; tool context brand id is the session user when the model sends `brand_id`; unknown tools never reach `callTool`; the tool list matches the M1 names; a propose inserts one pending command agent row and nothing into campaigns, outreach, deals, or shows; the same message id replays the action id; approving that outreach row returns "Approved. Nothing was sent." with Resend, email, and outreach generate/send uncalled; `lib/command-agent` does not import decide or execute; an injected tool result stays inside a `tool_result` block and out of the system prompt; a stored tool result does not appear in user-role content on the next turn; a script tag renders as text and a tool row renders as a short line; hour and day buckets return 429 with Retry-After; the token cap returns 429 at 300000 and 503 on a read error; deleting a conversation leaves the usage sum in place; the loop stops before the next model call once the cap is reached; per-turn caps store the stop message; a second conversation is 409 while a turn runs; `DELETE` is 403 for a foreign Origin and 409 during a fresh turn; console output and events omit message text.
 
-`npx vitest run`: 343 files, 2958 passed, 40 skipped. `npx next build` completed. `/assistant` and `/api/assistant` are dynamic. The messages route `maxDuration` is 120.
+`npx vitest run`: 343 files, 2965 passed, 40 skipped. `npx next build` completed. `/assistant` and `/api/assistant` are dynamic. The messages route `maxDuration` is 120.
 
 ### Known gaps
 
@@ -2337,7 +2337,8 @@ Security coverage: 401 and 403 for show, agent, and admin on every assistant han
 - `/assistant` is not in the nav and is not linked from an existing screen.
 - No 90-day purge. The brand deletes a conversation with DELETE.
 - An API caller who sends the same `ca:{message id}:{n}` idempotency key can collide with Tay. The API key insert path was not changed.
-- A crashed turn holds `turn_started_at` for up to 120 seconds.
+- A crashed turn holds `turn_started_at` for up to 120 seconds, and that fresh lock blocks every conversation for the brand.
+- A model call killed before its usage row is inserted is not counted. The next call is checked against the rows that were written.
 - Plan campaign caps are still not enforced on approval. That pairs with A7.
 - This environment has no Supabase or app env, so the signed-in `/assistant` and inbox screenshots could not be taken against a live session. The page tests cover the gate, the Tay empty state, literal model text, and the approval link.
 

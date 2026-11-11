@@ -15,9 +15,14 @@
 -- requested_by equal to brand_id. Existing rows pick up source
 -- api_key from the column default. No other backfill.
 --
--- command_agent_conversations and command_agent_messages are
--- service_role only. RLS is on. There is no policy.
--- turn_started_at is the in-row marker for one turn at a time.
+-- command_agent_conversations, command_agent_messages, and
+-- command_agent_usage are service_role only. RLS is on. There
+-- is no policy. turn_started_at is the in-row marker for one
+-- turn at a time for the whole brand.
+--
+-- command_agent_usage is append-only token accounting. It has
+-- no foreign key to a conversation, so deleting a conversation
+-- does not reset the daily cap.
 --
 -- Idempotent. Safe to re-run.
 --
@@ -46,17 +51,19 @@
 --      and c.relname in (
 --        'api_write_actions',
 --        'command_agent_conversations',
---        'command_agent_messages'
+--        'command_agent_messages',
+--        'command_agent_usage'
 --      )
 --    order by c.relname;
---   Expected: relrowsecurity true for all three.
+--   Expected: relrowsecurity true for all four.
 --   select tablename, count(*)
 --     from pg_policies
 --    where schemaname = 'public'
 --      and tablename in (
 --        'api_write_actions',
 --        'command_agent_conversations',
---        'command_agent_messages'
+--        'command_agent_messages',
+--        'command_agent_usage'
 --      )
 --    group by tablename;
 --   Expected: no rows.
@@ -66,7 +73,8 @@
 --      and table_name in (
 --        'api_write_actions',
 --        'command_agent_conversations',
---        'command_agent_messages'
+--        'command_agent_messages',
+--        'command_agent_usage'
 --      )
 --    order by table_name, grantee, privilege_type;
 --   Expected: service_role only. Nothing for anon, public,
@@ -259,6 +267,56 @@ create index if not exists command_agent_messages_brand_created_idx
 comment on table public.command_agent_messages is
   'Messages in a command agent thread. service_role only. Deleting a conversation cascades.';
 
+-- -------------------- usage (append-only, no conversation fk) --------------------
+
+create table if not exists public.command_agent_usage (
+  id uuid primary key default gen_random_uuid(),
+  brand_id uuid not null references public.profiles(id) on delete cascade,
+  input_tokens integer not null default 0,
+  output_tokens integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table public.command_agent_usage add column if not exists brand_id uuid;
+alter table public.command_agent_usage add column if not exists input_tokens integer default 0;
+alter table public.command_agent_usage add column if not exists output_tokens integer default 0;
+alter table public.command_agent_usage add column if not exists created_at timestamptz default now();
+
+alter table public.command_agent_usage alter column brand_id set not null;
+alter table public.command_agent_usage alter column input_tokens set not null;
+alter table public.command_agent_usage alter column input_tokens set default 0;
+alter table public.command_agent_usage alter column output_tokens set not null;
+alter table public.command_agent_usage alter column output_tokens set default 0;
+alter table public.command_agent_usage alter column created_at set not null;
+alter table public.command_agent_usage alter column created_at set default now();
+
+alter table public.command_agent_usage
+  drop constraint if exists command_agent_usage_brand_id_fkey;
+
+alter table public.command_agent_usage
+  add constraint command_agent_usage_brand_id_fkey
+  foreign key (brand_id) references public.profiles(id) on delete cascade;
+
+alter table public.command_agent_usage
+  drop constraint if exists command_agent_usage_input_tokens_check;
+
+alter table public.command_agent_usage
+  add constraint command_agent_usage_input_tokens_check
+  check (input_tokens >= 0);
+
+alter table public.command_agent_usage
+  drop constraint if exists command_agent_usage_output_tokens_check;
+
+alter table public.command_agent_usage
+  add constraint command_agent_usage_output_tokens_check
+  check (output_tokens >= 0);
+
+create index if not exists command_agent_usage_brand_created_idx
+  on public.command_agent_usage (brand_id, created_at);
+
+comment on table public.command_agent_usage is
+  'Append-only model token counts for a brand. No conversation foreign key. Deleting a conversation does not remove these rows. service_role only.';
+
 -- -------------------- grants (before RLS) --------------------
 
 revoke all on table public.api_write_actions from public;
@@ -279,6 +337,12 @@ revoke all on table public.command_agent_messages from authenticated;
 grant all on table public.command_agent_messages to service_role;
 revoke truncate, references, trigger on table public.command_agent_messages from authenticated;
 
+revoke all on table public.command_agent_usage from public;
+revoke all on table public.command_agent_usage from anon;
+revoke all on table public.command_agent_usage from authenticated;
+grant all on table public.command_agent_usage to service_role;
+revoke truncate, references, trigger on table public.command_agent_usage from authenticated;
+
 -- -------------------- RLS --------------------
 -- No policies. service_role bypasses RLS. anon and authenticated
 -- have no grant and no policy.
@@ -286,3 +350,4 @@ revoke truncate, references, trigger on table public.command_agent_messages from
 alter table public.api_write_actions enable row level security;
 alter table public.command_agent_conversations enable row level security;
 alter table public.command_agent_messages enable row level security;
+alter table public.command_agent_usage enable row level security;

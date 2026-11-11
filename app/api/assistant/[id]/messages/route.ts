@@ -71,7 +71,7 @@ export async function POST(request: Request, route: MessageRoute) {
 
   const claim = await claimTurn(actor.userId, found.row.id);
   if (claim === "missing") return json({ error: "Not found." }, 404);
-  if (claim === "busy") return json({ error: "This conversation is already working on a message." }, 409);
+  if (claim === "busy") return json({ error: "Tay is already working on a message." }, 409);
   if (claim === "error") return json({ error: "Could not start the turn." }, 503);
 
   try {
