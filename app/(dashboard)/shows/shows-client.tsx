@@ -692,7 +692,7 @@ function ImportShowsModal({
 
       if (res.ok) {
         const data = await res.json();
-        onImported(data.imported ?? []);
+        onImported(Array.isArray(data.shows) ? data.shows : []);
       } else if (res.status === 404) {
         setError("Import API not available yet. Shows will be available soon.");
       } else {

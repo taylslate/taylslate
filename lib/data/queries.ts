@@ -17,6 +17,8 @@ import {
 import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
 import { logEvent } from "./events";
 import { transformShow } from "./show-transform";
+import { findCatalogDuplicates } from "@/lib/shows/import-catalog-match";
+import { normalizeRosterShowName } from "@/lib/reps/roster-import";
 import type {
   Profile,
   Show,
@@ -1358,12 +1360,18 @@ export async function importShows(
   const existingNames = new Set(
     (existingRels ?? []).map((r: Record<string, unknown>) => {
       const shows = r.shows as { name: string } | null;
-      return shows?.name?.toLowerCase() ?? "";
+      return normalizeRosterShowName(shows?.name ?? "");
     })
   );
 
-  for (const showData of shows) {
-    if (existingNames.has(showData.name.toLowerCase())) {
+  const catalogDuplicates = await findCatalogDuplicates(shows, agentId);
+
+  for (let index = 0; index < shows.length; index += 1) {
+    const showData = shows[index];
+    if (
+      catalogDuplicates.has(index) ||
+      existingNames.has(normalizeRosterShowName(showData.name))
+    ) {
       skipped.push(showData.name);
       continue;
     }
@@ -1427,7 +1435,7 @@ export async function importShows(
       continue;
     }
 
-    existingNames.add(showData.name.toLowerCase());
+    existingNames.add(normalizeRosterShowName(showData.name));
     imported.push(transformShow(newShow));
   }
 

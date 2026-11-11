@@ -4,15 +4,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
-const { mockReplace, mockRefresh, mockAssign } = vi.hoisted(() => ({
+const { mockReplace, mockRefresh, mockAssign, pathnameRef } = vi.hoisted(() => ({
   mockReplace: vi.fn(),
   mockRefresh: vi.fn(),
   mockAssign: vi.fn(),
+  pathnameRef: { current: "/dashboard" },
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace, refresh: mockRefresh }),
-  usePathname: () => "/dashboard",
+  usePathname: () => pathnameRef.current,
 }));
 
 vi.mock("next/link", () => ({
@@ -70,6 +71,7 @@ import Sidebar from "./Sidebar";
 const BANNED = /--brand-blue|--brand-orange|--brand-navy|--brand-teal|--brand-blue-light/;
 
 beforeEach(() => {
+  pathnameRef.current = "/dashboard";
   mockReplace.mockReset();
   mockRefresh.mockReset();
   mockAssign.mockReset();
@@ -113,6 +115,39 @@ describe("Sidebar chrome", () => {
 
     expect(container.innerHTML).not.toMatch(BANNED);
     expect(container.querySelector("[class*='from-[var(--brand-blue)]']")).toBeNull();
+  });
+
+  it("renders Tay with the Search classes and marks it active on /assistant", () => {
+    const { rerender } = render(<Sidebar role="brand" assistantEnabled />);
+    const tay = screen.getByRole("link", { name: "Tay" });
+    const search = screen.getByRole("link", { name: "Search" });
+    expect(tay).toHaveAttribute("href", "/assistant");
+    expect(tay.className).toBe(search.className);
+    expect(tay.className).toContain("flex items-center gap-3 px-3 py-2.5 text-sm font-medium mb-0.5");
+    expect(tay.className).toContain("text-[var(--ts-ink-muted-on-paper)]");
+
+    pathnameRef.current = "/assistant";
+    rerender(<Sidebar role="brand" assistantEnabled />);
+    const active = screen.getByRole("link", { name: "Tay" });
+    expect(active.className).toContain("bg-[var(--ts-band-brands)]");
+    expect(active.className).toContain("text-[var(--ts-ink-on-paper)]");
+    expect(active.className).toContain("shadow-[inset_3px_0_0_var(--ts-gold)]");
+    expect(screen.getByRole("link", { name: "Search" }).className).not.toContain(
+      "bg-[var(--ts-band-brands)]"
+    );
+  });
+
+  it("hides Tay unless the brand assistant link is enabled", () => {
+    const { unmount } = render(<Sidebar role="brand" />);
+    expect(screen.queryByRole("link", { name: "Tay" })).toBeNull();
+    unmount();
+
+    const agency = render(<Sidebar role="agency" assistantEnabled />);
+    expect(screen.queryByRole("link", { name: "Tay" })).toBeNull();
+    agency.unmount();
+
+    render(<Sidebar role="show" assistantEnabled />);
+    expect(screen.queryByRole("link", { name: "Tay" })).toBeNull();
   });
 
   it("keeps show-role nav and the Add Show CTA", () => {
