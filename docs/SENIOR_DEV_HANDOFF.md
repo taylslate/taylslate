@@ -2722,7 +2722,7 @@ Route tests: the send response has no `pitch_url` and `outreach.token` is `""`; 
 
 External URLs are the link text and open in the same tab.
 
-Paul's review on PR 97 labeled the store, use, and visibility paragraphs ("What we store:", "Why we use it:", "Who can see it:"), with a lowercase word after each colon. Disconnect is at www.taylslate.com/settings/youtube. If you disconnect in Taylslate, we revoke our access at Google and delete your tokens right away, and the remaining Google data within 7 days. Removing Taylslate at Google is a lapsed authorization: tokens are deleted when the daily check detects it, and the 30-day deletion still applies. [CONFIRM WITH COUNSEL] on YouTube API policy III.D.3. Analytics reads are limited to videos on Taylslate deals. Results from Google data are not used in pooled anonymized data or to improve Taylslate for other users.
+Paul's review on PR 97 labeled the store, use, and visibility paragraphs ("What we store:", "Why we use it:", "Who can see it:"), with a lowercase word after each colon. Disconnect is at www.taylslate.com/settings/youtube. If you disconnect in Taylslate, we revoke our access at Google, delete your tokens right away, and delete the remaining Google data within 7 days. Removing Taylslate at Google is a lapsed authorization: tokens are deleted when the daily check detects it, and the 30-day deletion still applies. [CONFIRM WITH COUNSEL] on YouTube API policy III.D.3. Analytics reads are limited to videos on Taylslate deals. Results from Google data are not used in pooled anonymized data or to improve Taylslate for other users.
 
 ### Where
 

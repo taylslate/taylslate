@@ -96,7 +96,7 @@ describe("Privacy Policy page", () => {
       "yt-analytics.readonly lets us read YouTube Analytics for videos on your Taylslate deals.",
     );
     expect(google).toContain(
-      "If you disconnect in Taylslate, we revoke our access at Google and delete your tokens right away, and the remaining Google data within 7 days.",
+      "If you disconnect in Taylslate, we revoke our access at Google, delete your tokens right away, and delete the remaining Google data within 7 days.",
     );
     expect(google).toContain(
       "If you remove Taylslate at Google, we treat that as a lapsed authorization and delete your tokens when our daily check detects it.",

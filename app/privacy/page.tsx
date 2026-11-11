@@ -97,9 +97,9 @@ export default function PrivacyPage() {
           are kept while your channel stays connected, and we re-check your
           authorization at least every 30 days. If your authorization lapses
           and you do not reconnect, we delete your Google data 30 days later.
-          If you disconnect in Taylslate, we revoke our access at Google and
-          delete your tokens right away, and the remaining Google data within
-          7 days. If you remove Taylslate at Google, we treat that as a lapsed
+          If you disconnect in Taylslate, we revoke our access at Google,
+          delete your tokens right away, and delete the remaining Google data
+          within 7 days. If you remove Taylslate at Google, we treat that as a lapsed
           authorization and delete your tokens when our daily check detects
           it. [CONFIRM WITH COUNSEL] Whether YouTube API policy III.D.3
           requires deletion within 7 days after that revocation at Google.
