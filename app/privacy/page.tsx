@@ -67,7 +67,7 @@ export default function PrivacyPage() {
           offer a narrower permission for captions, and it also allows changes
           to your channel; Taylslate never uploads, edits, deletes or posts
           anything. yt-analytics.readonly lets us read YouTube Analytics for
-          your videos.
+          videos on your Taylslate deals.
         </p>
         <p>
           What we store: your channel ID and title; the caption text for a
@@ -97,9 +97,12 @@ export default function PrivacyPage() {
           are kept while your channel stays connected, and we re-check your
           authorization at least every 30 days. If your authorization lapses
           and you do not reconnect, we delete your Google data 30 days later.
-          If you disconnect in Taylslate, we revoke our access at Google.
-          Either way, we delete your tokens right away and the remaining Google
-          data within 7 days.
+          If you disconnect in Taylslate, we revoke our access at Google and
+          delete your tokens right away, and the remaining Google data within
+          7 days. If you remove Taylslate at Google, we treat that as a lapsed
+          authorization and delete your tokens when our daily check detects
+          it. [CONFIRM WITH COUNSEL] Whether YouTube API policy III.D.3
+          requires deletion within 7 days after that revocation at Google.
         </p>
         <p>
           Disconnect at any time on{" "}

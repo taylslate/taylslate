@@ -93,8 +93,18 @@ describe("Privacy Policy page", () => {
       "If your authorization lapses and you do not reconnect, we delete your Google data 30 days later.",
     );
     expect(google).toContain(
-      "If you disconnect in Taylslate, we revoke our access at Google. Either way, we delete your tokens right away and the remaining Google data within 7 days.",
+      "yt-analytics.readonly lets us read YouTube Analytics for videos on your Taylslate deals.",
     );
+    expect(google).toContain(
+      "If you disconnect in Taylslate, we revoke our access at Google and delete your tokens right away, and the remaining Google data within 7 days.",
+    );
+    expect(google).toContain(
+      "If you remove Taylslate at Google, we treat that as a lapsed authorization and delete your tokens when our daily check detects it.",
+    );
+    expect(google).toContain(
+      "[CONFIRM WITH COUNSEL] Whether YouTube API policy III.D.3 requires deletion within 7 days after that revocation at Google.",
+    );
+    expect(google).not.toContain("Either way, we delete your tokens right away");
     expect(google).not.toContain(
       "We revoke our access at Google and delete your tokens right away.",
     );
