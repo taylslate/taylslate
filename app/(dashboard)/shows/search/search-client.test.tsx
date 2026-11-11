@@ -229,4 +229,114 @@ describe("ShowSearchClient", () => {
     await user.type(screen.getByRole("searchbox", { name: "Search shows" }), "Acquired");
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load shows.");
   });
+
+  it("lists matching YouTube creators under the shows", async () => {
+    const channelId = "UCabcdefghijklmnopqrstuv";
+    vi.mocked(fetch).mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/api/library/creators")) {
+        return jsonResponse([
+          {
+            channelId,
+            title: "Sauna Lab",
+            thumbnailUrl: null,
+            country: "US",
+            subscriberCount: 12000,
+            videoCount: 40,
+            averageViews: 22000,
+            averageViewsLabel: "recent",
+            nicheTags: ["Health", "Home"],
+            youtubeUrl: `https://www.youtube.com/channel/${channelId}`,
+            contact_address: "hidden@creator.test",
+          },
+        ]);
+      }
+      return jsonResponse([visibleShow, hiddenShow]);
+    });
+    const user = userEvent.setup();
+    const view = render(<ShowSearchClient />);
+    await user.type(screen.getByRole("searchbox", { name: "Search shows" }), "Acquired");
+
+    const showLink = await screen.findByRole("link", { name: /Acquired/ });
+    const creatorLink = await screen.findByRole("link", { name: /Sauna Lab/ });
+    expect(showLink).toHaveAttribute("href", `/crm/${VISIBLE_ID}`);
+    expect(creatorLink).toHaveAttribute("href", `/shows/search/youtube/${channelId}`);
+    expect(screen.getByRole("heading", { name: "YouTube creators" })).toBeInTheDocument();
+    expect(screen.getByText("YouTube")).toBeInTheDocument();
+    expect(screen.getByText(/22,000 recent views/)).toBeInTheDocument();
+    expect(screen.getByText(/Health/)).toBeInTheDocument();
+    expect(screen.queryByText("Home")).not.toBeInTheDocument();
+    expect(screen.queryByText("hidden@creator.test")).not.toBeInTheDocument();
+    expect(screen.queryByText("host@show.test")).not.toBeInTheDocument();
+    expect(
+      showLink.compareDocumentPosition(creatorLink) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expectNoEmDash(view.container);
+
+    const urls = vi.mocked(fetch).mock.calls.map((call) => String(call[0]));
+    const libraryUrl = new URL(
+      urls.find((url) => url.includes("/api/library/creators"))!,
+      "http://localhost"
+    );
+    const showUrl = new URL(
+      urls.find((url) => url.includes("/api/shows"))!,
+      "http://localhost"
+    );
+    expect(libraryUrl.searchParams.get("search")).toBe(showUrl.searchParams.get("search"));
+    expect(libraryUrl.searchParams.get("search")).toBe("Acquired");
+  });
+
+  it("sends the same escaped term to the library search", async () => {
+    vi.mocked(fetch).mockImplementation(() => jsonResponse([]));
+    const user = userEvent.setup();
+    render(<ShowSearchClient />);
+    await user.type(screen.getByRole("searchbox", { name: "Search shows" }), "100%_off");
+    await waitFor(() => expect(fetch).toHaveBeenCalled(), {
+      timeout: SHOW_SEARCH_DEBOUNCE_MS + 1000,
+    });
+    const urls = vi.mocked(fetch).mock.calls.map((call) => String(call[0]));
+    const libraryUrl = new URL(
+      urls.filter((url) => url.includes("/api/library/creators")).at(-1)!,
+      "http://localhost"
+    );
+    const showUrl = new URL(
+      urls.filter((url) => url.includes("/api/shows")).at(-1)!,
+      "http://localhost"
+    );
+    expect(libraryUrl.searchParams.get("search")).toBe("100\\%\\_off");
+    expect(showUrl.searchParams.get("search")).toBe("100\\%\\_off");
+  });
+
+  it("keeps the show results when the library call fails", async () => {
+    vi.mocked(fetch).mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/api/library/creators")) return jsonResponse({ error: "Failed" }, 500);
+      return jsonResponse([visibleShow]);
+    });
+    const user = userEvent.setup();
+    render(<ShowSearchClient />);
+    await user.type(screen.getByRole("searchbox", { name: "Search shows" }), "Acquired");
+    expect(await screen.findByRole("link", { name: /Acquired/ })).toHaveAttribute(
+      "href",
+      `/crm/${VISIBLE_ID}`
+    );
+    expect(screen.queryByRole("heading", { name: "YouTube creators" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("does not replace show results with the sign-in message when only the library call is unauthorized", async () => {
+    vi.mocked(fetch).mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/api/library/creators")) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+      return jsonResponse([visibleShow]);
+    });
+    const user = userEvent.setup();
+    render(<ShowSearchClient />);
+    await user.type(screen.getByRole("searchbox", { name: "Search shows" }), "Acquired");
+    expect(await screen.findByRole("link", { name: /Acquired/ })).toBeInTheDocument();
+    expect(screen.queryByText("Sign in to search shows.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "YouTube creators" })).not.toBeInTheDocument();
+  });
 });

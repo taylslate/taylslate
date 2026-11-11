@@ -39,6 +39,61 @@ export function showSearchPath(raw: string): string | null {
   return `/api/shows?${params.toString()}`;
 }
 
+const LIBRARY_CREATOR_LIMIT = 20;
+const CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
+
+export type LibraryCreatorCard = {
+  channelId: string;
+  title: string;
+  averageViews: number | null;
+  averageViewsLabel: "recent" | "average";
+  nicheTags: string[];
+};
+
+export function libraryCreatorSearchPath(raw: string): string | null {
+  const search = sanitizeShowSearch(raw);
+  if (!search) return null;
+  return `/api/library/creators?${new URLSearchParams({ search }).toString()}`;
+}
+
+function asCount(value: unknown): number | null | undefined {
+  if (value == null) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return undefined;
+}
+
+export function toLibraryCreator(row: unknown): LibraryCreatorCard | null {
+  if (!row || typeof row !== "object") return null;
+  const value = row as Record<string, unknown>;
+  if (typeof value.channelId !== "string" || !CHANNEL_ID.test(value.channelId)) return null;
+  if (typeof value.title !== "string" || value.title.trim() === "") return null;
+  if (value.averageViewsLabel !== "recent" && value.averageViewsLabel !== "average") return null;
+  const expectedUrl = `https://www.youtube.com/channel/${value.channelId}`;
+  if (value.youtubeUrl !== expectedUrl) return null;
+  const averageViews = asCount(value.averageViews);
+  if (averageViews === undefined) return null;
+  const nicheTags = Array.isArray(value.nicheTags)
+    ? value.nicheTags
+        .filter((tag): tag is string => typeof tag === "string")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    : [];
+  return {
+    channelId: value.channelId,
+    title: value.title.trim(),
+    averageViews,
+    averageViewsLabel: value.averageViewsLabel,
+    nicheTags,
+  };
+}
+
+function formatCreatorViews(creator: LibraryCreatorCard): string {
+  if (creator.averageViews == null) return "Views not listed";
+  const count = creator.averageViews.toLocaleString("en-US");
+  const kind = creator.averageViewsLabel === "recent" ? "recent" : "average";
+  return `${count} ${kind} views`;
+}
+
 // Keep the fields a brand already sees on a show row. Drop hidden rows and
 // anything else on the catalog payload (contact, rates, sponsors).
 export function toPublicShow(row: unknown): PublicShow | null {
@@ -75,6 +130,7 @@ function formatAudience(show: PublicShow): string {
 export default function ShowSearchClient() {
   const [query, setQuery] = useState("");
   const [shows, setShows] = useState<PublicShow[]>([]);
+  const [creators, setCreators] = useState<LibraryCreatorCard[]>([]);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
@@ -83,6 +139,7 @@ export default function ShowSearchClient() {
     const path = showSearchPath(query);
     if (!path) {
       setShows([]);
+      setCreators([]);
       setError(null);
       setStatus("idle");
       return;
@@ -92,6 +149,31 @@ export default function ShowSearchClient() {
     const timer = window.setTimeout(() => {
       setStatus("loading");
       setError(null);
+      setCreators([]);
+      const libraryPath = libraryCreatorSearchPath(query);
+      if (libraryPath) {
+        fetch(libraryPath, { signal: controller.signal })
+          .then(async (res) => {
+            if (controller.signal.aborted) return;
+            const body: unknown = await res.json().catch(() => null);
+            if (controller.signal.aborted) return;
+            if (!res.ok || !Array.isArray(body)) {
+              setCreators([]);
+              return;
+            }
+            setCreators(
+              body
+                .map(toLibraryCreator)
+                .filter((row): row is LibraryCreatorCard => row !== null)
+                .slice(0, LIBRARY_CREATOR_LIMIT)
+            );
+          })
+          .catch((err: unknown) => {
+            if (err instanceof DOMException && err.name === "AbortError") return;
+            if (controller.signal.aborted) return;
+            setCreators([]);
+          });
+      }
       fetch(path, { signal: controller.signal })
         .then(async (res) => {
           if (controller.signal.aborted) return;
@@ -248,6 +330,40 @@ export default function ShowSearchClient() {
               </li>
             ))}
           </ul>
+        ) : null}
+
+        {status === "ready" && creators.length > 0 ? (
+          <section className="mt-8">
+            <h2 className="text-sm font-semibold text-[var(--ts-ink-on-paper)]">
+              YouTube creators
+            </h2>
+            <ul className="mt-3 space-y-3">
+              {creators.map((creator) => {
+                const tag = creator.nicheTags[0];
+                return (
+                  <li key={creator.channelId}>
+                    <Link
+                      href={`/shows/search/youtube/${creator.channelId}`}
+                      className="block rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5 hover:border-[var(--ts-ink-on-paper)]"
+                    >
+                      <div className="flex items-center gap-2">
+                        <h2 className="truncate font-semibold text-[var(--ts-ink-on-paper)]">
+                          {creator.title}
+                        </h2>
+                        <span className="shrink-0 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">
+                          YouTube
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-[var(--ts-ink-muted-on-paper)]">
+                        {formatCreatorViews(creator)}
+                        {tag ? ` · ${tag}` : ""}
+                      </p>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         ) : null}
       </div>
     </div>
