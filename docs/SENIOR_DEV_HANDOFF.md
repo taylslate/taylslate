@@ -3010,3 +3010,45 @@ Covers encrypted token round trip, tampered ciphertext, the two OAuth scopes, PK
 - `share_with_brand` is stored. No brand sees captions or analytics. A connected channel is not show-ownership verification. The log event is `youtube.channel_connected` only.
 - Live discovery searches and the runner's YouTube lookups still do not commit to `youtube_quota_days`. A Google `quotaExceeded` stops the feed for the day.
 - Screenshots are the rendered settings page (not connected, and connected). A signed-in production session was not available here. This PR does not merge. Paul reviews.
+
+## AC-YT2: clear a retired or lapsed channel's captions by channel
+
+### What was built
+
+`youtube_oauth_housekeeping` now clears caption text and the sponsor-read excerpt for the channel on a revoked or lapsed connection, not for every line on that show profile. After a channel switch, the old channel's captions are cleared 7 days after `revoked_at`, or 30 days after `reauth_required_at`. Captions whose resolved channel is the one that is active now stay. A line whose channel resolves to null is left for the 30-day `created_at` purge. Match judgments stay.
+
+The resolved channel is `shows.youtube_channel_id` (trimmed, non-empty) for `deals.show_id`, otherwise the lowest `youtube_channels.channel_id` for that show. That is the same resolution the caption feed uses. `airchecks` has no channel column. The clear also requires the deal's `show_profile_id` to be the connection's, a `youtube-captions` aircheck on the line, and no active connection on that `channel_id`.
+
+The rest of the function is the 088 body, in the same order: the 30-day `created_at` purge, the metric deletes, and the connection row deletes. `youtube_oauth_disconnect` and `youtube_oauth_clear_captions` are unchanged. No table, column, table grant, or policy. `anon` and `authenticated` cannot execute the function. `service_role` can. Running 089 twice is a no-op.
+
+`loadAnalyticsCandidateRows` was not edited. Its test now checks the real 16-day `created_at` filter and that a non-11-character `episode_identifier` is dropped.
+
+No screen, style, or animation changed. No UI, so there are no screenshots. No live write. Read-only precheck on `ldtmhafewfifdizgfrnn`: `youtube_oauth_connections` is absent, and `airchecks` count is 0. 088 is not applied.
+
+### Where
+
+- `supabase/migrations/089_youtube_caption_clear_by_channel.sql`
+- `supabase/migrations/089_youtube_caption_clear_by_channel.test.ts`
+- `lib/youtube-oauth/store.test.ts` (cases only)
+- `docs/jobs/AC-YT2.md`
+- `docs/jobs/AC-YT.md` (one housekeeping line)
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 385 files, 3231 passed, 41 skipped.
+
+`npx vitest run supabase/migrations/088_youtube_oauth.test.ts supabase/migrations/089_youtube_caption_clear_by_channel.test.ts lib/youtube-oauth`: 11 files, 42 passed.
+
+`npx next build` compiled successfully.
+
+PGlite loads 001 through 088, then 089 twice. A profile with a revoked `UCold` connection and an active `UCnew` connection clears the old channel (including a show that resolves `UCold` only through `youtube_channels`) and leaves `UCnew` and a null channel alone. Judgments stay. The same split holds for `reauth_required_at` 31 days ago. An active connection on `UCold` blocks that clear. The 30-day `created_at` purge still runs. anon and authenticated are denied. service_role can execute.
+
+### Known gaps
+
+- 088 and 089 are not applied. Apply 088, then 089, on `ldtmhafewfifdizgfrnn` only after merge and only after Chris names each file.
+- `youtube_oauth_disconnect` still clears caption text for the whole show profile at disconnect time. This job does not change that function. A channel switch uses `retireConnection`, which leaves captions for this housekeeping pass.
+- A line whose channel resolves to null still waits for the 30-day `created_at` purge.
+- No screen changed. Screenshots are not applicable. This PR does not merge. Paul reviews.
