@@ -46,13 +46,15 @@ Use the template in [MAINTENANCE.md](MAINTENANCE.md). Assign `CB-D-002` onward f
 - **Detailed direction:** [Sponsorship harness note](../docs/SPONSORSHIP_HARNESS_DIRECTION.md).
 - **Supersession:** None; extends existing agent-native direction and preserves transaction-before-MCP sequencing.
 
-## CB-D-002: Approve the LG1 data-pooling narrowing
+## CB-D-002 - LG1 data-pooling narrowing
 
-- **Recorded / effective:** November 4, 2026.
-- **Decision-maker and source:** Chris, November 4, 2026, relayed by Angus. This record is second-hand.
-- **Status:** Approved. The product sentences under "How the product applies that line" are still not the approved L2 consent line.
-- **Choice:** An uploaded past-campaign file stays private to that brand, is not shown to other brands or shows, and is not part of any aggregate unless that brand opted in. An imported insertion-order PDF becomes an ordinary deal and is pooled once it is signed.
-- **Rationale:** The opt-in aggregate sentence covers past-campaign files only. A signed imported insertion order is an ordinary on-platform deal.
-- **Consequence:** Recorded in `docs/jobs/LG1.md`. The legal pages already state this narrowing. No code change.
-- **Suggested revisit trigger:** Counsel review of the draft terms, or a change to what enters the pool.
-- **Supersession:** None. Does not replace the approved L2 consent line.
+- **Status:** Approved.
+- **Recorded / effective:** 2026-11-04.
+- **Decision-maker and source:** Chris Taylor, approval on 2026-11-04 as relayed by Angus. There is no first-hand record in the repo.
+- **Choice:** (1) An uploaded past-campaign file stays private to the uploading brand and joins the pool only through the import-screen opt-in checkbox (default off, terms version pooling-v1). (2) An imported signed insertion order becomes an ordinary deal and pools like any other deal.
+- **Source evidence:** docs/jobs/LG1.md (Product sentences next to the consent line), docs/jobs/I3.md (consent checkbox), docs/jobs/L2.md (deal pool and consent line), lib/imports/review.ts (POOLING_TERMS_VERSION).
+- **Rationale:** Keep an upload private by default, and treat a signed IO like any other booked deal.
+- **Alternatives considered:** None recorded in the repo.
+- **Supersession:** None. It does not change the approved L2 consent line (CONSENT_LINE in app/terms/page.tsx).
+- **Affected documents:** docs/jobs/LG1.md. The /terms and /privacy copy already matches and is not edited here.
+- **Not decided here:** The legal review ([CONFIRM WITH COUNSEL] items), the draft banner, and the placeholders in LG1. They stay as they are.

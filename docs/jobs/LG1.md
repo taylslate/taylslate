@@ -85,11 +85,11 @@ Privacy:
 
 ## Product sentences next to the consent line
 
-These sit under the label "How the product applies that line". They are not the approved L2 line. Chris approved the narrowing on November 4, 2026.
+These sit under the label "How the product applies that line". They are not the approved L2 line. Chris approved the data-pooling narrowing in the upload and imported-IO sentences below on 2026-11-04 (relayed by Angus). See CB-D-002 in company-brain/DECISION_INDEX.md.
 
 - Anonymized patterns from deals booked and transacted through Taylslate feed a pooled dataset.
 - An uploaded past-campaign file joins that pool only if the brand opts in on the import screen. The checkbox is off by default. The terms version recorded is pooling-v1.
-- A brand's own uploaded past-campaign file stays private to that brand, is not shown to other brands or shows, and that file is never part of any aggregate unless that brand opted in. An imported insertion-order PDF becomes an ordinary deal and is pooled once it is signed. Chris approved this narrowing on November 4, 2026.
+- A brand's own uploaded past-campaign file stays private to that brand, is not shown to other brands or shows, and that file is never part of any aggregate unless that brand opted in. An imported insertion-order PDF becomes an ordinary deal and is pooled once it is signed. Chris approved this narrowing on 2026-11-04.
 
 ## Factual sources
 

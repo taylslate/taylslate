@@ -2130,7 +2130,7 @@ Each request logs one line: method, tool name, outcome code, elapsed ms. Argumen
 
 ### Known gaps
 
-- CA1 records a command-agent action with `api_key_id` null, `source` `command_agent`, and `requested_by` equal to the brand id. `callTool` accepts that actor. The insert needs migration 083, which is not applied. An API key caller is unchanged.
+- CA1 records a command-agent action with `api_key_id` null, `source` `command_agent`, and `requested_by` equal to the brand id. `callTool` accepts that actor. The insert needs migration 083, which is applied (Nov 11, 2026 UTC). An API key caller is unchanged.
 - No OAuth, dynamic client registration, or protected-resource metadata.
 - No tool approves, sends, signs, charges, or pays.
 - `tools/list` is one page. A non-empty cursor is invalid params.
@@ -2302,7 +2302,7 @@ A signed-in brand can open `/assistant` and talk to Tay. Tay calls the M1 regist
 
 The page is URL-only. Nav, layout, settings, and the inbox client were not edited. Discovery, `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. `lib/llm/client.ts` was not edited. The model is `getLLMModel()`.
 
-083 is in the PR and is not applied. It makes `api_key_id` nullable, adds `source` and `requested_by` with the actor check, and adds `command_agent_conversations`, `command_agent_messages`, and `command_agent_usage`. `turn_started_at` is the one-turn marker for the whole brand. Usage rows are append-only and are not tied to a conversation. RLS is on, there are no policies, and only `service_role` is granted. `anon`, `public`, and `authenticated` have nothing, including `truncate`, `references`, and `trigger`.
+083 is applied on `ldtmhafewfifdizgfrnn` (Nov 11, 2026 UTC). It makes `api_key_id` nullable, adds `source` and `requested_by` with the actor check, and adds `command_agent_conversations`, `command_agent_messages`, and `command_agent_usage`. `turn_started_at` is the one-turn marker for the whole brand. Usage rows are append-only and are not tied to a conversation. RLS is on, there are no policies, and only `service_role` is granted. `anon`, `public`, and `authenticated` have nothing, including `truncate`, `references`, and `trigger`.
 
 Caps: 20 messages an hour, 60 a day, 300000 tokens a day, 6 model calls and 8 tool calls a turn, 90 second deadline. The daily cap sums `command_agent_usage`, which has no conversation foreign key, so a delete does not reset it. The loop checks that sum before every model call and writes one usage row after each call. A fresh turn anywhere for the brand is 409. A foreign conversation is 404. `DELETE` checks Origin and returns 409 while that conversation's turn is fresh. Full tool results are `tool_result` blocks only in the turn that produced them. Later turns send the tool name and status as their own turn, not concatenated with the brand's message, and not copied into the system prompt. The thread shows a short line such as "Looked up a show" instead of the raw tool JSON.
 
@@ -2333,7 +2333,7 @@ Security coverage: 401 and 403 for show, agent, and admin on every assistant han
 
 ### Known gaps
 
-- 083 is not applied. Do not expect Tay to insert a pending row until Chris applies it.
+- 083 is applied (Nov 11, 2026 UTC). Tay can insert pending rows.
 - `/assistant` is not in the nav and is not linked from an existing screen.
 - No 90-day purge. The brand deletes a conversation with DELETE.
 - An API caller who sends the same `ca:{message id}:{n}` idempotency key can collide with Tay. The API key insert path was not changed.
@@ -2348,12 +2348,10 @@ Security coverage: 401 and 403 for show, agent, and admin on every assistant han
 
 Docs only. Recorded Chris's November 4, 2026 approval of the LG1 data-pooling narrowing, and corrected the live migration claims on `ldtmhafewfifdizgfrnn`. No code, test, or migration file was edited. Nothing was applied.
 
-`prompts/DOC2-LG1-pooling-approved.md` is not in the repo and was not on this machine. The two LG1 lines and CB-D-002 follow the DOC3 instruction for that prompt (lines 88 and 92, approval date November 4, 2026, CB-D-002 appended after CB-D-001).
-
 LG1 (`docs/jobs/LG1.md`):
 
-- Line 88. "Chris has not approved them." is now "Chris approved the narrowing on November 4, 2026." The sentences are still not the approved L2 line.
-- Line 92. "This narrowing still needs Chris's approval." is now "Chris approved this narrowing on November 4, 2026." The narrowing itself is unchanged: an uploaded past-campaign file stays out of the pool unless the brand opted in, and an imported insertion-order PDF becomes an ordinary deal and is pooled once it is signed.
+- Line 88. "Chris has not approved them." is now "Chris approved the data-pooling narrowing in the upload and imported-IO sentences below on 2026-11-04 (relayed by Angus). See CB-D-002 in company-brain/DECISION_INDEX.md." The sentences are still not the approved L2 line.
+- Line 92. "This narrowing still needs Chris's approval." is now "Chris approved this narrowing on 2026-11-04." The narrowing itself is unchanged: an uploaded past-campaign file stays out of the pool unless the brand opted in, and an imported insertion-order PDF becomes an ordinary deal and is pooled once it is signed.
 
 `company-brain/DECISION_INDEX.md`: CB-D-002 is appended after CB-D-001.
 
@@ -2363,11 +2361,11 @@ LG1 (`docs/jobs/LG1.md`):
 - :7 Migration 079 is applied (Nov 2, 2026 UTC).
 - :11 Migration 081 is applied (Nov 10, 2026 UTC).
 - :15 Migration 078 is applied (Nov 2, 2026 UTC). The "do not paste" sentence is removed.
-- :33 Migrations 065 and 066 are applied. 061 (`show_ownership`) is applied. 041, 042, and 053 to 058 were applied by hand and are not in the tracked migration list. 082 is applied (Nov 10, 2026 UTC). 083 (CA1 command agent) is applied (Nov 10, 2026 UTC). 080 is reserved for AC3. "001–051 applied" is unchanged. 052 is not stated.
+- :33 Migrations 065 and 066 are applied. 061 (`show_ownership`) is applied. 041, 042, and 053 to 058 were applied by hand and are not in the tracked migration list. 082 is applied (Nov 10, 2026 UTC). 083 (CA1 command agent) is applied (Nov 11, 2026 UTC). 080 is reserved for AC3. "001–051 applied" is unchanged. 052 is not stated.
 - :36 Migration 076 is applied (Nov 2, 2026 UTC). The library pull and refresh write the new tables.
-- :46 Migration 076 is applied (Nov 2, 2026 UTC). The following sentence about the dropped index is unchanged, including "do not apply 076 while the previous deploy is still serving."
+- :46 Migration 076 is applied (Nov 2, 2026 UTC). The dropped-index sentence now says 076 shipped with the deploy.
 - :58 and :68 Migration 040 is applied. The rg pass: those lines still said 040 was written and not applied, and the live list says 040 is tracked as applied. On :58 the em dash before "the columns inherit" is now a period, so the edited line adds no em dash. The words are the same.
-- :74 Migration 040 is applied. The five review columns are on the live table. The old "cannot record success" sentence was the false not-applied claim, so it is removed.
+- :74 Migration 040 is applied. The five review columns are on the live table. The stale Supabase MCP auth sentence is removed. The old "cannot record success" sentence was the false not-applied claim, so it is removed.
 
 `PRODUCT_BACKLOG.md`:
 
@@ -2379,8 +2377,6 @@ LG1 (`docs/jobs/LG1.md`):
 - :308 Migration 076 is applied (Nov 2, 2026 UTC).
 - :311 Tense only: "after 076 was applied."
 - :315 Tense only: "076 was applied together with the deploy."
-
-The CA1 section above still says 083 is not applied. That sentence was not edited. This section is the later record: 083 was applied live on November 10, 2026.
 
 ### Where
 
@@ -2399,12 +2395,9 @@ Commands: `git diff --stat main` (five Owns files only), `rg -n -i "not applied|
 ### Known gaps
 
 - The November 4, 2026 approval is second-hand through Angus. This file does not quote Chris directly.
-- `prompts/DOC2-LG1-pooling-approved.md` was not available here. If that prompt has different sentences for lines 88 and 92 or for CB-D-002, those sentences should replace this wording.
 - 052 only revokes and was not verified. It is not stated as applied or not applied.
 - 041, 042, and 053 to 058 were applied by hand and are not in the tracked `schema_migrations` list.
 - 059 and 062 to 064 are not in the repo. 080 is reserved for AC3 and is not in the repo.
 - `OPENAI_API_KEY` is confirmed not set in Vercel as of November 10, 2026 (Chris). The airchecks cron cannot transcribe yet.
-- STATUS.md:46 still says not to apply 076 while the previous deploy is serving. 076 is already applied. That clause was left because the job said to keep the rest of the sentence.
 - STATUS.md:154 still contains the words "not yet applied" inside a superseded note about migration 033. 033 is applied. That line was left.
-- The CA1 known-gap line that says 083 is not applied is stale. 083 is applied (Nov 10, 2026 UTC).
 
