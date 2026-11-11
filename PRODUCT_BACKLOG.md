@@ -106,17 +106,17 @@ Things that must finish before GTM. The launch bar.
 
 ### Automated airchecks, parts 1 and 2 (Nov 2, 2026)
 - Shipped in code. A daily cron pulls the episode for each booked IO spot in its air window, transcribes it with OpenAI Whisper, stores the text and timestamped segments, deletes the audio, and writes a match with confidence, timestamps, and reasons. `ready_for_review` is set. The line is not marked delivered and nothing is charged.
-- Migration 079 is written and not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK. Until then the cron skips. authenticated has no select on `airchecks`.
-- `OPENAI_API_KEY` is not set. The cron skips until it is. Optional `AIRCHECK_RUN_COST_CAP_USD` defaults to $1 per run. whisper-1 is $0.006 per minute, so a 45-minute episode is about $0.27.
+- Migration 079 is applied on `ldtmhafewfifdizgfrnn` (Nov 2, 2026 UTC). authenticated has no select on `airchecks`.
+- `OPENAI_API_KEY` is confirmed not set in Vercel as of November 10, 2026 (Chris). The cron skips and cannot transcribe until it is. Optional `AIRCHECK_RUN_COST_CAP_USD` defaults to $1 per run. whisper-1 is $0.006 per minute, so a 45-minute episode is about $0.27.
 - The review screen that confirms a line and charges was not part of this change. A YouTube spot with no media file is stored as failed and is not sent to Whisper, because the Data API does not return the audio.
 
 ### Q12: roster dispute block and rep owner heads-up (Nov 9, 2026)
-- Shipped in code. An open dispute blocks approve until an internal admin resolves it with a note. The link stays pending. Migration 081 is written and not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
+- Shipped in code. An open dispute blocks approve until an internal admin resolves it with a note. The link stays pending. Migration 081 is applied on `ldtmhafewfifdizgfrnn` (Nov 10, 2026 UTC).
 - A rep gets one heads-up when a roster link points at a verified owner: at import commit, and later from the daily cron or an O2/O4 call. The legacy `/shows` CSV upload still creates a duplicate show. That screen is out of scope (see `docs/jobs/Q12.md`).
 
 ### SEC1: profiles.email must not grant access (Nov 2, 2026)
 - Shipped in code. A signed-in user can update `profiles.email`. Admin, show edit, roster import discoverability, show-owner ties, deal backfill, login and magic account lookup, outreach show resolution, and the DocuSign show signer now use the auth login.
-- Migration 077 is applied. Migration 078 is written and not applied. A null auth email must not roll back the auth update. Apply 078 only after merge and Chris's OK.
+- Migration 077 is applied. Migration 078 is applied on `ldtmhafewfifdizgfrnn` (Nov 2, 2026 UTC). A null auth email must not roll back the auth update.
 - Stripe customer email still reads `profiles.email` (`lib/stripe` and the setup-intent callers). That is a billing contact, not an access check, and was left unchanged. After 077 the stored value matches the login.
 
 ### Domain & email cutover
@@ -303,16 +303,16 @@ Wires Phase 1 dormant infrastructure into the brand-facing UI. Current flat fit-
 
 ## Foundational Architecture
 
-### YT2 YouTube library contact emails, daily quota, queue refill (written Nov 2, 2026, not applied)
+### YT2 YouTube library contact emails, daily quota, queue refill (written Nov 2, 2026, applied Nov 2, 2026 UTC)
 
-Built in the repo. Migration **076 is not applied** on `ldtmhafewfifdizgfrnn`. Apply only after merge and Chris's OK.
+Built in the repo. Migration **076 is applied** on `ldtmhafewfifdizgfrnn` (Nov 2, 2026 UTC).
 
 - Contact emails from the channel description, About URLs in that text (`mailto:` and YouTube `/redirect` targets, no page fetch), and recent upload descriptions. Stored on `youtube_channel_emails` with `source` and `found_at`.
-- Description scan spends 0 units and covers the stored library (about 3,102 channels) on the first email cron after 076 is applied. Video descriptions spend 2 units per channel and resume the next Pacific day when the cap is hit.
+- Description scan spends 0 units and covers the stored library (about 3,102 channels) on the first email cron after 076 was applied. Video descriptions spend 2 units per channel and resume the next Pacific day when the cap is hit.
 - Daily cap `YOUTUBE_DAILY_QUOTA_CAP`, default 8,000. Pacific reset. Pull, refresh, and the email cron share the ledger. The pull leaves room for refresh and, while video scans remain, for the email job.
 - When the pull queue has no pending rows, new searches are generated from saved page tokens, order variants, and phrases on high-view channels that passed the market filter. Dedupe is `(kind, value, page_token)`.
 - Cron `GET /api/cron/youtube-library-emails` at 19:00 UTC. No screen changes. Optional env var only. Not set in Vercel by this change.
-- Apply 076 together with the deploy. The migration drops `youtube_pull_queue_kind_value_uidx`. The previous pull upserts on `(kind, value)` and fails once that index is gone.
+- 076 was applied together with the deploy. The migration drops `youtube_pull_queue_kind_value_uidx`. The previous pull upserts on `(kind, value)` and fails once that index is gone.
 
 ### Podscan data-layer audit follow-ups (surfaced July 23, 2026)
 From the read-only Podscan consumption audit (see STATUS.md → "Podscan data audit"; verification script `378698a`). Four items, in rough priority:

@@ -2342,3 +2342,69 @@ Security coverage: 401 and 403 for show, agent, and admin on every assistant han
 - Plan campaign caps are still not enforced on approval. That pairs with A7.
 - This environment has no Supabase or app env, so the signed-in `/assistant` and inbox screenshots could not be taken against a live session. The page tests cover the gate, the Tay empty state, literal model text, and the approval link.
 
+## DOC3
+
+### What changed
+
+Docs only. Recorded Chris's November 4, 2026 approval of the LG1 data-pooling narrowing, and corrected the live migration claims on `ldtmhafewfifdizgfrnn`. No code, test, or migration file was edited. Nothing was applied.
+
+`prompts/DOC2-LG1-pooling-approved.md` is not in the repo and was not on this machine. The two LG1 lines and CB-D-002 follow the DOC3 instruction for that prompt (lines 88 and 92, approval date November 4, 2026, CB-D-002 appended after CB-D-001).
+
+LG1 (`docs/jobs/LG1.md`):
+
+- Line 88. "Chris has not approved them." is now "Chris approved the narrowing on November 4, 2026." The sentences are still not the approved L2 line.
+- Line 92. "This narrowing still needs Chris's approval." is now "Chris approved this narrowing on November 4, 2026." The narrowing itself is unchanged: an uploaded past-campaign file stays out of the pool unless the brand opted in, and an imported insertion-order PDF becomes an ordinary deal and is pooled once it is signed.
+
+`company-brain/DECISION_INDEX.md`: CB-D-002 is appended after CB-D-001.
+
+`STATUS.md` (line numbers unchanged):
+
+- :5 `OPENAI_API_KEY` is confirmed not set in Vercel as of November 10, 2026 (Chris). The airchecks cron returns 200 and skips, so it cannot transcribe yet.
+- :7 Migration 079 is applied (Nov 2, 2026 UTC).
+- :11 Migration 081 is applied (Nov 10, 2026 UTC).
+- :15 Migration 078 is applied (Nov 2, 2026 UTC). The "do not paste" sentence is removed.
+- :33 Migrations 065 and 066 are applied. 061 (`show_ownership`) is applied. 041, 042, and 053 to 058 were applied by hand and are not in the tracked migration list. 082 is applied (Nov 10, 2026 UTC). 083 (CA1 command agent) is applied (Nov 10, 2026 UTC). 080 is reserved for AC3. "001–051 applied" is unchanged. 052 is not stated.
+- :36 Migration 076 is applied (Nov 2, 2026 UTC). The library pull and refresh write the new tables.
+- :46 Migration 076 is applied (Nov 2, 2026 UTC). The following sentence about the dropped index is unchanged, including "do not apply 076 while the previous deploy is still serving."
+- :58 and :68 Migration 040 is applied. The rg pass: those lines still said 040 was written and not applied, and the live list says 040 is tracked as applied. On :58 the em dash before "the columns inherit" is now a period, so the edited line adds no em dash. The words are the same.
+- :74 Migration 040 is applied. The five review columns are on the live table. The old "cannot record success" sentence was the false not-applied claim, so it is removed.
+
+`PRODUCT_BACKLOG.md`:
+
+- :109 Migration 079 is applied (Nov 2, 2026 UTC).
+- :110 `OPENAI_API_KEY` is confirmed not set in Vercel as of November 10, 2026 (Chris). The cron cannot transcribe until it is.
+- :114 Migration 081 is applied (Nov 10, 2026 UTC).
+- :119 Migration 078 is applied (Nov 2, 2026 UTC).
+- :306 The YT2 heading now says applied Nov 2, 2026 UTC.
+- :308 Migration 076 is applied (Nov 2, 2026 UTC).
+- :311 Tense only: "after 076 was applied."
+- :315 Tense only: "076 was applied together with the deploy."
+
+The CA1 section above still says 083 is not applied. That sentence was not edited. This section is the later record: 083 was applied live on November 10, 2026.
+
+### Where
+
+- `docs/jobs/LG1.md`
+- `company-brain/DECISION_INDEX.md`
+- `STATUS.md`
+- `PRODUCT_BACKLOG.md`
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+None. Docs only. No page or component was edited. Screenshots are not applicable.
+
+Commands: `git diff --stat main` (five Owns files only), `rg -n -i "not applied|written and not|apply .* only after" STATUS.md PRODUCT_BACKLOG.md` (no hits), `rg -n "still needs Chris's approval|Chris has not approved them" docs/jobs/LG1.md` (no hits), `git diff main | rg "^\+.*\x{2014}"` (empty). `npx vitest run`: 343 files, 2965 passed, 40 skipped. `npx next build` compiled and generated 142 pages.
+
+### Known gaps
+
+- The November 4, 2026 approval is second-hand through Angus. This file does not quote Chris directly.
+- `prompts/DOC2-LG1-pooling-approved.md` was not available here. If that prompt has different sentences for lines 88 and 92 or for CB-D-002, those sentences should replace this wording.
+- 052 only revokes and was not verified. It is not stated as applied or not applied.
+- 041, 042, and 053 to 058 were applied by hand and are not in the tracked `schema_migrations` list.
+- 059 and 062 to 064 are not in the repo. 080 is reserved for AC3 and is not in the repo.
+- `OPENAI_API_KEY` is confirmed not set in Vercel as of November 10, 2026 (Chris). The airchecks cron cannot transcribe yet.
+- STATUS.md:46 still says not to apply 076 while the previous deploy is serving. 076 is already applied. That clause was left because the job said to keep the rest of the sentence.
+- STATUS.md:154 still contains the words "not yet applied" inside a superseded note about migration 033. 033 is applied. That line was left.
+- The CA1 known-gap line that says 083 is not applied is stale. 083 is applied (Nov 10, 2026 UTC).
+

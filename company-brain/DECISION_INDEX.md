@@ -45,3 +45,14 @@ Use the template in [MAINTENANCE.md](MAINTENANCE.md). Assign `CB-D-002` onward f
 - **Suggested revisit trigger:** Proven core transaction workflow plus repeated customer demand for a bounded multi-step job. This trigger is a planning suggestion.
 - **Detailed direction:** [Sponsorship harness note](../docs/SPONSORSHIP_HARNESS_DIRECTION.md).
 - **Supersession:** None; extends existing agent-native direction and preserves transaction-before-MCP sequencing.
+
+## CB-D-002: Approve the LG1 data-pooling narrowing
+
+- **Recorded / effective:** November 4, 2026.
+- **Decision-maker and source:** Chris, November 4, 2026, relayed by Angus. This record is second-hand.
+- **Status:** Approved. The product sentences under "How the product applies that line" are still not the approved L2 consent line.
+- **Choice:** An uploaded past-campaign file stays private to that brand, is not shown to other brands or shows, and is not part of any aggregate unless that brand opted in. An imported insertion-order PDF becomes an ordinary deal and is pooled once it is signed.
+- **Rationale:** The opt-in aggregate sentence covers past-campaign files only. A signed imported insertion order is an ordinary on-platform deal.
+- **Consequence:** Recorded in `docs/jobs/LG1.md`. The legal pages already state this narrowing. No code change.
+- **Suggested revisit trigger:** Counsel review of the draft terms, or a change to what enters the pool.
+- **Supersession:** None. Does not replace the approved L2 consent line.
