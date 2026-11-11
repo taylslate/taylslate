@@ -1,6 +1,6 @@
 # CA1: brand command agent
 
-Migration number is **083**. 080 is reserved for AC3. 081 is Q12. 082 is A4 and is live. 083 is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
+Migration number is **083**. 080 is reserved for AC3. 081 is Q12. 082 is A4 and is live. 083 is applied on `ldtmhafewfifdizgfrnn` at version 20261111004339 (Nov 11, 2026 UTC).
 
 The user-facing name is **Tay**. Chris named it. Internal identifiers stay `command_agent`, `lib/command-agent`, and `/assistant`.
 
@@ -16,7 +16,7 @@ Approving an agent `campaign.create` still creates one draft through the unchang
 
 083 drops `NOT NULL` on `api_write_actions.api_key_id`, adds `source` (`api_key` or `command_agent`, default `api_key`), and adds `requested_by`. The actor check requires an API key row to have a key and a null `requested_by`, and a command agent row to have a null key with `requested_by` equal to `brand_id`. Existing rows take `source` `api_key` from the column default. There is no other backfill. The `api_key_id` foreign key stays.
 
-`command_agent_conversations`, `command_agent_messages`, and `command_agent_usage` are new. `turn_started_at` is the in-row marker so the brand runs one turn at a time. A claim older than 120 seconds can be taken again. `command_agent_usage` stores one row per model call and has no foreign key to a conversation. RLS is on. There are no policies. `anon`, `public`, and `authenticated` have no privileges, including `truncate`, `references`, and `trigger` on `authenticated`. `service_role` has all privileges. Every read and write filters `brand_id` to the session user id.
+`command_agent_conversations`, `command_agent_messages`, and `command_agent_usage` are new. `turn_started_at` is the in-row marker so the brand runs one turn at a time. A claim older than 120 seconds can be taken again. `command_agent_usage` stores one row per model call and has no foreign key to a conversation. RLS is on for all four tables (`api_write_actions`, `command_agent_conversations`, `command_agent_messages`, and `command_agent_usage`). There are 0 policies. `service_role` is the only grant. `anon`, `public`, and `authenticated` have no privileges, including `truncate`, `references`, and `trigger` on `authenticated`. Every read and write filters `brand_id` to the session user id.
 
 ## Routes
 
@@ -49,7 +49,7 @@ Name: Tay. Confirmed. Shown on the `/assistant` heading and empty state, in the 
 
 ## Known gaps
 
-- 083 is not applied. Tay cannot insert a pending row until Chris applies it.
+- 083 is applied on `ldtmhafewfifdizgfrnn` at version 20261111004339 (Nov 11, 2026 UTC). Tay can insert pending rows.
 - `/assistant` is not in the nav. Adding it changes an existing screen, so it waits for a follow-up.
 - There is no 90-day purge.
 - An API caller who deliberately reuses a `ca:{message id}:{n}` idempotency key can collide with Tay on the shared unique key. The API path was not changed.
