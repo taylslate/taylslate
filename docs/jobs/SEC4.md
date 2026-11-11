@@ -67,7 +67,7 @@ Between merge and apply, the new code writes nothing to `deals.setup_intent_clie
 
 086 does not grant or revoke anything on `deals`. It is independent of 084 (PR 88, the command-agent turn index).
 
-085 (SEC3, `cursor/sec3-deals-update-guard-7bfb` at `90ad23f`, not on main) grants `authenticated` INSERT on this legacy list only:
+085 (SEC3, PR 90) grants `authenticated` INSERT on this legacy list only:
 
 `campaign_id`, `show_id`, `brand_id`, `agent_id`, `agency_id`, `status`, `num_episodes`, `placement`, `ad_format`, `price_type`, `cpm_rate`, `gross_cpm`, `guaranteed_downloads`, `net_per_episode`, `gross_per_episode`, `total_net`, `total_gross`, `is_scripted`, `is_personal_experience`, `reader_type`, `content_type`, `pixel_required`, `competitor_exclusion`, `exclusivity_days`, `rofr_days`, `flight_start`, `flight_end`, `notes`.
 
@@ -112,7 +112,8 @@ The DocuSign webhook test asserts the SetupIntent block writes `setup_intent_id`
 
 ## Outside the Owns list
 
-- `STATUS.md`. The job text said not to edit it. The task for this run asked for it.
 - `app/(dashboard)/deals/[id]/page.test.tsx`. No deal page test existed. The job says to add one and list it in the handoff.
+
+`STATUS.md` is not edited. The SEC4 block that was added there was reverted so it does not collide with PR 90.
 
 `rg -n "setup_intent_client_secret" app lib --glob '!*.test.*'` also matches `lib/deals/payment-secrets.ts`. That file is in the Owns list. It selects and upserts the column on `deal_payment_secrets`. The route files no longer name the column. `lib/data/types.ts:721` and the deal page view-model line still do.

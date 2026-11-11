@@ -2,7 +2,6 @@
 -- 086: move the SetupIntent client secret off deals
 --
 -- NOT applied. Apply only after merge and Chris's OK.
--- Apply on ldtmhafewfifdizgfrnn only after merge and Chris's OK.
 -- Paste into the Supabase SQL Editor, then introspect. Do not run
 -- this from the app, a seed script, or a deploy hook.
 --
@@ -21,8 +20,7 @@
 --
 -- Apply order: any order among 084, 085, and 086 is safe.
 -- 084 only adds an index on command_agent_conversations.
--- 085 (SEC3, cursor/sec3-deals-update-guard-7bfb at 90ad23f, not on
--- main at 2732ccd) re-grants deals INSERT on the legacy column list:
+-- 085 (SEC3, PR 90) re-grants deals INSERT on the legacy column list:
 --   campaign_id, show_id, brand_id, agent_id, agency_id, status,
 --   num_episodes, placement, ad_format, price_type, cpm_rate,
 --   gross_cpm, guaranteed_downloads, net_per_episode,
