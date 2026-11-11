@@ -546,6 +546,10 @@ Status: fixed by S-K for `GET /api/shows`, `GET /api/shows/[id]`, `GET /api/v1/s
 
 **SA-24. Outcomes insert does not check booking ownership.** `outcomes` insert policy, `auth.uid() = user_id` only. A caller can attach an outcome row to a `booking_id` they do not own. `refresh_pooled_deal_priors` will later read `outcomes` by `booking_id`. Fix: require the booking to be the caller's deal. Lane: S-D.
 
+**SA-26. A signed-in participant can rewrite deal, IO, invoice, and outreach money columns through the Data API.** SEC3. This is the write path in SA-04, plus the `payouts` grant slice of SA-10. Live read on 2026-11-11 against `ldtmhafewfifdizgfrnn` (SELECT only): `authenticated` holds INSERT, UPDATE, and DELETE on `deals`, `insertion_orders`, `io_line_items`, `invoices`, `invoice_line_items`, `outreaches`, and `payouts`. anon and PUBLIC hold nothing on those tables. The UPDATE policies have no column list, and there is no guard trigger (`deals` has only `update_deals_timestamp`). A brand who is `deals.brand_id` can set `status`, `agreed_cpm`, `show_profile_id`, `brand_signed_at`, `docusign_envelope_id`, `payment_method_id`, and `promo_code`, and can set `io_line_items.gross_rate`. `chargeForEpisode` loads that `gross_rate` by line id (`lib/stripe/payment-intent.ts:240-244`) and does not check that the line belongs to the deal. Counts that day were 0 deals, 0 line items, 0 invoices, and 0 payouts, so nothing had been exploited and no backfill is required. Fix: migration `085_lock_deal_io_writes.sql` revokes those table writes, grants only the legacy insert columns and the legacy editor columns, and rejects a user write whose parent deal is missing or has `outreach_id`, `brand_profile_id`, or `docusign_envelope_id` set. Lane: S-H/S-I.
+
+Status: written, not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and Chris's OK.
+
 ## What this pass did not do
 
 No exploit was sent against production. Policies and grants were read, not probed with a user JWT. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were read and not edited. Screenshot proof does not apply: no page or component was changed.
