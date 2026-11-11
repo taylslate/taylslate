@@ -3,6 +3,7 @@
 // does not read show_profiles.
 
 import { buildTrackingLink } from "@/lib/io/tracking-link";
+import { isGoogleDerivedAircheck } from "./google-data";
 import { normalizePlacement, normalizeReader } from "./styles";
 import type {
   ImportedHistoryInput,
@@ -39,6 +40,7 @@ export interface RawLine {
 
 export interface RawAircheck {
   io_line_item_id: string;
+  provider?: string | null;
   review_decision?: string | null;
   match_evidence?: unknown;
 }
@@ -161,6 +163,7 @@ export function assembleLearningInput(raw: AssembleLearningInput): LearningRevie
   }
   const airByLine = new Map<string, RawAircheck>();
   for (const aircheck of raw.airchecks) {
+    if (isGoogleDerivedAircheck(aircheck)) continue;
     airByLine.set(aircheck.io_line_item_id, aircheck);
   }
   const reportByDeal = new Map<string, number>();
