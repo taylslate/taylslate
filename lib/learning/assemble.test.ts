@@ -153,6 +153,95 @@ describe("assembleLearningInput", () => {
   it("returns an empty import list when none were loaded", () => {
     expect(assembleLearningInput(raw()).imported).toEqual([]);
   });
+
+  it("ignores a youtube-captions aircheck when it is the only row", () => {
+    const input = assembleLearningInput(
+      raw({
+        deals: [{ ...raw().deals[0], status: "delivering" }],
+        lines: [{ ...raw().lines[0], verified: false }],
+        airchecks: [
+          {
+            io_line_item_id: "line-1",
+            provider: "youtube-captions",
+            review_decision: "confirmed",
+            match_evidence: { code_or_url: "found" },
+          },
+        ],
+      })
+    );
+    expect(input.deals[0].codeOnAir).toBeNull();
+    expect(input.deals[0].aircheckDecision).toBeNull();
+    expect(input.deals[0].aired).toBe(false);
+  });
+
+  it("keeps the current values for a podscan aircheck on the same deal", () => {
+    const input = assembleLearningInput(
+      raw({
+        deals: [{ ...raw().deals[0], status: "delivering" }],
+        lines: [{ ...raw().lines[0], verified: false }],
+        airchecks: [
+          {
+            io_line_item_id: "line-1",
+            provider: "podscan",
+            review_decision: "confirmed",
+            match_evidence: { code_or_url: "found" },
+          },
+        ],
+      })
+    );
+    expect(input.deals[0].codeOnAir).toBe("found");
+    expect(input.deals[0].aircheckDecision).toBe("confirmed");
+    expect(input.deals[0].aired).toBe(true);
+  });
+
+  it("keeps the current values for a null provider aircheck", () => {
+    const input = assembleLearningInput(
+      raw({
+        deals: [{ ...raw().deals[0], status: "delivering" }],
+        lines: [{ ...raw().lines[0], verified: false }],
+        airchecks: [
+          {
+            io_line_item_id: "line-1",
+            provider: null,
+            review_decision: "confirmed",
+            match_evidence: { code_or_url: "found" },
+          },
+        ],
+      })
+    );
+    expect(input.deals[0].codeOnAir).toBe("found");
+    expect(input.deals[0].aircheckDecision).toBe("confirmed");
+    expect(input.deals[0].aired).toBe(true);
+  });
+
+  it("shows only the podscan result when a youtube-captions row is also present", () => {
+    const input = assembleLearningInput(
+      raw({
+        deals: [{ ...raw().deals[0], status: "delivering" }],
+        lines: [
+          { ...raw().lines[0], id: "line-podscan", verified: false },
+          { ...raw().lines[0], id: "line-yt", verified: false },
+        ],
+        airchecks: [
+          {
+            io_line_item_id: "line-podscan",
+            provider: "podscan",
+            review_decision: "rejected",
+            match_evidence: { code_or_url: "missing" },
+          },
+          {
+            io_line_item_id: "line-yt",
+            provider: "youtube-captions",
+            review_decision: "confirmed",
+            match_evidence: { code_or_url: "found" },
+          },
+        ],
+      })
+    );
+    expect(input.deals[0].codeOnAir).toBe("missing");
+    expect(input.deals[0].aircheckDecision).toBe("rejected");
+    expect(input.deals[0].aired).toBe(false);
+  });
 });
 
 describe("learning modules stay off podscan and the closed money paths", () => {

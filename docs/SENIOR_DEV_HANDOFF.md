@@ -2846,6 +2846,53 @@ Existing charge cases still pass: $275 at 10%, $270 at 8%, $265 at 6%, the legac
 - SA-26 (Data API writes on `gross_rate` and deal columns) is migration 085, not this job.
 - No page or component was edited. Screenshots are not applicable. This PR does not merge. Paul reviews.
 
+## LRN-YT: keep YouTube caption airchecks out of learning
+
+### What was built
+
+Airchecks with provider `youtube-captions` are dropped before they can enter a learning review. `isGoogleDerivedAircheck` matches that string exactly. Null, a missing provider, `podscan`, `deepgram`, `whisper`, and `YouTube-Captions` still count.
+
+`load.ts` selects `provider` on both aircheck reads and runs `filterLearningAirchecks` on both result sets before the merge. If the provider column cannot be read, `selectInOptional` already returns `[]`. There is no second read that omits `provider`.
+
+`assemble.ts` adds `provider` on `RawAircheck` and skips a Google-derived row when building the per-line map. A delivering deal whose only aircheck is `youtube-captions`, confirmed with a code found, gets `codeOnAir` null and `aircheckDecision` null, and that row does not mark the deal aired. The same deal with a `podscan` row, or a null provider, still gets `codeOnAir` `found`, `aircheckDecision` `confirmed`, and `aired` true. A mixed deal (podscan rejected, plus youtube-captions confirmed) shows only the podscan result. A completed deal or a verified line can still be aired from those other signals. `review.ts` was not edited. It still reads the assembled fields.
+
+Pooled jobs do not read airchecks. `pooled-guard.test.ts` fails if `pooled-deal-priors.ts`, `pooled-priors.ts`, `post-air-outcomes.ts`, or migration 069 contains `airchecks` or `youtube_aircheck_metrics`. The failure message says to read `docs/jobs/LRN-YT.md` first.
+
+No migration. No live write. Read-only precheck on `ldtmhafewfifdizgfrnn` (Nov 11, 2026): 0 rows in `airchecks`, so no provider values and no `youtube-captions` rows. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. No screen, style, or animation was changed. No Vercel env change.
+
+`/campaigns/[id]/learning` was not edited. It still loads through `resolveLearningPage` and `buildLearningReview`. With no YouTube caption aircheck, the assembled review is the same as before this change. The existing assemble fixture (no provider) still passes. The page was not opened in a browser: it requires a signed-in session, and the live table has no aircheck rows to differ on.
+
+### Where
+
+- `lib/learning/google-data.ts` and `google-data.test.ts`
+- `lib/learning/load.ts` (`filterLearningAirchecks`, both aircheck selects)
+- `lib/learning/assemble.ts` and `assemble.test.ts`
+- `lib/learning/pooled-guard.test.ts`
+- `docs/jobs/LRN-YT.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run lib/learning`: 10 files, 70 passed.
+
+`npx vitest run`: 364 files, 3115 passed, 41 skipped.
+
+`npx next build` compiled successfully and generated 142 static pages. `/campaigns/[id]/learning` stays dynamic.
+
+`rg -n "youtube-captions" lib/learning --glob '!*.test.ts'` matches only `lib/learning/google-data.ts`. `rg -n "airchecks" lib/learning/pooled-deal-priors.ts lib/learning/pooled-priors.ts lib/learning/post-air-outcomes.ts` is empty.
+
+Covers `youtube-captions` true, and null, undefined, `podscan`, `deepgram`, `whisper`, and `YouTube-Captions` false. The load helper drops only `youtube-captions`. Both load selects include `provider` and both results are filtered. Assemble covers a youtube-captions-only deal, the same deal with podscan, a null provider, and a mixed deal. The existing assemble tests are unchanged and passed. The pooled guard passes on these sources.
+
+### Known gaps
+
+- AC-YT has not written a row yet. This filter is in place before that write.
+- A failed provider-column read drops every aircheck on that load, because both reads return `[]`. There is no fallback. `provider` is live on migration 038.
+- `review.ts` still treats a confirmed aircheck as aired. It only sees rows assemble kept.
+- A future job that reads `airchecks` or `youtube_aircheck_metrics` for learning or pooling needs Chris's OK plus a Limited Use review.
+- No page or component was edited. Screenshots are not applicable. This PR does not merge. Paul reviews.
+
 ## AC3
 
 ### What was built
