@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AircheckPersist } from "./persist";
 import { runAutomatedAirchecks, type AircheckRunDeps } from "./run";
 import { splitAudioForWhisper } from "./audio";
@@ -87,17 +87,81 @@ function deps(partial: Partial<AircheckRunDeps>): AircheckRunDeps {
 }
 
 describe("runAutomatedAirchecks", () => {
-  it("skips the run when OPENAI_API_KEY is unset", async () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("skips the run when the provider is not configured", async () => {
     const loadSpots = vi.fn();
+    const lines: string[] = [];
     const report = await runAutomatedAirchecks(
       deps({
         provider: { ...provider(600), isConfigured: () => false },
         loadSpots,
+        log: (line) => lines.push(line),
       })
     );
-    expect(report.skipped).toBe("missing_openai_api_key");
+    expect(report.skipped).toBe("missing_transcription_api_key");
+    expect(lines).toContain(
+      "[aircheck] skipped no transcription provider configured (DEEPGRAM_API_KEY and OPENAI_API_KEY unset, or whisper-1 past shutdown)"
+    );
     expect(loadSpots).not.toHaveBeenCalled();
     expect(report.transcribed).toBe(0);
+  });
+
+  it("skips with a logged reason and fetches nothing when no transcription key is set", async () => {
+    vi.stubEnv("DEEPGRAM_API_KEY", "");
+    vi.stubEnv("OPENAI_API_KEY", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const loadSpots = vi.fn();
+    const lines: string[] = [];
+    const report = await runAutomatedAirchecks({
+      log: (line) => lines.push(line),
+      loadSpots,
+    });
+    expect(report.skipped).toBe("missing_transcription_api_key");
+    expect(lines).toEqual([
+      "[aircheck] skipped no transcription provider configured (DEEPGRAM_API_KEY and OPENAI_API_KEY unset, or whisper-1 past shutdown)",
+    ]);
+    expect(loadSpots).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(report.transcribed).toBe(0);
+  });
+
+  it("uses whisper-1 and logs the fallback when only OPENAI_API_KEY is set", async () => {
+    vi.stubEnv("DEEPGRAM_API_KEY", "");
+    vi.stubEnv("OPENAI_API_KEY", "sk-test-fallback");
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          text: "This episode is brought to you by Sauna Box. Use code HUBERMAN at saunabox.com.",
+          duration: 600,
+          segments: [
+            {
+              start: 600,
+              end: 650,
+              text: "This episode is brought to you by Sauna Box. Use code HUBERMAN at saunabox.com.",
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const lines: string[] = [];
+    const { provider: _provider, ...rest } = deps({ log: (line) => lines.push(line) });
+    const report = await runAutomatedAirchecks(rest);
+    expect(lines[0]).toBe("[aircheck] provider=whisper-1 fallback (DEEPGRAM_API_KEY unset)");
+    expect(report.skipped).toBeNull();
+    expect(report.transcribed).toBe(1);
+    expect(report.spentUsd).toBe(0.06);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.openai.com/v1/audio/transcriptions");
+    expect((init.headers as { Authorization: string }).Authorization).toBe("Bearer sk-test-fallback");
+    expect(lines.join(" ")).not.toContain("sk-test-fallback");
   });
 
   it("stops before a download that would pass the cost cap", async () => {
@@ -389,6 +453,193 @@ describe("runAutomatedAirchecks", () => {
     expect(saved[0].error).not.toContain("sk-supersecretkey");
     expect(saved[0].error).toContain("sk-[redacted]");
     expect(lines.join(" ")).not.toContain("sk-supersecretkey");
+  });
+
+  it("leaves the next spot and the report intact when one provider call throws", async () => {
+    const transcribe = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("boom sk-supersecretkey"))
+      .mockResolvedValueOnce({
+        ok: true as const,
+        provider: "openai-whisper",
+        text: "This episode is brought to you by Sauna Box. Use code HUBERMAN at saunabox.com.",
+        segments: [
+          {
+            start_seconds: 600,
+            end_seconds: 650,
+            text: "This episode is brought to you by Sauna Box. Use code HUBERMAN at saunabox.com.",
+          },
+        ],
+        durationSeconds: 600,
+      });
+    const saved: AircheckPersist[] = [];
+    const report = await runAutomatedAirchecks(
+      deps({
+        provider: { ...provider(600), transcribe },
+        loadSpots: async () => [spot({ ioLineItemId: "line-1" }), spot({ ioLineItemId: "line-2" })],
+        save: async (row) => {
+          saved.push(row);
+          return { id: `air-${row.io_line_item_id}` };
+        },
+      })
+    );
+    expect(report.failed).toBe(1);
+    expect(report.transcribed).toBe(1);
+    expect(report.considered).toBe(2);
+    expect(report.readyForReview).toBe(1);
+    expect(saved.map((row) => row.io_line_item_id)).toEqual(["line-1", "line-2"]);
+    expect(saved[0].status).toBe("failed");
+    expect(saved[1].status).toBe("transcribed");
+    expect(JSON.stringify(saved)).not.toContain("sk-supersecretkey");
+  });
+
+  it("fits a 0.0056 provider inside a cap that whisper's 0.006 misses", async () => {
+    const findEpisode = async () => ({
+      episodeIdentifier: "ep-1",
+      audioUrl: "https://cdn.example.com/ep.mp3",
+      durationSeconds: 45 * 60,
+      source: "rss" as const,
+      note: null,
+    });
+    const download = vi.fn(async () => ({
+      ok: true as const,
+      audio: {
+        bytes: new Uint8Array([1, 2, 3, 4]),
+        mimeType: "audio/mpeg",
+        filename: "ep.mp3",
+      },
+    }));
+    const transcribe = vi.fn(async () => ({
+      ok: true as const,
+      provider: "deepgram-nova-3",
+      text: "This episode is brought to you by Sauna Box. Use code HUBERMAN at saunabox.com.",
+      segments: [
+        {
+          start_seconds: 1,
+          end_seconds: 30,
+          text: "This episode is brought to you by Sauna Box. Use code HUBERMAN at saunabox.com.",
+        },
+      ],
+      durationSeconds: 45 * 60,
+    }));
+    const blocked = await runAutomatedAirchecks(
+      deps({
+        capUsd: 0.26,
+        provider: { ...provider(45 * 60), usdPerMinute: 0.006, transcribe },
+        download,
+        findEpisode,
+      })
+    );
+    expect(blocked.stopped).toBe("cost_cap");
+    expect(blocked.spentUsd).toBe(0);
+    expect(download).not.toHaveBeenCalled();
+
+    const saved: AircheckPersist[] = [];
+    const allowed = await runAutomatedAirchecks(
+      deps({
+        capUsd: 0.26,
+        provider: {
+          ...provider(45 * 60),
+          id: "deepgram-nova-3",
+          usdPerMinute: 0.0056,
+          transcribe,
+        },
+        download,
+        findEpisode,
+        save: async (row) => {
+          saved.push(row);
+          return { id: "air-rate" };
+        },
+      })
+    );
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(allowed.stopped).toBeNull();
+    expect(allowed.transcribed).toBe(1);
+    expect(allowed.spentUsd).toBe(0.252);
+    expect(saved[0].estimated_cost_usd).toBe(0.252);
+    expect(saved[0].provider).toBe("deepgram-nova-3");
+  });
+
+  it("passes brand, promo code, and url host hints to the provider", async () => {
+    let hints: string[] | undefined;
+    const transcribe = vi.fn(async (audio: { hints?: string[] }) => {
+      hints = audio.hints;
+      return {
+        ok: true as const,
+        provider: "deepgram-nova-3",
+        text: "This episode is brought to you by Sauna Box. Use code HUBERMAN at saunabox.com.",
+        segments: [
+          {
+            start_seconds: 600,
+            end_seconds: 650,
+            text: "This episode is brought to you by Sauna Box. Use code HUBERMAN at saunabox.com.",
+          },
+        ],
+        durationSeconds: 600,
+      };
+    });
+    await runAutomatedAirchecks(
+      deps({
+        provider: { ...provider(600), id: "deepgram-nova-3", usdPerMinute: 0.0056, transcribe },
+        loadSpots: async () => [
+          spot({
+            buy: {
+              brandNames: ["Sauna Box", "SaunaBox"],
+              promoCode: "HUBERMAN",
+              url: "https://www.saunabox.com/offer",
+              placement: "mid-roll",
+              talkingPoints: null,
+            },
+          }),
+        ],
+      })
+    );
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(hints).toEqual(["Sauna Box", "SaunaBox", "HUBERMAN", "www.saunabox.com"]);
+  });
+
+  it("sums segment offsets across two split pieces", async () => {
+    const transcribe = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true as const,
+        provider: "deepgram-nova-3",
+        text: "This episode is brought to you by Sauna Box.",
+        segments: [{ start_seconds: 1, end_seconds: 4, text: "This episode is brought to you by Sauna Box." }],
+        durationSeconds: 10,
+      })
+      .mockResolvedValueOnce({
+        ok: true as const,
+        provider: "deepgram-nova-3",
+        text: "Use code HUBERMAN at saunabox.com.",
+        segments: [{ start_seconds: 2, end_seconds: 6, text: "Use code HUBERMAN at saunabox.com." }],
+        durationSeconds: 10,
+      });
+    const saved: AircheckPersist[] = [];
+    const report = await runAutomatedAirchecks(
+      deps({
+        provider: { ...provider(10), id: "deepgram-nova-3", usdPerMinute: 0.0056, transcribe },
+        splitAudio: () => [new Uint8Array([1]), new Uint8Array([2])],
+        save: async (row) => {
+          saved.push(row);
+          return { id: "air-split" };
+        },
+      })
+    );
+    expect(transcribe).toHaveBeenCalledTimes(2);
+    expect(report.transcribed).toBe(1);
+    expect(saved[0].transcript_segments).toEqual([
+      {
+        start_seconds: 1,
+        end_seconds: 4,
+        text: "This episode is brought to you by Sauna Box.",
+      },
+      {
+        start_seconds: 12,
+        end_seconds: 16,
+        text: "Use code HUBERMAN at saunabox.com.",
+      },
+    ]);
   });
 
   it("does not import the charge path", () => {

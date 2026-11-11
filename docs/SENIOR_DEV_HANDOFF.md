@@ -10,9 +10,9 @@ Booked means deal status `show_signed`, `delivering`, `signed`, `live`, or `comp
 
 Part 1. A podcast spot fetches that show's RSS and downloads the enclosure published inside the window, or the enclosure for the episode URL already on the line. A YouTube spot uses `YouTubeClient.recentUploadsStats` for that channel's recent long-form uploads, or `getVideo` when the line already names a video id. That is the same client the YouTube library uses. The library pull, the search catalog, and `youtube_pull_queue` are not called. The audio is written to a temp file and deleted when transcription finishes, including when transcription throws. The publisher URL is kept on `audio_url`. The file is not uploaded to storage.
 
-Transcription goes through `TranscriptProvider`. The first provider is OpenAI `whisper-1` (`lib/airchecks/openai-whisper.ts`). `OPENAI_API_KEY` is read from the environment. It is not set. The cron then returns 200 with `skipped: "missing_openai_api_key"` and writes nothing. An mp3 over 24MB is split on frame boundaries so each upload stays under Whisper's 25MB limit. A file that large that is not mp3 is stored as failed. Segments are `{ start_seconds, end_seconds, text }`.
+Transcription goes through `TranscriptProvider`. Deepgram Nova-3 (`lib/airchecks/deepgram.ts`) is used when `DEEPGRAM_API_KEY` is set. The request asks for utterances, so each segment still has a start and an end, and it sends `mip_opt_out=true` and `redact_usage=true`. Brand names, the promo code, and the brand URL host are keyterms (at most 20, each at most 60 characters). If that key is missing, `OPENAI_API_KEY` is set, and the date is before 2027-02-26T00:00:00Z, the runner uses whisper-1 (`lib/airchecks/openai-whisper.ts`) and logs the fallback. Otherwise the cron returns 200 with `skipped: "missing_transcription_api_key"` and writes nothing. An mp3 over 24MB is split on frame boundaries so each upload stays under 24MB. A file that large that is not mp3 is stored as failed. Segments are `{ start_seconds, end_seconds, text }`.
 
-Cost. whisper-1 is priced at $0.006 per minute in `WHISPER_USD_PER_MINUTE`. A 30-minute episode is $0.18. A 45-minute episode is $0.27. A 60-minute episode is $0.36. `AIRCHECK_RUN_COST_CAP_USD` defaults to $1 when unset, about 166 minutes, about three 45-minute episodes. `0` stops the run before any download. The next episode is skipped when its estimate would pass the cap. The log line is `[aircheck] line=... minutes=... estimated_cost_usd=... provider=openai-whisper`. The key and the transcript are not logged. The stored cost uses the duration Whisper returns. A guess from file size, at 128 kbps, is used only to decide whether to start.
+Cost. The cap and the stored estimate use the active provider's own rate. Deepgram Nova-3 with keyterms is $0.0056 per minute in `DEEPGRAM_USD_PER_MINUTE` ($0.0043 plus $0.0013). A 30-minute episode is $0.168. A 45-minute episode is $0.252. A 60-minute episode is $0.336. whisper-1 stays $0.006 per minute in `WHISPER_USD_PER_MINUTE` (30 minutes $0.18, 45 minutes $0.27, 60 minutes $0.36) and is priced only when that fallback is the provider. `AIRCHECK_RUN_COST_CAP_USD` defaults to $1 when unset. At the Deepgram rate that is about 178 minutes. `0` stops the run before any download. The next episode is skipped when its estimate would pass the cap. The log line is `[aircheck] line=... minutes=... estimated_cost_usd=... provider=...`. The key and the transcript are not logged. The stored cost uses the duration the provider returns. A guess from file size, at 128 kbps, is used only to decide whether to start.
 
 Part 2. The read is located from the brand name, `deals.promo_code`, the brand URL, and bullet lines in the outreach pitch. The IO has no talking-points column. The judgment checks placement (pre-roll, mid-roll, post-roll, by where the read starts in the episode) and approximate length (about 30s pre-roll, 60s mid-roll, 30s post-roll, counted when the measured span is between half and double that). Confidence is 0 to 1: brand 0.40, code or URL 0.30, placement 0.15, length 0.10, talking points 0.05. `ready_for_review` is set for `matched` and `not_matched`. A skipped row stays false. `review_decision` is not set. `io_line_items.verified` is not set. No payment row is written. The make-good hook is not called from this cron.
 
@@ -2757,3 +2757,46 @@ Covers a discoverable normalized name, the caller's hidden show, another rep's h
 - Tay is not plan-gated. The icon is the shared `shows` icon.
 - CA1 claim race and the fallback usage test were already shipped in SEC2. Nothing changed there.
 - This PR does not merge. Paul reviews.
+
+## AC-TX: Deepgram Nova-3 for aircheck transcription
+
+### What was built
+
+The automated aircheck runner transcribes through Deepgram Nova-3 when `DEEPGRAM_API_KEY` is set. Utterances become timestamped segments, so `locateAdRead` still finds the ad start, checks placement and length, and the review screen is unchanged. The request sends `mip_opt_out=true` and `redact_usage=true`. Brand names, the promo code, and the brand URL host are keyterms, capped at 20 terms of 60 characters.
+
+If `DEEPGRAM_API_KEY` is missing, the runner uses whisper-1 only when `OPENAI_API_KEY` is set and the time is before `2027-02-26T00:00:00Z`, and it logs `[aircheck] provider=whisper-1 fallback (DEEPGRAM_API_KEY unset)` once per run. Otherwise it skips with `missing_transcription_api_key` and logs the reason. The cron route was not edited. It still returns the report with 200. A provider error on one spot stays on that spot.
+
+The cost cap and the stored `estimated_cost_usd` use the active provider's rate. Nova-3 with keyterms is $0.0056 per minute. whisper-1 stays $0.006 and is only priced when that fallback is selected. `openai-whisper.ts` was not edited.
+
+No migration. No live write. Read-only precheck on `ldtmhafewfifdizgfrnn` (Nov 11, 2026): 0 airchecks, no provider values, 0 booked lines with a post date in the last 14 days. `lib/stripe`, `lib/payouts`, `lib/billing`, and `plans.ts` were not edited. No screen, style, or animation was changed. No Vercel env change.
+
+### Where
+
+- `lib/airchecks/deepgram.ts` and `deepgram.test.ts`
+- `lib/airchecks/provider-select.ts` and `provider-select.test.ts`
+- `lib/airchecks/provider.ts` (`hints` on `TranscriptionAudio`)
+- `lib/airchecks/cost.ts` and `cost.test.ts` (`DEEPGRAM_USD_PER_MINUTE`, `estimateTranscriptCostUsd`)
+- `lib/airchecks/run.ts` and `run.test.ts` (provider choice, skip reason, cost lines, hints)
+- `docs/jobs/AC-TX.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (transcription and cost paragraphs, and this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 362 files, 3098 passed, 41 skipped.
+
+`npx vitest run lib/airchecks app/api/cron/airchecks app/api/admin/aircheck`: 18 files, 98 passed.
+
+`npx next build` compiled successfully and generated 142 static pages.
+
+Covers Nova-3 query params (`model`, `utterances`, `mip_opt_out`, `redact_usage`, one encoded keyterm per hint, capped at 20), the Token header, utterance segments, missing key with no fetch, redacted 4xx and 5xx, bad JSON, an empty transcript, and a timeout message that contains "timed out". Provider selection covers Deepgram when both keys are set, whisper before the shutdown, none on 2027-02-26, none with no keys, a whitespace key, and a throwing env. The runner skips with `missing_transcription_api_key` and fetches nothing when no key is set, logs and uses the whisper fallback when only `OPENAI_API_KEY` is set, keeps the next spot when one call throws, prices a 0.0056 provider inside a cap that 0.006 misses, passes hints, and still sums segment offsets across two split pieces.
+
+### Known gaps
+
+- `DEEPGRAM_API_KEY` is not set by this PR. Chris opens the Deepgram account, accepts the DPA, and sets the key in Vercel Production. Until then the cron skips, unless `OPENAI_API_KEY` is set before Feb 26, 2027.
+- `.env.example` is owned by AC-YT. This job does not add the key name there. `docs/jobs/AC-TX.md` lists `DEEPGRAM_API_KEY` as the one new env name.
+- After Feb 26, 2027: delete `openai-whisper.ts`, the `WHISPER_*` constants, and the Whisper name on the splitter. Keep the splitter.
+- `lib/airchecks/transcribe-audio.ts` (the admin step) still uses its own provider. It was not switched.
+- `AircheckRunReport.skipped` still includes the old `missing_openai_api_key` literal. The cron route test mocks that string. Nothing in the runner sets it now.
+- No page or component was edited. Screenshots are not applicable. This PR does not merge. Paul reviews.
