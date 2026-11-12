@@ -170,6 +170,16 @@ vi.mock("@/lib/auth/auth-email", () => ({
 
 const releaseHeldPayoutsForShow = vi.hoisted(() => vi.fn());
 
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>();
+  return {
+    ...actual,
+    after(task: () => unknown) {
+      void task();
+    },
+  };
+});
+
 vi.mock("@/lib/payouts/release", () => ({
   releaseHeldPayoutsForShow: (...args: unknown[]) => releaseHeldPayoutsForShow(...args),
 }));

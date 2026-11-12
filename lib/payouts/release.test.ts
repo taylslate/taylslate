@@ -24,6 +24,7 @@ const stripeState = vi.hoisted(() => ({
   creates: 0,
   listed: [] as Record<string, unknown>[],
   inflight: new Map<string, Promise<Record<string, unknown>>>(),
+  paramsByKey: new Map<string, string>(),
 }));
 
 function matches(row: Row, filters: Filter[]): boolean {
@@ -32,6 +33,16 @@ function matches(row: Row, filters: Filter[]): boolean {
     if (filter.op === "in") return (filter.value as unknown[]).includes(row[filter.column]);
     if (filter.op === "is") return filter.value == null ? row[filter.column] == null : row[filter.column] === filter.value;
     if (filter.op === "not" && filter.operator === "is") return row[filter.column] != null;
+    if (filter.op === "not" && filter.column === "payments.status" && filter.operator === "in") {
+      const payment = (db.payments ?? []).find((item) => item.id === row.payment_id);
+      const status = typeof payment?.status === "string" ? payment.status : "";
+      const blocked = String(filter.value)
+        .replace(/[()"]/g, "")
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      return !blocked.includes(status);
+    }
     return false;
   });
 }
@@ -132,8 +143,18 @@ function builder(table: string) {
 
 const stripe = vi.hoisted(() => ({
   transfers: {
-    create: vi.fn(async (params: { metadata?: Record<string, unknown>; amount?: number }, opts?: { idempotencyKey?: string }) => {
+    create: vi.fn(async (params: Record<string, unknown>, opts?: { idempotencyKey?: string }) => {
       const key = opts?.idempotencyKey ?? "none";
+      const metadata = (params.metadata ?? {}) as Record<string, unknown>;
+      const amount = params.amount;
+      const encoded = JSON.stringify(params);
+      const previous = stripeState.paramsByKey.get(key);
+      if (previous !== undefined && previous !== encoded) {
+        const err = new Error("idempotency_error");
+        err.name = "StripeIdempotencyError";
+        throw err;
+      }
+      if (previous === undefined) stripeState.paramsByKey.set(key, encoded);
       if (stripeState.mode === "reject-second") {
         stripeState.creates += 1;
         const n = stripeState.creates;
@@ -143,7 +164,7 @@ const stripe = vi.hoisted(() => ({
           err.name = "StripeIdempotencyError";
           throw err;
         }
-        return { id: "tr_first", metadata: params.metadata ?? {}, reversed: false, amount: params.amount };
+        return { id: "tr_first", metadata, reversed: false, amount };
       }
       const pending = stripeState.inflight.get(key);
       if (pending) return pending;
@@ -152,9 +173,9 @@ const stripe = vi.hoisted(() => ({
         await new Promise((resolve) => setTimeout(resolve, 15));
         return {
           id: `tr_${stripeState.creates}`,
-          metadata: params.metadata ?? {},
+          metadata,
           reversed: false,
-          amount: params.amount,
+          amount,
         };
       })();
       stripeState.inflight.set(key, next);
@@ -191,6 +212,7 @@ function reset() {
   stripeState.creates = 0;
   stripeState.listed = [];
   stripeState.inflight = new Map();
+  stripeState.paramsByKey = new Map();
   stripe.transfers.create.mockClear();
   stripe.transfers.list.mockClear();
   stripe.paymentIntents.retrieve.mockClear();
@@ -267,6 +289,60 @@ describe("releaseHeldPayoutsForShow", () => {
     expect(stripe.transfers.create).toHaveBeenCalledTimes(1);
   });
 
+  it("uses the same create params for a held release as a fresh payout", async () => {
+    seedHeld();
+    db.payouts = [];
+    await transferPayoutForPayment(PAY);
+    const fresh = stripe.transfers.create.mock.calls[0][0] as Record<string, unknown>;
+    db.payouts = [
+      {
+        id: "po-held",
+        payment_id: PAY,
+        stripe_transfer_id: null,
+        amount_cents: 25000,
+        early_payout_fee_cents: 0,
+        transferred_at: null,
+        created_at: "2026-04-02T00:00:00.000Z",
+        updated_at: "2026-04-02T00:00:00.000Z",
+      },
+    ];
+    stripe.transfers.create.mockClear();
+    stripeState.inflight = new Map();
+    stripeState.creates = 0;
+    await releaseHeldPayoutsForShow(SHOW);
+    const released = stripe.transfers.create.mock.calls[0][0] as Record<string, unknown>;
+    const shape = (params: Record<string, unknown>) => {
+      const meta = params.metadata as Record<string, unknown>;
+      return {
+        amount: params.amount,
+        currency: params.currency,
+        destination: params.destination,
+        source_transaction: params.source_transaction,
+        transfer_group: params.transfer_group,
+        metadata: {
+          payment_id: meta.payment_id,
+          io_line_item_id: meta.io_line_item_id,
+          deal_id: meta.deal_id,
+        },
+      };
+    };
+    expect(shape(released)).toEqual(shape(fresh));
+    expect(db.payouts[0].stripe_transfer_id).toBeTruthy();
+  });
+
+  it("rejects a repeated idempotency key when the params differ", async () => {
+    await stripe.transfers.create(
+      { amount: 25000, currency: "usd", metadata: { payment_id: PAY } },
+      { idempotencyKey: `transfer:v2:${PAY}` }
+    );
+    await expect(
+      stripe.transfers.create(
+        { amount: 1, currency: "usd", metadata: { payment_id: PAY } },
+        { idempotencyKey: `transfer:v2:${PAY}` }
+      )
+    ).rejects.toThrow("idempotency_error");
+  });
+
   it("collapses two parallel releases to one transfer", async () => {
     seedHeld();
     const [a, b] = await Promise.all([releaseHeldPayoutsForShow(SHOW), releaseHeldPayoutsForShow(SHOW)]);
@@ -322,15 +398,48 @@ describe("releaseHeldPayoutsForShow", () => {
 });
 
 describe("sweepHeldPayouts", () => {
-  it("leaves an unverified owner held with no write", async () => {
+  it("leaves an unverified owner held and bumps updated_at", async () => {
     seedHeld();
     db.show_ownership_proofs = [];
-    const before = JSON.stringify(db.payouts[0]);
+    db.payouts[0].updated_at = "2020-01-01T00:00:00.000Z";
     const counts = await sweepHeldPayouts();
     expect(counts).toEqual({ released: 0, held: 1, failed: 0 });
-    expect(JSON.stringify(db.payouts[0])).toBe(before);
+    expect(db.payouts[0].stripe_transfer_id).toBeNull();
+    expect(db.payouts[0].amount_cents).toBe(25000);
+    expect(String(db.payouts[0].updated_at) > "2020-01-01T00:00:00.000Z").toBe(true);
     expect(stripe.transfers.create).not.toHaveBeenCalled();
     expect(stripe.paymentIntents.retrieve).not.toHaveBeenCalled();
+  });
+
+  it("skips failed and disputed payments", async () => {
+    seedHeld({ status: "failed" });
+    db.payouts[0].updated_at = "2019-01-01T00:00:00.000Z";
+    const before = JSON.stringify(db.payouts[0]);
+    db.payments.push({
+      id: "pay-disputed",
+      deal_id: DEAL,
+      io_line_item_id: "line-d",
+      stripe_payment_intent_id: "pi_d",
+      amount_charged_cents: 11000,
+      application_fee_amount_cents: 1000,
+      gross_amount_cents: 10000,
+      settled_at: "2026-04-01T00:00:00.000Z",
+      status: "disputed",
+    });
+    db.payouts.push({
+      id: "po-disputed",
+      payment_id: "pay-disputed",
+      stripe_transfer_id: null,
+      amount_cents: 10000,
+      early_payout_fee_cents: 0,
+      transferred_at: null,
+      updated_at: "2019-06-01T00:00:00.000Z",
+    });
+    const counts = await sweepHeldPayouts();
+    expect(counts).toEqual({ released: 0, held: 0, failed: 0 });
+    expect(JSON.stringify(db.payouts[0])).toBe(before);
+    expect(db.payouts[1].stripe_transfer_id).toBeNull();
+    expect(stripe.transfers.create).not.toHaveBeenCalled();
   });
 
   it("releases the oldest 100 held rows and leaves the rest", async () => {
@@ -364,14 +473,36 @@ describe("sweepHeldPayouts", () => {
         early_payout_fee_cents: 0,
         transferred_at: null,
         created_at: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+        updated_at: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
       });
     }
+    db.payments.push({
+      id: "pay-failed",
+      deal_id: "deal-failed",
+      io_line_item_id: "line-failed",
+      stripe_payment_intent_id: "pi_failed",
+      amount_charged_cents: 11000,
+      application_fee_amount_cents: 1000,
+      gross_amount_cents: 10000,
+      settled_at: "2026-04-01T00:00:00.000Z",
+      status: "failed",
+    });
+    db.deals.push({ id: "deal-failed", show_id: SHOW, show_profile_id: PROFILE });
+    db.payouts.push({
+      id: "po-failed",
+      payment_id: "pay-failed",
+      stripe_transfer_id: null,
+      amount_cents: 10000,
+      early_payout_fee_cents: 0,
+      transferred_at: null,
+      updated_at: "2019-01-01T00:00:00.000Z",
+    });
     const counts = await sweepHeldPayouts();
     expect(counts.released).toBe(100);
     expect(counts.failed).toBe(0);
     const stillHeld = db.payouts.filter((row) => row.stripe_transfer_id == null);
-    expect(stillHeld).toHaveLength(1);
-    expect(stillHeld[0].payment_id).toBe("pay-100");
+    expect(stillHeld.map((row) => row.payment_id).sort()).toEqual(["pay-100", "pay-failed"]);
+    expect(db.payouts.find((row) => row.payment_id === "pay-failed")?.updated_at).toBe("2019-01-01T00:00:00.000Z");
     expect(stripe.transfers.create).toHaveBeenCalledTimes(100);
   });
 

@@ -33,7 +33,7 @@ export default async function OwnershipSettingsPage() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
     supabase.from("show_profiles").select("feed_url").eq("user_id", user.id).maybeSingle(),
-    supabase.from("payouts").select("id").is("stripe_transfer_id", null),
+    supabase.from("payouts").select("id").is("stripe_transfer_id", null).limit(1),
   ]);
 
   let payoutWaiting = false;

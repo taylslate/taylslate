@@ -2,7 +2,7 @@
 // Writes go through supabaseAdmin. decided_by is the session user id.
 // Logs are a route tag and a Postgres error code. No message, id, or email.
 
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getAuthEmail } from "@/lib/auth/auth-email";
 import { isUuid } from "@/lib/api/v1/pagination";
 import {
@@ -626,6 +626,20 @@ async function approveInner(input: {
   return finishAdminVerify(showId, input.adminId, nowIso);
 }
 
+function releaseAfterResponse(showId: string): void {
+  const logFailure = (err: unknown) => {
+    const name = err instanceof Error ? err.name : "";
+    logCode(ADMIN_TAG, /^[A-Za-z0-9_]+$/.test(name) ? name : "throw");
+  };
+  try {
+    after(() => {
+      void releaseHeldPayoutsForShow(showId).catch(logFailure);
+    });
+  } catch (err) {
+    logFailure(err);
+  }
+}
+
 async function finishAdminVerify(showId: string, adminId: string, nowIso: string): Promise<{ ok: true } | Fail> {
   const show = await supabaseAdmin.from("shows").update({ ownership_status: "verified" }).eq("id", showId);
   if (show.error) {
@@ -648,12 +662,7 @@ async function finishAdminVerify(showId: string, adminId: string, nowIso: string
     logCode(ADMIN_TAG, siblings.error.code);
     return { ok: false, status: 500, error: OWNERSHIP_APPROVE_FAILED };
   }
-  try {
-    await releaseHeldPayoutsForShow(showId);
-  } catch (err) {
-    const name = err instanceof Error ? err.name : "";
-    logCode(ADMIN_TAG, /^[A-Za-z0-9_]+$/.test(name) ? name : "throw");
-  }
+  releaseAfterResponse(showId);
   return { ok: true };
 }
 

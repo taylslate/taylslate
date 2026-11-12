@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // `payouts` independently. Stripe is a thin object whose `transfers.create`
 // is asserted against directly.
 
-const { stripe, supabaseAdmin, supabaseTables, payoutInsertCapture, payoutUpdateCapture, builders, sendEmail, getAuthEmail } =
+const { stripe, supabaseAdmin, supabaseTables, payoutInsertCapture, payoutUpdateCapture, sendEmail, getAuthEmail } =
   vi.hoisted(() => {
     interface TableState {
       row?: unknown;
@@ -23,7 +23,6 @@ const { stripe, supabaseAdmin, supabaseTables, payoutInsertCapture, payoutUpdate
       selectReads?: number;
     }
     const tables: Record<string, TableState> = {};
-    const builders: Record<string, ReturnType<typeof makeBuilder>> = {};
     const payoutInsertCapture: { value: unknown } = { value: null };
     const payoutUpdateCapture: { value: unknown } = { value: null };
 
@@ -62,6 +61,9 @@ const { stripe, supabaseAdmin, supabaseTables, payoutInsertCapture, payoutUpdate
               error: null,
             };
           }
+          if (table === "payouts" && state.readError) {
+            return { data: null, error: state.readError };
+          }
           if (table === "payouts") {
             state.selectReads = (state.selectReads ?? 0) + 1;
             if (state.selectReads > 1 && "reread" in state) {
@@ -91,15 +93,11 @@ const { stripe, supabaseAdmin, supabaseTables, payoutInsertCapture, payoutUpdate
         paymentIntents: { retrieve: vi.fn() },
       },
       supabaseAdmin: {
-        from: vi.fn((table: string) => {
-          builders[table] = makeBuilder(table);
-          return builders[table];
-        }),
+        from: vi.fn((table: string) => makeBuilder(table)),
       },
       supabaseTables: tables,
       payoutInsertCapture,
       payoutUpdateCapture,
-      builders,
       sendEmail: vi.fn(),
       getAuthEmail: vi.fn(),
     };
@@ -644,6 +642,34 @@ describe("transferPayoutForPayment — settle gate (load-bearing financial invar
     expect(logs.join("\n")).toContain("payout_conflict");
     expect(logs.join("\n")).not.toContain("secret-db-text");
     expect(logEvent).not.toHaveBeenCalledWith(expect.objectContaining({ eventType: "payout.released" }));
+  });
+
+  it("throws when the payout row read fails for a verified owner and does not transfer", async () => {
+    const logs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+    setPayment({
+      id: "pay_read",
+      deal_id: "deal_read",
+      io_line_item_id: "li_read",
+      stripe_payment_intent_id: "pi_read",
+      amount_charged_cents: 11000,
+      application_fee_amount_cents: 1000,
+      gross_amount_cents: 10000,
+      settled_at: SETTLED_AT,
+      status: "succeeded",
+    });
+    setVerifiedDeal({ id: "deal_read", show_profile_id: "sp_read" });
+    setShowProfile({ id: "sp_read", user_id: "user_read" });
+    setProfile({ id: "user_read", stripe_connect_account_id: "acct_read" });
+    supabaseTables.payouts = { readError: { code: "42501", message: "secret-db-text" } };
+
+    await expect(transferPayoutForPayment("pay_read")).rejects.toThrow("payout_read_failed");
+    expect(stripe.transfers.create).not.toHaveBeenCalled();
+    expect(stripe.paymentIntents.retrieve).not.toHaveBeenCalled();
+    expect(logs.join("\n")).toContain("42501");
+    expect(logs.join("\n")).not.toContain("secret-db-text");
   });
 
   it("does not email again when the held insert races", async () => {

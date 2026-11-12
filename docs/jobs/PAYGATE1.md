@@ -28,7 +28,7 @@ A failed or disputed payment with a held row stays held.
 `lib/payouts/release.ts`:
 
 - `releaseHeldPayoutsForShow` (`lib/payouts/release.ts:54`) reads the verified proof for that show, then deals with that `show_id` and `show_profile_id`, then settled payments, then up to 100 payout rows with `stripe_transfer_id` null. Each goes through `transferPayoutForPayment`, one at a time. It never throws. It returns `{ released, held, failed }`.
-- `sweepHeldPayouts` (`lib/payouts/release.ts:125`) takes the oldest 100 rows with `stripe_transfer_id` null and runs the same helper, which re-gates. An unverified owner stays held with no write.
+- `sweepHeldPayouts` (`lib/payouts/release.ts`) takes up to 100 held rows whose payment is not failed or disputed, oldest `updated_at` first, and re-gates each one. A retry that stays held bumps `updated_at` so a newer row can be reached next. It does not write a transfer id on that path. O2 and O4 schedule the same release with `after()` so the verify response is not held open for Stripe.
 
 Triggers, both fail-soft (the existing response is unchanged if release throws):
 

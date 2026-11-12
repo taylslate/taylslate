@@ -448,11 +448,15 @@ export async function transferPayoutForPayment(
   }
 
   // ---- Idempotency check: already paid out? ----
-  const { data: existing } = await supabaseAdmin
+  const { data: existing, error: existingErr } = await supabaseAdmin
     .from("payouts")
     .select("id,stripe_transfer_id,amount_cents,transferred_at")
     .eq("payment_id", paymentId)
     .maybeSingle<ExistingPayoutRow>();
+  if (existingErr) {
+    logPayout((existingErr as DbError).code ?? "payout_read_failed");
+    throw new Error("payout_read_failed");
+  }
   if (existing && existing.stripe_transfer_id) {
     return {
       payoutId: existing.id,

@@ -2,7 +2,7 @@
 // The plaintext code leaves this module only as the start return value.
 // Logs are the Postgres error code and an 8-character proof id prefix.
 
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { normalizeRssUrl } from "@/lib/reps/roster-import";
 import {
@@ -415,6 +415,20 @@ async function exclusiveOtherAgent(
   return { ok: true, conflict };
 }
 
+function releaseAfterResponse(showId: string): void {
+  const logFailure = (err: unknown) => {
+    const name = err instanceof Error ? err.name : "";
+    logOwnershipError(/^[A-Za-z0-9_]+$/.test(name) ? name : "throw");
+  };
+  try {
+    after(() => {
+      void releaseHeldPayoutsForShow(showId).catch(logFailure);
+    });
+  } catch (err) {
+    logFailure(err);
+  }
+}
+
 async function markShowVerified(showId: string, proofId: string): Promise<void> {
   const { error } = await supabaseAdmin
     .from("shows")
@@ -461,12 +475,7 @@ async function applyHit(row: ProofRow, userId: string, nowIso: string): Promise<
     return "error";
   }
   await markShowVerified(row.show_id, row.id);
-  try {
-    await releaseHeldPayoutsForShow(row.show_id);
-  } catch (err) {
-    const name = err instanceof Error ? err.name : "";
-    logOwnershipError(/^[A-Za-z0-9_]+$/.test(name) ? name : "throw");
-  }
+  releaseAfterResponse(row.show_id);
   return "verified";
 }
 

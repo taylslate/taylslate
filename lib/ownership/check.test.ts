@@ -198,6 +198,16 @@ vi.mock("./youtube-proof", () => ({
 
 const releaseHeldPayoutsForShow = vi.hoisted(() => vi.fn());
 
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>();
+  return {
+    ...actual,
+    after(task: () => unknown) {
+      void task();
+    },
+  };
+});
+
 vi.mock("@/lib/payouts/release", () => ({
   releaseHeldPayoutsForShow: (...args: unknown[]) => releaseHeldPayoutsForShow(...args),
 }));

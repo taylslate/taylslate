@@ -68,11 +68,24 @@ vi.mock("@/lib/supabase/server", () => ({
             mocks.selects.push(`${table}:${columns}`);
             return {
               is() {
-                if (mocks.payoutError) {
-                  return Promise.resolve({ data: null, error: mocks.payoutError });
-                }
-                const data = Array.from({ length: mocks.heldCount }, (_, index) => ({ id: `held-${index}` }));
-                return Promise.resolve({ data, error: null });
+                const answer = () => {
+                  if (mocks.payoutError) return { data: null, error: mocks.payoutError };
+                  const data = Array.from({ length: mocks.heldCount }, (_, index) => ({ id: `held-${index}` }));
+                  return { data, error: null };
+                };
+                return {
+                  limit(n: number) {
+                    const resolved = answer();
+                    if (resolved.data) resolved.data = resolved.data.slice(0, n);
+                    return Promise.resolve(resolved);
+                  },
+                  then(
+                    resolve: (value: { data: { id: string }[] | null; error: { code: string; message: string } | null }) => unknown,
+                    reject?: (err: unknown) => unknown
+                  ) {
+                    return Promise.resolve(answer()).then(resolve, reject);
+                  },
+                };
               },
             };
           },
