@@ -460,6 +460,50 @@ describe("ownership review", () => {
     expect(JSON.stringify(result)).not.toContain(PROOF);
   });
 
+  it("retries the show update and sibling rejection when the proof is already verified by an admin", async () => {
+    proofs().push(
+      { id: PROOF, show_id: SHOW_A, user_id: USER, status: "contested", code_hash: HASH },
+      { id: "pending-sib", show_id: SHOW_A, user_id: OTHER, status: "pending" },
+      { id: "expired-sib", show_id: SHOW_A, user_id: OTHER, status: "expired" }
+    );
+    state.fail = { table: "shows", action: "update", code: "XX000", message: "secret-db-text" };
+    const failed = await approveOwnershipProof({
+      proofId: PROOF,
+      adminId: ADMIN,
+      now: new Date("2026-04-01T00:00:00.000Z"),
+    });
+    expect(failed).toEqual({ ok: false, status: 500, error: OWNERSHIP_APPROVE_FAILED });
+    expect(proofs().find((row) => row.id === PROOF)?.status).toBe("verified");
+    expect(state.tables.shows.find((row) => row.id === SHOW_A)?.ownership_status).toBe("unclaimed");
+    expect(proofs().find((row) => row.id === "pending-sib")?.status).toBe("pending");
+
+    const again = await approveOwnershipProof({
+      proofId: PROOF,
+      adminId: ADMIN,
+      now: new Date("2026-04-02T00:00:00.000Z"),
+    });
+    expect(again).toEqual({ ok: true });
+    expect(proofs().find((row) => row.id === PROOF)).toMatchObject({
+      status: "verified",
+      decided_by: ADMIN,
+      code_hash: null,
+    });
+    expect(state.tables.shows.find((row) => row.id === SHOW_A)?.ownership_status).toBe("verified");
+    expect(proofs().find((row) => row.id === "pending-sib")).toMatchObject({
+      status: "rejected",
+      decision_note: OWNERSHIP_SIBLING_NOTE,
+      decided_by: ADMIN,
+    });
+    expect(proofs().find((row) => row.id === "expired-sib")?.status).toBe("rejected");
+    expect(writes("agent_show_relationships")).toEqual([]);
+
+    const ownerProof = "66666666-6666-4666-8666-666666666666";
+    proofs().push({ id: ownerProof, show_id: SHOW_B, user_id: USER, status: "verified", code_hash: null });
+    const ownerVerified = await approveOwnershipProof({ proofId: ownerProof, adminId: ADMIN });
+    expect(ownerVerified).toEqual({ ok: false, status: 409, error: OWNERSHIP_ALREADY_DECIDED });
+    expect(state.tables.shows.find((row) => row.id === SHOW_B)?.ownership_status).toBe("unclaimed");
+  });
+
   it("rejects with a reason and leaves ownership_status unchanged", async () => {
     proofs().push({ id: PROOF, show_id: SHOW_A, user_id: USER, status: "contested", note: "needs_admin_review" });
     const missing = await rejectOwnershipProof({ proofId: PROOF, adminId: ADMIN, reason: "  " });

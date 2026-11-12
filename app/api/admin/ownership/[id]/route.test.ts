@@ -36,8 +36,15 @@ import { GET, POST } from "./route";
 const ADMIN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const PROOF = "44444444-4444-4444-8444-444444444444";
 
-function call(method: "GET" | "POST", id: string, body?: unknown, headers?: Headers): Promise<Response> {
+function call(
+  method: "GET" | "POST",
+  id: string,
+  body?: unknown,
+  headers?: Headers,
+  origin: string | null = "https://www.taylslate.com"
+): Promise<Response> {
   const requestHeaders = headers ?? new Headers({ "content-type": "application/json" });
+  if (method === "POST" && origin) requestHeaders.set("origin", origin);
   return (method === "GET" ? GET : POST)(
     new NextRequest(`https://www.taylslate.com/api/admin/ownership/${id}`, {
       method,
@@ -51,6 +58,7 @@ function call(method: "GET" | "POST", id: string, body?: unknown, headers?: Head
 describe("GET and POST /api/admin/ownership/[id]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.NEXT_PUBLIC_SITE_URL = "https://www.taylslate.com";
     auth.mockResolvedValue({ id: ADMIN });
     admin.mockResolvedValue(true);
     limit.mockResolvedValue(null);
@@ -60,6 +68,23 @@ describe("GET and POST /api/admin/ownership/[id]", () => {
     });
     approve.mockResolvedValue({ ok: true });
     reject.mockResolvedValue({ ok: true });
+  });
+
+  it("returns 403 when the POST origin is missing or cross-site", async () => {
+    const missing = await call("POST", PROOF, { action: "approve" }, undefined, null);
+    expect(missing.status).toBe(403);
+    expect(await missing.json()).toEqual({ error: "Forbidden" });
+    expect(missing.headers.get("Cache-Control")).toBe("no-store");
+
+    const other = await call("POST", PROOF, { action: "approve" }, undefined, "https://evil.example");
+    expect(other.status).toBe(403);
+    expect(await other.json()).toEqual({ error: "Forbidden" });
+    expect(approve).not.toHaveBeenCalled();
+    expect(reject).not.toHaveBeenCalled();
+
+    const read = await call("GET", PROOF, undefined, undefined, null);
+    expect(read.status).toBe(200);
+    expect(detail).toHaveBeenCalled();
   });
 
   it("returns 401 and 403 with no-store", async () => {

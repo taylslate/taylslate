@@ -33,7 +33,9 @@ describe("migration 091 sql", () => {
   it("adds decision_note, restates the 061 grants, and does not add a table", () => {
     expect(sql).toContain("NOT applied. Apply on ldtmhafewfifdizgfrnn only after merge");
     expect(sql).toContain("Ownership review needs migration 091.");
-    expect(sql).toContain("before or after the O4 deploy");
+    expect(sql).toContain("Apply 091 before this deploy");
+    expect(sql).toContain("falls back to the");
+    expect(sql).not.toContain("before or after the O4 deploy");
     expect(sql).toContain("select column_name");
     expect(sql).toContain("information_schema.role_table_grants");
     expect(statements).toMatch(/add column if not exists decision_note text/i);

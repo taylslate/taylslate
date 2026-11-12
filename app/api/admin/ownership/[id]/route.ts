@@ -21,6 +21,7 @@ import {
   readOwnershipBody,
   rejectOwnershipProof,
 } from "@/lib/ownership/review";
+import { OWNERSHIP_ERRORS, requestIsSameOrigin } from "@/lib/ownership/check";
 import { enforceRules } from "@/lib/security/rate-limit";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 
@@ -66,6 +67,9 @@ export async function POST(
 ) {
   const gate = await requireShowsAdmin();
   if (!gate.ok) return gate.response;
+  if (!requestIsSameOrigin(request.headers.get("origin"))) {
+    return ownershipJson({ error: OWNERSHIP_ERRORS.forbidden }, 403);
+  }
   const limited = await enforceRules({
     rules: adminOwnershipDecideRules(gate.userId),
     failureMode: "closed",

@@ -604,7 +604,28 @@ async function approveInner(input: {
   }
   const changed = (updated.data ?? [])[0] as { show_id?: unknown } | undefined;
   const showId = asText(changed?.show_id);
-  if (!changed || !showId) return { ok: false, status: 409, error: OWNERSHIP_ALREADY_DECIDED };
+  if (!changed || !showId) {
+    const prior = await supabaseAdmin
+      .from("show_ownership_proofs")
+      .select("show_id, status, decided_by")
+      .eq("id", input.proofId)
+      .maybeSingle();
+    if (prior.error) {
+      logCode(ADMIN_TAG, prior.error.code);
+      return { ok: false, status: 500, error: OWNERSHIP_APPROVE_FAILED };
+    }
+    const priorShowId = asText(prior.data?.show_id);
+    const priorStatus = asText(prior.data?.status);
+    const decidedBy = asText(prior.data?.decided_by);
+    if (priorStatus === "verified" && decidedBy && priorShowId) {
+      return finishAdminVerify(priorShowId, input.adminId, nowIso);
+    }
+    return { ok: false, status: 409, error: OWNERSHIP_ALREADY_DECIDED };
+  }
+  return finishAdminVerify(showId, input.adminId, nowIso);
+}
+
+async function finishAdminVerify(showId: string, adminId: string, nowIso: string): Promise<{ ok: true } | Fail> {
   const show = await supabaseAdmin.from("shows").update({ ownership_status: "verified" }).eq("id", showId);
   if (show.error) {
     logCode(ADMIN_TAG, show.error.code);
@@ -615,7 +636,7 @@ async function approveInner(input: {
     .update({
       status: "rejected",
       decision_note: OWNERSHIP_SIBLING_NOTE,
-      decided_by: input.adminId,
+      decided_by: adminId,
       decided_at: nowIso,
       updated_at: nowIso,
     })

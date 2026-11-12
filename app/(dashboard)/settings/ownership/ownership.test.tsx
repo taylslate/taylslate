@@ -68,7 +68,10 @@ vi.mock("@/lib/supabase/server", () => ({
               return chain;
             },
             order() {
-              if (mocks.proofError) {
+              const missingColumn =
+                mocks.proofError != null &&
+                (mocks.proofError.code === "42703" || mocks.proofError.code === "PGRST204");
+              if (mocks.proofError && (!missingColumn || columns.includes("decision_note"))) {
                 return Promise.resolve({ data: null, error: mocks.proofError });
               }
               const leak = columns.includes("code_hash") || columns.includes("show_id");
@@ -364,6 +367,38 @@ describe("ownership settings", () => {
     const agent = render(<SettingsPage />);
     await screen.findByRole("link", { name: /Sellable surfaces/ });
     expect(agent.container.querySelector('a[href="/settings/ownership"]')).toBeNull();
+  });
+
+  it("renders the O2 view when decision_note is not in the database yet", async () => {
+    const logs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+    for (const code of ["42703", "PGRST204"]) {
+      cleanup();
+      mocks.proofError = { code, message: `column decision_note secret ${code}` };
+      mocks.proofs = [
+        {
+          method: "rss_code",
+          status: "pending",
+          target: "feeds.example.com/show",
+          code_expires_at: "2099-01-01T00:00:00.000Z",
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ];
+      mocks.selects = [];
+      render(await OwnershipSettingsPage());
+      expect(screen.getByRole("button", { name: "Check now" })).toBeInTheDocument();
+      expect(screen.queryByText("We could not load your ownership check. Refresh to try again.")).not.toBeInTheDocument();
+      expect(screen.queryByText("Not verified")).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toContain("secret");
+      expect(document.body.textContent).not.toContain("decision_note");
+      const selects = mocks.selects.filter((entry) => entry.startsWith("show_ownership_proofs:"));
+      expect(selects[0]).toContain("decision_note");
+      expect(selects[1]).toBe(`show_ownership_proofs:${"method, status, target, code_expires_at, created_at"}`);
+      expect(logs.join("\n")).toContain(code);
+      expect(logs.join("\n")).not.toContain("secret");
+    }
   });
 
   it("reads the decision note and decided time", async () => {
