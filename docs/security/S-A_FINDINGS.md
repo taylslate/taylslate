@@ -207,7 +207,7 @@ Live `pg_proc` in `public`, plus the one definer function in `private`.
 | cleanup_test_data_delete_batch | invoker | service_role only | Dynamic delete, table name allowlisted |
 | cleanup_test_data_log_batch | invoker | service_role only | Writes `domain_events` |
 | enforce_past_campaign_show_match | invoker | authenticated and service_role | Trigger. Authenticated can also call it as an RPC |
-| get_avg_negotiated_cpm(uuid) | DEFINER, owner `postgres`, search_path unset | anon, authenticated, and PUBLIC | Reads `public.deals`. See SA-06 |
+| get_avg_negotiated_cpm(uuid) | DEFINER, owner `postgres`. 090 pins search_path to '' | anon, authenticated, and PUBLIC until 090. After 090, service_role only | Reads `public.deals`. 090 revokes PUBLIC, anon, and authenticated. Not applied. See SA-06 |
 | increment_api_rate_window | invoker | service_role only | |
 | login_otp_consume | invoker | service_role only | Returns the pending code hash to the caller on a successful verify action. The route is the only caller |
 | normalize_show_match_key(text) | invoker | authenticated and service_role | Pure text function |
@@ -218,8 +218,8 @@ Live `pg_proc` in `public`, plus the one definer function in `private`.
 | protect_profiles_is_managed | invoker | anon and authenticated | Trigger. RPC use does not bypass the trigger body |
 | refresh_pooled_deal_priors | invoker | service_role only | Deletes and rebuilds pooled rows |
 | refresh_pooled_import_priors | invoker | service_role only | Same |
-| reset_monthly_campaigns | invoker, search_path unset | anon, authenticated, and PUBLIC | Updates `profiles.campaigns_this_month`. As invoker, RLS limits this to the caller's row. See SA-19 |
-| update_updated_at | invoker, search_path unset | anon, authenticated, and PUBLIC | Trigger. Body sets `NEW.updated_at` |
+| reset_monthly_campaigns | invoker. 090 pins search_path to ''. Grants unchanged | anon, authenticated, and PUBLIC | Updates `profiles.campaigns_this_month`. As invoker, RLS limits this to the caller's row. See SA-19 |
+| update_updated_at | invoker. 090 pins search_path to ''. Grants unchanged | anon, authenticated, and PUBLIC | Trigger. Body sets `NEW.updated_at`. 090 does not change grants. See SA-19 |
 | user_owns_show(uuid) | invoker | authenticated and service_role | Used by the show_surfaces policy |
 | private.show_profiles_guard_podscan_id | DEFINER | anon and authenticated have EXECUTE | Trigger on `show_profiles`. Schema `private` is outside `/rest/v1`. See SA-19 |
 
@@ -502,6 +502,10 @@ Status: fixed by H1 (commit 632f420, migration 072_lock_money_columns). Applied 
 
 **SA-06. Anon can execute a definer function that reads deal CPMs.** `public.get_avg_negotiated_cpm(uuid)`, owner `postgres`, `SECURITY DEFINER`, `EXECUTE` granted to `anon` and `PUBLIC`. Advisor `anon_security_definer_function_executable`. The body averages `deals.cpm_rate` for a show once three rows match, and RLS does not apply. Fix: `REVOKE EXECUTE FROM PUBLIC, anon, authenticated`, set `search_path`, and switch to invoker if a signed-in caller should ever see it. Lane: S-G.
 
+Status: 090 revokes EXECUTE from PUBLIC, anon, and authenticated, grants EXECUTE to service_role, and pins search_path to ''. The function stays SECURITY DEFINER. The body is unchanged. No caller in app, lib, scripts, policies, views, or other function bodies. Not applied. Apply on `ldtmhafewfifdizgfrnn` after merge, when Chris names 090. The apply does not depend on a deploy.
+
+`auth_login_email()` is the other `authenticated_security_definer_function_executable` hit. 090 does not revoke authenticated. The shows SELECT policy "Shows readable by signed-in participants", the outreaches SELECT policy "Show reads outreach to their email", and `public.user_owns_show(uuid)` (called by the show_surfaces policy) run as the signed-in role and call it. anon and PUBLIC already have no EXECUTE (071 and 077). The function returns only the email for `auth.uid()`. The authenticated advisor warning is accepted.
+
 **SA-07. The IO PDF import calls the model with no session.** `app/api/deals/import/route.ts:32` through the Anthropic call at `route.ts:64`. A 10MB PDF is enough. The `past_campaign` branch below it is authenticated. Fix: require the same session and role as `handlePastCampaignImport` before the model call, and rate limit. Lane: S-E.
 
 **SA-08. Outreach generation calls the model with no session.** `app/api/campaigns/outreach/generate/route.ts:9`. The body is a campaign object and there is no auth check and no body cap. Fix: require a session and a campaign the caller owns. Lane: S-E.
@@ -545,6 +549,10 @@ Precheck on `ldtmhafewfifdizgfrnn` (read only, Nov 11, 2026): outreaches 1, outr
 ### Low
 
 **SA-19. Extra EXECUTE grants on public and private functions.** `persist_confirmation`, `persist_interpretation`, `persist_refinement`, and `reset_monthly_campaigns` are invoker and executable by anon. RLS or missing table grants make them fail, and `reset_monthly_campaigns` can still zero the caller's own `campaigns_this_month` when `campaigns_reset_at` is before this month. `private.show_profiles_guard_podscan_id` is `SECURITY DEFINER` and executable by anon and authenticated. `update_updated_at`, `get_avg_negotiated_cpm`, and `reset_monthly_campaigns` have a mutable search_path (advisor). Fix: revoke anon and authenticated execute except on functions the browser must call (`user_owns_show`, `normalize_show_match_key`). Lane: S-G. SA-06 is the definer case that matters now.
+
+Status: 090 pins search_path to '' on `update_updated_at`, `reset_monthly_campaigns`, and `get_avg_negotiated_cpm`. Grants on `update_updated_at` and `reset_monthly_campaigns` are unchanged. Revoking the remaining anon and authenticated EXECUTE grants is a follow-up. 090 does not do that grant cleanup.
+
+`auth_login_email` stays executable by authenticated and service_role. That is the accepted `authenticated_security_definer_function_executable` finding after 090. See SA-06.
 
 **SA-20. The impersonation origin cookie is still written.** `app/api/admin/test-login/route.ts:117` stores `adminId` and `adminEmail` in an unsigned cookie. The return route does not trust it (`route.ts:13`). Fix: stop setting the cookie so a later reader cannot. Lane: S-F, because the hashed return token is already the audit record.
 

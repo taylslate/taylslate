@@ -3100,6 +3100,44 @@ Screenshots are the search page before the new group, the same page after, and t
 - The Search nav item was not changed.
 - This PR does not merge. Paul reviews.
 
+## SEC7
+
+### What was built
+
+Migration 090 pins `search_path` to `''` on `update_updated_at()`, `reset_monthly_campaigns()`, and `get_avg_negotiated_cpm(uuid)`. It revokes EXECUTE on `get_avg_negotiated_cpm(uuid)` from PUBLIC, anon, and authenticated, and grants EXECUTE to service_role. `auth_login_email()` grants are restated as live: anon and PUBLIC stay revoked, authenticated and service_role keep EXECUTE. The three RLS callers are the shows SELECT policy, the outreaches SELECT policy, and `user_owns_show` (called by the show_surfaces policy). The authenticated advisor warning for `auth_login_email` is accepted. Function bodies, owners, and security mode are unchanged. Grants on `update_updated_at` and `reset_monthly_campaigns` are unchanged. No table, policy, trigger, or app code change.
+
+090 is not applied. Apply it on `ldtmhafewfifdizgfrnn` after merge, when Chris names 090. The apply does not depend on a deploy.
+
+### Where
+
+- `supabase/migrations/090_function_grants_search_path.sql`
+- `supabase/migrations/090_function_grants_search_path.test.ts`
+- `docs/jobs/SEC7.md`
+- `docs/security/S-A_FINDINGS.md` (the three function rows, SA-06, and SA-19)
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run supabase/migrations/090_function_grants_search_path.test.ts` passed twice in a row (8 tests).
+
+`npx vitest run`: 389 files, 3274 passed, 41 skipped.
+
+`npx next build` compiled successfully and generated 147 pages.
+
+PGlite loads 001 through 089, then 090 twice. The three pinned functions have one proconfig element, `search_path=""`, which prints as `{"search_path=\"\""}`. `auth_login_email` keeps `search_path=auth, public, pg_temp`. Bodies and security mode match the pre-090 rows. anon and authenticated are denied on `get_avg_negotiated_cpm`. service_role is allowed, and three signed deals at 100, 200, and 300 return 200. Two deals return null. `auth_login_email` denies anon and allows authenticated and service_role. A service_role update advances `updated_at` on `profiles` and `deals`. A signed-in `select count(*)` on `shows` and `outreaches` runs, and `user_owns_show` still returns true for the owner row. The SQL has no `create or replace`, no grant to anon, and no security mode clause.
+
+No page or component was edited. Screenshots are not applicable. No live write.
+
+### Known gaps
+
+- 090 is not applied. Until Chris applies it, the advisor findings stay. After apply, `authenticated_security_definer_function_executable` should list only `auth_login_email`. That warning is accepted.
+- SA-19 EXECUTE cleanup for `persist_confirmation`, `persist_interpretation`, `persist_refinement`, `reset_monthly_campaigns`, and `private.show_profiles_guard_podscan_id` is a follow-up. 090 does not change those grants.
+- Leaked-password protection is a Supabase Auth dashboard setting. It is off. This job does not turn it on.
+- The U1b handoff note that 090 was the next free migration for a library read is stale. 090 is this grants file. The next free number is 091.
+- This PR does not merge. Paul reviews.
+
 ## AC3b
 
 ### What was built
