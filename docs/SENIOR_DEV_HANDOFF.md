@@ -3137,3 +3137,56 @@ No page or component was edited. Screenshots are not applicable. No live write.
 - Leaked-password protection is a Supabase Auth dashboard setting. It is off. This job does not turn it on.
 - The U1b handoff note that 090 was the next free migration for a library read is stale. 090 is this grants file. The next free number is 091.
 - This PR does not merge. Paul reviews.
+
+## O2
+
+### What was built
+
+A signed-in show owner can prove they control a podcast feed or a YouTube channel. They get one code, `TAYLSLATE-` plus 6 characters from a 31-symbol alphabet (A-Z and 2-9, without 0, O, 1, I, or L). They paste it into the RSS channel description or the notes of one of the latest 10 episodes, or into the YouTube channel description. A check that finds the code writes a verified `show_ownership_proofs` row, clears `code_hash`, and sets `shows.ownership_status` to `verified`. The owner is told the code can be deleted after that.
+
+The plaintext is returned once, from `POST /api/ownership/start`. Only the sha256 hex of the uppercase code is stored. Comparison uses `timingSafeEqual`. The code expires after 7 days. Five misses, expiry, an approved exclusive rep who is someone else, a show that already has a verified proof, and a `23505` race go to `contested` (expiry is `expired`) for the O4 queue. There is no public badge.
+
+Podcast targets `normalizeRssUrl(show_profiles.feed_url)`. YouTube accepts a bare `UC` id or `youtube.com/channel/UC...`. A handle is refused. Matching catalog rows are capped at 5. Each row verifies or goes to review on its own. The page and the responses show the feed URL or channel id only.
+
+`/settings` gains one Verify ownership card for `role === "show"`, after Sellable surfaces. `/settings/ownership` is show-only. Brands see nothing new. The page reads the caller's proofs with the session client and never selects `code_hash`.
+
+No migration. 061 is already live and has every column this job writes. 091 was not written. Read-only check on `ldtmhafewfifdizgfrnn` confirmed the proof columns, the status and method checks, and the one-verified-per-show index. Nothing was written.
+
+Payouts are not wired. A verified row is what `getVerifiedProfileTies` and `isPayoutOwnerVerified` already read. `lib/payouts` does not call them.
+
+### Where
+
+- `lib/ownership/code.ts` and `code.test.ts`
+- `lib/ownership/rss-proof.ts` and `rss-proof.test.ts`
+- `lib/ownership/youtube-proof.ts` and `youtube-proof.test.ts`
+- `lib/ownership/check.ts` and `check.test.ts`
+- `app/api/ownership/start/route.ts` and `route.test.ts`
+- `app/api/ownership/check/route.ts` and `route.test.ts`
+- `app/(dashboard)/settings/ownership/page.tsx`, `ownership-client.tsx`, and `ownership.test.tsx`
+- `app/(dashboard)/settings/page.tsx` (one show link card)
+- `app/(dashboard)/settings/api-keys/api-keys.test.tsx` (the settings-page snapshot hash, because that test locks the file this card changes)
+- `docs/jobs/O2.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 396 files, 3327 passed, 41 skipped. That run is after the merge of SEC7 (090).
+
+`npx vitest run lib/ownership app/api/ownership 'app/(dashboard)/settings'` covers 401, 403 for a brand and for a show with no profile, cross-origin 403, start 400 with no feed, 409 with no catalog match, the code returned once and only its hash stored, a channel-description hit, an episode-notes hit, an HTML-entity-encoded code, a miss and the 5th miss going to contested, expiry, 429 per minute and per day, 503 when the limiter fails closed, exclusive-rep contested, already-verified contested, the 23505 race, YouTube with no key (no miss), a blocked 127.0.0.1 and 10.1.2.3 feed with no network call, another user's proof left unchanged, and no code or hash in a console call.
+
+`npx next build` compiled successfully. `/settings/ownership` is dynamic. The build ran on this app code before the SEC7 merge. That merge is SQL and docs only.
+
+`git diff --stat origin/main -- supabase lib/payouts lib/stripe lib/billing lib/airchecks lib/reps lib/shows lib/data/types.ts lib/youtube-oauth app/api/youtube proxy.ts vercel.json` is empty.
+
+Screenshots are the show settings page before and after the card, and `/settings/ownership` for not started, the code just issued, pending without the code, verified, in review, expired, and YouTube unavailable. They use the production stylesheet and the real components. A signed-in session was not used. No live write, charge, or send.
+
+### Known gaps
+
+- `isPayoutOwnerVerified` is still not called from `lib/payouts`. A payout can still run for an unverified owner until that separate job, which needs Chris's OK.
+- O4 is the admin queue for `contested` rows. This job does not build it and does not send email. The rep heads-up stays on the existing daily sweep.
+- YouTube checks are 1 unit each and are not recorded on `youtube_quota_days`.
+- A failed or blocked feed read counts as a miss. Five of those send the proof to review.
+- Refreshing the page hides the code. The owner can start again, which expires the pending code and issues a new one. The check itself does not need the plaintext.
+- No migration. Apply nothing on `ldtmhafewfifdizgfrnn` for this job. The next free number after SEC7 is 091. This PR does not merge. Paul reviews.
