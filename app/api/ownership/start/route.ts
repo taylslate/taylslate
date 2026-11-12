@@ -20,12 +20,21 @@ export const dynamic = "force-dynamic";
 
 const MESSAGES = new Set<string>(Object.values(OWNERSHIP_MESSAGES));
 
+function noStore(response: NextResponse): NextResponse {
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
+function noStoreJson(body: unknown, status = 200): NextResponse {
+  return noStore(NextResponse.json(body, { status }));
+}
+
 function fixedError(status: number, error: string): NextResponse {
   const known = new Set<string>(Object.values(OWNERSHIP_ERRORS));
   if (!known.has(error)) {
-    return NextResponse.json({ error: OWNERSHIP_ERRORS.unavailable }, { status: 503 });
+    return noStoreJson({ error: OWNERSHIP_ERRORS.unavailable }, 503);
   }
-  return NextResponse.json({ error }, { status });
+  return noStoreJson({ error }, status);
 }
 
 export async function POST(request: NextRequest) {
@@ -40,7 +49,7 @@ export async function POST(request: NextRequest) {
   }
 
   const limited = await enforceOwnershipStart(user.id);
-  if (limited) return limited;
+  if (limited) return noStore(limited);
 
   let body: unknown = null;
   try {
@@ -66,7 +75,7 @@ export async function POST(request: NextRequest) {
   if (!isOwnershipCode(result.code) || !MESSAGES.has(result.message)) {
     return fixedError(503, OWNERSHIP_ERRORS.unavailable);
   }
-  return NextResponse.json({
+  return noStoreJson({
     code: result.code,
     message: result.message,
     target: result.target,

@@ -55,6 +55,7 @@ export interface OwnershipView {
   medium: "podcast" | "youtube" | null;
   pendingLabel: string;
   verifiedLabel: string;
+  loadError?: boolean;
 }
 
 function mediumOf(method: string | null): "podcast" | "youtube" | null {
@@ -175,6 +176,22 @@ export default function OwnershipClient({ view }: { view: OwnershipView }) {
 
   const showCode = Boolean(code) && view.kind !== "verified" && view.kind !== "review";
   const showCheck = showCode || view.kind === "pending";
+
+  if (view.loadError) {
+    return (
+      <div className="max-w-2xl p-4 sm:p-8">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
+          For shows
+        </p>
+        <h1 className="mt-2 font-[family-name:var(--font-app-display)] text-2xl font-semibold tracking-tight text-[var(--ts-ink-on-paper)]">
+          Verify ownership
+        </h1>
+        <p className="mt-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
+          We could not load your ownership check. Refresh to try again.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl p-4 sm:p-8">

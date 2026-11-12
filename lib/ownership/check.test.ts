@@ -408,10 +408,38 @@ describe("ownership check", () => {
     expect(row?.verified_at).toBe("2026-03-02T00:00:00.000Z");
     expect(row?.check_count).toBe(1);
     expect(state.tables.shows[0].ownership_status).toBe("verified");
-    expect(rssRead).toHaveBeenCalledWith(`https://${TARGET}`);
+    expect(rssRead).toHaveBeenCalledWith("https://Feeds.Example.com/Show");
+    expect(rssRead).not.toHaveBeenCalledWith(`https://${TARGET}`);
     expect(JSON.stringify(checked)).not.toContain(started.code);
     expect(JSON.stringify(checked)).not.toContain(SHOW_A);
     assertNoSecrets(started.code, hashOwnershipCode(started.code));
+  });
+
+  it("verifies a mixed-case feed by fetching the stored rss_url", async () => {
+    const stored = "http://feeds.simplecast.com/AbC123Xy";
+    state.tables.show_profiles[0].feed_url = stored;
+    state.tables.shows[0].rss_url = stored;
+    const started = await startPodcast();
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.target).toBe("feeds.simplecast.com/abc123xy");
+    rssRead.mockResolvedValue({ status: "ok", text: started.code });
+    const checked = await checkOwnership({ userId: USER });
+    expect(checked).toEqual({ ok: true, outcome: "verified", message: OWNERSHIP_MESSAGES.verified });
+    expect(rssRead).toHaveBeenCalledWith("http://feeds.simplecast.com/AbC123Xy");
+    expect(rssRead).not.toHaveBeenCalledWith("https://feeds.simplecast.com/abc123xy");
+    expect(state.tables.shows[0].ownership_status).toBe("verified");
+  });
+
+  it("keeps fetching the show rss_url after the profile feed changes", async () => {
+    const started = await startPodcast();
+    if (!started.ok) throw new Error("start failed");
+    state.tables.show_profiles[0].feed_url = "https://evil.example/other-feed";
+    rssRead.mockResolvedValue({ status: "ok", text: started.code });
+    const checked = await checkOwnership({ userId: USER });
+    expect(checked).toEqual({ ok: true, outcome: "verified", message: OWNERSHIP_MESSAGES.verified });
+    expect(rssRead).toHaveBeenCalledWith("https://Feeds.Example.com/Show");
+    expect(rssRead.mock.calls.some((call) => String(call[0]).includes("evil.example"))).toBe(false);
   });
 
   it("counts a miss, and the 5th miss becomes contested", async () => {

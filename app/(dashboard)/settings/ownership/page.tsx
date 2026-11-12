@@ -31,7 +31,24 @@ export default async function OwnershipSettingsPage() {
   if (proofsResult.error) logRead(proofsResult.error.code);
   if (profileResult.error) logRead(profileResult.error.code);
 
-  const proofs = (proofsResult.error ? [] : (proofsResult.data ?? [])) as OwnershipProofInput[];
+  if (proofsResult.error) {
+    return (
+      <OwnershipClient
+        view={{
+          kind: "not_started",
+          feedUrl: null,
+          youtubeAvailable: false,
+          target: null,
+          medium: null,
+          pendingLabel: ownershipLabels.pending,
+          verifiedLabel: ownershipLabels.verified,
+          loadError: true,
+        }}
+      />
+    );
+  }
+
+  const proofs = (proofsResult.data ?? []) as OwnershipProofInput[];
   const feedUrl = typeof profileResult.data?.feed_url === "string" ? profileResult.data.feed_url : null;
   const view = ownershipView({
     proofs,

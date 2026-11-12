@@ -87,6 +87,22 @@ describe("POST /api/ownership/check", () => {
     expect(checkMock).toHaveBeenCalledWith({ userId: USER });
   });
 
+  it("sets Cache-Control no-store on 200, 4xx, and 503", async () => {
+    const ok = await post("https://www.taylslate.com");
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("Cache-Control")).toBe("no-store");
+
+    show.mockResolvedValueOnce({ ok: false });
+    const forbidden = await post("https://www.taylslate.com");
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.headers.get("Cache-Control")).toBe("no-store");
+
+    limitCheck.mockResolvedValueOnce(NextResponse.json({ error: "unavailable" }, { status: 503 }));
+    const closed = await post("https://www.taylslate.com");
+    expect(closed.status).toBe(503);
+    expect(closed.headers.get("Cache-Control")).toBe("no-store");
+  });
+
   it("returns 429 per minute and per day, and 503 when the limiter fails closed", async () => {
     limitCheck.mockResolvedValueOnce(
       NextResponse.json({ error: OWNERSHIP_ERRORS.rate }, { status: 429, headers: { "Retry-After": "60" } })

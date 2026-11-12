@@ -3182,6 +3182,8 @@ Payouts are not wired. A verified row is what `getVerifiedProfileTies` and `isPa
 
 Screenshots are the show settings page before and after the card, and `/settings/ownership` for not started, the code just issued, pending without the code, verified, in review, expired, and YouTube unavailable. They use the production stylesheet and the real components. A signed-in session was not used. No live write, charge, or send.
 
+Review fixes: both ownership routes set `Cache-Control: no-store` on every response, including 429, 4xx, and 503. A podcast check fetches the show's stored `shows.rss_url` when it still normalizes to the proof target. It does not rebuild `https://` plus the lowercased target, and it does not read `show_profiles.feed_url` again. A proof read error on the page shows "We could not load your ownership check. Refresh to try again." and hides Start. `matchingShowIds` is unchanged.
+
 ### Known gaps
 
 - `isPayoutOwnerVerified` is still not called from `lib/payouts`. A payout can still run for an unverified owner until that separate job, which needs Chris's OK.

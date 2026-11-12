@@ -186,11 +186,6 @@ function rssStoredVariants(norm: string): string[] {
   ];
 }
 
-function feedFetchUrl(target: string): string {
-  if (/^https?:\/\//i.test(target)) return target;
-  return `https://${target}`;
-}
-
 async function matchingShowIds(
   medium: OwnershipMedium,
   target: string
@@ -316,6 +311,27 @@ export async function startOwnership(input: {
     target,
     medium: input.medium,
   };
+}
+
+async function storedRssUrls(
+  rows: ProofRow[],
+  target: string
+): Promise<{ ok: true; urls: string[] } | { ok: false; error: DbError }> {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const { data, error } = await supabaseAdmin
+      .from("shows")
+      .select("rss_url")
+      .eq("id", row.show_id)
+      .maybeSingle();
+    if (error) return { ok: false, error };
+    const rss = typeof data?.rss_url === "string" ? data.rss_url.trim() : "";
+    if (!rss || normalizeRssUrl(rss) !== target || seen.has(rss)) continue;
+    seen.add(rss);
+    urls.push(rss);
+  }
+  return { ok: true, urls };
 }
 
 async function loadPending(userId: string): Promise<{ ok: true; rows: ProofRow[] } | { ok: false; error: DbError }> {
@@ -517,13 +533,24 @@ export async function checkOwnership(input: {
       countedMiss = !sawCode;
     }
   } else if (method === "rss_code") {
-    const read = await readRssProofText(feedFetchUrl(target ?? ""));
-    if (read.status === "ok") {
-      const hash = rows.find((row) => row.code_hash)?.code_hash ?? "";
-      sawCode = hash.length > 0 && textContainsHashedCode(read.text, hash);
-      countedMiss = !sawCode;
-    } else {
+    const feeds = await storedRssUrls(rows, target ?? "");
+    if (!feeds.ok) {
+      logOwnershipError(feeds.error.code);
+      return { ok: false, status: 503, error: OWNERSHIP_ERRORS.unavailable };
+    }
+    if (feeds.urls.length === 0) {
       countedMiss = true;
+    } else {
+      const hash = rows.find((row) => row.code_hash)?.code_hash ?? "";
+      let hit = false;
+      for (const url of feeds.urls) {
+        const read = await readRssProofText(url);
+        if (read.status === "ok" && hash.length > 0 && textContainsHashedCode(read.text, hash)) {
+          hit = true;
+        }
+      }
+      sawCode = hit;
+      countedMiss = !hit;
     }
   } else {
     countedMiss = true;

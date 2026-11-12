@@ -132,6 +132,30 @@ describe("POST /api/ownership/start", () => {
     expect(await res.json()).toEqual({ error: "unavailable" });
   });
 
+  it("sets Cache-Control no-store on 200, 4xx, and 503", async () => {
+    const ok = await post("https://www.taylslate.com", { medium: "podcast" });
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("Cache-Control")).toBe("no-store");
+
+    startMock.mockResolvedValueOnce({ ok: false, status: 400, error: OWNERSHIP_ERRORS.noFeed });
+    const missing = await post("https://www.taylslate.com", { medium: "podcast" });
+    expect(missing.status).toBe(400);
+    expect(missing.headers.get("Cache-Control")).toBe("no-store");
+
+    limitStart.mockResolvedValueOnce(NextResponse.json({ error: "unavailable" }, { status: 503 }));
+    const closed = await post("https://www.taylslate.com", { medium: "podcast" });
+    expect(closed.status).toBe(503);
+    expect(closed.headers.get("Cache-Control")).toBe("no-store");
+
+    limitStart.mockResolvedValueOnce(
+      NextResponse.json({ error: OWNERSHIP_ERRORS.rate }, { status: 429, headers: { "Retry-After": "86400" } })
+    );
+    const limited = await post("https://www.taylslate.com", { medium: "podcast" });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Cache-Control")).toBe("no-store");
+    expect(limited.headers.get("Retry-After")).toBe("86400");
+  });
+
   it("returns 429 and 503 from the limiter", async () => {
     limitStart.mockResolvedValueOnce(
       NextResponse.json({ error: OWNERSHIP_ERRORS.rate }, { status: 429, headers: { "Retry-After": "86400" } })
