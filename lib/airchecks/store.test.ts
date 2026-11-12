@@ -11,7 +11,7 @@ interface Filter {
   or?: Filter[];
 }
 
-const { tables, resetTables, selects, limits, flags } = vi.hoisted(() => {
+const { tables, resetTables, selects, limits, flags, writes } = vi.hoisted(() => {
   const tables: Record<string, Row[]> = {
     airchecks: [],
     io_line_items: [],
@@ -20,14 +20,26 @@ const { tables, resetTables, selects, limits, flags } = vi.hoisted(() => {
   };
   const selects: string[] = [];
   const limits: number[] = [];
-  const flags = { claimColumnMissing: false };
+  const writes: { table: string; filters: Filter[]; payload: Row | null }[] = [];
+  const flags: {
+    claimColumnMissing: boolean;
+    updateError: { message: string; code?: string } | null;
+    forcePgrst116: boolean;
+  } = {
+    claimColumnMissing: false,
+    updateError: null,
+    forcePgrst116: false,
+  };
   function resetTables() {
     for (const key of Object.keys(tables)) tables[key] = [];
     selects.length = 0;
     limits.length = 0;
+    writes.length = 0;
     flags.claimColumnMissing = false;
+    flags.updateError = null;
+    flags.forcePgrst116 = false;
   }
-  return { tables, resetTables, selects, limits, flags };
+  return { tables, resetTables, selects, limits, flags, writes };
 });
 
 function splitOr(expr: string): string[] {
@@ -97,6 +109,23 @@ vi.mock("@/lib/supabase/admin", () => {
     } {
       const rows = tables[table] ?? [];
       if (op === "update") {
+        writes.push({
+          table,
+          filters: filters.map((filter) => ({ ...filter })),
+          payload: payload ? { ...payload } : null,
+        });
+        if (flags.forcePgrst116) {
+          flags.forcePgrst116 = false;
+          return {
+            data: null,
+            error: { message: "row count", code: "PGRST116" },
+          };
+        }
+        if (flags.updateError) {
+          const error = flags.updateError;
+          flags.updateError = null;
+          return { data: null, error };
+        }
         if (
           flags.claimColumnMissing &&
           payload &&
@@ -208,6 +237,7 @@ import {
   claimAircheckConfirm,
   loadAircheckQueue,
   releaseAircheckConfirm,
+  saveAircheckConfirmedIfUndecided,
 } from "./store";
 
 const LINE = "li_1";
@@ -302,6 +332,56 @@ describe("claimAircheckConfirm", () => {
       /migration 080/
     );
     expect(tables.airchecks[0].confirm_claimed_by).toBeNull();
+  });
+});
+
+describe("saveAircheckConfirmedIfUndecided", () => {
+  it("guards on an undecided row, returns null when nothing changes, and throws a plain Error otherwise", async () => {
+    tables.airchecks.push(aircheck());
+    const saved = await saveAircheckConfirmedIfUndecided(LINE, {
+      review_decision: "confirmed",
+      charge_error: null,
+    });
+    expect(saved?.review_decision).toBe("confirmed");
+    const write = writes.find(
+      (entry) => entry.payload?.review_decision === "confirmed"
+    );
+    expect(write?.filters).toEqual(
+      expect.arrayContaining([
+        { kind: "eq", col: "io_line_item_id", val: LINE },
+        { kind: "is", col: "review_decision", val: null },
+      ])
+    );
+    expect(selects).toContain("*");
+
+    tables.airchecks[0].review_decision = "rejected";
+    const missed = await saveAircheckConfirmedIfUndecided(LINE, {
+      review_decision: "confirmed",
+    });
+    expect(missed).toBeNull();
+    expect(tables.airchecks[0].review_decision).toBe("rejected");
+
+    flags.forcePgrst116 = true;
+    const raced = await saveAircheckConfirmedIfUndecided(LINE, {
+      review_decision: "confirmed",
+    });
+    expect(raced).toBeNull();
+    expect(tables.airchecks[0].review_decision).toBe("rejected");
+
+    flags.updateError = { message: "connection reset", code: "08006" };
+    try {
+      await saveAircheckConfirmedIfUndecided(LINE, {
+        review_decision: "confirmed",
+      });
+      expect.fail("expected a plain Error");
+    } catch (err) {
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).constructor).toBe(Error);
+      expect((err as Error).message).toBe(
+        "aircheck review save failed: connection reset"
+      );
+    }
+    expect(tables.airchecks[0].review_decision).toBe("rejected");
   });
 });
 

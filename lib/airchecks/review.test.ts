@@ -39,7 +39,14 @@ const {
     logEvent: vi.fn(),
     hook: vi.fn(),
     delivery: { deliverAndChargeLine: vi.fn() },
-    flags: { claimColumnMissing: false, failConfirmedSave: false },
+    flags: {
+      claimColumnMissing: false,
+      failConfirmedSave: false,
+      rejectBeforeConfirmedSave: false,
+      paymentAfterClaim: false,
+      lineUpdates: 0,
+      failLineUpdateAt: 0,
+    },
   };
 });
 
@@ -109,6 +116,15 @@ vi.mock("@/lib/supabase/admin", () => {
     } {
       const rows = tables[table] ?? [];
       if (op === "update") {
+        if (table === "io_line_items") {
+          flags.lineUpdates += 1;
+          if (
+            flags.failLineUpdateAt > 0 &&
+            flags.lineUpdates === flags.failLineUpdateAt
+          ) {
+            return { data: null, error: { message: "rollback write failed" } };
+          }
+        }
         if (
           flags.claimColumnMissing &&
           payload &&
@@ -126,6 +142,15 @@ vi.mock("@/lib/supabase/admin", () => {
           flags.failConfirmedSave = false;
           return { data: null, error: { message: "save failed" } };
         }
+        if (
+          flags.rejectBeforeConfirmedSave &&
+          payload?.review_decision === "confirmed"
+        ) {
+          flags.rejectBeforeConfirmedSave = false;
+          for (const row of rows) {
+            if (row.review_decision == null) row.review_decision = "rejected";
+          }
+        }
         if (!payload) return { data: null, error: { message: "missing payload" } };
         const index = rows.findIndex((row) => matches(row, filters));
         if (index < 0) {
@@ -137,6 +162,23 @@ vi.mock("@/lib/supabase/admin", () => {
           ...payload,
           updated_at: new Date().toISOString(),
         };
+        if (
+          flags.paymentAfterClaim &&
+          table === "airchecks" &&
+          payload.confirm_claimed_at
+        ) {
+          flags.paymentAfterClaim = false;
+          const lineId = rows[index].io_line_item_id;
+          const line = tables.io_line_items.find((row) => row.id === lineId);
+          const io = tables.insertion_orders.find((row) => row.id === line?.io_id);
+          tables.payments.push({
+            id: "pay_raced",
+            deal_id: io?.deal_id ?? null,
+            io_line_item_id: lineId,
+            status: "succeeded",
+            stripe_payment_intent_id: "pi_raced",
+          });
+        }
         return { data: rows[index], error: null };
       }
       const found = rows.filter((row) => matches(row, filters));
@@ -334,6 +376,10 @@ beforeEach(async () => {
   seed();
   flags.claimColumnMissing = false;
   flags.failConfirmedSave = false;
+  flags.rejectBeforeConfirmedSave = false;
+  flags.paymentAfterClaim = false;
+  flags.lineUpdates = 0;
+  flags.failLineUpdateAt = 0;
   chargeForEpisode.mockReset();
   logEvent.mockReset();
   logEvent.mockResolvedValue(null);
@@ -512,6 +558,25 @@ describe("confirmAircheck", () => {
     expect(String(failed[0].payload?.charge_error).length).toBeLessThanOrEqual(500);
   });
 
+  it("stores the full charge and rollback text on the row and the event", async () => {
+    chargeForEpisode.mockRejectedValueOnce(new Error("card declined"));
+    flags.failLineUpdateAt = 2;
+
+    const result = await confirmAircheck({
+      ioLineItemId: LINE,
+      decidedBy: "ops@taylslate.com",
+      actorId: "admin_1",
+    });
+
+    const full = "card declined Delivery rollback failed: rollback write failed";
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.chargeError).toBe(full);
+    expect(tables.airchecks[0].review_decision).toBeNull();
+    expect(tables.airchecks[0].charge_error).toBe(full);
+    expect(String(events("aircheck.charge_failed")[0].payload?.charge_error)).toBe(full);
+  });
+
   it("does not charge again when the confirmed save fails and a retry finds the payment", async () => {
     delivery.deliverAndChargeLine.mockImplementation(async () => {
       tables.payments.push({
@@ -681,6 +746,121 @@ describe("confirmAircheck", () => {
     expect(result.ok).toBe(true);
     expect(chargeForEpisode).toHaveBeenCalledTimes(1);
     expect(tables.airchecks[0].review_decision).toBe("confirmed");
+  });
+
+  it("returns 409 when a payment exists and the line is rejected before the save", async () => {
+    tables.payments.push({
+      id: "pay_existing",
+      deal_id: "deal_1",
+      io_line_item_id: LINE,
+      status: "succeeded",
+      stripe_payment_intent_id: "pi_existing",
+    });
+    flags.rejectBeforeConfirmedSave = true;
+
+    await expect(
+      confirmAircheck({
+        ioLineItemId: LINE,
+        decidedBy: "ops@taylslate.com",
+        actorId: "admin_1",
+      })
+    ).rejects.toThrow("This line was already decided. No new charge was made.");
+    expect(delivery.deliverAndChargeLine).not.toHaveBeenCalled();
+    expect(chargeForEpisode).not.toHaveBeenCalled();
+    expect(tables.airchecks[0].review_decision).toBe("rejected");
+    expect(events("aircheck.confirmed")).toHaveLength(0);
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when a payment appears under the claim and the line is rejected before the save", async () => {
+    flags.paymentAfterClaim = true;
+    flags.rejectBeforeConfirmedSave = true;
+
+    await expect(
+      confirmAircheck({
+        ioLineItemId: LINE,
+        decidedBy: "ops@taylslate.com",
+        actorId: "admin_1",
+      })
+    ).rejects.toThrow("This line was already decided. No new charge was made.");
+    expect(delivery.deliverAndChargeLine).not.toHaveBeenCalled();
+    expect(tables.airchecks[0].review_decision).toBe("rejected");
+    expect(tables.airchecks[0].confirm_claimed_at).toBeNull();
+    expect(events("aircheck.confirmed")).toHaveLength(0);
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it("does not overwrite a decision made while the charge was in flight", async () => {
+    chargeForEpisode.mockResolvedValueOnce(CHARGE);
+    flags.rejectBeforeConfirmedSave = true;
+
+    await expect(
+      confirmAircheck({
+        ioLineItemId: LINE,
+        decidedBy: "ops@taylslate.com",
+        actorId: "admin_1",
+      })
+    ).rejects.toThrow(
+      "This line was decided while it was being charged. The charge stands. Check this line before doing anything else."
+    );
+    expect(delivery.deliverAndChargeLine).toHaveBeenCalledTimes(1);
+    expect(tables.airchecks[0].review_decision).toBe("rejected");
+    expect(events("aircheck.confirmed")).toHaveLength(0);
+    expect(events("aircheck.confirm_blocked")).toHaveLength(1);
+    expect(events("aircheck.confirm_blocked")[0].payload).toMatchObject({
+      reason: "decided_during_charge",
+      payment_id: "pay_1",
+      io_line_item_id: LINE,
+    });
+    expect(tables.airchecks[0].confirm_claimed_at).toBeNull();
+  });
+
+  it("charges once when a second confirm finds the payment while the first claim is held", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    delivery.deliverAndChargeLine.mockImplementation(async () => {
+      tables.payments.push({
+        id: "pay_held",
+        deal_id: "deal_1",
+        io_line_item_id: LINE,
+        status: "succeeded",
+        stripe_payment_intent_id: "pi_held",
+      });
+      await gate;
+      return { ok: true, charge: CHARGE };
+    });
+
+    const first = confirmAircheck({
+      ioLineItemId: LINE,
+      decidedBy: "ops@taylslate.com",
+      actorId: "a",
+    });
+    await vi.waitFor(() => expect(tables.payments).toHaveLength(1));
+    const second = await confirmAircheck({
+      ioLineItemId: LINE,
+      decidedBy: "other@taylslate.com",
+      actorId: "b",
+    });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.alreadyCharged).toBe(true);
+    expect(tables.airchecks[0].review_decision).toBe("confirmed");
+    expect(tables.airchecks[0].decided_by).toBe("other@taylslate.com");
+    release();
+    await expect(first).rejects.toThrow(
+      "This line was decided while it was being charged. The charge stands. Check this line before doing anything else."
+    );
+    expect(delivery.deliverAndChargeLine).toHaveBeenCalledTimes(1);
+    expect(tables.airchecks[0].review_decision).toBe("confirmed");
+    expect(tables.airchecks[0].decided_by).toBe("other@taylslate.com");
+    expect(events("aircheck.confirmed")).toHaveLength(1);
+    expect(events("aircheck.confirm_blocked")[0].payload).toMatchObject({
+      reason: "decided_during_charge",
+      payment_id: "pay_1",
+      io_line_item_id: LINE,
+    });
   });
 });
 

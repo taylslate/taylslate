@@ -509,3 +509,26 @@ export async function saveAircheckReview(
   }
   return data as AircheckRow;
 }
+
+/**
+ * Same write as saveAircheckReview, but only while review_decision is
+ * still null. Zero rows, or PGRST116, means another review decided the
+ * line first. Charge-error and reject writes stay on saveAircheckReview.
+ */
+export async function saveAircheckConfirmedIfUndecided(
+  ioLineItemId: string,
+  patch: AircheckReviewPatch
+): Promise<AircheckRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from("airchecks")
+    .update(patch)
+    .eq("io_line_item_id", ioLineItemId)
+    .is("review_decision", null)
+    .select("*")
+    .maybeSingle();
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw new Error(`aircheck review save failed: ${error.message}`);
+  }
+  return (data as AircheckRow | null) ?? null;
+}
