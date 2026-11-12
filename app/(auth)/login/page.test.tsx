@@ -186,10 +186,22 @@ describe("LoginPage", () => {
     await expectSameSentNotice();
     expect(screen.getByRole("heading", { level: 1, name: "Log in" })).toBeInTheDocument();
     const signUpLinks = screen.getAllByRole("link", { name: "Sign up" });
-    expect(signUpLinks.length).toBeGreaterThan(1);
-    for (const link of signUpLinks) {
-      expect(link).toHaveAttribute("href", "/signup");
-    }
+    const hrefs = signUpLinks.map((link) => link.getAttribute("href"));
+    // The sent notice and the footer both point at /signup; the one
+    // show/creator link points at /signup/show.
+    expect(hrefs.filter((href) => href === "/signup").length).toBeGreaterThan(1);
+    expect(hrefs.filter((href) => href === "/signup/show")).toHaveLength(1);
+  });
+
+  it("links a new show or creator to the email-code sign-up", () => {
+    render(<LoginPage />);
+    const lead = screen.getByText(/New show or creator\?/);
+    const paragraph = lead.closest("p");
+    if (!paragraph) throw new Error("missing show sign-up line");
+    expect(within(paragraph).getByRole("link", { name: "Sign up" })).toHaveAttribute(
+      "href",
+      "/signup/show",
+    );
   });
 
   it("rejects an empty email without requesting a code", async () => {

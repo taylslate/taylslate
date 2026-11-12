@@ -61,6 +61,7 @@ export async function proxy(request: NextRequest) {
     pathname === "/login" ||
     pathname === "/login/show" ||
     pathname === "/signup" ||
+    pathname === "/signup/show" ||
     pathname === "/callback" ||
     pathname === "/forgot-password" ||
     pathname === "/reset-password" ||

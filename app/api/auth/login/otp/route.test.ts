@@ -365,3 +365,248 @@ describe("POST /api/auth/login/otp", () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /api/auth/login/otp show sign-up", () => {
+  /** rate_limit_hit answers per bucket; every other RPC keeps the default. */
+  function limitBuckets(buckets: Record<string, boolean | "error">) {
+    rpc.mockImplementation(
+      async (
+        name: string,
+        args: LoginOtpRpcArgs & { lookup?: string; p_bucket?: string },
+      ) => {
+        if (name === "rate_limit_hit") {
+          const answer = buckets[args.p_bucket ?? ""] ?? true;
+          if (answer === "error") {
+            return { data: null, error: { message: "secret-db-text" } };
+          }
+          return { data: answer, error: null };
+        }
+        if (name === "auth_user_ids_for_email") {
+          const lookup = String(args.lookup ?? "").toLowerCase();
+          return {
+            data: authUsers.current
+              .filter((user) => user.email.toLowerCase() === lookup)
+              .map((user) => user.id),
+            error: null,
+          };
+        }
+        return { data: applyLoginOtpRpc(store, args, Date.now()), error: null };
+      },
+    );
+  }
+
+  it("mints a sign-up code for an unknown address with intent show_signup", async () => {
+    authUsers.current = [];
+    const res = await POST(
+      req({ email: "new@example.com", intent: "show_signup" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(createUser).not.toHaveBeenCalled();
+    expect(generateLink).not.toHaveBeenCalled();
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    const sent = sendEmail.mock.calls[0][0];
+    expect(sent.to).toBe("new@example.com");
+    expect(sent.text).toMatch(/\b\d{6}\b/);
+    expect(rpc).toHaveBeenCalledWith(
+      "login_otp_consume",
+      expect.objectContaining({
+        p_action: "send",
+        p_email: "new@example.com",
+        p_pending_outreach: "show_signup",
+        p_pending_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+    const pendingExpires = Date.parse(
+      rpc.mock.calls.at(-1)?.[1]?.p_pending_expires as string,
+    );
+    const remaining = pendingExpires - Date.now();
+    expect(remaining).toBeGreaterThan(10 * 60 * 1000 - 5_000);
+    expect(remaining).toBeLessThanOrEqual(10 * 60 * 1000);
+  });
+
+  it("gives an existing user a normal login code and writes no profile", async () => {
+    const res = await POST(
+      req({ email: "host@example.com", intent: "show_signup" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(generateLink).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "host@example.com", type: "magiclink" }),
+    );
+    expect(createUser).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "login_otp_consume",
+      expect.objectContaining({
+        p_email: "host@example.com",
+        p_pending_hash: null,
+        p_clear_pending: true,
+      }),
+    );
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail.mock.calls[0][0].html).toContain("482913");
+  });
+
+  it("answers the same body for an existing and an unknown address", async () => {
+    const existing = await POST(
+      req({ email: "host@example.com", intent: "show_signup" }, { "x-forwarded-for": "203.0.113.1" }),
+    );
+    authUsers.current = [];
+    const unknown = await POST(
+      req({ email: "new@example.com", intent: "show_signup" }, { "x-forwarded-for": "203.0.113.2" }),
+    );
+    expect(existing.status).toBe(200);
+    expect(unknown.status).toBe(200);
+    expect(await existing.json()).toEqual(await unknown.json());
+    expect(existing.headers.get("Cache-Control")).toBe("no-store");
+    expect(unknown.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("ignores any other intent value and any role field", async () => {
+    authUsers.current = [];
+    const res = await POST(
+      req({ email: "new@example.com", intent: "admin", role: "admin", tier: "operator" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(createUser).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "login_otp_consume",
+      expect.objectContaining({ p_email: "new@example.com", p_pending_hash: null }),
+    );
+  });
+
+  it("does not let a role field change the sign-up marker", async () => {
+    authUsers.current = [];
+    const res = await POST(
+      req({ email: "new@example.com", intent: "show_signup", role: "admin" }),
+    );
+    expect(res.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith(
+      "login_otp_consume",
+      expect.objectContaining({ p_pending_outreach: "show_signup" }),
+    );
+  });
+
+  it("keeps the outreach path ahead of the sign-up intent", async () => {
+    authUsers.current = [];
+    verifyOutreachToken.mockReturnValue({ outreach_id: "out-1", iat: 1, v: 1 });
+    getOutreachById.mockResolvedValue({
+      id: "out-1",
+      sent_to_email: "new@example.com",
+    });
+    const res = await POST(
+      req({
+        email: "new@example.com",
+        outreach_token: "pitch-token",
+        intent: "show_signup",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith(
+      "login_otp_consume",
+      expect.objectContaining({ p_pending_outreach: "out-1" }),
+    );
+  });
+
+  it("rate limits show sign-up per IP per day and fails closed", async () => {
+    authUsers.current = [];
+    limitBuckets({ show_signup_ip_day: false });
+    const limited = await POST(
+      req({ email: "new@example.com", intent: "show_signup" }),
+    );
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Cache-Control")).toBe("no-store");
+    expect(limited.headers.get("Retry-After")).toBeTruthy();
+    expect(sendEmail).not.toHaveBeenCalled();
+
+    limitBuckets({ show_signup_ip_day: "error" });
+    const closed = await POST(
+      req({ email: "new2@example.com", intent: "show_signup" }),
+    );
+    expect(closed.status).toBe(503);
+    expect(await closed.json()).toEqual({ error: "unavailable" });
+    expect(closed.headers.get("Cache-Control")).toBe("no-store");
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("spends the sign-up budget for an existing address too", async () => {
+    limitBuckets({ show_signup_ip_day: false });
+    const res = await POST(
+      req({ email: "host@example.com", intent: "show_signup" }),
+    );
+    expect(res.status).toBe(429);
+    expect(generateLink).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("does not spend the sign-up budget without the intent", async () => {
+    const res = await POST(req({ email: "host@example.com" }));
+    expect(res.status).toBe(200);
+    const buckets = rpc.mock.calls
+      .filter((call) => call[0] === "rate_limit_hit")
+      .map((call) => (call[1] as { p_bucket?: string }).p_bucket);
+    expect(buckets).not.toContain("show_signup_ip_day");
+  });
+
+  it("keeps the generic send limiter in front (429 and closed failure)", async () => {
+    limitBuckets({ login_code_send_email: false });
+    const limited = await POST(
+      req({ email: "new@example.com", intent: "show_signup" }),
+    );
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Cache-Control")).toBe("no-store");
+
+    limitBuckets({ login_code_send_email: "error" });
+    const closed = await POST(
+      req({ email: "new3@example.com", intent: "show_signup" }),
+    );
+    expect(closed.status).toBe(503);
+    expect(closed.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("sets Cache-Control no-store on every response", async () => {
+    const ok = await POST(req({ email: "host@example.com" }));
+    expect(ok.headers.get("Cache-Control")).toBe("no-store");
+
+    const bad = await POST(req({ email: "   " }));
+    expect(bad.headers.get("Cache-Control")).toBe("no-store");
+
+    rpc.mockResolvedValue({ data: null, error: { message: "secret-db-text" } });
+    const unavailableRes = await POST(req({ email: "other@example.com" }));
+    expect(unavailableRes.status).toBe(503);
+    expect(unavailableRes.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("never returns DB text from any failing dependency", async () => {
+    authUsers.current = [];
+    sendEmail.mockResolvedValue({
+      ok: false,
+      reason: "secret-db-text",
+      error: new Error("secret-db-text"),
+    });
+    const sendFail = await POST(
+      req({ email: "new@example.com", intent: "show_signup" }),
+    );
+    expect(sendFail.status).toBe(500);
+    expect(JSON.stringify(await sendFail.json())).not.toContain("secret-db-text");
+
+    rpc.mockResolvedValue({ data: null, error: { message: "secret-db-text" } });
+    const rpcFail = await POST(
+      req({ email: "new2@example.com", intent: "show_signup" }),
+    );
+    expect(JSON.stringify(await rpcFail.json())).not.toContain("secret-db-text");
+
+    authUsers.current = [{ id: "show-1", email: "host@example.com" }];
+    limitBuckets({});
+    generateLink.mockResolvedValue({
+      data: { user: null, properties: {} },
+      error: { message: "secret-db-text" },
+    });
+    const linkFail = await POST(req({ email: "host@example.com" }));
+    expect(JSON.stringify(await linkFail.json())).not.toContain("secret-db-text");
+  });
+});

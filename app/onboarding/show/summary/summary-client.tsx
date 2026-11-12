@@ -109,7 +109,9 @@ export default function SummaryClient({
       window.location.assign(data.redirect_to);
       return;
     }
-    router.push("/dashboard");
+    // Everyone else proves ownership next (R1). The show stays unverified
+    // until that page's proof finishes.
+    router.push("/settings/ownership");
   };
 
   const audience = profile.audience_size ?? 0;

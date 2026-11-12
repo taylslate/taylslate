@@ -103,6 +103,37 @@ describe("ShowEmailCode", () => {
     expect(screen.queryByText(/magic link/i)).toBeNull();
   });
 
+  it("sends intent show_signup in the code request when set", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    render(
+      <ShowEmailCode
+        intent="show_signup"
+        nextPath="/onboarding/show"
+        onVerified={onVerified}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "new@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+    await screen.findByLabelText("Code");
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toEqual({
+      email: "new@example.com",
+      next: "/onboarding/show",
+      intent: "show_signup",
+    });
+  });
+
+  it("sends the same body as before when intent is unset", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    renderForm();
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "host@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+    await screen.findByLabelText("Code");
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toEqual({ email: "host@example.com" });
+    expect("intent" in body).toBe(false);
+  });
+
   it("stays on the email step when the first send is rate limited", async () => {
     fetchMock.mockResolvedValue({
       ok: false,

@@ -10,6 +10,15 @@ export const LOGIN_OTP_EXPIRED = "expired";
 export const LOGIN_OTP_INVALID = "invalid_code";
 export const LOGIN_OTP_RESEND_WAIT = "resend_wait";
 
+/**
+ * Show self-sign-up (R1). The send route accepts only this exact intent
+ * string; anything else in the body is ignored. The pending marker is stored
+ * in login_otp_limits.pending_outreach_id, which otherwise holds an outreach
+ * UUID, so the literal cannot collide with a real outreach id.
+ */
+export const SHOW_SIGNUP_INTENT = "show_signup";
+export const SHOW_SIGNUP_PENDING = "show_signup";
+
 /** Matches the send cooldown in lib/auth/login-otp-limit.ts. */
 export const LOGIN_OTP_RESEND_SEC = 60;
 export const LOGIN_OTP_LENGTH = 6;

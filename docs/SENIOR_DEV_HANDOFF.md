@@ -3398,3 +3398,41 @@ Screenshots use the production stylesheet and the real ownership component, rend
 - The email does not include the amount. Copy is open.
 - No admin release route.
 - No migration. This PR does not merge. Paul reviews.
+
+## R1
+
+### What was built
+
+Show / creator self-sign-up with an email code (no password). A new public page `/signup/show` asks for an email, posts `intent: "show_signup"` to the existing `POST /api/auth/login/otp`, and an address with no auth user and no outreach token gets a locally minted 6-digit code stored hashed in `login_otp_limits` with the literal `show_signup` in `pending_outreach_id` (outreach ids are UUIDs, so no collision). Verifying that code at `POST /api/auth/login/otp/verify` creates the account through `createShowAccount(email, "show_signup")` with `role: "show"` and `tier: "free"` hard-coded, opens the session, and defaults `next` to `/onboarding/show`. An existing user who uses the page gets a normal login code, keeps their role, and no `profiles` write happens; the send response is `{ ok: true }` either way. Both code routes now set `Cache-Control: no-store` on every response, and the send route adds one closed rate-limit rule (`show_signup_ip_day`, 10 per IP per day) that is spent on every show-signup request whether or not the address has an account.
+
+Links to `/signup/show` were added on `/signup`, `/login`, and the role picker. The picker's Show / Creator card (`SHOW_SIGNUP_OPTION`) stays out of `ONBOARDING_ROLES`, never calls `/api/onboarding/role`, and signs the password session out before navigating. After the show onboarding summary, `complete()` with no pitch `redirect_to` now pushes `/settings/ownership` (the existing O2/O4 proof flow) instead of `/dashboard`. The show stays unverified until ownership is proven there.
+
+### Where
+
+- `app/api/auth/login/otp/route.ts` and `route.test.ts`
+- `app/api/auth/login/otp/verify/route.ts` and `route.test.ts`
+- `lib/auth/login-otp.ts` (`SHOW_SIGNUP_INTENT`, `SHOW_SIGNUP_PENDING`) and `login-otp.test.ts`
+- `lib/auth/login-otp-show.ts` (optional `source` argument) and new `login-otp-show.test.ts`
+- `components/auth/show-email-code.tsx` (optional `intent` prop) and `show-email-code.test.tsx`
+- `app/(auth)/signup/show/page.tsx` and `page.test.tsx` (new)
+- `app/(auth)/signup/page.tsx` and `page.test.tsx` (one link)
+- `app/(auth)/login/page.tsx` and `page.test.tsx` (one link)
+- `app/onboarding/roles.tsx`, `app/onboarding/page.tsx`, `roles.test.tsx` (the Show / Creator card)
+- `app/onboarding/show/summary/summary-client.tsx` and new `summary-client.test.tsx` (final redirect only)
+- `app/api/onboarding/role/route.test.ts` (tests only; the route is not edited)
+- `proxy.ts` (ONE LINE OUTSIDE THE OWNS LIST: `/signup/show` in the public-route allowlist; without it the proxy bounces signed-out visitors to `/login` and the page is unreachable; flagged for review)
+- `docs/jobs/R1.md` (new)
+
+`lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, `lib/security/rate-limit.ts`, `app/api/onboarding/role/route.ts`, and every PAYGATE1 file were not edited. No migration.
+
+### Tests
+
+`npx tsc --noEmit` clean. `npx vitest run`: 408 files, 3480 passed, 41 skipped. `npx eslint` on changed files: 0 errors. `npx next build` compiled. Security coverage: role/tier/intent fields in request bodies never change the created role; `secret-db-text` injected into every Supabase and RPC mock appears in no response body or rendered page; the send response body is identical for existing and unknown addresses; both code routes send `Cache-Control: no-store` on every response; the `show_signup_ip_day` and existing limiters 429 and fail closed.
+
+### Known gaps
+
+- `proxy.ts` was touched outside Owns (one allowlist line, see above).
+- `/signup/show` inherits `/signup` metadata (no `PUBLIC_PAGES` entry; that file is not owned here).
+- No captcha on `/signup/show`; the rate limits are the only brake, by design.
+- The summary button copy still says "take me to my dashboard" while landing on `/settings/ownership`.
+- No migration. This PR does not merge. Paul reviews.

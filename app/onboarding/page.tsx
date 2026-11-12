@@ -7,7 +7,7 @@ import {
   type ParsedCSVRow,
 } from "@/lib/utils/fuzzy-match";
 import { createClient } from "@/lib/supabase/client";
-import { ONBOARDING_ROLES } from "./roles";
+import { ONBOARDING_ROLES, SHOW_SIGNUP_OPTION } from "./roles";
 import type { Platform } from "@/lib/data/types";
 
 type Step = 1 | 2 | 3;
@@ -145,9 +145,15 @@ export default function OnboardingPage() {
 
   // ---- Role selection ----
   //
-  // Options live in ./roles (ONBOARDING_ROLES). "show" / creator is
-  // deliberately not offered here — shows onboard via the magic-link+OTP
-  // outreach path, not password self-signup.
+  // Options live in ./roles (ONBOARDING_ROLES). "show" / creator is the
+  // separate SHOW_SIGNUP_OPTION card: it never posts to /api/onboarding/role.
+  // Shows self-sign-up through /signup/show with an email code (R1).
+
+  const handleShowSignup = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/signup/show");
+  };
 
   const handleRoleSelect = async (roleId: string) => {
     const supabase = createClient();
@@ -283,7 +289,31 @@ export default function OnboardingPage() {
                   </svg>
                 </button>
               ))}
+
+              <button
+                onClick={handleShowSignup}
+                className="group flex w-full items-center gap-5 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5 text-left transition-all hover:border-[var(--ts-ink-on-paper)]"
+              >
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] text-[var(--ts-ink-on-paper)]">
+                  {SHOW_SIGNUP_OPTION.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-0.5 font-semibold text-[var(--ts-ink-on-paper)]">
+                    {SHOW_SIGNUP_OPTION.title}
+                  </div>
+                  <div className="text-sm text-[var(--ts-ink-muted-on-paper)]">
+                    {SHOW_SIGNUP_OPTION.description}
+                  </div>
+                </div>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ts-ink-muted-on-paper)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
             </div>
+
+            <p className="mt-4 text-center text-sm text-[var(--ts-ink-muted-on-paper)]">
+              Shows sign up with an email code. Use the email you want on your show account.
+            </p>
           </div>
         )}
 
