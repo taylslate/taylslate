@@ -8,6 +8,7 @@ import { channelPassesLibraryFloors } from "./read";
 import { isMissingLibraryTable, statsFreshCutoff } from "./store";
 
 export const LIBRARY_CREATOR_LIMIT = 20;
+export const LIBRARY_CREATOR_FETCH = 60;
 const SEARCH_MAX = 100;
 const DESCRIPTION_MAX = 300;
 
@@ -110,12 +111,14 @@ function clampLimit(limit: number | undefined): number {
 }
 
 /**
- * Same wildcard escape as the show search box. Trim, undo one escape
- * pass so an already escaped term is not escaped twice, cap at 100
- * characters, then escape \, %, and _.
+ * Trim, drop every *, undo one escape pass so an already escaped term
+ * is not escaped twice, cap at 100 characters, then escape \, %, and _.
+ * PostgREST treats * as % and a backslash does not escape it.
  */
 export function escapeLibrarySearch(raw: string): string {
-  const plain = raw.trim().replace(LIKE_ESCAPED, "$1").slice(0, SEARCH_MAX);
+  const stripped = raw.trim().replace(/\*/g, "");
+  if (!stripped) return "";
+  const plain = stripped.replace(LIKE_ESCAPED, "$1").slice(0, SEARCH_MAX);
   return plain.replace(LIKE_SPECIAL, (char) => `\\${char}`);
 }
 
@@ -196,7 +199,7 @@ export async function searchLibraryCreators(input: {
     .gte("stats_refreshed_at", cutoff)
     .ilike("title", `%${escaped}%`)
     .order("avg_recent_views", { ascending: false, nullsFirst: false })
-    .limit(limit);
+    .limit(LIBRARY_CREATOR_FETCH);
 
   if (missingOrThrow(error) === "missing") return [];
   const rows = ((data ?? []) as LibraryRow[]).filter(passesFloors);

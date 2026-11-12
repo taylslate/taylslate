@@ -22,25 +22,36 @@ const ERROR_TEXT: Record<string, string> = {
 export default function YoutubeConnectClient({
   status,
   notice,
+  loadError = false,
 }: {
   status: YoutubeStatus;
   notice: { connected?: boolean; error?: string | null };
+  loadError?: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [revokeNotice, setRevokeNotice] = useState(false);
   const active = status.connected && status.status === "active";
   const reconnect = status.status === "reauth_required";
 
   const disconnect = async () => {
     setPending(true);
     setMessage(null);
+    setRevokeNotice(false);
     const res = await fetch("/api/youtube/disconnect", { method: "POST" });
     setPending(false);
     if (!res.ok) {
       setMessage("Could not disconnect. Try again.");
       return;
     }
+    let body: { google_revoke?: unknown } | null = null;
+    try {
+      body = (await res.json()) as { google_revoke?: unknown };
+    } catch {
+      body = null;
+    }
+    if (body?.google_revoke === "failed") setRevokeNotice(true);
     router.refresh();
   };
 
@@ -69,12 +80,30 @@ export default function YoutubeConnectClient({
           {message}
         </p>
       )}
+      {revokeNotice && (
+        <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]">
+          Disconnected. To finish, remove Taylslate from your{" "}
+          <a
+            className="text-[var(--ts-accent-text)] underline"
+            href="https://myaccount.google.com/permissions"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Google Account permissions
+          </a>
+          .
+        </p>
+      )}
 
       <section
         className="border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4"
         style={radiusStyle}
       >
-        {active ? (
+        {loadError ? (
+          <p className="text-sm text-[var(--ts-ink-on-paper)]" role="alert">
+            We could not load your YouTube connection. Refresh to try again.
+          </p>
+        ) : active ? (
           <p className="text-sm text-[var(--ts-ink-on-paper)]">
             Connected{status.channel_title ? ` to ${status.channel_title}` : ""}.
             {status.channel_id ? ` Channel ${status.channel_id}.` : ""}
@@ -91,28 +120,30 @@ export default function YoutubeConnectClient({
           <p className="text-sm text-[var(--ts-ink-on-paper)]">No YouTube channel is connected.</p>
         )}
 
-        <div className="mt-4 flex flex-wrap gap-3">
-          {!active && (
-            <a
-              href="/api/youtube/connect"
-              className="inline-flex items-center bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90"
-              style={radiusStyle}
-            >
-              Connect YouTube
-            </a>
-          )}
-          {(active || reconnect) && (
-            <button
-              type="button"
-              onClick={disconnect}
-              disabled={pending}
-              className="inline-flex items-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:opacity-50"
-              style={radiusStyle}
-            >
-              {pending ? "Disconnecting" : "Disconnect"}
-            </button>
-          )}
-        </div>
+        {!loadError && (
+          <div className="mt-4 flex flex-wrap gap-3">
+            {!active && (
+              <a
+                href="/api/youtube/connect"
+                className="inline-flex items-center bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90"
+                style={radiusStyle}
+              >
+                Connect YouTube
+              </a>
+            )}
+            {(active || reconnect) && (
+              <button
+                type="button"
+                onClick={disconnect}
+                disabled={pending}
+                className="inline-flex items-center border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-2 text-sm font-medium text-[var(--ts-ink-on-paper)] hover:bg-[var(--ts-band-shows)] disabled:opacity-50"
+                style={radiusStyle}
+              >
+                {pending ? "Disconnecting" : "Disconnect"}
+              </button>
+            )}
+          </div>
+        )}
       </section>
 
       <div className="mt-8 space-y-4 text-sm leading-6 text-[var(--ts-ink-muted-on-paper)]">

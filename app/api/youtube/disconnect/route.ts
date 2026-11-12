@@ -3,6 +3,7 @@
 // database transaction. Cross-origin requests are refused.
 
 import { NextRequest, NextResponse } from "next/server";
+import { logEvent } from "@/lib/data/events";
 import { getAuthenticatedUser } from "@/lib/data/queries";
 import { readYoutubeOauthConfig, youtubeOauthConfigured } from "@/lib/youtube-oauth/config";
 import { decryptString } from "@/lib/youtube-oauth/crypto";
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const failures: Array<{ connection_id: string; attempts: number }> = [];
   try {
     const live = await listLiveCiphertexts(user.id);
     for (const cipher of live) {
@@ -58,12 +60,33 @@ export async function POST(request: NextRequest) {
       } catch {
         token = "";
       }
-      if (token) await revokeGoogleToken(token);
+      if (!token) continue;
+      const attempts = { count: 0 };
+      const revoked = await revokeGoogleToken(token, { attempts });
+      if (revoked === false) {
+        failures.push({ connection_id: cipher.id, attempts: attempts.count });
+      }
     }
     await disconnectYoutubeUser(user.id);
   } catch {
     return unavailable();
   }
 
+  for (const failure of failures) {
+    await logEvent({
+      eventType: "youtube.google_revoke_failed",
+      entityType: "profile",
+      entityId: user.id,
+      actorId: user.id,
+      payload: {
+        connection_id: failure.connection_id,
+        attempts: failure.attempts,
+      },
+    });
+  }
+
+  if (failures.length > 0) {
+    return NextResponse.json({ ok: true, google_revoke: "failed" });
+  }
   return NextResponse.json({ ok: true });
 }

@@ -69,3 +69,7 @@ Housekeeping caption clears for a retired or lapsed channel are per channel as o
 - A connected channel is not show-ownership verification. The log event is `youtube.channel_connected` only.
 - Track search.list calls apart from other Data API units.
 - The cron route still has its own bearer check.
+
+## Known gaps
+
+- A status read failure, the bounded Google revoke retry, and the `youtube.channel_connected` cast are handled in [HARDEN1](HARDEN1.md). Keeping ciphertext after a failed revoke is on the Chris list there.

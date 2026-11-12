@@ -15,6 +15,7 @@ import {
   claimAircheckConfirm,
   loadAircheckLineDeal,
   releaseAircheckConfirm,
+  saveAircheckConfirmedIfUndecided,
   saveAircheckReview,
   findAircheckByLine,
   type AircheckLineDeal,
@@ -83,6 +84,12 @@ const REJECTED_FINAL =
   "This line was rejected. Reopening a rejected line is not supported.";
 
 const IN_PROGRESS = "This line is already being reviewed.";
+
+const ALREADY_DECIDED =
+  "This line was already decided. No new charge was made.";
+
+const DECIDED_DURING_CHARGE =
+  "This line was decided while it was being charged. The charge stands. Check this line before doing anything else.";
 
 function cleanReason(reason: string | null | undefined): string | null {
   const trimmed = reason?.trim() ?? "";
@@ -220,8 +227,8 @@ async function paymentFor(
 async function saveConfirmed(
   input: DecideInput,
   clearClaim: boolean
-): Promise<AircheckRow> {
-  return saveAircheckReview(input.ioLineItemId, {
+): Promise<AircheckRow | null> {
+  return saveAircheckConfirmedIfUndecided(input.ioLineItemId, {
     review_decision: "confirmed",
     review_reason: null,
     decided_by: input.decidedBy,
@@ -239,6 +246,9 @@ async function finishAlreadyCharged(
   clearClaim: boolean
 ): Promise<ConfirmAircheckResult> {
   const aircheck = await saveConfirmed(input, clearClaim);
+  if (!aircheck) {
+    throw new AircheckReviewConflict(ALREADY_DECIDED);
+  }
   await logEvent({
     eventType: "aircheck.confirmed",
     entityType: "aircheck",
@@ -356,6 +366,21 @@ export async function confirmAircheck(
     }
 
     const aircheck = await saveConfirmed(input, true);
+    if (!aircheck) {
+      await logEvent({
+        eventType: "aircheck.confirm_blocked",
+        entityType: "aircheck",
+        entityId: existing.id,
+        actorId: input.actorId ?? null,
+        payload: {
+          reason: "decided_during_charge",
+          payment_id: delivered.charge.paymentId,
+          io_line_item_id: input.ioLineItemId,
+          decided_by: input.decidedBy,
+        },
+      });
+      throw new AircheckReviewConflict(DECIDED_DURING_CHARGE);
+    }
     await logEvent({
       eventType: "aircheck.confirmed",
       entityType: "aircheck",

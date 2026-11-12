@@ -1402,7 +1402,8 @@ export async function importShows(
       .single();
 
     if (showError || !newShow) {
-      errors.push(`${showData.name}: ${showError?.message ?? "Unknown error"}`);
+      console.error("Import error:", importFailureCode(showError));
+      errors.push(`${showData.name}: could not be imported.`);
       continue;
     }
 
@@ -1423,14 +1424,12 @@ export async function importShows(
         .from("shows")
         .delete()
         .eq("id", newShow.id);
+      console.error("Import error:", importFailureCode(relError));
       if (deleteError) {
-        errors.push(
-          `${showData.name}: roster link failed (${relError.message}); show ${newShow.id} was left in place (${deleteError.message})`
-        );
+        console.error("Import error:", importFailureCode(deleteError));
+        errors.push(`${showData.name}: could not be imported. Contact support.`);
       } else {
-        errors.push(
-          `${showData.name}: roster link failed (${relError.message}); the new show was removed`
-        );
+        errors.push(`${showData.name}: could not be imported.`);
       }
       continue;
     }
@@ -1440,6 +1439,11 @@ export async function importShows(
   }
 
   return { imported, skipped, errors };
+}
+
+function importFailureCode(error: { code?: string } | null | undefined): string {
+  const code = error?.code;
+  return typeof code === "string" && code.length > 0 ? code : "unknown";
 }
 
 // ---- Enrichment Queries ----

@@ -880,7 +880,10 @@ export type DomainEventType =
   | "api_action.execution_failed"
   // Command agent turn finished, or the daily token cap stopped a turn.
   | "command_agent.turn"
-  | "command_agent.cap_hit";
+  | "command_agent.cap_hit"
+  // Creator YouTube channel saved, or Google revoke failed and the tokens were still deleted.
+  | "youtube.channel_connected"
+  | "youtube.google_revoke_failed";
 
 export type DomainEntityType =
   | "deal"

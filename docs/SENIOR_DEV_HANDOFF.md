@@ -3138,6 +3138,108 @@ No page or component was edited. Screenshots are not applicable. No live write.
 - The U1b handoff note that 090 was the next free migration for a library read is stale. 090 is this grants file. The next free number is 091.
 - This PR does not merge. Paul reviews.
 
+## AC3b
+
+### What was built
+
+Three follow-ups to AC3, with no migration.
+
+A confirm that already finds a payment can no longer overwrite a concurrent reject. `saveAircheckConfirmedIfUndecided` updates the row only while `review_decision` is null. Zero rows returns null. The reconcile path then returns 409, "This line was already decided. No new charge was made.", writes no `aircheck.confirmed` event, and does not charge. If the charge already succeeded and the guarded save loses, the code logs `aircheck.confirm_blocked` with `decided_during_charge` and returns 409, "This line was decided while it was being charged. The charge stands. Check this line before doing anything else." It does not retry, charge again, or overwrite the row. `deliverAndChargeLine` is still called only under the claim, and only once.
+
+The confirm route no longer returns raw Stripe or database text. A 502 body uses a fixed `chargeError`. `charge_error` is hidden on every response body. The stored `charge_error` and the `aircheck.charge_failed` payload still keep the full detail, including a rollback sentence. Every response from this route is `Cache-Control: no-store`. A 500 still says "Review failed." and the log is only the error name or code.
+
+The YouTube caption fallback in `buildDueSpots` keeps the lowest `channel_id` per show, using `localeCompare` with `en-US`, which matches migration 089. The chunked library query is unchanged.
+
+Chris approved these `lib/airchecks` edits on 2026-11-11 (Angus relayed "yes its ok"). That approval does not cover any other file in `lib/airchecks`. No screen, style, or animation changed. No live write and no charge. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/delivery`, `plans.ts`, and `lib/data/types.ts` were not edited.
+
+### Where
+
+- `lib/airchecks/store.ts` and `store.test.ts` (`saveAircheckConfirmedIfUndecided`)
+- `lib/airchecks/review.ts` and `review.test.ts`
+- `lib/airchecks/select.ts` and `select.test.ts` (`compareCaptionChannelId`)
+- `app/api/admin/aircheck/review/route.ts` and `route.test.ts`
+- `docs/jobs/AC3b.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run lib/airchecks app/api/admin/aircheck`: 20 files, 150 passed.
+
+`npx vitest run`: 388 files, 3275 passed, 41 skipped.
+
+`npx next build` compiled successfully and generated 147 pages. `/api/admin/aircheck/review` is dynamic.
+
+Covers a payment that exists while the row turns rejected before the save (409, no confirmed event, no charge), the same race under the claim with the claim released, a guarded save that returns null after one charge (`aircheck.confirm_blocked`, row not overwritten), two confirms where the second finds the payment and `deliverAndChargeLine` runs once, the full "card declined ... Delivery rollback failed: ..." text still stored on the row and the event, `.is("review_decision", null)` plus null on 0 rows and a plain `Error` otherwise, the 502 body with the fixed sentence and no `charge_error` key, the 409 fixed text, `Cache-Control: no-store` on every response from the route, and the lowest channel id in both input orders including the mixed-case pair `"UCa..."` before `"UCB..."`. The old route assertion that expected raw "card declined" in the 502 body was replaced on purpose.
+
+No UI file changed, so there are no screenshots.
+
+### Known gaps
+
+- The stale-claim clock still uses `Date.now()` for the cutoff and for `confirm_claimed_at`. A PostgREST filter cannot reference database `now()`. Moving it needs an RPC or SQL function, which is a migration, so it was skipped.
+- `app/api/admin/mark-delivered` still returns the raw `chargeError` on a 502. That route wraps the charge path, so the same fixed-text change needs the same Chris OK. It was not edited.
+- `decided_by` still stores the session email.
+- The admin review page still renders the saved `charge_error` for an internal admin. That page was not edited. The POST body does not carry it.
+- No migration. Apply nothing for this job.
+- This PR does not merge. Paul reviews.
+
+## HARDEN1
+
+### What was built
+
+Six review follow-ups from CLEAN1, AC-YT, and U1b. No migration.
+
+A feed match in the legacy `/shows` import counts only when the show is discoverable or owned by the caller. Another rep's hidden show with the same feed is not a duplicate, so the row imports as a new hidden show for the caller. Roster import still matches that hidden show on a strong tier and still writes the pending link, because an admin reviews every roster link. The preview and commit result leaves `show_id` and `show_name` empty for that row. The class, the tier, and the reasons stay. A discoverable show or the caller's own show still returns the id and name. The roster-import test change that used to expect the hidden id and name is intended.
+
+`POST /api/shows/import` rejects a Content-Length over 1 MB with 413 before reading the body, then counts bytes while reading. It also checks `file.size` and the length of the text. Over 1 MB returns "This file is larger than 1 MB." More than 500 parsed shows returns "Send at most 500 shows." Name and feed lookups run in chunks of 20 with `Promise.all` per chunk. `importShows` error strings are fixed text with the row name only. A cleanup failure says "could not be imported. Contact support." Logs record `error.code` only. CSV formula cells are not neutralized.
+
+`revokeGoogleToken` returns a boolean. It tries at once, after 250 ms, and after 1000 ms, and only retries a network error or a 5xx. A 200 returns true. A 400 `invalid_token` counts as revoked. Anything else returns false. It never throws. Disconnect still revokes and then deletes the tokens. When revoke fails, the tokens are still deleted, a `youtube.google_revoke_failed` event stores `{ connection_id, attempts }` only, and the response is `{ ok: true, google_revoke: "failed" }`. The settings client shows one line telling the creator to remove Taylslate from Google Account permissions, with a new-tab link to `https://myaccount.google.com/permissions`. A channel switch logs the same event when revoke returns false. The other callback revoke calls stay best-effort.
+
+`GET /api/youtube/status` returns 503 `{ error: "unavailable" }` with `Cache-Control: no-store` when the read throws. `/settings/youtube` requires a show profile after the role check, and calls `notFound()` without one. A read failure renders "We could not load your YouTube connection. Refresh to try again." and hides Connect and Disconnect. `youtube.channel_connected` and `youtube.google_revoke_failed` are on `DomainEventType`. The callback cast is gone.
+
+Library search selects 60 rows, applies the floor check and the show-link drop, then slices to at most 20. `escapeLibrarySearch` removes every `*` after trimming. A term that is empty after that returns `[]` with no query. `a*b` is sent as `%ab%`.
+
+### Where
+
+- `lib/shows/import-catalog-match.ts` and `import-catalog-match.test.ts`
+- `lib/reps/roster-import.ts` and `roster-import.test.ts` (hidden-show result shape only)
+- `lib/data/queries.ts` (`importShows` only) and `lib/data/roster-links.test.ts` (`importShows` cases only)
+- `app/api/shows/import/route.ts` and `route.test.ts`
+- `lib/youtube-oauth/google.ts` and `google.test.ts` (`revokeGoogleToken` only)
+- `app/api/youtube/disconnect/route.ts` and `route.test.ts`
+- `app/api/youtube/callback/route.ts` and `route.test.ts` (revoke calls and the cast)
+- `app/api/youtube/status/route.ts` and `route.test.ts`
+- `app/(dashboard)/settings/youtube/page.tsx`, `page.test.tsx`, and `youtube-connect-client.tsx`
+- `lib/data/types.ts` (two `DomainEventType` strings)
+- `lib/youtube-library/brand-read.ts` and `brand-read.test.ts`
+- `docs/jobs/HARDEN1.md`, `docs/jobs/AC-YT.md`, `docs/jobs/U1b.md`, `docs/jobs/CLEAN1.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+`lib/stripe`, `lib/airchecks`, `lib/billing`, `lib/payouts`, `plans.ts`, `supabase/**`, `proxy.ts`, `vercel.json`, `lib/youtube-oauth/store.ts`, and `lib/youtube-oauth/feed.ts` were not edited. No Vercel env change. No live write.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 388 files, 3286 passed, 41 skipped.
+
+`npx vitest run lib/shows lib/reps app/api/shows/import lib/data/roster-links.test.ts lib/youtube-oauth app/api/youtube 'app/(dashboard)/settings/youtube' lib/youtube-library/brand-read.test.ts`: 30 files, 264 passed.
+
+`npx next build` compiled successfully and generated 147 pages. `/settings/youtube` stays dynamic.
+
+Covers a hidden feed that is not a catalog duplicate, a discoverable or own feed that is, chunked lookups, roster id and name hidden with the pending link still written, 413 and 500-row caps, fixed import errors with code-only logs, revoke retry timing, disconnect and channel-switch failure events, status 503, the settings load error, the show-profile gate, the disconnect notice, the 60-row fetch, and `*` stripped from library search.
+
+Screenshots of `/settings/youtube`: normal state before, normal state after, the load error, and the disconnect notice. They use the production stylesheet. A signed-in session was not available, so the shots render the page markup rather than a live login.
+
+### Known gaps
+
+- SA-14 caps and batched lookups are done. Formula-cell neutralizing is still open.
+- The same `*` wildcard in `/api/shows` search is still open. That route is outside this job.
+- Name and feed lookups still do not fail closed when a query hits its row cap.
+- Keeping the Google ciphertext until a later revoke succeeds is not built. It would contradict the LG2 privacy copy. It is on the Chris list in `docs/jobs/HARDEN1.md`.
+- This PR does not merge. Paul reviews.
+
 ## O2
 
 ### What was built
@@ -3172,11 +3274,11 @@ Payouts are not wired. A verified row is what `getVerifiedProfileTies` and `isPa
 
 `npx tsc --noEmit` is clean.
 
-`npx vitest run`: 396 files, 3327 passed, 41 skipped. That run is after the merge of SEC7 (090).
+`npx vitest run`: 396 files, 3361 passed, 41 skipped. That run is after the merge of main at 3bb8179 (SEC7, AC3b, and HARDEN1).
 
 `npx vitest run lib/ownership app/api/ownership 'app/(dashboard)/settings'` covers 401, 403 for a brand and for a show with no profile, cross-origin 403, start 400 with no feed, 409 with no catalog match, the code returned once and only its hash stored, a channel-description hit, an episode-notes hit, an HTML-entity-encoded code, a miss and the 5th miss going to contested, expiry, 429 per minute and per day, 503 when the limiter fails closed, exclusive-rep contested, already-verified contested, the 23505 race, YouTube with no key (no miss), a blocked 127.0.0.1 and 10.1.2.3 feed with no network call, another user's proof left unchanged, and no code or hash in a console call.
 
-`npx next build` compiled successfully. `/settings/ownership` is dynamic. The build ran on this app code before the SEC7 merge. That merge is SQL and docs only.
+`npx next build` compiled successfully after the merge of main at 3bb8179. `/settings/ownership` is dynamic.
 
 `git diff --stat origin/main -- supabase lib/payouts lib/stripe lib/billing lib/airchecks lib/reps lib/shows lib/data/types.ts lib/youtube-oauth app/api/youtube proxy.ts vercel.json` is empty.
 

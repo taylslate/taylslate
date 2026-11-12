@@ -130,8 +130,7 @@ The search client keeps every previous assertion. The new group renders under th
 ## Known gaps
 
 - A library creator has no outreach, contact, or add-to-campaign action. The profile is read-only.
-- The match is `ilike` on `title` only.
-- The database page is capped at 20 before the in-code floor check and the show-link drop, so a page can come back shorter than 20.
+- The match is `ilike` on `title` only. [HARDEN1](HARDEN1.md) fetches 60 rows before the floor check and the show-link drop, trims to 20, and strips `*`. The same `*` issue in `/api/shows` search is still open.
 - The next free migration (090 at the time of writing) is not written. No view, no policy, and no grant.
 - `youtube_channels` and `youtube_channel_emails` stay service_role only.
 - The Search nav item was not changed. `read.ts`, `store.ts`, `quota.ts`, `lib/nav`, `lib/security/rate-limit.ts`, and `app/api/shows` were not edited.

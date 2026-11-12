@@ -172,7 +172,10 @@ describe("GET /api/youtube/callback", () => {
     expect(retire).toHaveBeenCalledWith("old-row");
     expect(held[0]?.status).toBe("revoked");
     expect(held[0]?.refresh_token_enc).toBeNull();
-    expect(revoke).toHaveBeenCalledWith("old-refresh");
+    expect(revoke).toHaveBeenCalledWith(
+      "old-refresh",
+      expect.objectContaining({ attempts: { count: 0 } })
+    );
     expect(upsert).toHaveBeenCalledOnce();
 
     held[0] = {
@@ -195,5 +198,39 @@ describe("GET /api/youtube/callback", () => {
     expect(held[0]?.refresh_token_enc).not.toBeNull();
     expect(revoke).toHaveBeenCalledWith(REFRESH);
     expect(revoke).not.toHaveBeenCalledWith("keep-refresh");
+  });
+
+  it("logs a failed revoke on a channel switch and still connects", async () => {
+    held.push({
+      id: "old-row",
+      channel_id: "UCold",
+      refresh_token_enc: encryptString("old-refresh", KEY),
+      access_token_enc: null,
+      status: "active",
+    });
+    live.mockImplementation(async () => held.filter((row) => row.status !== "revoked"));
+    listChannel.mockResolvedValue({ ok: true, channel: { channelId: "UCnew", title: "New Show" } });
+    revoke.mockImplementation(async (token: string, options?: { attempts?: { count: number } }) => {
+      if (token === "old-refresh") {
+        if (options?.attempts) options.attempts.count = 2;
+        return false;
+      }
+      return true;
+    });
+    const switched = await callback(cookieFor(USER));
+    expect(new URL(switched.headers.get("location") ?? "").searchParams.get("connected")).toBe("1");
+    expect(retire).toHaveBeenCalledWith("old-row");
+    const failure = logEvent.mock.calls
+      .map((call) => call[0] as { eventType?: string; payload?: Record<string, unknown> })
+      .find((event) => event.eventType === "youtube.google_revoke_failed");
+    expect(failure).toMatchObject({
+      eventType: "youtube.google_revoke_failed",
+      entityType: "profile",
+      entityId: USER,
+      payload: { connection_id: "old-row", attempts: 2 },
+    });
+    expect(JSON.stringify(failure)).not.toContain("old-refresh");
+    expect(JSON.stringify(failure)).not.toContain("New Show");
+    expect(JSON.stringify(logEvent.mock.calls)).toContain("youtube.channel_connected");
   });
 });
