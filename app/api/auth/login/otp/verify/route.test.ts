@@ -385,3 +385,206 @@ describe("POST /api/auth/login/otp/verify", () => {
     );
   });
 });
+
+describe("POST /api/auth/login/otp/verify show sign-up", () => {
+  const CODE = "482913";
+
+  function seedSignupPending(
+    email: string,
+    options: { expiresInMs?: number; code?: string } = {},
+  ) {
+    applyLoginOtpRpc(
+      store,
+      {
+        p_action: "send",
+        p_email: email,
+        p_ip: "seed",
+        p_pending_hash: hashLoginOtpCode(email, options.code ?? CODE),
+        p_pending_outreach: "show_signup",
+        p_pending_expires: new Date(
+          Date.now() + (options.expiresInMs ?? 60 * 60 * 1000),
+        ).toISOString(),
+      },
+      Date.now(),
+    );
+  }
+
+  it("creates the show account from a sign-up code and defaults next to show onboarding", async () => {
+    profile = null;
+    authUsers.current = [];
+    seedSignupPending("new@example.com");
+    const res = await POST(req({ email: "new@example.com", code: CODE }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, next: "/onboarding/show" });
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(getOutreachById).not.toHaveBeenCalled();
+    expect(createUser).toHaveBeenCalledWith({
+      email: "new@example.com",
+      email_confirm: true,
+      user_metadata: { source: "show_signup" },
+    });
+    expect(inserted[0]).toEqual({
+      id: "new-show",
+      email: "new@example.com",
+      full_name: "",
+      role: "show",
+      tier: "free",
+    });
+    expect(generateLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          redirectTo: expect.stringContaining("/callback?next=%2Fonboarding%2Fshow"),
+        }),
+      }),
+    );
+    expect(verifyOtp).toHaveBeenCalledWith({
+      token_hash: "tok-hash",
+      type: "magiclink",
+    });
+  });
+
+  it("keeps an explicit next and still routes it through safeLoginNext", async () => {
+    profile = null;
+    authUsers.current = [];
+    seedSignupPending("new@example.com");
+    const res = await POST(
+      req({ email: "new@example.com", code: CODE, next: "//evil.com" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, next: "/dashboard" });
+  });
+
+  it("ignores role and tier fields in the body", async () => {
+    profile = null;
+    authUsers.current = [];
+    seedSignupPending("new@example.com");
+    const res = await POST(
+      req({
+        email: "new@example.com",
+        code: CODE,
+        role: "admin",
+        tier: "operator",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(createUser).toHaveBeenCalledWith(
+      expect.objectContaining({ user_metadata: { source: "show_signup" } }),
+    );
+    expect(inserted[0]).toMatchObject({ role: "show", tier: "free" });
+  });
+
+  it("rejects a wrong sign-up code with invalid_code", async () => {
+    profile = null;
+    authUsers.current = [];
+    seedSignupPending("new@example.com");
+    const res = await POST(req({ email: "new@example.com", code: "000000" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_code" });
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it("rejects an expired sign-up code with expired", async () => {
+    profile = null;
+    authUsers.current = [];
+    seedSignupPending("new@example.com", { expiresInMs: -1000 });
+    const res = await POST(req({ email: "new@example.com", code: CODE }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "expired" });
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it("locks the sign-up email after 5 wrong codes", async () => {
+    profile = null;
+    authUsers.current = [];
+    seedSignupPending("new@example.com");
+    for (let i = 0; i < 5; i++) {
+      const res = await POST(req({ email: "new@example.com", code: "000000" }));
+      expect(res.status).toBe(400);
+    }
+    const locked = await POST(req({ email: "new@example.com", code: CODE }));
+    expect(locked.status).toBe(429);
+    expect(await locked.json()).toMatchObject({ error: "locked" });
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it("is rate limited by the verify bucket and fails closed", async () => {
+    profile = null;
+    authUsers.current = [];
+    seedSignupPending("new@example.com");
+    const baseRpc = rpc.getMockImplementation()!;
+    rpc.mockImplementation(async (name: string, args: unknown) => {
+      if (name === "rate_limit_hit") return { data: false, error: null };
+      return baseRpc(name, args);
+    });
+    const limited = await POST(req({ email: "new@example.com", code: CODE }));
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Cache-Control")).toBe("no-store");
+    expect(createUser).not.toHaveBeenCalled();
+
+    rpc.mockImplementation(async (name: string, args: unknown) => {
+      if (name === "rate_limit_hit") {
+        return { data: null, error: { message: "secret-db-text" } };
+      }
+      return baseRpc(name, args);
+    });
+    const closed = await POST(req({ email: "new@example.com", code: CODE }));
+    expect(closed.status).toBe(503);
+    expect(JSON.stringify(await closed.json())).not.toContain("secret-db-text");
+  });
+
+  it("never returns DB text from any failing dependency", async () => {
+    profile = null;
+    authUsers.current = [];
+
+    seedSignupPending("a@example.com");
+    createUser.mockResolvedValue({
+      data: { user: null },
+      error: { message: "secret-db-text" },
+    });
+    const createFail = await POST(req({ email: "a@example.com", code: CODE }));
+    expect(createFail.status).toBe(500);
+    expect(JSON.stringify(await createFail.json())).not.toContain("secret-db-text");
+    createUser.mockResolvedValue({ data: { user: { id: "new-show" } }, error: null });
+
+    seedSignupPending("b@example.com");
+    from.mockImplementation(() => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+      insert: vi.fn(async () => ({ error: { message: "secret-db-text" } })),
+    }));
+    const insertFail = await POST(req({ email: "b@example.com", code: CODE }));
+    expect(insertFail.status).toBe(500);
+    expect(JSON.stringify(await insertFail.json())).not.toContain("secret-db-text");
+    from.mockImplementation(() => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+      insert: vi.fn(async () => ({ error: null })),
+    }));
+
+    seedSignupPending("c@example.com");
+    generateLink.mockResolvedValue({
+      data: { user: null, properties: {} },
+      error: { message: "secret-db-text" },
+    });
+    const linkFail = await POST(req({ email: "c@example.com", code: CODE }));
+    expect(linkFail.status).toBe(500);
+    expect(JSON.stringify(await linkFail.json())).not.toContain("secret-db-text");
+  });
+
+  it("sets Cache-Control no-store on existing-user verifies too", async () => {
+    const ok = await POST(req({ email: "host@example.com", code: CODE }));
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("Cache-Control")).toBe("no-store");
+
+    verifyOtp.mockResolvedValue({
+      data: { user: null },
+      error: { code: "otp_invalid", message: "Token has expired or is invalid" },
+    });
+    const bad = await POST(req({ email: "host@example.com", code: "000000" }));
+    expect(bad.status).toBe(400);
+    expect(bad.headers.get("Cache-Control")).toBe("no-store");
+  });
+});

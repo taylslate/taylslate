@@ -106,4 +106,17 @@ describe("POST /api/onboarding/role", () => {
       { table: "profiles", op: "update", payload: { role: "agent", tier: "free" } },
     ]);
   });
+
+  it("rejects the show sign-up card id", async () => {
+    const res = await POST(post({ role: "show_signup" }));
+    expect(res.status).toBe(400);
+    expect(writes).toEqual([]);
+  });
+
+  it("refuses a show account that posts brand (403, no role escalation)", async () => {
+    openProfile("show");
+    const res = await POST(post({ role: "brand" }));
+    expect(res.status).toBe(403);
+    expect(writes).toEqual([]);
+  });
 });

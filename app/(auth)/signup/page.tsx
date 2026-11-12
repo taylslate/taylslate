@@ -206,6 +206,12 @@ export default function SignupPage() {
           Log in
         </Link>
       </p>
+      <p className="mt-2 text-sm text-[var(--ts-ink-muted-on-paper)]">
+        Are you a show or creator?{" "}
+        <Link href="/signup/show" className="text-[var(--ts-accent-text)] hover:underline">
+          Sign up with an email code
+        </Link>
+      </p>
     </AuthShell>
   );
 }

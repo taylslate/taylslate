@@ -165,4 +165,12 @@ describe("SignupPage", () => {
     expect(screen.queryByText(/captcha verification process failed/i)).toBeNull();
     expect(mockReset).toHaveBeenCalled();
   });
+
+  it("links shows and creators to the email-code sign-up", () => {
+    render(<SignupPage />);
+    expect(screen.getByText(/Are you a show or creator\?/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Sign up with an email code" }),
+    ).toHaveAttribute("href", "/signup/show");
+  });
 });

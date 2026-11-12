@@ -4,7 +4,22 @@ import {
   isSixDigitCode,
   nextAfterCodeLogin,
   normalizeLoginOtp,
+  SHOW_SIGNUP_INTENT,
+  SHOW_SIGNUP_PENDING,
 } from "./login-otp";
+
+describe("show sign-up constants", () => {
+  it("uses the show_signup literal for the intent and the pending marker", () => {
+    expect(SHOW_SIGNUP_INTENT).toBe("show_signup");
+    expect(SHOW_SIGNUP_PENDING).toBe("show_signup");
+  });
+
+  it("cannot collide with an outreach id (UUIDs only)", () => {
+    expect(SHOW_SIGNUP_PENDING).not.toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+  });
+});
 
 describe("normalizeLoginOtp / isSixDigitCode", () => {
   it("strips spaces and accepts six digits", () => {

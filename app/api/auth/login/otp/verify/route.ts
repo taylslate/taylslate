@@ -1,8 +1,10 @@
 // POST /api/auth/login/otp/verify — exchange a 6-digit code for a session.
 // verifyOtp runs on the server client so the session cookies are set here.
 // A pitch code for an address with no profile creates the show account here,
-// then opens the session from the admin link's hashed token. Brand and show
-// profiles both stay signed in. /dashboard applies the existing role redirects.
+// then opens the session from the admin link's hashed token. A show sign-up
+// code (pending marker "show_signup", R1) does the same without an outreach
+// row and defaults next to /onboarding/show. Brand and show profiles both
+// stay signed in. /dashboard applies the existing role redirects.
 
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -26,6 +28,7 @@ import {
   LOGIN_OTP_INVALID,
   nextAfterCodeLogin,
   normalizeLoginOtp,
+  SHOW_SIGNUP_PENDING,
 } from "@/lib/auth/login-otp";
 import {
   consumeLoginOtpLimit,
@@ -55,14 +58,22 @@ interface ProfileHit {
   role: string | null;
 }
 
+/** Codes and session outcomes must never be cached by any intermediary. */
+function noStore(response: NextResponse): NextResponse {
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
 function unavailable() {
-  return NextResponse.json({ error: "unavailable" }, { status: 503 });
+  return noStore(NextResponse.json({ error: "unavailable" }, { status: 503 }));
 }
 
 function limited(decision: LoginOtpLimitDecision) {
-  return NextResponse.json(
-    { error: decision.error, retry_after_sec: decision.retry_after_sec },
-    { status: 429 },
+  return noStore(
+    NextResponse.json(
+      { error: decision.error, retry_after_sec: decision.retry_after_sec },
+      { status: 429 },
+    ),
   );
 }
 
@@ -93,7 +104,7 @@ async function finish(
     p_email: normalizeLoginEmail(body.email),
     p_ip: loginOtpClientIp(request.headers),
   });
-  return NextResponse.json({ ok: true, next });
+  return noStore(NextResponse.json({ ok: true, next }));
 }
 
 export async function POST(request: NextRequest) {
@@ -101,20 +112,20 @@ export async function POST(request: NextRequest) {
   try {
     body = (await request.json()) as VerifyBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return noStore(NextResponse.json({ error: "Invalid JSON" }, { status: 400 }));
   }
 
   const email = normalizeLoginEmail(body.email);
   if (!email || !isValidLoginEmail(email)) {
-    return NextResponse.json({ error: "invalid email" }, { status: 400 });
+    return noStore(NextResponse.json({ error: "invalid email" }, { status: 400 }));
   }
   const code = normalizeLoginOtp(body.code);
   if (!isSixDigitCode(code)) {
-    return NextResponse.json({ error: LOGIN_OTP_INVALID }, { status: 400 });
+    return noStore(NextResponse.json({ error: LOGIN_OTP_INVALID }, { status: 400 }));
   }
 
   const rateLimited = await enforceLoginCodeVerify(email);
-  if (rateLimited) return rateLimited;
+  if (rateLimited) return noStore(rateLimited);
 
   const ip = loginOtpClientIp(request.headers);
   // The verify action increments wrong_codes under the email row lock and
@@ -131,7 +142,7 @@ export async function POST(request: NextRequest) {
   const directory = await listAuthUserIdsByEmail(email);
   if (!directory.ok || directory.ids.length > 1) {
     console.error("[login.otp.verify] auth user lookup failed");
-    return NextResponse.json({ error: "verify_failed" }, { status: 500 });
+    return noStore(NextResponse.json({ error: "verify_failed" }, { status: 500 }));
   }
   const authUserId = directory.ids[0] ?? null;
 
@@ -144,14 +155,16 @@ export async function POST(request: NextRequest) {
     });
     if (error || !data.user) {
       const kind = classifyEmailOtpError(error);
-      return NextResponse.json(
-        { error: kind === "expired" ? LOGIN_OTP_EXPIRED : LOGIN_OTP_INVALID },
-        { status: 400 },
+      return noStore(
+        NextResponse.json(
+          { error: kind === "expired" ? LOGIN_OTP_EXPIRED : LOGIN_OTP_INVALID },
+          { status: 400 },
+        ),
       );
     }
     if (data.user.id !== authUserId) {
       await supabase.auth.signOut();
-      return NextResponse.json({ error: "verify_failed" }, { status: 403 });
+      return noStore(NextResponse.json({ error: "verify_failed" }, { status: 403 }));
     }
     const { data: existing, error: lookupError } = await supabaseAdmin
       .from("profiles")
@@ -161,12 +174,12 @@ export async function POST(request: NextRequest) {
     if (lookupError) {
       console.error("[login.otp.verify] profile lookup:", lookupError.message);
       await supabase.auth.signOut();
-      return NextResponse.json({ error: "verify_failed" }, { status: 500 });
+      return noStore(NextResponse.json({ error: "verify_failed" }, { status: 500 }));
     }
     const profile = existing as ProfileHit | null;
     if (!profile?.role || profile.id !== data.user.id) {
       await supabase.auth.signOut();
-      return NextResponse.json({ error: "verify_failed" }, { status: 403 });
+      return noStore(NextResponse.json({ error: "verify_failed" }, { status: 403 }));
     }
     return finish(request, body, profile.role);
   }
@@ -177,24 +190,41 @@ export async function POST(request: NextRequest) {
     : Number.NaN;
   const matches = pendingLoginOtpMatches(pending.pending_hash, email, code);
   if (!matches || !pending.pending_outreach_id || !Number.isFinite(expiresAt)) {
-    return NextResponse.json({ error: LOGIN_OTP_INVALID }, { status: 400 });
+    return noStore(NextResponse.json({ error: LOGIN_OTP_INVALID }, { status: 400 }));
   }
   if (expiresAt <= Date.now()) {
-    return NextResponse.json({ error: LOGIN_OTP_EXPIRED }, { status: 400 });
+    return noStore(NextResponse.json({ error: LOGIN_OTP_EXPIRED }, { status: 400 }));
   }
 
-  const outreach = await getOutreachById(pending.pending_outreach_id);
-  if (!outreach || normalizeLoginEmail(outreach.sent_to_email) !== email) {
-    return NextResponse.json({ error: LOGIN_OTP_INVALID }, { status: 400 });
+  // The show_signup marker (R1) is a sign-up with no outreach row. Everything
+  // else in pending_outreach_id is an outreach id whose contact must still be
+  // this address. The created role is always the literal "show" from
+  // createShowAccount, never a value from the request.
+  const isShowSignup = pending.pending_outreach_id === SHOW_SIGNUP_PENDING;
+  if (!isShowSignup) {
+    const outreach = await getOutreachById(pending.pending_outreach_id);
+    if (!outreach || normalizeLoginEmail(outreach.sent_to_email) !== email) {
+      return noStore(NextResponse.json({ error: LOGIN_OTP_INVALID }, { status: 400 }));
+    }
   }
 
-  const created = await createShowAccount(email);
+  const created = await createShowAccount(
+    email,
+    isShowSignup ? "show_signup" : "email_code",
+  );
   if (!created.ok) {
-    return NextResponse.json({ error: "verify_failed" }, { status: 500 });
+    return noStore(NextResponse.json({ error: "verify_failed" }, { status: 500 }));
   }
+
+  // A show sign-up with no explicit next lands in show onboarding.
+  // safeLoginNext and nextAfterCodeLogin still apply on the way out.
+  const effectiveBody: VerifyBody =
+    isShowSignup && !(typeof body.next === "string" && body.next)
+      ? { ...body, next: "/onboarding/show" }
+      : body;
 
   const origin = siteOriginFromRequest(request.url);
-  const nextPath = safeLoginNext(body.next, origin);
+  const nextPath = safeLoginNext(effectiveBody.next, origin);
   const redirectTo = `${origin}/callback?next=${encodeURIComponent(nextPath)}`;
   const { data: link, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
     type: "magiclink",
@@ -211,7 +241,7 @@ export async function POST(request: NextRequest) {
       }
     }
     console.error("[login.otp.verify] generateLink:", linkError?.message ?? "no hashed token");
-    return NextResponse.json({ error: "verify_failed" }, { status: 500 });
+    return noStore(NextResponse.json({ error: "verify_failed" }, { status: 500 }));
   }
 
   const supabase = await createClient();
@@ -222,8 +252,8 @@ export async function POST(request: NextRequest) {
   if (sessionError || !session.user || session.user.id !== created.userId) {
     if (session.user) await supabase.auth.signOut();
     console.error("[login.otp.verify] session:", sessionError?.message ?? "user mismatch");
-    return NextResponse.json({ error: "verify_failed" }, { status: 500 });
+    return noStore(NextResponse.json({ error: "verify_failed" }, { status: 500 }));
   }
 
-  return finish(request, body, "show");
+  return finish(request, effectiveBody, "show");
 }

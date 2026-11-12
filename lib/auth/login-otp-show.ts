@@ -1,15 +1,18 @@
-// Show profile created when a pitch code is verified. Requesting the code
-// does not create the account.
+// Show profile created when a pitch code or a show sign-up code is verified.
+// Requesting the code does not create the account. The source argument only
+// labels user_metadata; role and tier are hard-coded and never come from a
+// request.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export async function createShowAccount(
   email: string,
+  source = "email_code",
 ): Promise<{ ok: true; userId: string } | { ok: false }> {
   const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
     email,
     email_confirm: true,
-    user_metadata: { source: "email_code" },
+    user_metadata: { source },
   });
   if (createErr || !created?.user) {
     console.error("[login.otp] createUser failed:", createErr?.message);

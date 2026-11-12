@@ -9,10 +9,12 @@ export interface OnboardingRole {
 
 // Self-serve signup role options shown in the post-signup role picker.
 //
-// "show" / creator is intentionally NOT offered here: shows onboard via the
-// magic-link+OTP outreach path (a brand's outreach email → /api/auth/magic),
-// not password self-signup. Offering it here would mint password-based show
-// accounts that contradict the shows-are-magic-link-OTP auth model.
+// "show" / creator is intentionally NOT in ONBOARDING_ROLES: shows self-sign-up
+// through /signup/show with an email code (R1), or through a brand's outreach
+// pitch, and never through /api/onboarding/role. The picker's Show / Creator
+// card (SHOW_SIGNUP_OPTION below) signs the password session out and sends the
+// visitor to /signup/show without calling the role route, so only brand,
+// agency and agent ids are ever posted there.
 export const ONBOARDING_ROLES: OnboardingRole[] = [
   {
     id: "brand",
@@ -52,3 +54,21 @@ export const ONBOARDING_ROLES: OnboardingRole[] = [
     ),
   },
 ];
+
+// The Show / Creator card. Deliberately NOT in ONBOARDING_ROLES: its id is
+// never posted to /api/onboarding/role. Picking it signs the password session
+// out and goes to /signup/show, the email-code sign-up.
+export const SHOW_SIGNUP_OPTION: OnboardingRole = {
+  id: "show_signup",
+  title: "Show / Creator",
+  description: "I own or host a show",
+  icon: (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" />
+      <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" />
+      <circle cx="12" cy="12" r="2" />
+      <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" />
+      <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1" />
+    </svg>
+  ),
+};

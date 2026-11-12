@@ -19,6 +19,12 @@ interface ShowEmailCodeProps {
   onEmailChange?: (email: string) => void;
   /** Pitch token. Present only on show setup, where a new show may be created. */
   outreachToken?: string;
+  /**
+   * Show self-sign-up (/signup/show only). Sent with the code request so an
+   * address with no account is minted a sign-up code. Existing callers leave
+   * this unset and send the same body as before.
+   */
+  intent?: "show_signup";
   nextPath?: string | null;
   onVerified: (nextPath: string) => void;
   /**
@@ -33,6 +39,7 @@ export function ShowEmailCode({
   emailValue,
   onEmailChange,
   outreachToken,
+  intent,
   nextPath,
   onVerified,
   sentNotice,
@@ -74,6 +81,7 @@ export function ShowEmailCode({
           email: normalized,
           outreach_token: outreachToken,
           next: nextPath,
+          ...(intent ? { intent } : {}),
         }),
       });
       const data = (await res.json().catch(() => null)) as {

@@ -152,6 +152,12 @@ function LoginForm() {
           Sign up
         </Link>
       </p>
+      <p className="mt-2 text-sm text-[var(--ts-ink-muted-on-paper)]">
+        New show or creator?{" "}
+        <Link href="/signup/show" className="text-[var(--ts-accent-text)] hover:underline">
+          Sign up
+        </Link>
+      </p>
     </>
   );
 }
