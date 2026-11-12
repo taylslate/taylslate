@@ -144,8 +144,8 @@ describe("findCatalogDuplicates", () => {
     expect(duplicates).toEqual(new Set());
   });
 
-  it("matches the same feed on any show", async () => {
-    const queries = install({
+  it("does not treat another rep's hidden show with the same feed as a duplicate", async () => {
+    install({
       rss: [
         {
           id: SHOW_ID,
@@ -165,13 +165,72 @@ describe("findCatalogDuplicates", () => {
       ],
       CALLER
     );
-    expect(duplicates).toEqual(new Set([0]));
+    expect(duplicates).toEqual(new Set());
+    expect(JSON.stringify([...duplicates])).not.toContain(SHOW_ID);
+  });
+
+  it("matches the same feed on a discoverable show or the caller's own show", async () => {
+    const hiddenFeed = {
+      id: SHOW_ID,
+      name: "Hidden Feed",
+      agent_id: OTHER,
+      is_discoverable: false,
+      rss_url: "http://feeds.example.com/show",
+    };
+    const queries = install({ rss: [{ ...hiddenFeed, is_discoverable: true }] });
+    const row = { name: "Something Else", rss_url: "https://feeds.example.com/show/" };
+    const discoverable = await findCatalogDuplicates([row], CALLER);
+    expect(discoverable).toEqual(new Set([0]));
     expect(queries).toContainEqual({
       select: "id, name, agent_id, is_discoverable, rss_url",
       column: "rss_url",
       pattern: "%feeds.example.com/show%",
       limit: 10,
     });
+
+    install({ rss: [{ ...hiddenFeed, agent_id: CALLER }] });
+    const own = await findCatalogDuplicates([row], CALLER);
+    expect(own).toEqual(new Set([0]));
+  });
+
+  it("looks up name tokens in chunks of 20", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const queries: string[] = [];
+    adminFrom.mockImplementation((table: string) => {
+      expect(table).toBe("shows");
+      const state = { column: "" };
+      const builder = {
+        select() {
+          return builder;
+        },
+        ilike(column: string) {
+          state.column = column;
+          return builder;
+        },
+        limit() {
+          const token = state.column;
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          queries.push(token);
+          return new Promise((resolve) => {
+            queueMicrotask(() => {
+              inFlight -= 1;
+              resolve({ data: [], error: null });
+            });
+          });
+        },
+      };
+      return builder;
+    });
+
+    const rows = Array.from({ length: 21 }, (_, index) => ({
+      name: `Token${String(index + 1).padStart(2, "0")}name`,
+    }));
+    const duplicates = await findCatalogDuplicates(rows, CALLER);
+    expect(duplicates).toEqual(new Set());
+    expect(queries).toHaveLength(21);
+    expect(maxInFlight).toBe(20);
   });
 
   it("returns an empty set when nothing matches", async () => {

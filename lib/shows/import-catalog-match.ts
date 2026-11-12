@@ -1,9 +1,10 @@
 // Catalog duplicate check for the legacy /shows CSV import.
 //
-// Same name and feed rules as the roster import. A name match requires
-// the show to be discoverable, or owned by the caller. A feed match is
-// a strong key and ignores visibility. The matched show's id, name, and
-// owner are not returned and are not logged.
+// Same name and feed rules as the roster import. A name match and a
+// feed match count only when the show is discoverable, or owned by the
+// caller. Another rep's hidden show is not a duplicate, so that row
+// imports as a new hidden show for the caller. The matched show's id,
+// name, and owner are not returned and are not logged.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
@@ -14,6 +15,7 @@ import {
 const SHOW_COLUMNS = "id, name, agent_id, is_discoverable, rss_url";
 const NAME_LOOKUP_LIMIT = 25;
 const RSS_LOOKUP_LIMIT = 10;
+const LOOKUP_CHUNK = 20;
 
 interface CatalogRow {
   name: string;
@@ -93,12 +95,15 @@ async function lookupShows(
   return asShows(data);
 }
 
-function feedMatches(row: CatalogRow, shows: CatalogShow[]): boolean {
+function feedMatches(row: CatalogRow, shows: CatalogShow[], agentId: string): boolean {
   if (!row.rss_url) return false;
   const key = normalizeRssUrl(row.rss_url);
   if (!key) return false;
   return shows.some(
-    (show) => Boolean(show.rss_url) && normalizeRssUrl(show.rss_url as string) === key
+    (show) =>
+      nameEligible(show, agentId) &&
+      Boolean(show.rss_url) &&
+      normalizeRssUrl(show.rss_url as string) === key
   );
 }
 
@@ -126,20 +131,36 @@ export async function findCatalogDuplicates(
       .filter((key) => key.length > 0)
   );
 
-  const found: CatalogShow[] = [];
-  for (const token of nameTokens) {
-    found.push(...(await lookupShows("name", token, NAME_LOOKUP_LIMIT)));
-  }
-  for (const key of rssKeys) {
-    found.push(...(await lookupShows("rss_url", key, RSS_LOOKUP_LIMIT)));
-  }
+  const found: CatalogShow[] = [
+    ...(await lookupChunked("name", nameTokens, NAME_LOOKUP_LIMIT)),
+    ...(await lookupChunked("rss_url", rssKeys, RSS_LOOKUP_LIMIT)),
+  ];
   const shows = dedupeShows(found);
 
   const duplicates = new Set<number>();
   rows.forEach((row, index) => {
-    if (feedMatches(row, shows) || nameMatches(row, shows, agentId)) {
+    if (feedMatches(row, shows, agentId) || nameMatches(row, shows, agentId)) {
       duplicates.add(index);
     }
   });
   return duplicates;
+}
+
+async function lookupChunked(
+  column: "name" | "rss_url",
+  tokens: string[],
+  limit: number
+): Promise<CatalogShow[]> {
+  const found: CatalogShow[] = [];
+  for (const group of chunk(tokens, LOOKUP_CHUNK)) {
+    const parts = await Promise.all(group.map((token) => lookupShows(column, token, limit)));
+    for (const part of parts) found.push(...part);
+  }
+  return found;
+}
+
+function chunk<T>(values: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
+  return out;
 }

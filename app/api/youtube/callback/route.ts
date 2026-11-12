@@ -4,7 +4,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { logEvent } from "@/lib/data/events";
-import type { LogEventInput } from "@/lib/data/events";
 import { getAuthenticatedUser } from "@/lib/data/queries";
 import {
   clearYoutubeOauthCookie,
@@ -134,7 +133,19 @@ export async function GET(request: NextRequest) {
       } catch {
         oldToken = "";
       }
-      if (oldToken) await revokeGoogleToken(oldToken);
+      if (oldToken) {
+        const attempts = { count: 0 };
+        const revoked = await revokeGoogleToken(oldToken, { attempts });
+        if (revoked === false) {
+          await logEvent({
+            eventType: "youtube.google_revoke_failed",
+            entityType: "profile",
+            entityId: user.id,
+            actorId: user.id,
+            payload: { connection_id: row.id, attempts: attempts.count },
+          });
+        }
+      }
       await retireConnection(row.id);
     }
 
@@ -155,7 +166,7 @@ export async function GET(request: NextRequest) {
     }
 
     await logEvent({
-      eventType: "youtube.channel_connected" as LogEventInput["eventType"],
+      eventType: "youtube.channel_connected",
       entityType: "profile",
       entityId: user.id,
       actorId: user.id,

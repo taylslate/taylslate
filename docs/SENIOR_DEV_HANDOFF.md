@@ -3099,3 +3099,59 @@ Screenshots are the search page before the new group, the same page after, and t
 - The next free migration (090 at the time of writing) is not written. No view, policy, or grant. Apply nothing on `ldtmhafewfifdizgfrnn` for this job.
 - The Search nav item was not changed.
 - This PR does not merge. Paul reviews.
+
+## HARDEN1
+
+### What was built
+
+Six review follow-ups from CLEAN1, AC-YT, and U1b. No migration.
+
+A feed match in the legacy `/shows` import counts only when the show is discoverable or owned by the caller. Another rep's hidden show with the same feed is not a duplicate, so the row imports as a new hidden show for the caller. Roster import still matches that hidden show on a strong tier and still writes the pending link, because an admin reviews every roster link. The preview and commit result leaves `show_id` and `show_name` empty for that row. The class, the tier, and the reasons stay. A discoverable show or the caller's own show still returns the id and name. The roster-import test change that used to expect the hidden id and name is intended.
+
+`POST /api/shows/import` rejects a Content-Length over 1 MB with 413 before reading the body, then counts bytes while reading. It also checks `file.size` and the length of the text. Over 1 MB returns "This file is larger than 1 MB." More than 500 parsed shows returns "Send at most 500 shows." Name and feed lookups run in chunks of 20 with `Promise.all` per chunk. `importShows` error strings are fixed text with the row name only. A cleanup failure says "could not be imported. Contact support." Logs record `error.code` only. CSV formula cells are not neutralized.
+
+`revokeGoogleToken` returns a boolean. It tries at once, after 250 ms, and after 1000 ms, and only retries a network error or a 5xx. A 200 returns true. A 400 `invalid_token` counts as revoked. Anything else returns false. It never throws. Disconnect still revokes and then deletes the tokens. When revoke fails, the tokens are still deleted, a `youtube.google_revoke_failed` event stores `{ connection_id, attempts }` only, and the response is `{ ok: true, google_revoke: "failed" }`. The settings client shows one line telling the creator to remove Taylslate from Google Account permissions, with a new-tab link to `https://myaccount.google.com/permissions`. A channel switch logs the same event when revoke returns false. The other callback revoke calls stay best-effort.
+
+`GET /api/youtube/status` returns 503 `{ error: "unavailable" }` with `Cache-Control: no-store` when the read throws. `/settings/youtube` requires a show profile after the role check, and calls `notFound()` without one. A read failure renders "We could not load your YouTube connection. Refresh to try again." and hides Connect and Disconnect. `youtube.channel_connected` and `youtube.google_revoke_failed` are on `DomainEventType`. The callback cast is gone.
+
+Library search selects 60 rows, applies the floor check and the show-link drop, then slices to at most 20. `escapeLibrarySearch` removes every `*` after trimming. A term that is empty after that returns `[]` with no query. `a*b` is sent as `%ab%`.
+
+### Where
+
+- `lib/shows/import-catalog-match.ts` and `import-catalog-match.test.ts`
+- `lib/reps/roster-import.ts` and `roster-import.test.ts` (hidden-show result shape only)
+- `lib/data/queries.ts` (`importShows` only) and `lib/data/roster-links.test.ts` (`importShows` cases only)
+- `app/api/shows/import/route.ts` and `route.test.ts`
+- `lib/youtube-oauth/google.ts` and `google.test.ts` (`revokeGoogleToken` only)
+- `app/api/youtube/disconnect/route.ts` and `route.test.ts`
+- `app/api/youtube/callback/route.ts` and `route.test.ts` (revoke calls and the cast)
+- `app/api/youtube/status/route.ts` and `route.test.ts`
+- `app/(dashboard)/settings/youtube/page.tsx`, `page.test.tsx`, and `youtube-connect-client.tsx`
+- `lib/data/types.ts` (two `DomainEventType` strings)
+- `lib/youtube-library/brand-read.ts` and `brand-read.test.ts`
+- `docs/jobs/HARDEN1.md`, `docs/jobs/AC-YT.md`, `docs/jobs/U1b.md`, `docs/jobs/CLEAN1.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+`lib/stripe`, `lib/airchecks`, `lib/billing`, `lib/payouts`, `plans.ts`, `supabase/**`, `proxy.ts`, `vercel.json`, `lib/youtube-oauth/store.ts`, and `lib/youtube-oauth/feed.ts` were not edited. No Vercel env change. No live write.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 388 files, 3286 passed, 41 skipped.
+
+`npx vitest run lib/shows lib/reps app/api/shows/import lib/data/roster-links.test.ts lib/youtube-oauth app/api/youtube 'app/(dashboard)/settings/youtube' lib/youtube-library/brand-read.test.ts`: 30 files, 264 passed.
+
+`npx next build` compiled successfully and generated 147 pages. `/settings/youtube` stays dynamic.
+
+Covers a hidden feed that is not a catalog duplicate, a discoverable or own feed that is, chunked lookups, roster id and name hidden with the pending link still written, 413 and 500-row caps, fixed import errors with code-only logs, revoke retry timing, disconnect and channel-switch failure events, status 503, the settings load error, the show-profile gate, the disconnect notice, the 60-row fetch, and `*` stripped from library search.
+
+Screenshots of `/settings/youtube`: normal state before, normal state after, the load error, and the disconnect notice. They use the production stylesheet. A signed-in session was not available, so the shots render the page markup rather than a live login.
+
+### Known gaps
+
+- SA-14 caps and batched lookups are done. Formula-cell neutralizing is still open.
+- The same `*` wildcard in `/api/shows` search is still open. That route is outside this job.
+- Name and feed lookups still do not fail closed when a query hits its row cap.
+- Keeping the Google ciphertext until a later revoke succeeds is not built. It would contradict the LG2 privacy copy. It is on the Chris list in `docs/jobs/HARDEN1.md`.
+- This PR does not merge. Paul reviews.

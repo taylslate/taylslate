@@ -13,6 +13,7 @@ const state = {
   fromCalls: [] as string[],
   selects: [] as string[],
   patterns: [] as string[],
+  limits: [] as number[],
 };
 
 function project(row: Row, columns: string): Row {
@@ -103,6 +104,7 @@ class Query {
 
   limit(count: number) {
     this.max = count;
+    state.limits.push(count);
     return this;
   }
 
@@ -195,6 +197,7 @@ beforeEach(() => {
   state.fromCalls = [];
   state.selects = [];
   state.patterns = [];
+  state.limits = [];
 });
 
 describe("SAFE_COLUMNS", () => {
@@ -349,6 +352,42 @@ describe("searchLibraryCreators", () => {
     const ordered = await searchLibraryCreators({ query: "Lab", now: NOW });
     expect(ordered.map((item) => item.channelId)).toEqual([channelId(1), channelId(2)]);
     expect(ordered[1].averageViewsLabel).toBe("average");
+  });
+
+  it("fills 20 when the first page by views includes rows under the floors", async () => {
+    state.channels = Array.from({ length: 25 }, (_, index) =>
+      row({
+        channel_id: channelId(index + 1),
+        title: `Lab ${index + 1}`,
+        avg_recent_views: 100000 - index,
+        video_count: index < 5 ? 9 : 40,
+      })
+    );
+    const result = await searchLibraryCreators({ query: "Lab", now: NOW });
+    expect(state.limits).toEqual([60]);
+    expect(result).toHaveLength(20);
+    expect(result.map((item) => item.channelId)).toEqual(
+      Array.from({ length: 20 }, (_, index) => channelId(index + 6))
+    );
+    expect(state.fromCalls.filter((table) => table === "shows")).toHaveLength(1);
+  });
+
+  it("drops a star and does not query when the term is only stars", async () => {
+    state.channels = [
+      row({ channel_id: channelId(1), title: "ab show" }),
+      row({ channel_id: channelId(2), title: "ax show" }),
+    ];
+    const starred = await searchLibraryCreators({ query: "a*b", now: NOW });
+    expect(state.patterns).toEqual(["%ab%"]);
+    expect(starred.map((item) => item.channelId)).toEqual([channelId(1)]);
+
+    state.fromCalls = [];
+    state.patterns = [];
+    state.limits = [];
+    await expect(searchLibraryCreators({ query: "*", now: NOW })).resolves.toEqual([]);
+    expect(state.fromCalls).toEqual([]);
+    expect(state.patterns).toEqual([]);
+    expect(state.limits).toEqual([]);
   });
 
   it("returns an empty list for a blank query without reading", async () => {

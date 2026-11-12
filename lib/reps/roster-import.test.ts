@@ -520,7 +520,7 @@ describe("importRoster matching", () => {
     });
   });
 
-  it("does not suggest a hidden show owned by another agent, but a feed match returns id and name", async () => {
+  it("keeps a hidden feed match and omits the other rep's id and name", async () => {
     catalog({
       id: "show-hidden",
       name: "Secret Desk",
@@ -540,21 +540,20 @@ describe("importRoster matching", () => {
     expect(JSON.stringify(byName)).not.toContain("show-hidden");
     expect(JSON.stringify(byName)).not.toContain(SECRET);
 
-    const byRss = await run("preview", {
-      rows: [
-        {
-          name: "Different",
-          platform: "podcast",
-          rss_url: "https://feeds.example.com/secret",
-        },
-      ],
-    });
+    const feedRow = {
+      name: "Different",
+      platform: "podcast" as const,
+      rss_url: "https://feeds.example.com/secret",
+    };
+    const byRss = await run("preview", { rows: [feedRow] });
     expect(byRss[0]).toMatchObject({
       class: "link_existing",
       match_tier: "rss_url",
-      show_id: "show-hidden",
-      show_name: "Secret Desk",
+      show_id: null,
+      show_name: null,
     });
+    expect(JSON.stringify(byRss)).not.toContain("show-hidden");
+    expect(JSON.stringify(byRss)).not.toContain("Secret Desk");
     expect(JSON.stringify(byRss)).not.toContain(SECRET);
     expect(JSON.stringify(byRss)).not.toContain("pd_hidden");
     expect(Object.keys(byRss[0]).sort()).toEqual(
@@ -572,6 +571,71 @@ describe("importRoster matching", () => {
         "show_name",
       ].sort()
     );
+
+    const committed = await run("commit", { rows: [feedRow] });
+    expect(committed[0]).toMatchObject({
+      class: "link_existing",
+      match_tier: "rss_url",
+      show_id: null,
+      show_name: null,
+      committed: true,
+    });
+    expect(JSON.stringify(committed)).not.toContain("show-hidden");
+    expect(JSON.stringify(committed)).not.toContain("Secret Desk");
+    expect(linkInserts()[0].row).toMatchObject({
+      agent_id: AGENT,
+      show_id: "show-hidden",
+      status: "pending",
+      source: "import",
+    });
+
+    mem.shows.length = 0;
+    catalog({
+      id: "show-public",
+      name: "Public Desk",
+      rss_url: "https://feeds.example.com/public",
+      is_discoverable: true,
+      agent_id: OTHER,
+    });
+    const visible = await run("preview", {
+      rows: [
+        {
+          name: "Different",
+          platform: "podcast",
+          rss_url: "https://feeds.example.com/public",
+        },
+      ],
+    });
+    expect(visible[0]).toMatchObject({
+      class: "link_existing",
+      match_tier: "rss_url",
+      show_id: "show-public",
+      show_name: "Public Desk",
+    });
+
+    mem.shows.length = 0;
+    catalog({
+      id: "show-own-feed",
+      name: "Own Desk",
+      rss_url: "https://feeds.example.com/own",
+      is_discoverable: false,
+      agent_id: AGENT,
+    });
+    const own = await run("preview", {
+      rows: [
+        {
+          name: "Different",
+          platform: "podcast",
+          rss_url: "https://feeds.example.com/own",
+        },
+      ],
+    });
+    expect(own[0]).toMatchObject({
+      class: "link_existing",
+      match_tier: "rss_url",
+      show_id: "show-own-feed",
+      show_name: "Own Desk",
+    });
   });
 
   it("can suggest the caller's own hidden show by name", async () => {

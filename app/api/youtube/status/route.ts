@@ -9,14 +9,6 @@ import { readYoutubeStatus, requireShowProfile, type YoutubeStatus } from "@/lib
 
 export const runtime = "nodejs";
 
-const EMPTY: YoutubeStatus = {
-  connected: false,
-  channel_id: null,
-  channel_title: null,
-  status: null,
-  analytics_enabled: false,
-};
-
 export async function GET(request: NextRequest) {
   const user = await getAuthenticatedUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -42,6 +34,9 @@ export async function GET(request: NextRequest) {
     };
     return NextResponse.json(body);
   } catch {
-    return NextResponse.json(EMPTY);
+    return NextResponse.json(
+      { error: "unavailable" },
+      { status: 503, headers: { "Cache-Control": "no-store" } }
+    );
   }
 }

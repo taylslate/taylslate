@@ -9,6 +9,15 @@ import {
   parseMediaKitGeography,
 } from "@/lib/shows/media-kit-geo";
 import { enforceUpload } from "@/lib/security/rate-limit";
+import {
+  ROSTER_IMPORT_MAX_BYTES,
+  ROSTER_IMPORT_MAX_ROWS,
+} from "@/lib/reps/roster-import";
+
+type ImportShow = Partial<import("@/lib/data/types").Show> & {
+  name: string;
+  platform: "podcast" | "youtube";
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,30 +36,27 @@ export async function POST(request: NextRequest) {
     const limited = await enforceUpload(request, user.id);
     if (limited) return limited;
 
+    const capped = await readCappedImportBody(request);
+    if (capped instanceof NextResponse) return capped;
+
     const contentType = request.headers.get("content-type") || "";
-    let shows: Array<Partial<import("@/lib/data/types").Show> & { name: string; platform: "podcast" | "youtube" }>;
+    let shows: ImportShow[];
 
     if (contentType.includes("multipart/form-data")) {
-      // Handle file upload
-      const formData = await request.formData();
-      const file = formData.get("file") as File | null;
-      if (!file) {
-        return NextResponse.json({ error: "No file provided" }, { status: 400 });
-      }
-
-      const text = await file.text();
-      shows = parseCSVToShows(text) as typeof shows;
+      const parsed = await showsFromUpload(request, capped);
+      if (parsed instanceof NextResponse) return parsed;
+      shows = parsed;
     } else {
-      // Handle JSON body with pre-parsed shows
-      const body = await request.json();
-      shows = body.shows;
-      if (!Array.isArray(shows)) {
-        return NextResponse.json({ error: "shows array is required" }, { status: 400 });
-      }
+      const parsed = showsFromJson(capped);
+      if (parsed instanceof NextResponse) return parsed;
+      shows = parsed;
     }
 
     if (shows.length === 0) {
       return NextResponse.json({ error: "No valid shows found in file" }, { status: 400 });
+    }
+    if (shows.length > ROSTER_IMPORT_MAX_ROWS) {
+      return NextResponse.json({ error: "Send at most 500 shows." }, { status: 400 });
     }
 
     // importShows reads the agent from the session. A body agent id is ignored.
@@ -71,6 +77,101 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function tooLarge(): NextResponse {
+  return NextResponse.json({ error: "This file is larger than 1 MB." }, { status: 413 });
+}
+
+/** Digits only. A missing or non-numeric Content-Length is not trusted. */
+function declaredContentLength(request: NextRequest): number | null {
+  const raw = request.headers.get("content-length");
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  if (!Number.isSafeInteger(value)) return null;
+  return value;
+}
+
+/**
+ * Reject an oversized Content-Length before any read. Then count bytes
+ * as they arrive and stop once the running total passes 1 MB.
+ */
+async function readCappedImportBody(request: NextRequest): Promise<Uint8Array | NextResponse> {
+  const declared = declaredContentLength(request);
+  if (declared !== null && declared > ROSTER_IMPORT_MAX_BYTES) return tooLarge();
+
+  const stream = request.body;
+  if (!stream) return new Uint8Array();
+
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+      total += value.byteLength;
+      if (total > ROSTER_IMPORT_MAX_BYTES) return tooLarge();
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  if (bytes.byteLength > ROSTER_IMPORT_MAX_BYTES) return tooLarge();
+  return bytes;
+}
+
+function textBytes(text: string): number {
+  return new TextEncoder().encode(text).byteLength;
+}
+
+async function showsFromUpload(
+  request: NextRequest,
+  bytes: Uint8Array
+): Promise<ImportShow[] | NextResponse> {
+  const headers = new Headers(request.headers);
+  headers.delete("content-length");
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  const replay = new Request(request.url, {
+    method: "POST",
+    headers,
+    body: new Blob([copy]),
+  });
+  const formData = await replay.formData();
+  const file = formData.get("file");
+  if (!(file instanceof Blob)) {
+    return NextResponse.json({ error: "No file provided" }, { status: 400 });
+  }
+  if (file.size > ROSTER_IMPORT_MAX_BYTES) return tooLarge();
+  const text = await file.text();
+  if (textBytes(text) > ROSTER_IMPORT_MAX_BYTES) return tooLarge();
+  return parseCSVToShows(text) as ImportShow[];
+}
+
+function showsFromJson(bytes: Uint8Array): ImportShow[] | NextResponse {
+  const text = new TextDecoder().decode(bytes);
+  if (textBytes(text) > ROSTER_IMPORT_MAX_BYTES) return tooLarge();
+  let body: { shows?: unknown };
+  try {
+    body = JSON.parse(text) as { shows?: unknown };
+  } catch {
+    return NextResponse.json({ error: "Failed to import shows" }, { status: 500 });
+  }
+  if (!Array.isArray(body.shows)) {
+    return NextResponse.json({ error: "shows array is required" }, { status: 400 });
+  }
+  return body.shows as ImportShow[];
 }
 
 export function parseCSVToShows(text: string) {

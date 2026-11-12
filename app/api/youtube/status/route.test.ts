@@ -65,4 +65,15 @@ describe("GET /api/youtube/status", () => {
     expect(res.status).toBe(401);
     expect(readStatus).not.toHaveBeenCalled();
   });
+
+  it("returns 503 when the status read fails", async () => {
+    readStatus.mockRejectedValue(new Error("relation missing for show-secret"));
+    const res = await GET(new NextRequest("https://taylslate.com/api/youtube/status"));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const body = await res.json();
+    expect(body).toEqual({ error: "unavailable" });
+    expect(JSON.stringify(body)).not.toContain("show-secret");
+    expect(body).not.toHaveProperty("connected");
+  });
 });

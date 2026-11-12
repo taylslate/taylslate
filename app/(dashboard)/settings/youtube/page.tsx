@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getAuthenticatedUser, getUserProfile } from "@/lib/data/queries";
-import { readYoutubeStatus } from "@/lib/youtube-oauth/store";
+import { readYoutubeStatus, requireShowProfile } from "@/lib/youtube-oauth/store";
 import YoutubeConnectClient from "./youtube-connect-client";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,8 @@ export default async function YoutubeSettingsPage({
 
   const profile = await getUserProfile(user.id);
   if (!profile || profile.role !== "show") notFound();
+  const showProfile = await requireShowProfile(user.id);
+  if (!showProfile.ok) notFound();
 
   const query = await searchParams;
   let status = {
@@ -24,21 +26,17 @@ export default async function YoutubeSettingsPage({
     status: null as "active" | "reauth_required" | "revoked" | null,
     analytics_enabled: false,
   };
+  let loadError = false;
   try {
     status = await readYoutubeStatus(user.id);
   } catch {
-    status = {
-      connected: false,
-      channel_id: null,
-      channel_title: null,
-      status: null,
-      analytics_enabled: false,
-    };
+    loadError = true;
   }
 
   return (
     <YoutubeConnectClient
       status={status}
+      loadError={loadError}
       notice={{
         connected: query.connected === "1",
         error: typeof query.error === "string" ? query.error : null,

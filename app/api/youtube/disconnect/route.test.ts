@@ -8,9 +8,14 @@ const enforce = vi.fn();
 const listLive = vi.fn();
 const disconnect = vi.fn();
 const revoke = vi.fn();
+const logEvent = vi.fn();
 
 vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: () => auth(),
+}));
+
+vi.mock("@/lib/data/events", () => ({
+  logEvent: (...args: unknown[]) => logEvent(...args),
 }));
 
 vi.mock("@/lib/youtube-oauth/limits", () => ({
@@ -47,7 +52,8 @@ describe("POST /api/youtube/disconnect", () => {
     show.mockResolvedValue({ ok: true, showProfileId: "profile-1" });
     enforce.mockResolvedValue(null);
     disconnect.mockResolvedValue("ok");
-    revoke.mockResolvedValue(undefined);
+    revoke.mockResolvedValue(true);
+    logEvent.mockResolvedValue(null);
     listLive.mockResolvedValue([
       {
         id: "conn-1",
@@ -67,7 +73,7 @@ describe("POST /api/youtube/disconnect", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ ok: true });
-    expect(revoke).toHaveBeenCalledWith(REFRESH);
+    expect(revoke).toHaveBeenCalledWith(REFRESH, expect.objectContaining({ attempts: { count: 0 } }));
     expect(disconnect).toHaveBeenCalledWith(USER);
     expect(JSON.stringify(body)).not.toContain(REFRESH);
   });
@@ -100,8 +106,29 @@ describe("POST /api/youtube/disconnect", () => {
     const res = await post("https://www.taylslate.com");
     expect(res.status).toBe(200);
     expect(revoke).toHaveBeenCalledTimes(2);
-    expect(revoke).toHaveBeenCalledWith(REFRESH);
-    expect(revoke).toHaveBeenCalledWith(second);
+    expect(revoke).toHaveBeenCalledWith(REFRESH, expect.objectContaining({ attempts: { count: 0 } }));
+    expect(revoke).toHaveBeenCalledWith(second, expect.objectContaining({ attempts: { count: 0 } }));
     expect(disconnect).toHaveBeenCalledWith(USER);
+  });
+
+  it("still deletes tokens when Google revoke fails and says so", async () => {
+    revoke.mockImplementation(async (_token: string, options?: { attempts?: { count: number } }) => {
+      if (options?.attempts) options.attempts.count = 3;
+      return false;
+    });
+    const res = await post("https://www.taylslate.com");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, google_revoke: "failed" });
+    expect(disconnect).toHaveBeenCalledWith(USER);
+    expect(logEvent).toHaveBeenCalledWith({
+      eventType: "youtube.google_revoke_failed",
+      entityType: "profile",
+      entityId: USER,
+      actorId: USER,
+      payload: { connection_id: "conn-1", attempts: 3 },
+    });
+    const logged = JSON.stringify(logEvent.mock.calls);
+    expect(logged).not.toContain(REFRESH);
+    expect(logged).not.toContain("UCone");
   });
 });
