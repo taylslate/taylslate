@@ -19,6 +19,12 @@ const UNAVAILABLE = "unavailable";
 const RATE = "Too many requests. Try again later.";
 const YOUTUBE_UNAVAILABLE = "YouTube checks are not available yet.";
 const REVIEWING = "Our team is reviewing this.";
+const NOT_VERIFIED = "Not verified";
+const MANUAL_ASK = "Ask for manual review";
+const MANUAL_HELP = "Tell us how you control this show. A link is optional and must start with https.";
+const EXPLAIN_ERROR = "Explain the request in 20 to 1000 characters.";
+const LINK_ERROR = "The link must be an https URL of at most 300 characters.";
+const DUPLICATE = "Your request is already with our team.";
 
 const KNOWN = new Set([
   PASTE,
@@ -35,6 +41,9 @@ const KNOWN = new Set([
   RATE,
   "Forbidden",
   "Unauthorized",
+  EXPLAIN_ERROR,
+  LINK_ERROR,
+  DUPLICATE,
 ]);
 
 const CODE_RE = /^TAYLSLATE-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
@@ -45,10 +54,12 @@ export interface OwnershipProofInput {
   target: string | null;
   code_expires_at: string | null;
   created_at: string;
+  decision_note?: string | null;
+  decided_at?: string | null;
 }
 
 export interface OwnershipView {
-  kind: "not_started" | "pending" | "verified" | "review" | "expired";
+  kind: "not_started" | "pending" | "verified" | "review" | "expired" | "rejected";
   feedUrl: string | null;
   youtubeAvailable: boolean;
   target: string | null;
@@ -56,6 +67,8 @@ export interface OwnershipView {
   pendingLabel: string;
   verifiedLabel: string;
   loadError?: boolean;
+  decisionNote?: string | null;
+  manual?: boolean;
 }
 
 function mediumOf(method: string | null): "podcast" | "youtube" | null {
@@ -74,13 +87,15 @@ export function ownershipView(input: {
 }): OwnershipView {
   const now = input.now ?? new Date();
   const feedUrl = input.feedUrl?.trim() ? input.feedUrl.trim() : null;
+  const manual = !input.proofs.some((row) => row.status === "verified" || row.status === "contested");
   const base = {
     feedUrl,
     youtubeAvailable: input.youtubeAvailable,
-    target: null,
-    medium: null,
+    target: null as string | null,
+    medium: null as "podcast" | "youtube" | null,
     pendingLabel: input.pendingLabel,
     verifiedLabel: input.verifiedLabel,
+    manual,
   };
   const proofs = [...input.proofs]
     .filter((row) => row.target)
@@ -100,6 +115,11 @@ export function ownershipView(input: {
   }
   if (group.some((row) => row.status === "verified")) {
     return { ...base, kind: "verified", target, medium };
+  }
+  const rejected = group.find((row) => row.status === "rejected");
+  if (rejected) {
+    const decisionNote = typeof rejected.decision_note === "string" ? rejected.decision_note : null;
+    return { ...base, kind: "rejected", target, medium, decisionNote };
   }
   if (group.some((row) => row.status === "expired" || row.status === "pending")) {
     return { ...base, kind: "expired" };
@@ -124,7 +144,13 @@ export default function OwnershipClient({ view }: { view: OwnershipView }) {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [channel, setChannel] = useState("");
-  const again = view.kind === "expired";
+  const [manualMedium, setManualMedium] = useState<"podcast" | "youtube">("podcast");
+  const [manualChannel, setManualChannel] = useState("");
+  const [explanation, setExplanation] = useState("");
+  const [link, setLink] = useState("");
+  const again = view.kind === "expired" || view.kind === "rejected";
+  const showManual = view.manual ?? (view.kind !== "verified" && view.kind !== "review");
+  const explanationReady = Array.from(explanation.trim()).length >= 20 && Array.from(explanation.trim()).length <= 1000;
 
   async function readBody(res: Response): Promise<{ error: string | null; message: string | null; code: string | null }> {
     const body = (await res.json().catch(() => null)) as { error?: unknown; message?: unknown; code?: unknown } | null;
@@ -152,6 +178,31 @@ export default function OwnershipClient({ view }: { view: OwnershipView }) {
     }
     setCode(parsed.code);
     setMessage(parsed.code ? null : parsed.message);
+    router.refresh();
+  }
+
+  async function askManual() {
+    setBusy(true);
+    setMessage(null);
+    const payload: { medium: "podcast" | "youtube"; explanation: string; link?: string; channel?: string } = {
+      medium: manualMedium,
+      explanation: explanation.trim(),
+    };
+    const trimmedLink = link.trim();
+    if (trimmedLink) payload.link = trimmedLink;
+    if (manualMedium === "youtube") payload.channel = manualChannel;
+    const res = await fetch("/api/ownership/manual", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const parsed = await readBody(res);
+    setBusy(false);
+    if (parsed.error) {
+      setMessage(parsed.error);
+      return;
+    }
+    setMessage(parsed.message);
     router.refresh();
   }
 
@@ -225,6 +276,20 @@ export default function OwnershipClient({ view }: { view: OwnershipView }) {
         </section>
       )}
 
+      {view.kind === "rejected" && !code && (
+        <section className={`mb-6 ${panelClass}`} style={radiusStyle}>
+          <p className="font-[family-name:var(--font-app-display)] text-xl font-semibold text-[var(--ts-ink-on-paper)]">
+            {NOT_VERIFIED}
+          </p>
+          {view.decisionNote && (
+            <p className="mt-2 text-sm text-[var(--ts-ink-on-paper)]">{view.decisionNote}</p>
+          )}
+          {view.target && (
+            <p className="mt-2 text-sm text-[var(--ts-ink-muted-on-paper)]">{view.target}</p>
+          )}
+        </section>
+      )}
+
       {view.kind === "review" && (
         <section className={panelClass} style={radiusStyle}>
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ts-accent-text)]">
@@ -255,7 +320,7 @@ export default function OwnershipClient({ view }: { view: OwnershipView }) {
         </div>
       )}
 
-      {(view.kind === "not_started" || view.kind === "expired") && !code && (
+      {(view.kind === "not_started" || view.kind === "expired" || view.kind === "rejected") && !code && (
         <div className="space-y-4">
           {again && (
             <p className="text-sm text-[var(--ts-ink-on-paper)]">Start again.</p>
@@ -311,6 +376,85 @@ export default function OwnershipClient({ view }: { view: OwnershipView }) {
             )}
           </section>
         </div>
+      )}
+
+      {showManual && (
+        <section className={`mt-6 ${panelClass}`} style={radiusStyle}>
+          <h2 className="font-semibold text-[var(--ts-ink-on-paper)]">{MANUAL_ASK}</h2>
+          <p className="mt-1 text-sm text-[var(--ts-ink-muted-on-paper)]">{MANUAL_HELP}</p>
+          <fieldset className="mt-3">
+            <legend className="text-sm font-medium text-[var(--ts-ink-on-paper)]">Podcast or YouTube</legend>
+            <label className="mt-2 flex items-center gap-2 text-sm text-[var(--ts-ink-on-paper)]">
+              <input
+                type="radio"
+                name="ownership-manual-medium"
+                checked={manualMedium === "podcast"}
+                onChange={() => setManualMedium("podcast")}
+              />
+              Podcast
+            </label>
+            <label className="mt-1 flex items-center gap-2 text-sm text-[var(--ts-ink-on-paper)]">
+              <input
+                type="radio"
+                name="ownership-manual-medium"
+                checked={manualMedium === "youtube"}
+                onChange={() => setManualMedium("youtube")}
+              />
+              YouTube
+            </label>
+          </fieldset>
+          {manualMedium === "youtube" && (
+            <>
+              <label className="mt-3 block text-sm font-medium text-[var(--ts-ink-on-paper)]" htmlFor="ownership-manual-channel">
+                Channel URL
+              </label>
+              <input
+                id="ownership-manual-channel"
+                value={manualChannel}
+                onChange={(event) => setManualChannel(event.target.value)}
+                autoComplete="off"
+                maxLength={300}
+                placeholder="https://www.youtube.com/channel/UC"
+                className="mt-1.5 w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none"
+                style={radiusStyle}
+              />
+            </>
+          )}
+          <label className="mt-3 block text-sm font-medium text-[var(--ts-ink-on-paper)]" htmlFor="ownership-manual-explanation">
+            Explanation
+          </label>
+          <textarea
+            id="ownership-manual-explanation"
+            value={explanation}
+            onChange={(event) => setExplanation(event.target.value)}
+            rows={4}
+            maxLength={1000}
+            className="mt-1.5 w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none"
+            style={radiusStyle}
+          />
+          <label className="mt-3 block text-sm font-medium text-[var(--ts-ink-on-paper)]" htmlFor="ownership-manual-link">
+            Link
+          </label>
+          <input
+            id="ownership-manual-link"
+            value={link}
+            onChange={(event) => setLink(event.target.value)}
+            autoComplete="off"
+            maxLength={300}
+            placeholder="https://"
+            className="mt-1.5 w-full border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-3 py-2 text-sm text-[var(--ts-ink-on-paper)] placeholder:text-[var(--ts-ink-muted-on-paper)] focus:border-[var(--ts-accent)] focus:outline-none"
+            style={radiusStyle}
+          />
+          <button
+            type="button"
+            className={`${ghostBtn} mt-4`}
+            style={radiusStyle}
+            onClick={askManual}
+            disabled={busy || !explanationReady}
+          >
+            {MANUAL_ASK}
+          </button>
+        </section>
       )}
     </div>
   );

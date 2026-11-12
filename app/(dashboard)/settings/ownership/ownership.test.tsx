@@ -68,7 +68,10 @@ vi.mock("@/lib/supabase/server", () => ({
               return chain;
             },
             order() {
-              if (mocks.proofError) {
+              const missingColumn =
+                mocks.proofError != null &&
+                (mocks.proofError.code === "42703" || mocks.proofError.code === "PGRST204");
+              if (mocks.proofError && (!missingColumn || columns.includes("decision_note"))) {
                 return Promise.resolve({ data: null, error: mocks.proofError });
               }
               const leak = columns.includes("code_hash") || columns.includes("show_id");
@@ -364,5 +367,114 @@ describe("ownership settings", () => {
     const agent = render(<SettingsPage />);
     await screen.findByRole("link", { name: /Sellable surfaces/ });
     expect(agent.container.querySelector('a[href="/settings/ownership"]')).toBeNull();
+  });
+
+  it("renders the O2 view when decision_note is not in the database yet", async () => {
+    const logs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+    for (const code of ["42703", "PGRST204"]) {
+      cleanup();
+      mocks.proofError = { code, message: `column decision_note secret ${code}` };
+      mocks.proofs = [
+        {
+          method: "rss_code",
+          status: "pending",
+          target: "feeds.example.com/show",
+          code_expires_at: "2099-01-01T00:00:00.000Z",
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ];
+      mocks.selects = [];
+      render(await OwnershipSettingsPage());
+      expect(screen.getByRole("button", { name: "Check now" })).toBeInTheDocument();
+      expect(screen.queryByText("We could not load your ownership check. Refresh to try again.")).not.toBeInTheDocument();
+      expect(screen.queryByText("Not verified")).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toContain("secret");
+      expect(document.body.textContent).not.toContain("decision_note");
+      const selects = mocks.selects.filter((entry) => entry.startsWith("show_ownership_proofs:"));
+      expect(selects[0]).toContain("decision_note");
+      expect(selects[1]).toBe(`show_ownership_proofs:${"method, status, target, code_expires_at, created_at"}`);
+      expect(logs.join("\n")).toContain(code);
+      expect(logs.join("\n")).not.toContain("secret");
+    }
+  });
+
+  it("reads the decision note and decided time", async () => {
+    await OwnershipSettingsPage();
+    expect(mocks.selects.join(" ")).toContain("decision_note");
+    expect(mocks.selects.join(" ")).toContain("decided_at");
+    expect(mocks.selects.join(" ")).not.toContain("code_hash");
+  });
+
+  it("shows Not verified with the decision note, and Verified for an admin approval", () => {
+    const rejected = ownershipView({
+      proofs: [
+        {
+          method: "admin",
+          status: "rejected",
+          target: "feeds.example.com/show",
+          code_expires_at: null,
+          created_at: "2026-02-01T00:00:00.000Z",
+          decision_note: "The feed does not match this show.",
+          decided_at: "2026-02-02T00:00:00.000Z",
+        },
+      ],
+      feedUrl: "https://feeds.example.com/show",
+      youtubeAvailable: true,
+      pendingLabel: "Pending",
+      verifiedLabel: "Verified",
+    });
+    expect(rejected.kind).toBe("rejected");
+    expect(rejected.decisionNote).toBe("The feed does not match this show.");
+    expect(rejected.manual).toBe(true);
+    render(<OwnershipClient view={rejected} />);
+    expect(screen.getByText("Not verified")).toBeInTheDocument();
+    expect(screen.getByText("The feed does not match this show.")).toBeInTheDocument();
+    expect(screen.getByText("Start again.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ask for manual review" })).toBeInTheDocument();
+    cleanup();
+
+    const approved = ownershipView({
+      proofs: [
+        {
+          method: "admin",
+          status: "verified",
+          target: "feeds.example.com/show",
+          code_expires_at: null,
+          created_at: "2026-02-03T00:00:00.000Z",
+        },
+      ],
+      feedUrl: "https://feeds.example.com/show",
+      youtubeAvailable: true,
+      pendingLabel: "Pending",
+      verifiedLabel: "Verified",
+    });
+    expect(approved.kind).toBe("verified");
+    expect(approved.manual).toBe(false);
+    render(<OwnershipClient view={approved} />);
+    expect(screen.getByText("Verified")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ask for manual review" })).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("\u2014");
+  });
+
+  it("posts a manual review request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, message: OWNERSHIP_MESSAGES.review }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<OwnershipClient view={view()} />);
+    fireEvent.change(screen.getByLabelText("Explanation"), {
+      target: { value: "I host this show and can edit the description." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Ask for manual review" }));
+    expect(await screen.findByText(OWNERSHIP_MESSAGES.review)).toBeInTheDocument();
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/ownership/manual");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({
+      medium: "podcast",
+      explanation: "I host this show and can edit the description.",
+    });
   });
 });

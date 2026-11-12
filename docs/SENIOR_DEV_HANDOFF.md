@@ -3294,3 +3294,58 @@ Review fixes: both ownership routes set `Cache-Control: no-store` on every respo
 - A failed or blocked feed read counts as a miss. Five of those send the proof to review.
 - Refreshing the page hides the code. The owner can start again, which expires the pending code and issues a new one. The check itself does not need the plaintext.
 - No migration. Apply nothing on `ldtmhafewfifdizgfrnn` for this job. The next free number after SEC7 is 091. This PR does not merge. Paul reviews.
+
+## O4
+
+### What was built
+
+An internal admin can open `/admin/ownership` and decide ownership proofs that need a person. The queue lists `contested` proofs, and `expired` proofs when that user has no newer proof for the same show. Oldest first, 100 at a time, with a contested or expired filter. Approve sets that proof to `verified`, sets `shows.ownership_status` to `verified`, and rejects the other open proofs for the show with `decision_note` "Another owner was verified." Reject requires a reason of 1 to 500 characters. A second approve, or an approve when the show already has a verified owner, returns 409 and changes nothing. Rep links are not written.
+
+The owner page at `/settings/ownership` shows "Not verified" and the decision note, with Start again. An admin-approved row shows Verified, the same state O2 already used. A user with no verified proof and no contested proof can ask for manual review. That inserts one `method` `admin`, `status` `contested` proof per matching show. The optional link is stored as text and is never fetched. YouTube also takes `channel`, because the merged O2 code resolves a channel with `parseYoutubeChannelTarget(input)` and `matchingShowIds(medium, target)`.
+
+Migration 091 adds `decision_note` (null, or 1 to 500 characters) and restates the 061 grants. `note` stays the reason the row reached review. The owner can read `decision_note` through the existing SELECT policy. 091 is in the repo and is not applied. Apply it on `ldtmhafewfifdizgfrnn` only after merge and when Chris names it. It is safe to deploy before 091. The owner page falls back to the O2 view with no decision reason. The admin queue returns 503 "Ownership review needs migration 091." until 091 is applied.
+
+Approve is safe to retry. If the show update or the sibling rejection fails after the proof is already `verified` with `decided_by` set, approving that proof again finishes those two steps. A verified proof from the O2 code path has no `decided_by` and still returns 409. Admin POST checks the same origin as the owner routes. GET does not.
+
+O2 on main `444a88d` (PR 106) already used these names. The only `lib/ownership/check.ts` edit is `export` on `matchingShowIds`. Its check still reads `status` `pending`, so an admin row is not picked up. `docs/jobs/O2.md` now says O4 resolves contested and expired rows.
+
+`/admin/ownership` is URL only. The admin home and the nav were not edited. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. The payout gate is not wired.
+
+### Where
+
+- `supabase/migrations/091_ownership_decision_note.sql` and its test
+- `lib/ownership/review.ts` and `review.test.ts`
+- `lib/ownership/check.ts` (`export` on `matchingShowIds` only)
+- `app/api/admin/ownership/route.ts` and `route.test.ts`
+- `app/api/admin/ownership/[id]/route.ts` and `route.test.ts`
+- `app/api/ownership/manual/route.ts` and `route.test.ts`
+- `app/(dashboard)/admin/ownership/page.tsx`, `ownership-review-client.tsx`, and `ownership-review.test.tsx`
+- `app/(dashboard)/settings/ownership/page.tsx`, `ownership-client.tsx`, and `ownership.test.tsx`
+- `docs/jobs/O4.md`
+- `docs/jobs/O2.md` (one line: contested and expired)
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 402 files, 3399 passed, 41 skipped.
+
+`npx vitest run supabase/migrations/091_ownership_decision_note.test.ts lib/ownership app/api/admin/ownership app/api/ownership 'app/(dashboard)/admin/ownership' 'app/(dashboard)/settings/ownership'` covers the 091 column, the 501-character refusal, the 061 grants, anon denied, an owner reading only their own `decision_note`, authenticated unable to update, 401, 403, the page `notFound`, 429, closed 503, 413, 415, a bad id, an unknown id, approve success, the lost race, 23505, sibling proofs rejected, rep links not written, reject without a reason and with 501 characters, manual success, a duplicate, no catalog match, an http link refused, no-store, and `decided_by` as the session user id.
+
+`npx next build` compiled successfully. `/admin/ownership` and `/settings/ownership` are dynamic.
+
+`git diff --stat main -- lib/payouts lib/stripe lib/billing lib/airchecks lib/data/types.ts lib/reps lib/shows lib/auth proxy.ts vercel.json` is empty. The only supabase change is 091.
+
+Screenshots use the production stylesheet and the real components. A signed-in session was not used. No live write, charge, or send. Before shots are O2's owner states. After shots add "Not verified", the manual review form, and the admin queue (empty, list, detail, decided).
+
+### Known gaps
+
+- No email to the owner or the rep. The daily sweep still covers a proof verified in the last 7 days.
+- No domain event. `lib/data/types.ts` was not edited. `ownership.approved` and `ownership.rejected` are a follow-up.
+- The rep link is reviewed by hand. This job does not change `agent_show_relationships`.
+- `isPayoutOwnerVerified` is still not called from `lib/payouts`. That needs Chris's OK.
+- There is no undo. The owner can start a new proof.
+- The admin gate is still the auth login email through `isShowsAdmin`, not a user-id allowlist.
+- If a retry of approve still returns 500 after the proof is already `verified`, set the show to `verified` and reject the other open proofs by hand. The repair is in `docs/jobs/O4.md`.
+- Migration 091 is not applied. This PR does not merge. Paul reviews.
