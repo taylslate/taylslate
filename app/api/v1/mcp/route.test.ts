@@ -13,6 +13,7 @@ const bridge = vi.hoisted(() => ({
     from: () => unknown;
   } | null,
   recordEvent: vi.fn(async () => undefined),
+  oauthQueries: [] as string[],
 }));
 
 vi.mock("@supabase/ssr", () => ({
@@ -24,6 +25,7 @@ vi.mock("@supabase/ssr", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
     from: (table: string) => {
+      if (table.startsWith("mcp_oauth_")) bridge.oauthQueries.push(table);
       if (table === "api_keys" || table === "profiles") return bridge.keys!.from(table);
       if (table === "api_write_actions") return bridge.actions!.from();
       return bridge.data!.from(table);
@@ -259,6 +261,7 @@ beforeEach(() => {
   bridge.data = createDomainAdmin();
   bridge.actions = createActionAdmin();
   bridge.recordEvent.mockClear();
+  bridge.oauthQueries = [];
   _setApiRateClockForTests(() => FIXED_NOW);
   bridge.data.tables.shows.push(
     { id: SHOW_PUBLIC, name: "Public", is_discoverable: true, created_at: "2026-03-01T00:00:00.000Z" },
@@ -296,7 +299,11 @@ afterEach(() => {
 
 describe("POST /api/v1/mcp", () => {
   it("returns 401 for a missing key, a bad token, a revoked key, and an untied key", async () => {
+    const savedSite = process.env.NEXT_PUBLIC_SITE_URL;
+    delete process.env.NEXT_PUBLIC_SITE_URL;
     const missing = await rpc(undefined, legacy("2025-11-25", "ping").message, legacy("2025-11-25", "ping").headers);
+    if (savedSite === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = savedSite;
     expect(missing.status).toBe(401);
     expect(missing.headers.get("www-authenticate")).toBe("Bearer");
     expect(missing.headers.get("cache-control")).toBe("no-store");
@@ -318,6 +325,50 @@ describe("POST /api/v1/mcp", () => {
     expect(rejected.status).toBe(401);
     expect(await rejected.json()).toEqual({ error: "API key is not tied to a user." });
     expect(bridge.keys!.keys.find((row) => row.brand_id === UNTIED)?.last_used_at).toBeNull();
+  });
+
+  it("does not query an OAuth table for a ts_live_ key", async () => {
+    const secret = await keyFor(BRAND, ["read"]);
+    const response = await rpc(secret, legacy("2025-11-25", "ping").message, legacy("2025-11-25", "ping").headers);
+    expect(response.status).toBe(200);
+    expect(bridge.oauthQueries).toEqual([]);
+  });
+
+  it("returns 503 for a ts_oat_ token when the OAuth table is missing", async () => {
+    const savedSite = process.env.NEXT_PUBLIC_SITE_URL;
+    process.env.NEXT_PUBLIC_SITE_URL = "https://www.taylslate.com";
+    try {
+      const token = `ts_oat_${"ab".repeat(32)}`;
+      const response = await rpc(token, legacy("2025-11-25", "ping").message, legacy("2025-11-25", "ping").headers);
+      expect(response.status).toBe(503);
+      const body = await response.json();
+      expect(body).toEqual({ error: "API request failed." });
+      expect(JSON.stringify(body)).not.toContain("secret-db-text");
+      expect(JSON.stringify(body)).not.toContain("unexpected table");
+      expect(bridge.oauthQueries).toContain("mcp_oauth_tokens");
+    } finally {
+      if (savedSite === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+      else process.env.NEXT_PUBLIC_SITE_URL = savedSite;
+    }
+  });
+
+  it("advertises protected-resource metadata on 401 when the origin is configured", async () => {
+    const savedSite = process.env.NEXT_PUBLIC_SITE_URL;
+    process.env.NEXT_PUBLIC_SITE_URL = "https://www.taylslate.com";
+    try {
+      const missing = await rpc(undefined, legacy("2025-11-25", "ping").message, legacy("2025-11-25", "ping").headers);
+      expect(missing.status).toBe(401);
+      expect(missing.headers.get("www-authenticate")).toBe(
+        'Bearer resource_metadata="https://www.taylslate.com/.well-known/oauth-protected-resource/api/v1/mcp"'
+      );
+      const presented = await rpc("not-a-key", legacy("2025-11-25", "ping").message, legacy("2025-11-25", "ping").headers);
+      expect(presented.headers.get("www-authenticate")).toBe(
+        'Bearer error="invalid_token", resource_metadata="https://www.taylslate.com/.well-known/oauth-protected-resource/api/v1/mcp"'
+      );
+    } finally {
+      if (savedSite === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+      else process.env.NEXT_PUBLIC_SITE_URL = savedSite;
+    }
   });
 
   it("returns 403 for a foreign Origin and allows a missing Origin", async () => {

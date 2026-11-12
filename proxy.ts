@@ -62,6 +62,12 @@ export async function proxy(request: NextRequest) {
     pathname === "/login/show" ||
     pathname === "/signup" ||
     pathname === "/signup/show" ||
+    // OAuth protected-resource metadata. Signed-out clients must read it.
+    pathname === "/.well-known/oauth-protected-resource" ||
+    // Suffix form: /.well-known/oauth-protected-resource/api/v1/mcp
+    pathname.startsWith("/.well-known/oauth-protected-resource/") ||
+    // OAuth authorization-server metadata. Signed-out clients must read it.
+    pathname === "/.well-known/oauth-authorization-server" ||
     pathname === "/callback" ||
     pathname === "/forgot-password" ||
     pathname === "/reset-password" ||

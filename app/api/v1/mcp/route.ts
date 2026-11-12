@@ -7,6 +7,9 @@ import { enforceApiRateLimit } from "@/lib/api/rate-limit";
 import { API_WRITE_MAX_BODY_BYTES, ApiWriteError, apiJson } from "@/lib/api/v1/handler";
 import { handleMcpMessage, type McpDispatch } from "@/lib/mcp/protocol";
 import { isMcpToolName, type ToolContext } from "@/lib/mcp/tools";
+import { wwwAuthenticate } from "@/lib/mcp-oauth/config";
+import { OAuthUnavailableError } from "@/lib/mcp-oauth/errors";
+import { resolveOAuthAccessToken } from "@/lib/mcp-oauth/resolve";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,13 +17,25 @@ export const runtime = "nodejs";
 const SAFE_METHOD =
   /^(initialize|server\/discover|ping|tools\/list|tools\/call|notifications\/[a-z0-9_-]{1,40})$/;
 
+function bearerToken(req: Request): string | null {
+  const header = req.headers.get("authorization");
+  if (!header) return null;
+  const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
+  return match?.[1] ?? null;
+}
+
 export async function POST(req: Request): Promise<Response> {
   const started = Date.now();
+  let presented = false;
   try {
     if (!originAllowed(req)) {
       return finish(started, null, null, 403, originDenied());
     }
-    const resolved = await resolveApiRequest(req);
+    const token = bearerToken(req);
+    presented = token != null;
+    const resolved = token?.startsWith("ts_oat_")
+      ? await resolveOAuthAccessToken(req)
+      : await resolveApiRequest(req);
     const limit = await enforceApiRateLimit(resolved.keyId);
     if (!limit.ok) {
       return finish(
@@ -53,8 +68,11 @@ export async function POST(req: Request): Promise<Response> {
     const dispatch = await handleMcpMessage(payload, readProtocolHeaders(req), ctx);
     return finish(started, dispatch.method, dispatch.tool, dispatch.outcome, toResponse(dispatch));
   } catch (err) {
+    if (err instanceof OAuthUnavailableError) {
+      return finish(started, null, null, 503, apiJson({ error: "API request failed." }, 503));
+    }
     if (err instanceof ApiAuthError) {
-      const extra = err.status === 401 ? { "WWW-Authenticate": "Bearer" } : undefined;
+      const extra = err.status === 401 ? { "WWW-Authenticate": wwwAuthenticate(presented) } : undefined;
       const body = err.code ? { error: err.message, code: err.code } : { error: err.message };
       return finish(started, null, null, err.status, apiJson(body, err.status, extra));
     }
