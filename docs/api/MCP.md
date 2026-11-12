@@ -25,6 +25,39 @@ On `2026-07-28`, every POST also sends `MCP-Protocol-Version` and `Mcp-Method`. 
 
 On `2025-11-25` or `2025-06-18`, call `initialize` first, then send `MCP-Protocol-Version` on later requests. This server does not mint a session id. `Mcp-Session-Id` is ignored.
 
+## OAuth
+
+Remote MCP clients that cannot paste a key connect with OAuth 2.1. Bearer keys (`ts_live_`) keep working on this route and on every other `/api/v1` route. No new environment variable is required. The issuer is `NEXT_PUBLIC_SITE_URL` with the trailing slash removed. It must be `https`, or `http://localhost` outside production. If that origin is missing, the metadata routes and the OAuth routes answer 503 `temporarily_unavailable`. Bearer keys do not.
+
+Metadata (no database):
+
+- `GET /.well-known/oauth-protected-resource`
+- `GET /.well-known/oauth-protected-resource/api/v1/mcp`
+- `GET /.well-known/oauth-authorization-server`
+
+The resource is `<origin>/api/v1/mcp`. The authorization server lists `authorization_endpoint` `/api/oauth/authorize`, `token_endpoint` `/api/oauth/token`, `registration_endpoint` `/api/oauth/register`, and `revocation_endpoint` `/api/oauth/revoke`.
+
+Flow:
+
+1. `POST /api/oauth/register` with JSON. Public clients only. PKCE S256. No client secret is stored or returned. Redirect URIs are an exact list of 1 to 5: `https` on any host, `http` only for `localhost`, `127.0.0.1`, or `[::1]`, or a private-use scheme such as `cursor://`.
+2. `GET /api/oauth/authorize` with `response_type=code`, the registered `redirect_uri`, and a `code_challenge`. A bad client or redirect is 400 JSON and is not redirected. Later errors redirect to the registered URI with `error`, `state`, and `iss`.
+3. The brand signs in. `/oauth/consent/<id>` shows the client name as plain text, the redirect host, and one line per scope. Allow or Deny.
+4. `POST /api/oauth/token` with `grant_type=authorization_code`, the code, the same `redirect_uri`, and the `code_verifier`. The response is `{ access_token, token_type: "Bearer", expires_in: 3600, refresh_token, scope }`.
+5. `POST /api/v1/mcp` with `Authorization: Bearer ts_oat_...`.
+6. `grant_type=refresh_token` rotates the pair. Sending an already-used refresh token revokes that token family.
+
+Scopes are `read`, `write:campaigns`, and `write:outreach`. An omitted authorize scope defaults to `read`. A refresh `scope` can only narrow.
+
+Lifetimes: authorization request 10 minutes, code 5 minutes, access token 1 hour, refresh token 30 days.
+
+Each Allow creates one `api_keys` row named `MCP: <client name>`. Revoke that key in Settings, API keys. The next MCP call and the next refresh both stop. There is no separate OAuth disconnect screen.
+
+`ts_oat_` is accepted only on `POST /api/v1/mcp`. Any other `/api/v1` route still returns 401, because API key parsing is unchanged.
+
+A 401 from this route sends `WWW-Authenticate`. When the site origin is configured, the value is `Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource/api/v1/mcp"`, plus `error="invalid_token"` when a token was sent. When the origin is not configured, the value stays `Bearer`. The JSON body and status are unchanged.
+
+Migration 092 creates the OAuth tables and is not applied with this change. Until it is applied, metadata still responds, OAuth routes that need a table answer 503 `temporarily_unavailable`, a `ts_oat_` call here answers 503 `{ "error": "API request failed." }`, and a `ts_live_` key never reads an OAuth table.
+
 ## Tools
 
 `tools/list` returns the tools the key's scopes include, in this order.
@@ -194,7 +227,7 @@ A pending campaign looks like this:
 
 | Situation | HTTP | Body |
 | --- | --- | --- |
-| Missing, malformed, revoked, or untied key | 401 | `{ "error": "<ApiAuthError message>" }` and `WWW-Authenticate: Bearer` |
+| Missing, malformed, revoked, or untied key | 401 | `{ "error": "<ApiAuthError message>" }` and `WWW-Authenticate` (see OAuth) |
 | Brand plan does not include API access | 403 | `{ "error": "Your plan does not include API access.", "code": "plan_no_api_access" }` |
 | `Origin` host is not the request host | 403 | JSON-RPC `-32600`, no `id` |
 | Over 60 requests for this key in the UTC minute | 429 | `{ "error": "Rate limit exceeded." }` and `Retry-After` |
@@ -212,7 +245,7 @@ A pending campaign looks like this:
 
 Tool errors do not include a stack, a SQL message, a key, a prefix, or a hash. Logs are one line: method, tool name, outcome code, elapsed milliseconds. Arguments, outreach text, and the `Authorization` value are not logged.
 
-`resolveApiRequest` writes the existing `api_call` row. This endpoint does not write a second metering row.
+A bearer key writes one `api_call` row through `resolveApiRequest`. An OAuth access token writes one `api_call` row through `resolveOAuthAccessToken`, with metadata `{ key_id, path, scopes, auth: "oauth" }`. This endpoint does not write a second metering row.
 
 ## In process
 

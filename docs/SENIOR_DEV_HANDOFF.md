@@ -3436,3 +3436,42 @@ Links to `/signup/show` were added on `/signup`, `/login`, and the role picker. 
 - No captcha on `/signup/show`; the rate limits are the only brake, by design.
 - The summary button copy still says "take me to my dashboard" while landing on `/settings/ownership`.
 - No migration. This PR does not merge. Paul reviews.
+
+## MCP-OAUTH1
+
+### What was built
+
+Remote MCP clients can connect with OAuth 2.1. A client reads the protected-resource and authorization-server metadata, registers as a public client (no secret), sends the brand to `/oauth/consent/<id>`, and exchanges a PKCE S256 code for an access token (`ts_oat_`) and a refresh token (`ts_ort_`). The access token calls `POST /api/v1/mcp` only. Allow creates one real `api_keys` row named `MCP: <client name>` and throws away the `ts_live_` secret. Revoking that key in Settings, API keys, stops the next call and the next refresh. Bearer keys are unchanged. `lib/api/auth.ts` is not edited, so `ts_oat_` on any other `/api/v1` route stays 401.
+
+The code is safe to deploy before migration 092. Metadata never touches the database. Every OAuth table call goes through one helper that maps `42P01`, `PGRST205`, and any other database error to 503 `temporarily_unavailable`. A `ts_live_` key never reads an OAuth table. A `ts_oat_` token on `/api/v1/mcp` before 092 is 503 `{ "error": "API request failed." }`.
+
+### Where
+
+- `supabase/migrations/092_mcp_oauth.sql` and `092_mcp_oauth.test.ts` (repo only, not applied)
+- `lib/mcp-oauth/*`
+- `app/.well-known/oauth-protected-resource/route.ts` and `[...path]/route.ts`
+- `app/.well-known/oauth-authorization-server/route.ts`
+- `app/api/oauth/register`, `authorize`, `consent`, `token`, `revoke`
+- `app/oauth/consent/[requestId]/page.tsx` and `consent-client.tsx`
+- `app/api/v1/mcp/route.ts` and `route.test.ts` (dispatch and the 401 `WWW-Authenticate` header only)
+- `proxy.ts` and `proxy.test.ts` (three public `/.well-known` lines; `/oauth/consent` stays signed-in)
+- `docs/api/MCP.md`, `docs/jobs/M1.md` (one known-gap line), `docs/jobs/MCP-OAUTH1.md`
+
+`lib/api/auth.ts`, `lib/api/keys.ts`, `lib/api/plan-gate.ts`, `lib/api/rate-limit.ts`, `lib/security/rate-limit.ts`, `lib/mcp/*`, `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and settings pages were not edited.
+
+### Tests
+
+`npx tsc --noEmit` clean. `npx vitest run`: 427 files, 3546 passed, 41 skipped. `npx eslint` on changed files: 0 errors. `npx next build` compiled and lists `/.well-known/oauth-protected-resource`, `/.well-known/oauth-protected-resource/[...path]`, `/.well-known/oauth-authorization-server`, `/api/oauth/register`, `/api/oauth/authorize`, `/api/oauth/consent`, `/api/oauth/token`, `/api/oauth/revoke`, and `/oauth/consent/[requestId]`.
+
+Security coverage: PKCE S256 is compared with `timingSafeEqual`. A reused authorization code is `invalid_grant` and revokes that code's tokens. A reused refresh token revokes the family. A revoked backing key or a plan without API access stops refresh. MCP scopes are the intersection of the token and the key. Registration rejects `javascript:`, `data:`, `file:`, non-loopback `http:`, fragments, more than 5 URIs, and a client secret. A bad client or redirect is 400 with no `Location`. Consent is 401 without a session and 403 on a foreign Origin. The client name renders as text. Every OAuth route returns 429 when limited and 503 when the rate-limit store errors. No insert or happy-path log contains a plaintext token, code, verifier, state, or `createKey` secret. `secret-db-text` appears in no response body. A `ts_live_` key never queries an OAuth table. A `ts_oat_` token before the tables exist is 503 with the existing MCP error text. Signed-out visitors reach the three `/.well-known` paths and are sent to login on `/oauth/consent/<id>`.
+
+### Known gaps
+
+- Consent copy shipped as written. Chris can change it.
+- Migration 092 is not applied. Apply only after merge and Chris's OK.
+- Public clients only. No client secret, no `plain` PKCE, no implicit, password, or client-credentials grant.
+- Access tokens work only on `POST /api/v1/mcp`.
+- Disconnect is revoking the backing API key. There is no separate OAuth screen in Settings.
+- Two refreshes that both pass the unused check can race. The loser revokes the family.
+- No captcha. The rate limits are the only brake.
+- This PR does not merge. Paul reviews.
