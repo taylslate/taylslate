@@ -31,7 +31,7 @@ export default async function OwnershipSettingsPage() {
   if (proofsResult.error) logRead(proofsResult.error.code);
   if (profileResult.error) logRead(profileResult.error.code);
 
-  if (proofsResult.error) {
+  if (proofsResult.error || profileResult.error) {
     return (
       <OwnershipClient
         view={{

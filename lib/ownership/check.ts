@@ -316,9 +316,8 @@ export async function startOwnership(input: {
 async function storedRssUrls(
   rows: ProofRow[],
   target: string
-): Promise<{ ok: true; urls: string[] } | { ok: false; error: DbError }> {
-  const urls: string[] = [];
-  const seen = new Set<string>();
+): Promise<{ ok: true; byRow: Map<string, string | null> } | { ok: false; error: DbError }> {
+  const byRow = new Map<string, string | null>();
   for (const row of rows) {
     const { data, error } = await supabaseAdmin
       .from("shows")
@@ -327,11 +326,9 @@ async function storedRssUrls(
       .maybeSingle();
     if (error) return { ok: false, error };
     const rss = typeof data?.rss_url === "string" ? data.rss_url.trim() : "";
-    if (!rss || normalizeRssUrl(rss) !== target || seen.has(rss)) continue;
-    seen.add(rss);
-    urls.push(rss);
+    byRow.set(row.id, rss && normalizeRssUrl(rss) === target ? rss : null);
   }
-  return { ok: true, urls };
+  return { ok: true, byRow };
 }
 
 async function loadPending(userId: string): Promise<{ ok: true; rows: ProofRow[] } | { ok: false; error: DbError }> {
@@ -538,20 +535,37 @@ export async function checkOwnership(input: {
       logOwnershipError(feeds.error.code);
       return { ok: false, status: 503, error: OWNERSHIP_ERRORS.unavailable };
     }
-    if (feeds.urls.length === 0) {
-      countedMiss = true;
-    } else {
-      const hash = rows.find((row) => row.code_hash)?.code_hash ?? "";
-      let hit = false;
-      for (const url of feeds.urls) {
-        const read = await readRssProofText(url);
-        if (read.status === "ok" && hash.length > 0 && textContainsHashedCode(read.text, hash)) {
-          hit = true;
-        }
-      }
-      sawCode = hit;
-      countedMiss = !hit;
+    const hash = rows.find((row) => row.code_hash)?.code_hash ?? "";
+    const hitByUrl = new Map<string, boolean>();
+    for (const url of new Set(feeds.byRow.values())) {
+      if (!url || hitByUrl.has(url)) continue;
+      const read = await readRssProofText(url);
+      hitByUrl.set(
+        url,
+        read.status === "ok" && hash.length > 0 && textContainsHashedCode(read.text, hash)
+      );
     }
+    const outcomes: RowOutcome[] = [];
+    for (const row of rows) {
+      const url = feeds.byRow.get(row.id) ?? null;
+      if (url && hitByUrl.get(url)) {
+        outcomes.push(await applyHit(row, input.userId, nowIso));
+        continue;
+      }
+      const misses = row.miss_count + 1;
+      const contested = misses >= 5;
+      const updated = await updateProof(
+        input.userId,
+        row.id,
+        checkedPatch(row, nowIso, {
+          miss_count: misses,
+          ...(contested ? { status: "contested", note: "needs_admin_review" } : {}),
+        })
+      );
+      if (!updated.ok) outcomes.push("error");
+      else outcomes.push(contested ? "contested" : "miss");
+    }
+    return messageFor(outcomes);
   } else {
     countedMiss = true;
   }

@@ -3274,7 +3274,7 @@ Payouts are not wired. A verified row is what `getVerifiedProfileTies` and `isPa
 
 `npx tsc --noEmit` is clean.
 
-`npx vitest run`: 396 files, 3361 passed, 41 skipped. That run is after the merge of main at 3bb8179 (SEC7, AC3b, and HARDEN1).
+`npx vitest run`: 396 files, 3364 passed, 41 skipped. That run is after the merge of main at 3bb8179 (SEC7, AC3b, and HARDEN1).
 
 `npx vitest run lib/ownership app/api/ownership 'app/(dashboard)/settings'` covers 401, 403 for a brand and for a show with no profile, cross-origin 403, start 400 with no feed, 409 with no catalog match, the code returned once and only its hash stored, a channel-description hit, an episode-notes hit, an HTML-entity-encoded code, a miss and the 5th miss going to contested, expiry, 429 per minute and per day, 503 when the limiter fails closed, exclusive-rep contested, already-verified contested, the 23505 race, YouTube with no key (no miss), a blocked 127.0.0.1 and 10.1.2.3 feed with no network call, another user's proof left unchanged, and no code or hash in a console call.
 
@@ -3284,7 +3284,7 @@ Payouts are not wired. A verified row is what `getVerifiedProfileTies` and `isPa
 
 Screenshots are the show settings page before and after the card, and `/settings/ownership` for not started, the code just issued, pending without the code, verified, in review, expired, and YouTube unavailable. They use the production stylesheet and the real components. A signed-in session was not used. No live write, charge, or send.
 
-Review fixes: both ownership routes set `Cache-Control: no-store` on every response, including 429, 4xx, and 503. A podcast check fetches the show's stored `shows.rss_url` when it still normalizes to the proof target. It does not rebuild `https://` plus the lowercased target, and it does not read `show_profiles.feed_url` again. A proof read error on the page shows "We could not load your ownership check. Refresh to try again." and hides Start. `matchingShowIds` is unchanged.
+Review fixes: both ownership routes set `Cache-Control: no-store` on every response, including 429, 4xx, and 503. A podcast row is verified only when its own `shows.rss_url` still normalizes to the proof target and that exact feed contains the code. A case-variant sibling does not ride along, and a cleared or changed feed is a miss. Each distinct URL is fetched once. The profile feed is not read again. A proof or profile read error on the page shows "We could not load your ownership check. Refresh to try again." and hides Start. `matchingShowIds` is unchanged.
 
 ### Known gaps
 

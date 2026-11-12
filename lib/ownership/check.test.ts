@@ -431,6 +431,55 @@ describe("ownership check", () => {
     expect(state.tables.shows[0].ownership_status).toBe("verified");
   });
 
+  it("verifies only the case-variant feed that contains the code", async () => {
+    const upper = "https://feeds.host/AbC123";
+    const lower = "https://feeds.host/abc123";
+    state.tables.show_profiles[0].feed_url = upper;
+    state.tables.shows = [
+      { id: SHOW_A, name: SHOW_NAME, rss_url: upper, ownership_status: "unclaimed" },
+      { id: SHOW_B, name: "Sibling", rss_url: lower, ownership_status: "unclaimed" },
+    ];
+    const started = await startPodcast();
+    if (!started.ok) throw new Error("start failed");
+    expect(started.target).toBe("feeds.host/abc123");
+    rssRead.mockImplementation(async (url: string) => ({
+      status: "ok",
+      text: url === upper ? started.code : "no code here",
+    }));
+    const checked = await checkOwnership({ userId: USER });
+    const mine = proofs().filter((row) => row.user_id === USER);
+    expect(mine.find((row) => row.show_id === SHOW_A)?.status).toBe("verified");
+    expect(mine.find((row) => row.show_id === SHOW_B)?.status).toBe("pending");
+    expect(mine.find((row) => row.show_id === SHOW_B)?.miss_count).toBe(1);
+    expect(state.tables.shows.find((row) => row.id === SHOW_A)?.ownership_status).toBe("verified");
+    expect(state.tables.shows.find((row) => row.id === SHOW_B)?.ownership_status).toBe("unclaimed");
+    expect(rssRead).toHaveBeenCalledTimes(2);
+    expect(rssRead).toHaveBeenCalledWith(upper);
+    expect(rssRead).toHaveBeenCalledWith(lower);
+    expect(checked.ok).toBe(true);
+  });
+
+  it("does not verify a row whose rss_url was cleared when its sibling hits", async () => {
+    state.tables.shows.push({
+      id: SHOW_B,
+      name: "Sibling",
+      rss_url: "https://Feeds.Example.com/Show",
+      ownership_status: "unclaimed",
+    });
+    const started = await startPodcast();
+    if (!started.ok) throw new Error("start failed");
+    state.tables.shows.find((row) => row.id === SHOW_B)!.rss_url = null;
+    rssRead.mockResolvedValue({ status: "ok", text: started.code });
+    await checkOwnership({ userId: USER });
+    const mine = proofs().filter((row) => row.user_id === USER);
+    expect(mine.find((row) => row.show_id === SHOW_A)?.status).toBe("verified");
+    expect(mine.find((row) => row.show_id === SHOW_B)?.status).toBe("pending");
+    expect(mine.find((row) => row.show_id === SHOW_B)?.miss_count).toBe(1);
+    expect(state.tables.shows.find((row) => row.id === SHOW_B)?.ownership_status).toBe("unclaimed");
+    expect(rssRead).toHaveBeenCalledTimes(1);
+    expect(rssRead).toHaveBeenCalledWith("https://Feeds.Example.com/Show");
+  });
+
   it("keeps fetching the show rss_url after the profile feed changes", async () => {
     const started = await startPodcast();
     if (!started.ok) throw new Error("start failed");

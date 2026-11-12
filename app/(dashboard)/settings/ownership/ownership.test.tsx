@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   feedUrl: "https://feeds.example.com/show" as string | null,
   proofs: [] as Array<Record<string, unknown>>,
   proofError: null as { code: string; message: string } | null,
+  profileError: null as { code: string; message: string } | null,
   selects: [] as string[],
   browserProfile: { role: "show", plan: "pay_as_you_go" } as { role: string; plan: string } | null,
   browserUser: { id: "11111111-1111-4111-8111-111111111111", email: "show@example.com" } as {
@@ -82,6 +83,9 @@ vi.mock("@/lib/supabase/server", () => ({
               return Promise.resolve({ data: rows, error: null });
             },
             maybeSingle() {
+              if (table === "show_profiles" && mocks.profileError) {
+                return Promise.resolve({ data: null, error: mocks.profileError });
+              }
               return Promise.resolve({
                 data: table === "show_profiles" ? { feed_url: mocks.feedUrl } : null,
                 error: null,
@@ -137,6 +141,7 @@ describe("ownership settings", () => {
     mocks.feedUrl = "https://feeds.example.com/show";
     mocks.proofs = [];
     mocks.proofError = null;
+    mocks.profileError = null;
     mocks.selects = [];
     mocks.browserProfile = { role: "show", plan: "pay_as_you_go" };
     mocks.browserUser = { id: "11111111-1111-4111-8111-111111111111", email: "show@example.com" };
@@ -327,6 +332,17 @@ describe("ownership settings", () => {
     expect(document.body.textContent).not.toContain("secret-db-text");
     expect(logs.join("\n")).toContain("XX000");
     expect(logs.join("\n")).not.toContain("secret-db-text");
+  });
+
+  it("shows an error when the profile read fails", async () => {
+    mocks.profileError = { code: "XX000", message: "secret-db-text" };
+    render(await OwnershipSettingsPage());
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "We could not load your ownership check. Refresh to try again."
+    );
+    expect(screen.queryByText("Add your RSS feed to your show profile first.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("secret-db-text");
   });
 
   it("adds a Verify ownership card for a show, after Sellable surfaces", async () => {
