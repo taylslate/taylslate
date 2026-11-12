@@ -129,6 +129,29 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+/**
+ * Caption channel order from migration 089 (`order by yc.channel_id limit 1`).
+ * Live collation is ICU en_US.UTF-8, which is not JS byte order:
+ * "UCa" sorts before "UCB" here, and the opposite under `<`.
+ */
+export function compareCaptionChannelId(a: string, b: string): number {
+  return a.localeCompare(b, "en-US");
+}
+
+function libraryChannelByShow(
+  rows: { show_id: string; channel_id: string }[]
+): Map<string, string> {
+  const sorted = rows
+    .filter((row) => row.show_id && row.channel_id)
+    .slice()
+    .sort((a, b) => compareCaptionChannelId(a.channel_id, b.channel_id));
+  const library = new Map<string, string>();
+  for (const row of sorted) {
+    if (!library.has(row.show_id)) library.set(row.show_id, row.channel_id);
+  }
+  return library;
+}
+
 export function buildDueSpots(input: {
   today: string;
   nowMs?: number;
@@ -165,11 +188,7 @@ export function buildDueSpots(input: {
   const airchecks = new Map(
     input.airchecks.map((row) => [row.io_line_item_id, row])
   );
-  const library = new Map(
-    input.libraryChannels
-      .filter((row) => row.show_id && row.channel_id)
-      .map((row) => [row.show_id, row.channel_id])
-  );
+  const library = libraryChannelByShow(input.libraryChannels);
 
   const spots: DueSpot[] = [];
   for (const line of input.lines) {

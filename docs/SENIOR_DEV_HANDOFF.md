@@ -3099,3 +3099,49 @@ Screenshots are the search page before the new group, the same page after, and t
 - The next free migration (090 at the time of writing) is not written. No view, policy, or grant. Apply nothing on `ldtmhafewfifdizgfrnn` for this job.
 - The Search nav item was not changed.
 - This PR does not merge. Paul reviews.
+
+## AC3b
+
+### What was built
+
+Three follow-ups to AC3, with no migration.
+
+A confirm that already finds a payment can no longer overwrite a concurrent reject. `saveAircheckConfirmedIfUndecided` updates the row only while `review_decision` is null. Zero rows returns null. The reconcile path then returns 409, "This line was already decided. No new charge was made.", writes no `aircheck.confirmed` event, and does not charge. If the charge already succeeded and the guarded save loses, the code logs `aircheck.confirm_blocked` with `decided_during_charge` and returns 409, "This line was decided while it was being charged. The charge stands. Check this line before doing anything else." It does not retry, charge again, or overwrite the row. `deliverAndChargeLine` is still called only under the claim, and only once.
+
+The confirm route no longer returns raw Stripe or database text. A 502 body uses a fixed `chargeError`. `charge_error` is hidden on every response body. The stored `charge_error` and the `aircheck.charge_failed` payload still keep the full detail, including a rollback sentence. Every response from this route is `Cache-Control: no-store`. A 500 still says "Review failed." and the log is only the error name or code.
+
+The YouTube caption fallback in `buildDueSpots` keeps the lowest `channel_id` per show, using `localeCompare` with `en-US`, which matches migration 089. The chunked library query is unchanged.
+
+Chris approved these `lib/airchecks` edits on 2026-11-11 (Angus relayed "yes its ok"). That approval does not cover any other file in `lib/airchecks`. No screen, style, or animation changed. No live write and no charge. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/delivery`, `plans.ts`, and `lib/data/types.ts` were not edited.
+
+### Where
+
+- `lib/airchecks/store.ts` and `store.test.ts` (`saveAircheckConfirmedIfUndecided`)
+- `lib/airchecks/review.ts` and `review.test.ts`
+- `lib/airchecks/select.ts` and `select.test.ts` (`compareCaptionChannelId`)
+- `app/api/admin/aircheck/review/route.ts` and `route.test.ts`
+- `docs/jobs/AC3b.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run lib/airchecks app/api/admin/aircheck`: 20 files, 150 passed.
+
+`npx vitest run`: 388 files, 3275 passed, 41 skipped.
+
+`npx next build` compiled successfully and generated 147 pages. `/api/admin/aircheck/review` is dynamic.
+
+Covers a payment that exists while the row turns rejected before the save (409, no confirmed event, no charge), the same race under the claim with the claim released, a guarded save that returns null after one charge (`aircheck.confirm_blocked`, row not overwritten), two confirms where the second finds the payment and `deliverAndChargeLine` runs once, the full "card declined ... Delivery rollback failed: ..." text still stored on the row and the event, `.is("review_decision", null)` plus null on 0 rows and a plain `Error` otherwise, the 502 body with the fixed sentence and no `charge_error` key, the 409 fixed text, `Cache-Control: no-store` on every response from the route, and the lowest channel id in both input orders including the mixed-case pair `"UCa..."` before `"UCB..."`. The old route assertion that expected raw "card declined" in the 502 body was replaced on purpose.
+
+No UI file changed, so there are no screenshots.
+
+### Known gaps
+
+- The stale-claim clock still uses `Date.now()` for the cutoff and for `confirm_claimed_at`. A PostgREST filter cannot reference database `now()`. Moving it needs an RPC or SQL function, which is a migration, so it was skipped.
+- `app/api/admin/mark-delivered` still returns the raw `chargeError` on a 502. That route wraps the charge path, so the same fixed-text change needs the same Chris OK. It was not edited.
+- `decided_by` still stores the session email.
+- The admin review page still renders the saved `charge_error` for an internal admin. That page was not edited. The POST body does not carry it.
+- No migration. Apply nothing for this job.
+- This PR does not merge. Paul reviews.

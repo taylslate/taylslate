@@ -161,4 +161,40 @@ describe("buildDueSpots", () => {
     expect(spots[0].format).toBe("youtube");
     expect(spots.map((spot) => spot.showId)).not.toContain("show-catalog");
   });
+
+  it("keeps the lowest library channel id, in either input order", () => {
+    const highFirst = [
+      { show_id: "show-1", channel_id: "UCzzzzzzzzzzzzzzzzzzz" },
+      { show_id: "show-1", channel_id: "UCaaaaaaaaaaaaaaaaaaaa" },
+    ];
+    const spot = (channels: { show_id: string; channel_id: string }[]) =>
+      buildDueSpots({
+        ...base,
+        lines: [line({ format: "youtube" })],
+        shows: [{ id: "show-1", rss_url: null, youtube_channel_id: null }],
+        libraryChannels: channels,
+      });
+    expect(spot(highFirst)[0].youtubeChannelId).toBe("UCaaaaaaaaaaaaaaaaaaaa");
+    expect(spot([...highFirst].reverse())[0].youtubeChannelId).toBe(
+      "UCaaaaaaaaaaaaaaaaaaaa"
+    );
+  });
+
+  it("orders mixed-case channel ids the way migration 089 does", () => {
+    const upperFirst = [
+      { show_id: "show-1", channel_id: "UCB000000000000000000" },
+      { show_id: "show-1", channel_id: "UCa000000000000000000" },
+    ];
+    const spot = (channels: { show_id: string; channel_id: string }[]) =>
+      buildDueSpots({
+        ...base,
+        lines: [line({ format: "youtube" })],
+        shows: [{ id: "show-1", rss_url: null, youtube_channel_id: null }],
+        libraryChannels: channels,
+      });
+    expect(spot(upperFirst)[0].youtubeChannelId).toBe("UCa000000000000000000");
+    expect(spot([...upperFirst].reverse())[0].youtubeChannelId).toBe(
+      "UCa000000000000000000"
+    );
+  });
 });
