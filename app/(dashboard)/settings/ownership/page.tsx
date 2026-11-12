@@ -22,7 +22,7 @@ export default async function OwnershipSettingsPage() {
   const [proofsResult, profileResult] = await Promise.all([
     supabase
       .from("show_ownership_proofs")
-      .select("method, status, target, code_expires_at, created_at")
+      .select("method, status, target, code_expires_at, created_at, decision_note, decided_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
     supabase.from("show_profiles").select("feed_url").eq("user_id", user.id).maybeSingle(),

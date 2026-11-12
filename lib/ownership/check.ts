@@ -186,7 +186,7 @@ function rssStoredVariants(norm: string): string[] {
   ];
 }
 
-async function matchingShowIds(
+export async function matchingShowIds(
   medium: OwnershipMedium,
   target: string
 ): Promise<{ ok: true; ids: string[] } | { ok: false; error: DbError }> {
