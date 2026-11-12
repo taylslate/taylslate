@@ -34,7 +34,26 @@ const HIDDEN_RESPONSE_KEYS = new Set([
   "audio_url",
   "transcript_segments",
   "client_secret",
+  "charge_error",
 ]);
+
+const CHARGE_FAILED =
+  "The charge failed, so this line is not confirmed. The details are saved on this line for the team.";
+
+function noStoreJson(body: unknown, status = 200) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
+function reviewFailureLabel(err: unknown): string {
+  if (err && typeof err === "object" && "code" in err) {
+    const code = (err as { code?: unknown }).code;
+    if (typeof code === "string" && code.trim()) return code.trim();
+  }
+  if (err instanceof Error && err.name) return err.name;
+  return "Error";
+}
 
 function publicBody(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
@@ -49,38 +68,29 @@ function publicBody(value: unknown): unknown {
 export async function POST(request: NextRequest) {
   const user = await getAuthenticatedUser();
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return noStoreJson({ error: "Unauthorized" }, 401);
   }
   if (!isInternalAdmin(user.email)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return noStoreJson({ error: "Forbidden" }, 403);
   }
 
   let body: ReviewBody;
   try {
     body = (await request.json()) as ReviewBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return noStoreJson({ error: "Invalid JSON" }, 400);
   }
   if (!body.ioLineItemId || typeof body.ioLineItemId !== "string") {
-    return NextResponse.json(
-      { error: "ioLineItemId is required" },
-      { status: 400 }
-    );
+    return noStoreJson({ error: "ioLineItemId is required" }, 400);
   }
   if (!UUID.test(body.ioLineItemId)) {
-    return NextResponse.json(
-      { error: "ioLineItemId must be a uuid" },
-      { status: 400 }
-    );
+    return noStoreJson({ error: "ioLineItemId must be a uuid" }, 400);
   }
   if (body.decision !== "confirm" && body.decision !== "reject") {
-    return NextResponse.json(
-      { error: "decision must be confirm or reject" },
-      { status: 400 }
-    );
+    return noStoreJson({ error: "decision must be confirm or reject" }, 400);
   }
   if (body.reason != null && typeof body.reason !== "string") {
-    return NextResponse.json({ error: "reason must be a string" }, { status: 400 });
+    return noStoreJson({ error: "reason must be a string" }, 400);
   }
 
   // Session only. A decidedBy or actorId in the body is ignored.
@@ -93,7 +103,7 @@ export async function POST(request: NextRequest) {
         actorId: user.id,
         reason: body.reason,
       });
-      return NextResponse.json({ ok: true, aircheck: publicBody(aircheck) });
+      return noStoreJson({ ok: true, aircheck: publicBody(aircheck) });
     }
     const result = await confirmAircheck({
       ioLineItemId: body.ioLineItemId,
@@ -101,16 +111,16 @@ export async function POST(request: NextRequest) {
       actorId: user.id,
     });
     if (!result.ok) {
-      return NextResponse.json(
+      return noStoreJson(
         {
           ok: false,
-          chargeError: result.chargeError,
+          chargeError: CHARGE_FAILED,
           aircheck: publicBody(result.aircheck),
         },
-        { status: 502 }
+        502
       );
     }
-    return NextResponse.json({
+    return noStoreJson({
       ok: true,
       alreadyCharged: result.alreadyCharged,
       charge: publicBody(result.charge),
@@ -118,19 +128,18 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     if (err instanceof AircheckReviewNotFound) {
-      return NextResponse.json({ error: err.message }, { status: 404 });
+      return noStoreJson({ error: err.message }, 404);
     }
     if (err instanceof AircheckConfirmUnavailable) {
-      return NextResponse.json({ error: err.message }, { status: 503 });
+      return noStoreJson({ error: err.message }, 503);
     }
     if (
       err instanceof AircheckReviewConflict ||
       err instanceof AircheckConfirmInProgress
     ) {
-      return NextResponse.json({ error: err.message }, { status: 409 });
+      return noStoreJson({ error: err.message }, 409);
     }
-    const message = err instanceof Error ? err.message : "Review failed.";
-    console.error(`[admin/aircheck/review] line ${body.ioLineItemId}:`, message);
-    return NextResponse.json({ error: "Review failed." }, { status: 500 });
+    console.error("[admin/aircheck/review]", reviewFailureLabel(err));
+    return noStoreJson({ error: "Review failed." }, 500);
   }
 }

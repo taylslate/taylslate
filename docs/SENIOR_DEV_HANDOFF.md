@@ -3100,6 +3100,90 @@ Screenshots are the search page before the new group, the same page after, and t
 - The Search nav item was not changed.
 - This PR does not merge. Paul reviews.
 
+## SEC7
+
+### What was built
+
+Migration 090 pins `search_path` to `''` on `update_updated_at()`, `reset_monthly_campaigns()`, and `get_avg_negotiated_cpm(uuid)`. It revokes EXECUTE on `get_avg_negotiated_cpm(uuid)` from PUBLIC, anon, and authenticated, and grants EXECUTE to service_role. `auth_login_email()` grants are restated as live: anon and PUBLIC stay revoked, authenticated and service_role keep EXECUTE. The three RLS callers are the shows SELECT policy, the outreaches SELECT policy, and `user_owns_show` (called by the show_surfaces policy). The authenticated advisor warning for `auth_login_email` is accepted. Function bodies, owners, and security mode are unchanged. Grants on `update_updated_at` and `reset_monthly_campaigns` are unchanged. No table, policy, trigger, or app code change.
+
+090 is not applied. Apply it on `ldtmhafewfifdizgfrnn` after merge, when Chris names 090. The apply does not depend on a deploy.
+
+### Where
+
+- `supabase/migrations/090_function_grants_search_path.sql`
+- `supabase/migrations/090_function_grants_search_path.test.ts`
+- `docs/jobs/SEC7.md`
+- `docs/security/S-A_FINDINGS.md` (the three function rows, SA-06, and SA-19)
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run supabase/migrations/090_function_grants_search_path.test.ts` passed twice in a row (8 tests).
+
+`npx vitest run`: 389 files, 3274 passed, 41 skipped.
+
+`npx next build` compiled successfully and generated 147 pages.
+
+PGlite loads 001 through 089, then 090 twice. The three pinned functions have one proconfig element, `search_path=""`, which prints as `{"search_path=\"\""}`. `auth_login_email` keeps `search_path=auth, public, pg_temp`. Bodies and security mode match the pre-090 rows. anon and authenticated are denied on `get_avg_negotiated_cpm`. service_role is allowed, and three signed deals at 100, 200, and 300 return 200. Two deals return null. `auth_login_email` denies anon and allows authenticated and service_role. A service_role update advances `updated_at` on `profiles` and `deals`. A signed-in `select count(*)` on `shows` and `outreaches` runs, and `user_owns_show` still returns true for the owner row. The SQL has no `create or replace`, no grant to anon, and no security mode clause.
+
+No page or component was edited. Screenshots are not applicable. No live write.
+
+### Known gaps
+
+- 090 is not applied. Until Chris applies it, the advisor findings stay. After apply, `authenticated_security_definer_function_executable` should list only `auth_login_email`. That warning is accepted.
+- SA-19 EXECUTE cleanup for `persist_confirmation`, `persist_interpretation`, `persist_refinement`, `reset_monthly_campaigns`, and `private.show_profiles_guard_podscan_id` is a follow-up. 090 does not change those grants.
+- Leaked-password protection is a Supabase Auth dashboard setting. It is off. This job does not turn it on.
+- The U1b handoff note that 090 was the next free migration for a library read is stale. 090 is this grants file. The next free number is 091.
+- This PR does not merge. Paul reviews.
+
+## AC3b
+
+### What was built
+
+Three follow-ups to AC3, with no migration.
+
+A confirm that already finds a payment can no longer overwrite a concurrent reject. `saveAircheckConfirmedIfUndecided` updates the row only while `review_decision` is null. Zero rows returns null. The reconcile path then returns 409, "This line was already decided. No new charge was made.", writes no `aircheck.confirmed` event, and does not charge. If the charge already succeeded and the guarded save loses, the code logs `aircheck.confirm_blocked` with `decided_during_charge` and returns 409, "This line was decided while it was being charged. The charge stands. Check this line before doing anything else." It does not retry, charge again, or overwrite the row. `deliverAndChargeLine` is still called only under the claim, and only once.
+
+The confirm route no longer returns raw Stripe or database text. A 502 body uses a fixed `chargeError`. `charge_error` is hidden on every response body. The stored `charge_error` and the `aircheck.charge_failed` payload still keep the full detail, including a rollback sentence. Every response from this route is `Cache-Control: no-store`. A 500 still says "Review failed." and the log is only the error name or code.
+
+The YouTube caption fallback in `buildDueSpots` keeps the lowest `channel_id` per show, using `localeCompare` with `en-US`, which matches migration 089. The chunked library query is unchanged.
+
+Chris approved these `lib/airchecks` edits on 2026-11-11 (Angus relayed "yes its ok"). That approval does not cover any other file in `lib/airchecks`. No screen, style, or animation changed. No live write and no charge. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/delivery`, `plans.ts`, and `lib/data/types.ts` were not edited.
+
+### Where
+
+- `lib/airchecks/store.ts` and `store.test.ts` (`saveAircheckConfirmedIfUndecided`)
+- `lib/airchecks/review.ts` and `review.test.ts`
+- `lib/airchecks/select.ts` and `select.test.ts` (`compareCaptionChannelId`)
+- `app/api/admin/aircheck/review/route.ts` and `route.test.ts`
+- `docs/jobs/AC3b.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run lib/airchecks app/api/admin/aircheck`: 20 files, 150 passed.
+
+`npx vitest run`: 388 files, 3275 passed, 41 skipped.
+
+`npx next build` compiled successfully and generated 147 pages. `/api/admin/aircheck/review` is dynamic.
+
+Covers a payment that exists while the row turns rejected before the save (409, no confirmed event, no charge), the same race under the claim with the claim released, a guarded save that returns null after one charge (`aircheck.confirm_blocked`, row not overwritten), two confirms where the second finds the payment and `deliverAndChargeLine` runs once, the full "card declined ... Delivery rollback failed: ..." text still stored on the row and the event, `.is("review_decision", null)` plus null on 0 rows and a plain `Error` otherwise, the 502 body with the fixed sentence and no `charge_error` key, the 409 fixed text, `Cache-Control: no-store` on every response from the route, and the lowest channel id in both input orders including the mixed-case pair `"UCa..."` before `"UCB..."`. The old route assertion that expected raw "card declined" in the 502 body was replaced on purpose.
+
+No UI file changed, so there are no screenshots.
+
+### Known gaps
+
+- The stale-claim clock still uses `Date.now()` for the cutoff and for `confirm_claimed_at`. A PostgREST filter cannot reference database `now()`. Moving it needs an RPC or SQL function, which is a migration, so it was skipped.
+- `app/api/admin/mark-delivered` still returns the raw `chargeError` on a 502. That route wraps the charge path, so the same fixed-text change needs the same Chris OK. It was not edited.
+- `decided_by` still stores the session email.
+- The admin review page still renders the saved `charge_error` for an internal admin. That page was not edited. The POST body does not carry it.
+- No migration. Apply nothing for this job.
+- This PR does not merge. Paul reviews.
+
 ## HARDEN1
 
 ### What was built
