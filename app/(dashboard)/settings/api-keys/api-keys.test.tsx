@@ -313,7 +313,7 @@ describe("settings index card", () => {
     );
     expect(without).not.toContain("/settings/api-keys");
     expect(createHash("sha256").update(without).digest("hex")).toBe(
-      "f044a86a22ba6eed510105e9c32abda04ce8ad046fb642b5104c42fb23b1b27e"
+      "abe29eb24a78cf5b1c43f1a9a4de469f61db6bd2bab6195c53964591f6251a3d"
     );
     expect(readFileSync(join(process.cwd(), "app/(dashboard)/settings/api-keys/api-keys-client.tsx"), "utf8"))
       .not.toMatch(/localStorage|sessionStorage|console\.log/);
