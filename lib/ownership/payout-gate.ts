@@ -1,11 +1,10 @@
 // Payout readiness. True only when a verified show_ownership_proofs
 // row ties this show to this show profile.
 //
-// Not wired. lib/payouts does not import this file, and this file
-// does not import lib/payouts, lib/stripe, lib/billing, or
-// lib/airchecks. Calling this before the first payout is a separate
-// job that needs Chris's OK. Until that job lands, a payout can
-// still run for an unverified owner.
+// Callers: transferPayoutForPayment and transferEarlyPayoutForPayment
+// in lib/payouts/transfer.ts. A false result holds the automatic
+// payout or refuses an early payout. This file does not import
+// lib/payouts, lib/stripe, lib/billing, or lib/airchecks.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
@@ -23,15 +22,12 @@ export async function isPayoutOwnerVerified(
       .eq("status", "verified")
       .limit(1);
     if (error) {
-      console.warn("[isPayoutOwnerVerified] proof read failed:", error.message);
+      console.warn("[isPayoutOwnerVerified]", error.code ?? "unknown");
       return false;
     }
     return (data ?? []).length > 0;
-  } catch (err) {
-    console.warn(
-      "[isPayoutOwnerVerified] threw:",
-      err instanceof Error ? err.message : err
-    );
+  } catch {
+    console.warn("[isPayoutOwnerVerified]", "threw");
     return false;
   }
 }

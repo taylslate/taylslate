@@ -26,14 +26,19 @@ export default async function OwnershipSettingsPage() {
   if (!show.ok) notFound();
 
   const supabase = await createClient();
-  const [firstProofs, profileResult] = await Promise.all([
+  const [firstProofs, profileResult, heldResult] = await Promise.all([
     supabase
       .from("show_ownership_proofs")
       .select(PROOF_COLUMNS)
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
     supabase.from("show_profiles").select("feed_url").eq("user_id", user.id).maybeSingle(),
+    supabase.from("payouts").select("id").is("stripe_transfer_id", null).limit(1),
   ]);
+
+  let payoutWaiting = false;
+  if (heldResult.error) logRead(heldResult.error.code);
+  else payoutWaiting = (heldResult.data ?? []).length > 0;
 
   let proofs: OwnershipProofInput[] = (firstProofs.data ?? []) as OwnershipProofInput[];
   let proofsError = firstProofs.error;
@@ -63,6 +68,7 @@ export default async function OwnershipSettingsPage() {
           pendingLabel: ownershipLabels.pending,
           verifiedLabel: ownershipLabels.verified,
           loadError: true,
+          payoutWaiting,
         }}
       />
     );
@@ -77,5 +83,5 @@ export default async function OwnershipSettingsPage() {
     verifiedLabel: ownershipLabels.verified,
   });
 
-  return <OwnershipClient view={view} />;
+  return <OwnershipClient view={{ ...view, payoutWaiting }} />;
 }

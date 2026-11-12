@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,7 +10,8 @@ interface Filter {
 }
 
 const db: { show_ownership_proofs: Row[] } = { show_ownership_proofs: [] };
-let fail = "";
+let fail: { code?: string; message: string } | null = null;
+let explode = false;
 
 function matches(row: Row, filters: Filter[]): boolean {
   return filters.every((filter) => row[filter.column] === filter.value);
@@ -32,14 +33,17 @@ vi.mock("@/lib/supabase/admin", () => ({
           return api;
         },
         then(
-          resolve: (value: { data: Row[] | null; error: { message: string } | null }) => unknown,
+          resolve: (value: { data: Row[] | null; error: { code?: string; message: string } | null }) => unknown,
           reject?: (err: unknown) => unknown
         ) {
           if (table !== "show_ownership_proofs") {
             return Promise.resolve({ data: [], error: null }).then(resolve, reject);
           }
+          if (explode) {
+            return Promise.reject(new Error("secret-db-text")).then(resolve, reject);
+          }
           if (fail) {
-            return Promise.resolve({ data: null, error: { message: fail } }).then(resolve, reject);
+            return Promise.resolve({ data: null, error: fail }).then(resolve, reject);
           }
           const hits = db.show_ownership_proofs.filter((row) => matches(row, filters));
           return Promise.resolve({ data: hits, error: null }).then(resolve, reject);
@@ -58,7 +62,8 @@ const OTHER_PROFILE = "44444444-4444-4444-8444-444444444444";
 
 beforeEach(() => {
   db.show_ownership_proofs = [];
-  fail = "";
+  fail = null;
+  explode = false;
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
@@ -93,23 +98,32 @@ describe("isPayoutOwnerVerified", () => {
     });
     expect(await isPayoutOwnerVerified("", PROFILE)).toBe(false);
     expect(await isPayoutOwnerVerified(SHOW, "")).toBe(false);
-    fail = "permission denied";
+    fail = { code: "42501", message: "secret-db-text" };
     expect(await isPayoutOwnerVerified(SHOW, PROFILE)).toBe(false);
-    expect(console.warn).toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledWith("[isPayoutOwnerVerified]", "42501");
+    const logged = vi.mocked(console.warn).mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+    expect(logged).not.toContain("secret-db-text");
   });
 
-  it("is not wired into payouts", () => {
+  it("logs a code when the proof read throws", async () => {
+    explode = true;
+    expect(await isPayoutOwnerVerified(SHOW, PROFILE)).toBe(false);
+    expect(console.warn).toHaveBeenCalledWith("[isPayoutOwnerVerified]", "threw");
+    const logged = vi.mocked(console.warn).mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+    expect(logged).not.toContain("secret-db-text");
+  });
+
+  it("names the payout callers and does not import them", () => {
     const self = readFileSync(join(process.cwd(), "lib/ownership/payout-gate.ts"), "utf8");
+    expect(self).toContain("transferPayoutForPayment");
+    expect(self).toContain("transferEarlyPayoutForPayment");
+    expect(self).not.toContain("Not wired");
     const imports = self
       .split("\n")
       .filter((line) => /^\s*import\b/.test(line) || /^\s*export\s+.*\bfrom\b/.test(line))
       .join("\n");
     expect(imports).not.toMatch(/payouts|stripe|billing|airchecks/);
-    const payoutDir = join(process.cwd(), "lib/payouts");
-    for (const name of readdirSync(payoutDir)) {
-      if (!name.endsWith(".ts")) continue;
-      const src = readFileSync(join(payoutDir, name), "utf8");
-      expect(src, name).not.toMatch(/isPayoutOwnerVerified|ownership\/payout-gate|from ["']@\/lib\/ownership/);
-    }
+    const transfer = readFileSync(join(process.cwd(), "lib/payouts/transfer.ts"), "utf8");
+    expect(transfer).toContain("isPayoutOwnerVerified");
   });
 });

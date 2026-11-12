@@ -353,11 +353,12 @@ From the read-only Podscan consumption audit (see STATUS.md → "Podscan data au
 - **Effort:** ~1 hour
 
 ### Durable retry for stranded payouts (surfaced Sep 15, 2026 live rehearsal)
-- Failure class: `transferPayoutForPayment` throws (Stripe error, outage), the `charge.succeeded` webhook acks 200 by design (fail-soft — a transfer failure must never break the webhook ack), and the payout strands silently — the webhook is the ONLY caller, nothing retries
+- Failure class: `transferPayoutForPayment` throws (Stripe error, outage), the `charge.succeeded` webhook acks 200 by design (fail-soft: a transfer failure must never break the webhook ack), and the payout strands silently. The webhook is the only caller that creates a transfer. A throw before a row exists is not retried.
 - Sep 15 instance (balance_insufficient) fixed at the root by `source_transaction`; the class survives for any other transfer error
-- Options: admin retry route (`POST /api/admin/retry-payout`), or a cron sweep for settled-payments-without-payouts (tripwire + retry)
+- PAYGATE1 shipped the sweep half. `GET /api/cron/payout-releases` (daily `0 22 * * *`) retries the oldest 100 `payouts` rows with `stripe_transfer_id` null, through `transferPayoutForPayment`. The owner gate still applies. An unverified owner stays held with no write. O2 verify and O4 approve call the same release helper.
+- Still open: an admin retry route (`POST /api/admin/retry-payout`), and settled payments that never inserted a payout row (for example, no Stripe Connect account). The sweep only retries rows.
 - Transfer idempotency (`transfer:v2:{paymentId}` + UNIQUE(payment_id)) makes any retry path safe
-- **Effort:** half day (route) or 1 day (cron sweep + alerting)
+- **Effort:** the sweep is done. The admin route is still about half a day.
 
 ### Multi-channel creator profiles (approved Nov 1, 2026, launch foundation)
 - "Show" generalizes to "creator". One creator profile holds any number of channels: podcast, YouTube, newsletter, Rumble, Twitch, Kick, Instagram, TikTok, own site.

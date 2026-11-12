@@ -28,7 +28,7 @@ Events: `aircheck.confirmed` (now includes `match_result`, `confidence`, `overri
 
 - (a) Rejected is final. Confirm on a rejected line is 409. There is no reopen path.
 - (b) Confirming `not_matched` needs no typed reason. The event sets `override: true`.
-- (c) The three Stripe limits stay out. A retry after a decline within 24 hours can replay Stripe's idempotent decline. A PaymentIntent created but not persisted, retried after the 24 hour key window, could double charge. `isPayoutOwnerVerified` is not wired into payouts.
+- (c) The three Stripe limits stay out. A retry after a decline within 24 hours can replay Stripe's idempotent decline. A PaymentIntent created but not persisted, retried after the 24 hour key window, could double charge. `isPayoutOwnerVerified` is wired by PAYGATE1, which holds the transfer until the owner is verified. This job does not change that gate.
 - (d) 040 and 079 are already live. This job does not query the live project.
 - (e) The queue page is reachable by URL only.
 

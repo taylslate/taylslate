@@ -3349,3 +3349,52 @@ Screenshots use the production stylesheet and the real components. A signed-in s
 - The admin gate is still the auth login email through `isShowsAdmin`, not a user-id allowlist.
 - If a retry of approve still returns 500 after the proof is already `verified`, set the show to `verified` and reject the other open proofs by hand. The repair is in `docs/jobs/O4.md`.
 - Migration 091 is not applied. This PR does not merge. Paul reviews.
+
+## PAYGATE1
+
+### What was built
+
+A show payout does not transfer until `isPayoutOwnerVerified(deal.show_id, deal.show_profile_id)` is true. The brand is still charged on delivery. An unverified owner gets one held `payouts` row (`stripe_transfer_id` null, `transferred_at` null, `amount_cents` equal to the payment gross, `early_payout_fee_cents` 0), one `payout.held` event, and one email. Stripe is not called. Verifying through the O2 code check or an O4 admin approve releases that row once, with `source_transaction` and the existing `transfer:v2:{paymentId}` key. A daily cron sweeps held rows the hooks missed. It skips failed and disputed payments, orders by updated_at, and bumps updated_at when a retry stays held. O2 and O4 schedule that release after the response. A still-unverified owner stays held without a transfer id.
+
+A verified owner's fresh payout uses the same create params, key, insert, and `payout.transferred` event as before. Early payout is 409 while the owner is unverified or any payout row already exists, and 502 with fixed text if the transfer throws. `/settings/ownership` shows "You have a payout waiting. Verify you own your show to receive it." when this user has a held row and the view is not verified.
+
+No migration. No Vercel env change. Nothing was applied live.
+
+### Where
+
+- `lib/payouts/transfer.ts` and `transfer.test.ts`
+- `lib/payouts/release.ts` and `release.test.ts`
+- `lib/ownership/payout-gate.ts` and `payout-gate.test.ts` (header and error code only)
+- `lib/ownership/check.ts` (one fail-soft call after `markShowVerified`) and `check.test.ts`
+- `lib/ownership/review.ts` (one fail-soft call at the end of `finishAdminVerify`) and `review.test.ts`
+- `app/api/payouts/early/route.ts` and `route.test.ts`
+- `app/api/cron/payout-releases/route.ts` and `route.test.ts`
+- `app/api/cron/cron-auth.routes.test.ts`
+- `app/api/cron/pooled-priors/route.test.ts` (the existing cron-list snapshot, so the new daily entry does not fail CI)
+- `vercel.json` cron `0 22 * * *`
+- `lib/email/templates/payout-held.ts` and `payout-held.test.ts`
+- `lib/data/types.ts` (`payout.held`, `payout.released`)
+- `app/(dashboard)/settings/ownership/page.tsx`, `ownership-client.tsx`, `ownership.test.tsx` (banner only)
+- `docs/jobs/PAYGATE1.md`
+- one line each in `docs/jobs/O1.md`, `O2.md`, `O4.md`, `AC3.md`
+- `PRODUCT_BACKLOG.md` (sweep half of stranded payouts)
+
+`lib/stripe`, `lib/billing`, `lib/airchecks`, `lib/delivery`, and `plans.ts` were not edited. The webhook already calls `transferPayoutForPayment`, so the gate sits inside that helper.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 405 files, 3429 passed, 41 skipped.
+
+`npx next build` compiled successfully. `/settings/ownership` and `/api/cron/payout-releases` are dynamic.
+
+Screenshots use the production stylesheet and the real ownership component, rendered without a signed-in session. No live write, charge, or send. The before shot is the page with no held payout. The after shot adds the waiting banner. The rest of the page is unchanged.
+
+### Known gaps
+
+- A held payout can stay held forever if that show profile never verifies, or if a different profile verifies the show. Refund vs admin release is open. This job only holds.
+- A verified owner with no Stripe Connect account still throws and leaves no row. The sweep only retries rows.
+- The email does not include the amount. Copy is open.
+- No admin release route.
+- No migration. This PR does not merge. Paul reviews.

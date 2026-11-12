@@ -58,6 +58,10 @@ function makeReq(body: object): Request {
   });
 }
 
+function expectNoStore(res: Response) {
+  expect(res.headers.get("cache-control")).toBe("no-store");
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   rows.payment = undefined;
@@ -70,12 +74,14 @@ describe("POST /api/payouts/early", () => {
     getAuthenticatedUser.mockResolvedValueOnce(null);
     const res = await POST(makeReq({ paymentId: "pay_1" }) as never);
     expect(res.status).toBe(401);
+    expectNoStore(res);
   });
 
   it("requires paymentId in body", async () => {
     getAuthenticatedUser.mockResolvedValueOnce({ id: "u1", email: "show@x.com" });
     const res = await POST(makeReq({}) as never);
     expect(res.status).toBe(400);
+    expectNoStore(res);
   });
 
   it("returns 404 when payment is missing", async () => {
@@ -83,6 +89,7 @@ describe("POST /api/payouts/early", () => {
     rows.payment = null;
     const res = await POST(makeReq({ paymentId: "pay_404" }) as never);
     expect(res.status).toBe(404);
+    expectNoStore(res);
   });
 
   it("forbids show users that don't own the receiving account", async () => {
@@ -93,6 +100,7 @@ describe("POST /api/payouts/early", () => {
 
     const res = await POST(makeReq({ paymentId: "pay_1" }) as never);
     expect(res.status).toBe(403);
+    expectNoStore(res);
     expect(transferEarlyPayoutForPayment).not.toHaveBeenCalled();
   });
 
@@ -109,11 +117,55 @@ describe("POST /api/payouts/early", () => {
 
     const res = await POST(makeReq({ paymentId: "pay_1" }) as never);
     expect(res.status).toBe(200);
+    expectNoStore(res);
     const body = await res.json();
     expect(body.amountCents).toBe(21937);
     expect(transferEarlyPayoutForPayment).toHaveBeenCalledWith(
       "pay_1",
       EARLY_PAYOUT_FEE_PERCENTAGE
     );
+  });
+
+  it("returns fixed 409 text when the owner is unverified or a payout row exists", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u_owner", email: "show@x.com" });
+    rows.payment = { id: "pay_1", deal_id: "deal_1" };
+    rows.deal = { id: "deal_1", show_profile_id: "sp_1" };
+    rows.show_profile = { id: "sp_1", user_id: "u_owner" };
+    const held = new Error("secret-db-text");
+    held.name = "PayoutHeldError";
+    transferEarlyPayoutForPayment.mockRejectedValueOnce(held);
+    const unverified = await POST(makeReq({ paymentId: "pay_1" }) as never);
+    expect(unverified.status).toBe(409);
+    expectNoStore(unverified);
+    expect(await unverified.json()).toEqual({ error: "Verify you own this show to get paid." });
+
+    const exists = new Error("secret-db-text");
+    exists.name = "PayoutAlreadyExistsError";
+    transferEarlyPayoutForPayment.mockRejectedValueOnce(exists);
+    const waiting = await POST(makeReq({ paymentId: "pay_1" }) as never);
+    expect(waiting.status).toBe(409);
+    expectNoStore(waiting);
+    const waitingBody = await waiting.json();
+    expect(waitingBody).toEqual({ error: "This payout is already on its way." });
+    expect(JSON.stringify(waitingBody)).not.toContain("secret-db-text");
+  });
+
+  it("returns a fixed 502 and logs only the error name", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u_owner", email: "show@x.com" });
+    rows.payment = { id: "pay_1", deal_id: "deal_1" };
+    rows.deal = { id: "deal_1", show_profile_id: "sp_1" };
+    rows.show_profile = { id: "sp_1", user_id: "u_owner" };
+    transferEarlyPayoutForPayment.mockRejectedValueOnce(new Error("secret-db-text"));
+    const logs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+    const res = await POST(makeReq({ paymentId: "pay_1" }) as never);
+    expect(res.status).toBe(502);
+    expectNoStore(res);
+    expect(await res.json()).toEqual({ error: "Couldn't send the early payout." });
+    expect(logs.join("\n")).toContain("Error");
+    expect(logs.join("\n")).not.toContain("secret-db-text");
+    expect(logs.join("\n")).not.toContain("pay_1");
   });
 });
