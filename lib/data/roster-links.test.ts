@@ -22,7 +22,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import { claimShow, getAgentShowRelationship, importShows } from "./queries";
 
-type RowResult = { data: unknown; error: { message: string } | null };
+type RowResult = { data: unknown; error: { message: string; code?: string } | null };
 
 function chain(result: RowResult, onInsert?: (row: unknown) => void) {
   const builder: Record<string, unknown> = {};
@@ -395,11 +395,62 @@ describe("importShows", () => {
       return chain({ data: null, error: { message: "roster write refused" } });
     });
 
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const result = await importShows([{ name: "Night Desk", platform: "podcast" }]);
     expect(result.imported).toEqual([]);
-    expect(result.errors[0]).toMatch(/roster link failed/);
-    expect(result.errors[0]).toMatch(/removed/);
+    expect(result.errors).toEqual(["Night Desk: could not be imported."]);
+    expect(result.errors.join(" ")).not.toContain("roster write refused");
+    expect(result.errors.join(" ")).not.toContain("show-new");
     expect(deleted).toEqual(["show-new"]);
+    const logged = errorSpy.mock.calls.flat().map(String).join(" ");
+    expect(logged).not.toContain("roster write refused");
+    expect(logged).not.toContain("show-new");
+    errorSpy.mockRestore();
+  });
+
+  it("uses fixed text when the new show cannot be removed", async () => {
+    asAgent();
+    adminFrom.mockImplementation((table: string) => {
+      if (table === "shows") {
+        let deleted = false;
+        const builder = chain({
+          data: { id: "show-left", name: "Night Desk", platform: "podcast" },
+          error: null,
+        });
+        builder.delete = vi.fn(() => {
+          deleted = true;
+          return builder;
+        });
+        builder.then = (
+          resolve: (value: unknown) => unknown,
+          reject?: (reason: unknown) => unknown
+        ) =>
+          Promise.resolve(
+            deleted
+              ? { data: null, error: { message: "delete refused for show-left", code: "42501" } }
+              : { data: [], error: null }
+          ).then(resolve, reject);
+        builder.single = vi.fn(async () => ({
+          data: { id: "show-left", name: "Night Desk", platform: "podcast" },
+          error: null,
+        }));
+        return builder;
+      }
+      return chain({ data: null, error: { message: "roster write refused", code: "23503" } });
+    });
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await importShows([{ name: "Night Desk", platform: "podcast" }]);
+    expect(result.errors).toEqual(["Night Desk: could not be imported. Contact support."]);
+    expect(result.errors.join(" ")).not.toContain("show-left");
+    expect(result.errors.join(" ")).not.toContain("delete refused");
+    expect(result.errors.join(" ")).not.toContain("23503");
+    const logged = errorSpy.mock.calls.flat().map(String).join(" ");
+    expect(logged).toContain("23503");
+    expect(logged).toContain("42501");
+    expect(logged).not.toContain("delete refused");
+    expect(logged).not.toContain("show-left");
+    errorSpy.mockRestore();
   });
 });
 

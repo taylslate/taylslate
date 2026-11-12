@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { YOUTUBE_OAUTH_SCOPES } from "./config";
 import {
   buildAuthorizeUrl,
   exchangeAuthorizationCode,
   parseGrantedScopes,
   refreshAccessToken,
+  revokeGoogleToken,
 } from "./google";
 
 const SECRET = "super-secret-client-value";
@@ -88,5 +89,94 @@ describe("google oauth", () => {
     expect(calls[1]?.url).not.toContain("refresh-plain");
     expect(calls[1]?.body).toContain("grant_type=refresh_token");
     expect(calls[1]?.body).toContain(SECRET);
+  });
+});
+
+describe("revokeGoogleToken", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function fetchStatuses(statuses: number[], bodies?: Array<Record<string, unknown>>): {
+    fetchImpl: typeof fetch;
+    calls: number;
+  } {
+    const state = { calls: 0 };
+    const fetchImpl = (async () => {
+      const index = state.calls;
+      state.calls += 1;
+      const status = statuses[index] ?? statuses[statuses.length - 1] ?? 500;
+      return jsonResponse(bodies?.[index] ?? { error: "backend" }, status);
+    }) as typeof fetch;
+    return {
+      fetchImpl,
+      get calls() {
+        return state.calls;
+      },
+    };
+  }
+
+  it("returns true on 200 and on invalid_token without retrying", async () => {
+    const ok = fetchStatuses([200]);
+    const attempts = { count: 0 };
+    await expect(revokeGoogleToken("refresh-token", { fetchImpl: ok.fetchImpl, attempts })).resolves.toBe(true);
+    expect(ok.calls).toBe(1);
+    expect(attempts.count).toBe(1);
+
+    const invalid = fetchStatuses([400], [{ error: "invalid_token" }]);
+    const invalidAttempts = { count: 0 };
+    await expect(
+      revokeGoogleToken("refresh-token", { fetchImpl: invalid.fetchImpl, attempts: invalidAttempts })
+    ).resolves.toBe(true);
+    expect(invalid.calls).toBe(1);
+    expect(invalidAttempts.count).toBe(1);
+  });
+
+  it("does not retry a 400 that is not invalid_token", async () => {
+    vi.useFakeTimers();
+    const denied = fetchStatuses([400], [{ error: "invalid_request" }]);
+    const attempts = { count: 0 };
+    const pending = revokeGoogleToken("refresh-token", { fetchImpl: denied.fetchImpl, attempts });
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(pending).resolves.toBe(false);
+    expect(denied.calls).toBe(1);
+    expect(attempts.count).toBe(1);
+  });
+
+  it("retries a 5xx and a network error, then stops", async () => {
+    vi.useFakeTimers();
+    const recovered = fetchStatuses([503, 200]);
+    const attempts = { count: 0 };
+    const pending = revokeGoogleToken("refresh-token", { fetchImpl: recovered.fetchImpl, attempts });
+    await vi.advanceTimersByTimeAsync(250);
+    await expect(pending).resolves.toBe(true);
+    expect(recovered.calls).toBe(2);
+    expect(attempts.count).toBe(2);
+
+    let networkCalls = 0;
+    const network = (async () => {
+      networkCalls += 1;
+      throw new Error("socket hang up token=refresh-token");
+    }) as typeof fetch;
+    const networkAttempts = { count: 0 };
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+    const failed = revokeGoogleToken("refresh-token", { fetchImpl: network, attempts: networkAttempts });
+    await vi.advanceTimersByTimeAsync(1250);
+    await expect(failed).resolves.toBe(false);
+    expect(networkCalls).toBe(3);
+    expect(networkAttempts.count).toBe(3);
+    expect(logs.join("\n")).not.toContain("refresh-token");
+    spy.mockRestore();
+  });
+
+  it("returns true for an empty token and does not call Google", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    const attempts = { count: 9 };
+    await expect(revokeGoogleToken("", { fetchImpl, attempts })).resolves.toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(attempts.count).toBe(0);
   });
 });

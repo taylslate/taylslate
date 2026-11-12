@@ -10,9 +10,9 @@
 // Match order: normalized rss_url, then a YouTube channel id that is
 // already a UC id, then shows.apple_id, then a normalized name.
 // A name match is a suggestion until the row sets confirm. Hidden shows
-// owned by another agent match only on the first three tiers, and the
-// result carries their id and name only. show_profiles.podscan_id is
-// not a match field. Nothing here approves a link.
+// owned by another agent match only on the first three tiers. The result
+// keeps that class and tier, and leaves show_id and show_name empty.
+// show_profiles.podscan_id is not a match field. Nothing here approves a link.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
@@ -337,6 +337,7 @@ function finishMatch(
     : exclusiveConflict
       ? "exclusive_conflict"
       : "link_existing";
+  const reveal = nameEligible(show, agentId);
   return {
     parsed,
     show,
@@ -344,8 +345,8 @@ function finishMatch(
       ...base,
       class: rosterClass,
       match_tier: tier,
-      show_id: show.id,
-      show_name: show.name,
+      show_id: reveal ? show.id : null,
+      show_name: reveal ? show.name : null,
       needs_confirm: Boolean(needsConfirm && !own),
       exclusive_conflict: exclusiveConflict,
       reasons,

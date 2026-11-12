@@ -257,14 +257,74 @@ export async function refreshAccessToken(
   return token;
 }
 
-/** Best effort. A network or HTTP failure does not throw. */
-export async function revokeGoogleToken(token: string, fetchImpl: typeof fetch = fetch): Promise<void> {
-  if (!token) return;
-  try {
-    await postForm(REVOKE_URL, { token }, fetchImpl);
-  } catch {
-    return;
+const REVOKE_DELAYS_MS = [0, 250, 1000] as const;
+
+type RevokeCall =
+  | typeof fetch
+  | { fetchImpl?: typeof fetch; attempts?: { count: number } };
+
+function resolveRevokeCall(call: RevokeCall | undefined): {
+  fetchImpl: typeof fetch;
+  attempts: { count: number } | null;
+} {
+  if (typeof call === "function") return { fetchImpl: call, attempts: null };
+  if (call && typeof call === "object") {
+    return { fetchImpl: call.fetchImpl ?? fetch, attempts: call.attempts ?? null };
   }
+  return { fetchImpl: fetch, attempts: null };
+}
+
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function tokenAlreadyRevoked(status: number, body: Record<string, unknown> | null): boolean {
+  return status === 400 && body?.error === "invalid_token";
+}
+
+/**
+ * Best effort. Tries at once, then after 250ms and 1000ms, only when the
+ * call hits a network error or a 5xx. A 200, or a 400 invalid_token,
+ * counts as revoked. Anything else is false. Never throws.
+ */
+export async function revokeGoogleToken(
+  token: string,
+  fetchImplOrOptions: RevokeCall = fetch
+): Promise<boolean> {
+  const { fetchImpl, attempts } = resolveRevokeCall(fetchImplOrOptions);
+  const note = (count: number) => {
+    if (attempts) attempts.count = count;
+  };
+  if (!token) {
+    note(0);
+    return true;
+  }
+
+  let count = 0;
+  for (let index = 0; index < REVOKE_DELAYS_MS.length; index += 1) {
+    const wait = REVOKE_DELAYS_MS[index];
+    if (wait > 0) await delay(wait);
+    count += 1;
+    try {
+      const { status, body } = await postForm(REVOKE_URL, { token }, fetchImpl);
+      if (status === 200 || tokenAlreadyRevoked(status, body)) {
+        note(count);
+        return true;
+      }
+      if (status >= 500 && status <= 599 && index < REVOKE_DELAYS_MS.length - 1) continue;
+      note(count);
+      return false;
+    } catch {
+      if (index < REVOKE_DELAYS_MS.length - 1) continue;
+      note(count);
+      return false;
+    }
+  }
+  note(count);
+  return false;
 }
 
 export async function listOwnedChannel(

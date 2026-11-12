@@ -79,7 +79,7 @@ A static test reads string literals and JSX text in `app/**/*.tsx` and `componen
 
 - Name lookup returns at most 25 rows per token and feed lookup at most 10. A token that fills the cap can miss a later duplicate. The lookup does not fail closed on the cap. B1 does, for its own path. This job copies the limits and not that cap failure.
 - A duplicate is skipped with no extra copy in the modal. `skipped_names` is still on the JSON response.
-- `importShows` still appends `showError.message` on an insert failure.
+- `importShows` no longer appends database error text. Fixed wording, the 1 MB and 500-row caps, and the hidden-show feed rule are in [HARDEN1](HARDEN1.md). Formula cells stay open.
 - The modal still does not upload `rss_url`, so two different names that share a feed can still insert from that screen.
 - Tay is not plan-gated.
 - This PR does not merge. Paul reviews.
