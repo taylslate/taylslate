@@ -25,6 +25,7 @@ const MANUAL_HELP = "Tell us how you control this show. A link is optional and m
 const EXPLAIN_ERROR = "Explain the request in 20 to 1000 characters.";
 const LINK_ERROR = "The link must be an https URL of at most 300 characters.";
 const DUPLICATE = "Your request is already with our team.";
+const PAYOUT_WAITING = "You have a payout waiting. Verify you own your show to receive it.";
 
 const KNOWN = new Set([
   PASTE,
@@ -69,6 +70,7 @@ export interface OwnershipView {
   loadError?: boolean;
   decisionNote?: string | null;
   manual?: boolean;
+  payoutWaiting?: boolean;
 }
 
 function mediumOf(method: string | null): "podcast" | "youtube" | null {
@@ -128,6 +130,19 @@ export function ownershipView(input: {
 }
 
 const radiusStyle = { borderRadius: tokens.radius };
+
+function payoutBanner(show: boolean) {
+  if (!show) return null;
+  return (
+    <p
+      className="mb-4 mt-4 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-4 py-3 text-sm text-[var(--ts-ink-on-paper)]"
+      role="status"
+      style={radiusStyle}
+    >
+      {PAYOUT_WAITING}
+    </p>
+  );
+}
 const panelClass = "border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-5";
 const inkBtn =
   "inline-flex items-center bg-[var(--ts-accent)] px-4 py-2 text-sm font-medium text-[var(--ts-accent-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
@@ -227,6 +242,7 @@ export default function OwnershipClient({ view }: { view: OwnershipView }) {
 
   const showCode = Boolean(code) && view.kind !== "verified" && view.kind !== "review";
   const showCheck = showCode || view.kind === "pending";
+  const showPayout = Boolean(view.payoutWaiting) && view.kind !== "verified";
 
   if (view.loadError) {
     return (
@@ -237,6 +253,7 @@ export default function OwnershipClient({ view }: { view: OwnershipView }) {
         <h1 className="mt-2 font-[family-name:var(--font-app-display)] text-2xl font-semibold tracking-tight text-[var(--ts-ink-on-paper)]">
           Verify ownership
         </h1>
+        {payoutBanner(showPayout)}
         <p className="mt-4 text-sm text-[var(--ts-ink-on-paper)]" role="alert">
           We could not load your ownership check. Refresh to try again.
         </p>
@@ -255,6 +272,8 @@ export default function OwnershipClient({ view }: { view: OwnershipView }) {
       <p className="mb-6 mt-1 text-sm text-[var(--ts-ink-muted-on-paper)]">
         Paste a short code into a description you control. Once we see it, you can delete the code.
       </p>
+
+      {payoutBanner(showPayout)}
 
       {message && (
         <p className="mb-4 text-sm text-[var(--ts-ink-on-paper)]" role="status">

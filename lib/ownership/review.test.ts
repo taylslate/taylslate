@@ -168,6 +168,12 @@ vi.mock("@/lib/auth/auth-email", () => ({
   getAuthEmail: async (id: string) => (id in state.emails ? state.emails[id] : null),
 }));
 
+const releaseHeldPayoutsForShow = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/payouts/release", () => ({
+  releaseHeldPayoutsForShow: (...args: unknown[]) => releaseHeldPayoutsForShow(...args),
+}));
+
 import {
   OWNERSHIP_ALREADY_DECIDED,
   OWNERSHIP_ALREADY_VERIFIED,
@@ -227,6 +233,8 @@ describe("ownership review", () => {
     state.missingColumn = false;
     state.fail = null;
     state.seq = 0;
+    releaseHeldPayoutsForShow.mockReset();
+    releaseHeldPayoutsForShow.mockResolvedValue({ released: 0, held: 0, failed: 0 });
   });
 
   afterEach(() => {
@@ -420,6 +428,8 @@ describe("ownership review", () => {
     expect(state.tables.shows.find((row) => row.id === SHOW_B)?.ownership_status).toBe("unclaimed");
     expect(JSON.stringify(state.tables.agent_show_relationships)).toBe(beforeLinks);
     expect(writes("agent_show_relationships")).toEqual([]);
+    expect(releaseHeldPayoutsForShow).toHaveBeenCalledTimes(1);
+    expect(releaseHeldPayoutsForShow).toHaveBeenCalledWith(SHOW_A);
   });
 
   it("returns 409 and changes nothing on a lost race or a verified owner", async () => {
@@ -496,6 +506,8 @@ describe("ownership review", () => {
     });
     expect(proofs().find((row) => row.id === "expired-sib")?.status).toBe("rejected");
     expect(writes("agent_show_relationships")).toEqual([]);
+    expect(releaseHeldPayoutsForShow).toHaveBeenCalledTimes(1);
+    expect(releaseHeldPayoutsForShow).toHaveBeenCalledWith(SHOW_A);
 
     const ownerProof = "66666666-6666-4666-8666-666666666666";
     proofs().push({ id: ownerProof, show_id: SHOW_B, user_id: USER, status: "verified", code_hash: null });
@@ -526,6 +538,7 @@ describe("ownership review", () => {
     });
     expect(state.tables.shows[0].ownership_status).toBe("unclaimed");
     expect(writes("shows")).toEqual([]);
+    expect(releaseHeldPayoutsForShow).not.toHaveBeenCalled();
   });
 
   it("asks for manual review once per show and refuses a duplicate, a miss, and an http link", async () => {
@@ -614,5 +627,20 @@ describe("ownership review", () => {
     expect(youtube).toEqual({ ok: true, message: OWNERSHIP_MESSAGES.review });
     expect(proofs()[0]).toMatchObject({ method: "admin", status: "contested", target: UC, show_id: SHOW_A });
     expect(proofs()[0].note).toBe(`Manual review: ${EXPLANATION}`);
+  });
+
+  it("keeps the approve response when payout release throws", async () => {
+    proofs().push({ id: PROOF, show_id: SHOW_A, user_id: USER, status: "contested" });
+    releaseHeldPayoutsForShow.mockRejectedValueOnce(new Error("secret-db-text"));
+    const logs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+    const result = await approveOwnershipProof({ proofId: PROOF, adminId: ADMIN });
+    expect(result).toEqual({ ok: true });
+    expect(releaseHeldPayoutsForShow).toHaveBeenCalledWith(SHOW_A);
+    expect(JSON.stringify(result)).not.toContain("secret-db-text");
+    expect(logs.join("\n")).not.toContain("secret-db-text");
+    expect(logs.join("\n")).toContain("Error");
   });
 });

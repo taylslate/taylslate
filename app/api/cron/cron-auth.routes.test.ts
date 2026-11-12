@@ -8,6 +8,7 @@ const work = vi.hoisted(() => ({
   dealPriors: vi.fn(),
   pull: vi.fn(),
   refresh: vi.fn(),
+  releases: vi.fn(),
 }));
 
 vi.mock("@/lib/analytics/gmv", () => ({
@@ -37,11 +38,16 @@ vi.mock("@/lib/youtube-library/refresh", () => ({
   runYoutubeLibraryRefresh: (...args: unknown[]) => work.refresh(...args),
 }));
 
+vi.mock("@/lib/payouts/release", () => ({
+  sweepHeldPayouts: (...args: unknown[]) => work.releases(...args),
+}));
+
 import { GET as conversionAlerts } from "@/app/api/cron/conversion-alerts/route";
 import { GET as dealTimeouts } from "@/app/api/cron/deal-timeouts/route";
 import { GET as pooledPriors } from "@/app/api/cron/pooled-priors/route";
 import { GET as youtubePull } from "@/app/api/cron/youtube-library-pull/route";
 import { GET as youtubeRefresh } from "@/app/api/cron/youtube-library-refresh/route";
+import { GET as payoutReleases } from "@/app/api/cron/payout-releases/route";
 
 const SECRET = "cron-secret";
 
@@ -82,6 +88,12 @@ const routes = [
     GET: youtubeRefresh,
     called: () => work.refresh.mock.calls.length > 0,
   },
+  {
+    name: "payout-releases",
+    path: "/api/cron/payout-releases",
+    GET: payoutReleases,
+    called: () => work.releases.mock.calls.length > 0,
+  },
 ] as const;
 
 describe("cron routes use isCronAuthorized", () => {
@@ -95,6 +107,7 @@ describe("cron routes use isCronAuthorized", () => {
     work.dealPriors.mockResolvedValue(0);
     work.pull.mockResolvedValue({ ok: true });
     work.refresh.mockResolvedValue({ ok: true });
+    work.releases.mockResolvedValue({ released: 0, held: 0, failed: 0 });
   });
 
   for (const route of routes) {

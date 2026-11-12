@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   proofs: [] as Array<Record<string, unknown>>,
   proofError: null as { code: string; message: string } | null,
   profileError: null as { code: string; message: string } | null,
+  payoutError: null as { code: string; message: string } | null,
+  heldCount: 0,
   selects: [] as string[],
   browserProfile: { role: "show", plan: "pay_as_you_go" } as { role: string; plan: string } | null,
   browserUser: { id: "11111111-1111-4111-8111-111111111111", email: "show@example.com" } as {
@@ -60,6 +62,22 @@ vi.mock("@/lib/youtube-oauth/store", () => ({
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     from(table: string) {
+      if (table === "payouts") {
+        return {
+          select(columns: string) {
+            mocks.selects.push(`${table}:${columns}`);
+            return {
+              is() {
+                if (mocks.payoutError) {
+                  return Promise.resolve({ data: null, error: mocks.payoutError });
+                }
+                const data = Array.from({ length: mocks.heldCount }, (_, index) => ({ id: `held-${index}` }));
+                return Promise.resolve({ data, error: null });
+              },
+            };
+          },
+        };
+      }
       return {
         select(columns: string) {
           mocks.selects.push(`${table}:${columns}`);
@@ -145,6 +163,8 @@ describe("ownership settings", () => {
     mocks.proofs = [];
     mocks.proofError = null;
     mocks.profileError = null;
+    mocks.payoutError = null;
+    mocks.heldCount = 0;
     mocks.selects = [];
     mocks.browserProfile = { role: "show", plan: "pay_as_you_go" };
     mocks.browserUser = { id: "11111111-1111-4111-8111-111111111111", email: "show@example.com" };
@@ -476,5 +496,33 @@ describe("ownership settings", () => {
       medium: "podcast",
       explanation: "I host this show and can edit the description.",
     });
+  });
+
+  it("shows a payout banner for an unverified owner and hides it when verified", async () => {
+    mocks.heldCount = 1;
+    render(await OwnershipSettingsPage());
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "You have a payout waiting. Verify you own your show to receive it."
+    );
+    expect(document.body.textContent).not.toContain("\u2014");
+    cleanup();
+
+    render(<OwnershipClient view={view({ kind: "verified", payoutWaiting: true, target: "feeds.example.com/show" })} />);
+    expect(screen.queryByText("You have a payout waiting. Verify you own your show to receive it.")).not.toBeInTheDocument();
+    expect(screen.getByText("Verified")).toBeInTheDocument();
+  });
+
+  it("hides the payout banner when the payout read fails and still renders the page", async () => {
+    mocks.payoutError = { code: "42501", message: "secret-db-text" };
+    const logs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(" "));
+    });
+    render(await OwnershipSettingsPage());
+    expect(screen.getAllByRole("button", { name: "Start" }).length).toBeGreaterThan(0);
+    expect(screen.queryByText("You have a payout waiting. Verify you own your show to receive it.")).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("secret-db-text");
+    expect(logs.join("\n")).toContain("42501");
+    expect(logs.join("\n")).not.toContain("secret-db-text");
   });
 });

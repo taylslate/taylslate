@@ -37,23 +37,43 @@ interface ShowProfileRow {
   user_id: string;
 }
 
+function json(body: unknown, status = 200): NextResponse {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
+function refusal(err: unknown): { status: number; error: string } | null {
+  const name = err instanceof Error ? err.name : "";
+  if (name === "PayoutHeldError") {
+    return { status: 409, error: "Verify you own this show to get paid." };
+  }
+  if (name === "PayoutAlreadyExistsError") {
+    return { status: 409, error: "This payout is already on its way." };
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const blocked = await rejectSwitchedViewMoneyAction(request);
-  if (blocked) return blocked;
+  if (blocked) {
+    blocked.headers.set("Cache-Control", "no-store");
+    return blocked;
+  }
 
   const user = await getAuthenticatedUser();
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return json({ error: "Unauthorized" }, 401);
   }
 
   let body: EarlyPayoutBody;
   try {
     body = (await request.json()) as EarlyPayoutBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return json({ error: "Invalid JSON" }, 400);
   }
   if (!body.paymentId || typeof body.paymentId !== "string") {
-    return NextResponse.json({ error: "paymentId is required" }, { status: 400 });
+    return json({ error: "paymentId is required" }, 400);
   }
 
   // Resolve payment → deal → show_profile → user. We authorise BEFORE
@@ -65,12 +85,12 @@ export async function POST(request: NextRequest) {
     .eq("id", body.paymentId)
     .single<PaymentRow>();
   if (pErr || !payment) {
-    return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+    return json({ error: "Payment not found" }, 404);
   }
   if (!payment.deal_id) {
-    return NextResponse.json(
+    return json(
       { error: "Payment has no associated deal; cannot route early payout" },
-      { status: 400 }
+      400
     );
   }
 
@@ -80,10 +100,7 @@ export async function POST(request: NextRequest) {
     .eq("id", payment.deal_id)
     .single<DealRow>();
   if (dErr || !deal || !deal.show_profile_id) {
-    return NextResponse.json(
-      { error: "Deal not found or has no show_profile_id" },
-      { status: 404 }
-    );
+    return json({ error: "Deal not found or has no show_profile_id" }, 404);
   }
 
   const { data: sp, error: spErr } = await supabaseAdmin
@@ -92,13 +109,10 @@ export async function POST(request: NextRequest) {
     .eq("id", deal.show_profile_id)
     .single<ShowProfileRow>();
   if (spErr || !sp) {
-    return NextResponse.json(
-      { error: "Show profile not found" },
-      { status: 404 }
-    );
+    return json({ error: "Show profile not found" }, 404);
   }
   if (sp.user_id !== user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return json({ error: "Forbidden" }, 403);
   }
 
   try {
@@ -106,13 +120,12 @@ export async function POST(request: NextRequest) {
       payment.id,
       EARLY_PAYOUT_FEE_PERCENTAGE
     );
-    return NextResponse.json(result);
+    return json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Early payout failed";
-    console.error(
-      `[payouts/early] payment ${payment.id}:`,
-      message
-    );
-    return NextResponse.json({ error: message }, { status: 502 });
+    const known = refusal(err);
+    if (known) return json({ error: known.error }, known.status);
+    const name = err instanceof Error ? err.name : "Error";
+    console.error("[payouts/early]", /^[A-Za-z0-9_]+$/.test(name) ? name : "Error");
+    return json({ error: "Couldn't send the early payout." }, 502);
   }
 }

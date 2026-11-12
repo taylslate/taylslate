@@ -32,6 +32,10 @@
     {
       "path": "/api/cron/roster-owner-notices",
       "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/cron/payout-releases",
+      "schedule": "0 22 * * *"
     }
   ]
 }

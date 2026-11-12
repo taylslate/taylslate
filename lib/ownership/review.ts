@@ -14,6 +14,7 @@ import {
 } from "@/lib/ownership/check";
 import { normalizeRssUrl } from "@/lib/reps/roster-import";
 import { rosterRepLabel, type RepNameFields } from "@/lib/reps/roster-notify";
+import { releaseHeldPayoutsForShow } from "@/lib/payouts/release";
 import { rosterReviewNote } from "@/lib/reps/roster-review";
 import { type RateLimitRule, RATE_LIMIT_MESSAGE } from "@/lib/security/rate-limit";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -646,6 +647,12 @@ async function finishAdminVerify(showId: string, adminId: string, nowIso: string
     if (needsMigration(siblings.error)) return { ok: false, status: 503, error: OWNERSHIP_REVIEW_MIGRATION };
     logCode(ADMIN_TAG, siblings.error.code);
     return { ok: false, status: 500, error: OWNERSHIP_APPROVE_FAILED };
+  }
+  try {
+    await releaseHeldPayoutsForShow(showId);
+  } catch (err) {
+    const name = err instanceof Error ? err.name : "";
+    logCode(ADMIN_TAG, /^[A-Za-z0-9_]+$/.test(name) ? name : "throw");
   }
   return { ok: true };
 }

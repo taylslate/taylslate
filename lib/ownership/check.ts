@@ -19,6 +19,7 @@ import {
 } from "@/lib/ownership/code";
 import { readRssProofText } from "@/lib/ownership/rss-proof";
 import { readYoutubeDescription } from "@/lib/ownership/youtube-proof";
+import { releaseHeldPayoutsForShow } from "@/lib/payouts/release";
 
 export const OWNERSHIP_START_DAY_MAX = 5;
 export const OWNERSHIP_START_DAY_WINDOW_SEC = 24 * 60 * 60;
@@ -460,6 +461,12 @@ async function applyHit(row: ProofRow, userId: string, nowIso: string): Promise<
     return "error";
   }
   await markShowVerified(row.show_id, row.id);
+  try {
+    await releaseHeldPayoutsForShow(row.show_id);
+  } catch (err) {
+    const name = err instanceof Error ? err.name : "";
+    logOwnershipError(/^[A-Za-z0-9_]+$/.test(name) ? name : "throw");
+  }
   return "verified";
 }
 

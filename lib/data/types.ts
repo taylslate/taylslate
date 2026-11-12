@@ -798,6 +798,8 @@ export type DomainEventType =
   | "payment_method.attached"
   | "payout.transferred"
   | "payout.early_requested"
+  | "payout.held"
+  | "payout.released"
   // Wave 14 Phase 2A — brief intake + interpretation loop
   | "brief.url_derived"
   | "brief.url_derivation_failed"
