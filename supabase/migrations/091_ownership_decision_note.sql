@@ -15,12 +15,9 @@
 -- No new table, policy, or function. 091 does not depend on 090.
 -- They touch different objects. Idempotent. Safe to re-run.
 --
--- Apply 091 before this deploy. The owner page falls back to the
--- O2 select, with no decision reason, when the column is missing
--- (42703 or PGRST204), so the page still renders. The admin review
--- routes return 503 "Ownership review needs migration 091." until
--- the column exists. Applying 091 after the deploy leaves the admin
--- queue down and hides the reason from the owner.
+-- It is safe to deploy before 091. The owner page falls back to the
+-- O2 view with no decision reason. The admin queue returns 503
+-- "Ownership review needs migration 091." until 091 is applied.
 --
 -- Grants are restated from 061. service_role keeps select, insert,
 -- update, and delete. authenticated keeps select only. anon and
