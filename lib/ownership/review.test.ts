@@ -169,13 +169,20 @@ vi.mock("@/lib/auth/auth-email", () => ({
 }));
 
 const releaseHeldPayoutsForShow = vi.hoisted(() => vi.fn());
+const afterState = vi.hoisted(() => ({
+  returns: [] as unknown[],
+  throwOnCall: false,
+}));
 
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>();
   return {
     ...actual,
     after(task: () => unknown) {
-      void task();
+      if (afterState.throwOnCall) throw new Error("after failed");
+      const result = task();
+      afterState.returns.push(result);
+      return result;
     },
   };
 });
@@ -245,6 +252,8 @@ describe("ownership review", () => {
     state.seq = 0;
     releaseHeldPayoutsForShow.mockReset();
     releaseHeldPayoutsForShow.mockResolvedValue({ released: 0, held: 0, failed: 0 });
+    afterState.returns = [];
+    afterState.throwOnCall = false;
   });
 
   afterEach(() => {
@@ -438,6 +447,9 @@ describe("ownership review", () => {
     expect(state.tables.shows.find((row) => row.id === SHOW_B)?.ownership_status).toBe("unclaimed");
     expect(JSON.stringify(state.tables.agent_show_relationships)).toBe(beforeLinks);
     expect(writes("agent_show_relationships")).toEqual([]);
+    expect(afterState.returns).toHaveLength(1);
+    expect(afterState.returns[0]).toBeInstanceOf(Promise);
+    await afterState.returns[0];
     expect(releaseHeldPayoutsForShow).toHaveBeenCalledTimes(1);
     expect(releaseHeldPayoutsForShow).toHaveBeenCalledWith(SHOW_A);
   });
@@ -516,6 +528,9 @@ describe("ownership review", () => {
     });
     expect(proofs().find((row) => row.id === "expired-sib")?.status).toBe("rejected");
     expect(writes("agent_show_relationships")).toEqual([]);
+    expect(afterState.returns).toHaveLength(1);
+    expect(afterState.returns[0]).toBeInstanceOf(Promise);
+    await afterState.returns[0];
     expect(releaseHeldPayoutsForShow).toHaveBeenCalledTimes(1);
     expect(releaseHeldPayoutsForShow).toHaveBeenCalledWith(SHOW_A);
 
@@ -648,9 +663,22 @@ describe("ownership review", () => {
     });
     const result = await approveOwnershipProof({ proofId: PROOF, adminId: ADMIN });
     expect(result).toEqual({ ok: true });
+    expect(afterState.returns[0]).toBeInstanceOf(Promise);
+    await afterState.returns[0];
     expect(releaseHeldPayoutsForShow).toHaveBeenCalledWith(SHOW_A);
     expect(JSON.stringify(result)).not.toContain("secret-db-text");
     expect(logs.join("\n")).not.toContain("secret-db-text");
     expect(logs.join("\n")).toContain("Error");
+  });
+
+  it("keeps the approve response when after throws", async () => {
+    proofs().push({ id: PROOF, show_id: SHOW_A, user_id: USER, status: "contested" });
+    afterState.throwOnCall = true;
+    const result = await approveOwnershipProof({ proofId: PROOF, adminId: ADMIN });
+    expect(result).toEqual({ ok: true });
+    expect(releaseHeldPayoutsForShow).not.toHaveBeenCalled();
+    expect(afterState.returns).toHaveLength(0);
+    expect(JSON.stringify(result)).not.toContain("after failed");
+    expect(proofs().find((row) => row.id === PROOF)?.status).toBe("verified");
   });
 });

@@ -632,9 +632,7 @@ function releaseAfterResponse(showId: string): void {
     logCode(ADMIN_TAG, /^[A-Za-z0-9_]+$/.test(name) ? name : "throw");
   };
   try {
-    after(() => {
-      void releaseHeldPayoutsForShow(showId).catch(logFailure);
-    });
+    after(() => releaseHeldPayoutsForShow(showId).catch(logFailure));
   } catch (err) {
     logFailure(err);
   }

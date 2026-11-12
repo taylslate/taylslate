@@ -197,13 +197,20 @@ vi.mock("./youtube-proof", () => ({
 }));
 
 const releaseHeldPayoutsForShow = vi.hoisted(() => vi.fn());
+const afterState = vi.hoisted(() => ({
+  returns: [] as unknown[],
+  throwOnCall: false,
+}));
 
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>();
   return {
     ...actual,
     after(task: () => unknown) {
-      void task();
+      if (afterState.throwOnCall) throw new Error("after failed");
+      const result = task();
+      afterState.returns.push(result);
+      return result;
     },
   };
 });
@@ -289,6 +296,8 @@ describe("ownership check", () => {
     ytRead.mockReset();
     releaseHeldPayoutsForShow.mockReset();
     releaseHeldPayoutsForShow.mockResolvedValue({ released: 0, held: 0, failed: 0 });
+    afterState.returns = [];
+    afterState.throwOnCall = false;
     rssRead.mockResolvedValue({ status: "ok", text: "no code in the feed" });
     ytRead.mockResolvedValue({ status: "unavailable" });
     vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
@@ -426,6 +435,9 @@ describe("ownership check", () => {
     expect(row?.verified_at).toBe("2026-03-02T00:00:00.000Z");
     expect(row?.check_count).toBe(1);
     expect(state.tables.shows[0].ownership_status).toBe("verified");
+    expect(afterState.returns).toHaveLength(1);
+    expect(afterState.returns[0]).toBeInstanceOf(Promise);
+    await afterState.returns[0];
     expect(releaseHeldPayoutsForShow).toHaveBeenCalledTimes(1);
     expect(releaseHeldPayoutsForShow).toHaveBeenCalledWith(SHOW_A);
     expect(rssRead).toHaveBeenCalledWith("https://Feeds.Example.com/Show");
@@ -763,8 +775,22 @@ describe("ownership check", () => {
     releaseHeldPayoutsForShow.mockRejectedValueOnce(new Error("secret-db-text"));
     const checked = await checkOwnership({ userId: USER, now: new Date("2026-03-02T00:00:00.000Z") });
     expect(checked).toEqual({ ok: true, outcome: "verified", message: OWNERSHIP_MESSAGES.verified });
+    expect(afterState.returns[0]).toBeInstanceOf(Promise);
+    await afterState.returns[0];
     expect(releaseHeldPayoutsForShow).toHaveBeenCalledWith(SHOW_A);
     expect(JSON.stringify(checked)).not.toContain("secret-db-text");
     assertNoSecrets(started.code);
+  });
+
+  it("keeps the verified response when after throws", async () => {
+    const started = await startPodcast();
+    if (!started.ok) throw new Error("start failed");
+    rssRead.mockResolvedValue({ status: "ok", text: started.code });
+    afterState.throwOnCall = true;
+    const checked = await checkOwnership({ userId: USER, now: new Date("2026-03-02T00:00:00.000Z") });
+    expect(checked).toEqual({ ok: true, outcome: "verified", message: OWNERSHIP_MESSAGES.verified });
+    expect(releaseHeldPayoutsForShow).not.toHaveBeenCalled();
+    expect(afterState.returns).toHaveLength(0);
+    expect(JSON.stringify(checked)).not.toContain("after failed");
   });
 });
