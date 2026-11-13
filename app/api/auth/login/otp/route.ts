@@ -5,8 +5,8 @@
 // address is that outreach's contact, and the show account is created when
 // the code is verified. A show sign-up (intent "show_signup", R1) mints a
 // code for an address with no auth user and no outreach token; the account
-// is created when that code is verified. An existing user who sends the
-// intent gets a normal login code and keeps their role.
+// is created when that code is verified. An existing user with a profile
+// still keeps their role. A no-profile auth user is finished on verify.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -41,7 +41,6 @@ import {
 import {
   enforceLoginCodeSend,
   enforceRules,
-  rateLimitClientIp,
 } from "@/lib/security/rate-limit";
 
 export const runtime = "nodejs";
@@ -128,7 +127,7 @@ export async function POST(request: NextRequest) {
       rules: [
         {
           bucket: SHOW_SIGNUP_IP_DAY_BUCKET,
-          key: rateLimitClientIp(request.headers),
+          key: loginOtpClientIp(request.headers),
           max: SHOW_SIGNUP_IP_DAY_MAX,
           windowSeconds: SHOW_SIGNUP_IP_DAY_WINDOW_SEC,
         },
@@ -149,6 +148,7 @@ export async function POST(request: NextRequest) {
   let pendingHash: string | null = null;
   let pendingOutreach: string | null = null;
   let pendingExpires: string | null = null;
+  let clearPending = Boolean(authUserId);
   if (!authUserId && outreachId && outreachContactEmail === email) {
     localCode = mintLoginOtpCode();
     pendingHash = hashLoginOtpCode(email, localCode);
@@ -161,6 +161,15 @@ export async function POST(request: NextRequest) {
     pendingHash = hashLoginOtpCode(email, localCode);
     pendingOutreach = SHOW_SIGNUP_PENDING;
     pendingExpires = new Date(Date.now() + LOGIN_OTP_PENDING_MS).toISOString();
+  } else if (authUserId && !outreachToken && showSignupIntent) {
+    // The generateLink code is what we email. This hash only exists so the
+    // limiter keeps the show_signup marker until verify. The minted code
+    // is never sent. No profile is read or written here.
+    const markerCode = mintLoginOtpCode();
+    pendingHash = hashLoginOtpCode(email, markerCode);
+    pendingOutreach = SHOW_SIGNUP_PENDING;
+    pendingExpires = new Date(Date.now() + LOGIN_OTP_PENDING_MS).toISOString();
+    clearPending = false;
   }
 
   const consumed = await consumeLoginOtpLimit({
@@ -170,7 +179,7 @@ export async function POST(request: NextRequest) {
     p_pending_hash: pendingHash,
     p_pending_outreach: pendingOutreach,
     p_pending_expires: pendingExpires,
-    p_clear_pending: Boolean(authUserId),
+    p_clear_pending: clearPending,
   });
   if (!consumed.ok) return unavailable();
   if (!consumed.decision.ok) return limited(consumed.decision);

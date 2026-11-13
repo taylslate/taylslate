@@ -61,6 +61,9 @@ import { POST } from "./route";
 const store = new Map<string, LoginOtpBucket>();
 let profile: { id: string; role: string } | null = { id: "show-1", role: "show" };
 let inserted: unknown[] = [];
+let upsertOptions: unknown[] = [];
+let updates: unknown[] = [];
+let raceWinner: { id: string; role: string } | null = null;
 
 function req(body: unknown, headers?: Record<string, string>): NextRequest {
   return new NextRequest("https://www.taylslate.com/api/auth/login/otp/verify", {
@@ -83,6 +86,9 @@ beforeEach(() => {
   rpc.mockReset();
   store.clear();
   inserted = [];
+  upsertOptions = [];
+  updates = [];
+  raceWinner = null;
   profile = { id: "show-1", role: "show" };
   authUsers.current = [{ id: "show-1", email: "host@example.com" }];
   listUsers.mockImplementation(async () => ({ data: { users: authUsers.current }, error: null }));
@@ -101,6 +107,17 @@ beforeEach(() => {
       insert: vi.fn(async (row: unknown) => {
         inserted.push(row);
         return { error: null };
+      }),
+      upsert: vi.fn(async (row: { id: string; role: string }, opts?: unknown) => {
+        inserted.push(row);
+        upsertOptions.push(opts);
+        if (raceWinner) profile = { ...raceWinner };
+        else if (!profile) profile = { id: row.id, role: row.role };
+        return { error: null };
+      }),
+      update: vi.fn((row: unknown) => {
+        updates.push(row);
+        return chain;
       }),
     };
     return chain;
@@ -552,16 +569,20 @@ describe("POST /api/auth/login/otp/verify show sign-up", () => {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       maybeSingle: vi.fn(async () => ({ data: null, error: null })),
-      insert: vi.fn(async () => ({ error: { message: "secret-db-text" } })),
+      upsert: vi.fn(async () => ({ error: { message: "secret-db-text" } })),
     }));
     const insertFail = await POST(req({ email: "b@example.com", code: CODE }));
     expect(insertFail.status).toBe(500);
     expect(JSON.stringify(await insertFail.json())).not.toContain("secret-db-text");
+    let row: { id: string; role: string } | null = null;
     from.mockImplementation(() => ({
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
-      insert: vi.fn(async () => ({ error: null })),
+      maybeSingle: vi.fn(async () => ({ data: row, error: null })),
+      upsert: vi.fn(async (written: { id: string; role: string }) => {
+        row = { id: written.id, role: written.role };
+        return { error: null };
+      }),
     }));
 
     seedSignupPending("c@example.com");
@@ -586,5 +607,120 @@ describe("POST /api/auth/login/otp/verify show sign-up", () => {
     const bad = await POST(req({ email: "host@example.com", code: "000000" }));
     expect(bad.status).toBe(400);
     expect(bad.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("creates a show profile for an auth user with no profile when the marker is valid", async () => {
+    profile = null;
+    seedSignupPending("host@example.com");
+    const res = await POST(req({ email: "host@example.com", code: CODE }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, next: "/onboarding/show" });
+    expect(createUser).not.toHaveBeenCalled();
+    expect(updates).toEqual([]);
+    expect(inserted[0]).toEqual({
+      id: "show-1",
+      email: "host@example.com",
+      full_name: "",
+      role: "show",
+      tier: "free",
+    });
+    expect(upsertOptions[0]).toEqual({ onConflict: "id", ignoreDuplicates: true });
+  });
+
+  it("honors an explicit safe next for that new show profile", async () => {
+    profile = null;
+    seedSignupPending("host@example.com");
+    const res = await POST(
+      req({ email: "host@example.com", code: CODE, next: "/settings/ownership" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, next: "/settings/ownership" });
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it("drops an unsafe next for that new show profile", async () => {
+    profile = null;
+    seedSignupPending("host@example.com");
+    const res = await POST(
+      req({ email: "host@example.com", code: CODE, next: "//evil.com" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, next: "/dashboard" });
+  });
+
+  it("leaves an existing profile untouched when the show-signup marker is set", async () => {
+    for (const role of ["brand", "agent", "show"] as const) {
+      profile = { id: `${role}-1`, role };
+      authUsers.current = [{ id: `${role}-1`, email: `${role}@example.com` }];
+      seedSignupPending(`${role}@example.com`);
+      inserted = [];
+      updates = [];
+      const res = await POST(
+        req({
+          email: `${role}@example.com`,
+          code: CODE,
+          next: "/onboarding/show",
+        }),
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.next).toBe(role === "brand" ? "/dashboard" : "/onboarding/show");
+      expect(inserted).toEqual([]);
+      expect(updates).toEqual([]);
+      expect(createUser).not.toHaveBeenCalled();
+    }
+  });
+
+  it("still 403s when an auth user has no profile and no valid marker", async () => {
+    profile = null;
+    const res = await POST(req({ email: "host@example.com", code: CODE }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "verify_failed" });
+    expect(signOut).toHaveBeenCalled();
+    expect(inserted).toEqual([]);
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it("still 403s when the show-signup marker is expired", async () => {
+    profile = null;
+    seedSignupPending("host@example.com", { expiresInMs: -1000 });
+    const res = await POST(req({ email: "host@example.com", code: CODE }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "verify_failed" });
+    expect(signOut).toHaveBeenCalled();
+    expect(inserted).toEqual([]);
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it("still 403s when the stored profile has no role, marker or not", async () => {
+    profile = { id: "show-1", role: "" };
+    seedSignupPending("host@example.com");
+    const res = await POST(req({ email: "host@example.com", code: CODE }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "verify_failed" });
+    expect(signOut).toHaveBeenCalled();
+    expect(inserted).toEqual([]);
+    expect(updates).toEqual([]);
+  });
+
+  it("keeps the role that wins the insert race and does not update the row", async () => {
+    profile = null;
+    raceWinner = { id: "show-1", role: "brand" };
+    seedSignupPending("host@example.com");
+    const res = await POST(
+      req({ email: "host@example.com", code: CODE, next: "/campaigns/abc" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, next: "/campaigns/abc" });
+    expect(createUser).not.toHaveBeenCalled();
+    expect(updates).toEqual([]);
+    expect(inserted[0]).toMatchObject({
+      id: "show-1",
+      email: "host@example.com",
+      role: "show",
+      tier: "free",
+    });
+    expect(upsertOptions[0]).toEqual({ onConflict: "id", ignoreDuplicates: true });
+    expect(profile).toEqual({ id: "show-1", role: "brand" });
   });
 });

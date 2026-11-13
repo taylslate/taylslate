@@ -3,8 +3,10 @@
 // A pitch code for an address with no profile creates the show account here,
 // then opens the session from the admin link's hashed token. A show sign-up
 // code (pending marker "show_signup", R1) does the same without an outreach
-// row and defaults next to /onboarding/show. Brand and show profiles both
-// stay signed in. /dashboard applies the existing role redirects.
+// row and defaults next to /onboarding/show. An auth user with no profiles
+// row and a still-valid show_signup marker gets that same show profile here,
+// without createUser. Brand and show profiles both stay signed in.
+// /dashboard applies the existing role redirects.
 
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -36,7 +38,7 @@ import {
   pendingLoginOtpMatches,
   type LoginOtpLimitDecision,
 } from "@/lib/auth/login-otp-limit";
-import { createShowAccount } from "@/lib/auth/login-otp-show";
+import { createShowAccount, insertShowProfile } from "@/lib/auth/login-otp-show";
 import { enforceLoginCodeVerify } from "@/lib/security/rate-limit";
 import {
   ONBOARDING_RETURN_COOKIE,
@@ -105,6 +107,11 @@ async function finish(
     p_ip: loginOtpClientIp(request.headers),
   });
   return noStore(NextResponse.json({ ok: true, next }));
+}
+
+function withShowOnboardingNext(body: VerifyBody): VerifyBody {
+  if (typeof body.next === "string" && body.next) return body;
+  return { ...body, next: "/onboarding/show" };
 }
 
 export async function POST(request: NextRequest) {
@@ -177,11 +184,43 @@ export async function POST(request: NextRequest) {
       return noStore(NextResponse.json({ error: "verify_failed" }, { status: 500 }));
     }
     const profile = existing as ProfileHit | null;
-    if (!profile?.role || profile.id !== data.user.id) {
+    if (profile && profile.id !== data.user.id) {
       await supabase.auth.signOut();
       return noStore(NextResponse.json({ error: "verify_failed" }, { status: 403 }));
     }
-    return finish(request, body, profile.role);
+    // Any stored row is left as it is. A role finishes as that role, even
+    // when the show_signup marker is set. An empty role still 403s.
+    if (profile?.role) {
+      return finish(request, body, profile.role);
+    }
+    if (profile) {
+      await supabase.auth.signOut();
+      return noStore(NextResponse.json({ error: "verify_failed" }, { status: 403 }));
+    }
+
+    const marker = consumed.decision;
+    const markerExpires = marker.pending_expires_at
+      ? Date.parse(marker.pending_expires_at)
+      : Number.NaN;
+    const showSignupReady =
+      marker.pending_outreach_id === SHOW_SIGNUP_PENDING &&
+      Number.isFinite(markerExpires) &&
+      markerExpires > Date.now();
+    if (!showSignupReady) {
+      await supabase.auth.signOut();
+      return noStore(NextResponse.json({ error: "verify_failed" }, { status: 403 }));
+    }
+
+    const placed = await insertShowProfile(data.user.id, email);
+    if (!placed.ok) {
+      console.error("[login.otp.verify] show profile was not stored");
+      await supabase.auth.signOut();
+      return noStore(NextResponse.json({ error: "verify_failed" }, { status: 500 }));
+    }
+    if (placed.role !== "show") {
+      return finish(request, body, placed.role);
+    }
+    return finish(request, withShowOnboardingNext(body), "show");
   }
 
   const pending = consumed.decision;
@@ -218,10 +257,7 @@ export async function POST(request: NextRequest) {
 
   // A show sign-up with no explicit next lands in show onboarding.
   // safeLoginNext and nextAfterCodeLogin still apply on the way out.
-  const effectiveBody: VerifyBody =
-    isShowSignup && !(typeof body.next === "string" && body.next)
-      ? { ...body, next: "/onboarding/show" }
-      : body;
+  const effectiveBody = isShowSignup ? withShowOnboardingNext(body) : body;
 
   const origin = siteOriginFromRequest(request.url);
   const nextPath = safeLoginNext(effectiveBody.next, origin);
