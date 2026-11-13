@@ -3569,3 +3569,25 @@ Follow-ups from the PR 110 review, plus real consent screenshots for Chris to ch
 - Revoking one access token does not revoke the backing key.
 - Framing protection is only on `/oauth/consent/:path*`.
 - No cleanup job. This PR does not merge. Paul reviews.
+
+## MCP-OAUTH3
+
+### What was built
+
+Family revoke and code replay now set `mcp_oauth_tokens.revoked_at` before any backing-key write. That update returns `api_key_id` and `user_id`, and those rows are what the key revoke uses. There is no separate select before the update. If the update fails, the error still throws. If the returned rows are missing or malformed, the key is left alone, a fixed log line is written, and the call does not throw. A failed key write still leaves the token rows revoked.
+
+### Where
+
+- `lib/mcp-oauth/grants.ts` and `lib/mcp-oauth/grants.test.ts`
+
+`proxy.ts`, `next.config.ts`, `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, `lib/security/rate-limit.ts`, and `supabase/migrations` were not edited. No migration. Migration 092 is not applied.
+
+### Tests
+
+`npx tsc --noEmit` clean. `npx vitest run`: 432 files, 3637 passed, 41 skipped. `npx eslint` on changed files: 0 errors. `npx next build` compiled. Coverage: the token update runs before any key write on family revoke and on code replay; a failed key write still revokes the tokens and returns `invalid_grant`; family revoke and code replay still revoke only that user's backing key; `secret-db-text` stays out of response bodies and headers.
+
+### Known gaps
+
+- A failed token update still leaves those tokens live.
+- A missing or malformed update payload leaves the backing key live. The token rows are already revoked.
+- No migration. This PR does not merge. Paul reviews.

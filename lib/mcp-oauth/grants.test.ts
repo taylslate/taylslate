@@ -376,6 +376,49 @@ describe("OAuth grants", () => {
     return { clientId, refreshToken: body.refresh_token };
   }
 
+  it("updates token rows before any backing key write", async () => {
+    function watchOrder(): string[] {
+      const order: string[] = [];
+      admin().beforeExecute = (table, op) => {
+        if (table === "mcp_oauth_tokens" && op === "update") order.push("tokens");
+        if (table === "api_keys" && op === "update") {
+          expect(admin().tables.mcp_oauth_tokens.every((row) => row.revoked_at)).toBe(true);
+          order.push("keys");
+        }
+      };
+      return order;
+    }
+
+    const { clientId, refreshToken } = await issuedRefresh();
+    const rotated = await refresh(clientId, refreshToken);
+    expect(rotated.status).toBe(200);
+    const family = watchOrder();
+    const replay = await refresh(clientId, refreshToken);
+    expect(replay.status).toBe(400);
+    expect(family).toEqual(["tokens", "keys"]);
+    const replayText = await replay.text();
+    expect(replayText).not.toContain(SECRET_DB);
+    for (const [name, value] of replay.headers.entries()) {
+      expect(`${name}:${value}`).not.toContain(SECRET_DB);
+    }
+
+    const { verifier, challenge } = pkcePair();
+    const codeClient = await registerClient("Order");
+    const requestId = await startAuthorize(codeClient, challenge);
+    const code = codeFrom(await allow(requestId));
+    const first = await exchange(codeClient, code, verifier);
+    expect(first.status).toBe(200);
+    const codeOrder = watchOrder();
+    const second = await exchange(codeClient, code, verifier);
+    expect(second.status).toBe(400);
+    expect(codeOrder).toEqual(["tokens", "keys"]);
+    const codeText = await second.text();
+    expect(codeText).not.toContain(SECRET_DB);
+    for (const [name, value] of second.headers.entries()) {
+      expect(`${name}:${value}`).not.toContain(SECRET_DB);
+    }
+  });
+
   it("revokes only the backing key on refresh replay", async () => {
     const { clientId, refreshToken } = await issuedRefresh();
     const rotated = await refresh(clientId, refreshToken);
@@ -476,6 +519,45 @@ describe("OAuth grants", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it("skips the key revoke when the token update returns malformed rows", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { clientId, refreshToken } = await issuedRefresh();
+      await refresh(clientId, refreshToken);
+      for (const row of admin().tables.mcp_oauth_tokens) delete row.api_key_id;
+      const replay = await refresh(clientId, refreshToken);
+      expect(replay.status).toBe(400);
+      const text = await replay.text();
+      expect(text).toContain("invalid_grant");
+      expect(text).not.toContain(SECRET_DB);
+      for (const [name, value] of replay.headers.entries()) {
+        expect(`${name}:${value}`).not.toContain(SECRET_DB);
+      }
+      expect(admin().tables.mcp_oauth_tokens.every((row) => row.revoked_at)).toBe(true);
+      expect(admin().tables.api_keys[0].revoked_at).toBeNull();
+      const lines = warn.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+      expect(lines).toContain("[mcp-oauth] revoked token rows missing");
+      expect(lines).not.toContain(SECRET_DB);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("throws when the token revoke update fails and does not write the key", async () => {
+    const { clientId, refreshToken } = await issuedRefresh();
+    await refresh(clientId, refreshToken);
+    admin().failUpdates.add("mcp_oauth_tokens");
+    const replay = await refresh(clientId, refreshToken);
+    expect(replay.status).toBe(503);
+    const text = await replay.text();
+    expect(text).not.toContain(SECRET_DB);
+    for (const [name, value] of replay.headers.entries()) {
+      expect(`${name}:${value}`).not.toContain(SECRET_DB);
+    }
+    expect(admin().tables.api_keys[0].revoked_at).toBeNull();
+    expect(admin().tables.mcp_oauth_tokens.every((row) => row.revoked_at)).toBe(false);
   });
 
   it("hides database text on authorization_code and refresh_token failures", async () => {
