@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAllowedRedirectUri, narrowScopes, parseScopeList } from "./clients";
+import { isAllowedRedirectUri, narrowScopes, parseClientName, parseScopeList } from "./clients";
 
 describe("redirect URIs", () => {
   it("accepts https, loopback http, and a private scheme", () => {
@@ -27,6 +27,20 @@ describe("redirect URIs", () => {
     ]) {
       expect(isAllowedRedirectUri(uri)).toBe(false);
     }
+  });
+});
+
+describe("client names", () => {
+  it("strips a right-to-left override and a zero-width joiner before the length check", () => {
+    const rlo = "\u202E";
+    const zwj = "\u200D";
+    expect(parseClientName(`Acme${rlo}${zwj} Client`, true)).toBe("Acme Client");
+    expect(parseClientName(`${"a".repeat(100)}${rlo}${zwj}`, true)).toBe("a".repeat(100));
+  });
+
+  it("rejects a name that is only format characters", () => {
+    expect(() => parseClientName("\u202E\u200D\u200B", true)).toThrow(/invalid_client_metadata/);
+    expect(() => parseClientName("\u202E".repeat(4) + "a".repeat(101), true)).toThrow(/invalid_client_metadata/);
   });
 });
 

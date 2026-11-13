@@ -40,6 +40,7 @@ describe("site origin", () => {
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
+      authorization_response_iss_parameter_supported: true,
       scopes_supported: [...API_SCOPES],
     });
     expect(wwwAuthenticate(false)).toBe(

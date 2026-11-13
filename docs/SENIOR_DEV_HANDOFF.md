@@ -3541,3 +3541,31 @@ The show onboarding summary button now says `Next: prove you own the show` and s
 - A `profiles` row with an empty role still 403s, marker or not.
 - A show sign-up `next` that fails `safeLoginNext` still falls back to `/dashboard`.
 - No migration. This PR does not merge. Paul reviews.
+
+## MCP-OAUTH2
+
+### What was built
+
+Follow-ups from the PR 110 review, plus real consent screenshots for Chris to check before migration 092 is applied. Client names lose Unicode format characters before the length check. Redirects omit an empty parameter, so a missing state is not sent as `state=`, and a sent state is echoed. Metadata sets `authorization_response_iss_parameter_supported`. A family revoke also sets `revoked_at` on that grant's backing `api_keys` row, filtered by id and `brand_id`, and only when `revoked_at` is null. One access-token revoke does not revoke the key. A failed key write is a fixed log line and does not change the response. A resolved OAuth call updates `api_keys.last_used_at` after the plan check, and a failed touch is logged and ignored. `/oauth/consent/:path*` sends `X-Frame-Options: DENY` and `frame-ancestors 'none'`.
+
+### Where
+
+- `lib/mcp-oauth/clients.ts`, `errors.ts`, `config.ts`, `grants.ts`, `resolve.ts`, `test-store.ts`, and the OAuth tests
+- `app/api/oauth/token/route.test.ts`, `app/api/oauth/revoke/route.test.ts`
+- `next.config.ts` (one `headers()` entry)
+- `docs/screenshots/MCP-OAUTH2/` (five PNGs)
+- `docs/jobs/MCP-OAUTH2.md`
+
+`proxy.ts`, `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, `lib/api/auth.ts`, `lib/security/rate-limit.ts`, the consent page, and `supabase/migrations` were not edited. No migration.
+
+### Tests
+
+`npx tsc --noEmit` clean. `npx vitest run`: 432 files, 3634 passed, 41 skipped. `npx eslint` on changed files: 0 errors. `npx next build` compiled. Coverage: format characters stripped from client names; missing state omitted and a sent state echoed with `iss`; each family revoke path revokes only that key; another user's same-id key is untouched; an access-token revoke leaves the key; a failed key write and a failed `last_used_at` touch stay out of the response; `secret-db-text` is absent from token, revoke, and grants responses.
+
+### Known gaps
+
+- Migration 092 is not applied. Apply only after merge and Chris's OK.
+- A failed backing-key update leaves that key live until a later family revoke or Settings. The token rows are already revoked.
+- Revoking one access token does not revoke the backing key.
+- Framing protection is only on `/oauth/consent/:path*`.
+- No cleanup job. This PR does not merge. Paul reviews.

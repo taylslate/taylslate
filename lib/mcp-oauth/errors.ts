@@ -192,6 +192,7 @@ export function respondOauthFailure(err: unknown, cors: boolean): Response {
 export function redirectWith(redirectUri: string, params: Record<string, string>): string {
   const url = new URL(redirectUri);
   for (const [key, value] of Object.entries(params)) {
+    if (value === "") continue;
     url.searchParams.set(key, value);
   }
   return url.toString();

@@ -42,6 +42,8 @@ export interface OauthTestAdmin {
   user: { id: string } | null;
   failAll: DbError | null;
   missingTables: Set<string>;
+  failUpdates: Set<string>;
+  beforeExecute: ((table: string, op: "select" | "insert" | "update", patch: Row | null) => void) | null;
   denyBuckets: Set<string>;
   rateError: DbError | null;
   from: (table: string) => unknown;
@@ -90,6 +92,8 @@ export function createOauthTestAdmin(): OauthTestAdmin {
     user: null,
     failAll: null,
     missingTables: new Set(),
+    failUpdates: new Set(),
+    beforeExecute: null,
     denyBuckets: new Set(),
     rateError: null,
     from,
@@ -112,6 +116,10 @@ export function createOauthTestAdmin(): OauthTestAdmin {
       if (admin.failAll) return { data: null, error: admin.failAll };
       if (admin.missingTables.has(table) || !Object.prototype.hasOwnProperty.call(tables, table)) {
         return { data: null, error: dbError("42P01") };
+      }
+      admin.beforeExecute?.(table, state.op, state.patch);
+      if (state.op === "update" && admin.failUpdates.has(table)) {
+        return { data: null, error: dbError("XX000") };
       }
       const list = tables[table];
       if (state.op === "insert") {

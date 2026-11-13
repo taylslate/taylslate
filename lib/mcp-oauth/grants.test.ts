@@ -229,6 +229,7 @@ describe("OAuth grants", () => {
       const family = admin().tables.mcp_oauth_tokens;
       expect(family.length).toBeGreaterThanOrEqual(4);
       expect(family.every((row) => row.revoked_at)).toBe(true);
+      expect(admin().tables.api_keys[0].revoked_at).toBeTruthy();
       const cut = await mcpCall(second.access_token);
       expect(cut.status).toBe(401);
 
@@ -263,6 +264,7 @@ describe("OAuth grants", () => {
     expect(second.status).toBe(400);
     expect((await second.json()).error).toBe("invalid_grant");
     expect(admin().tables.mcp_oauth_tokens.every((row) => row.revoked_at)).toBe(true);
+    expect(admin().tables.api_keys[0].revoked_at).toBeTruthy();
     expect((await mcpCall(body.access_token)).status).toBe(401);
   });
 
@@ -342,5 +344,157 @@ describe("OAuth grants", () => {
     expect((await widened.json()).error).toBe("invalid_scope");
     const row = admin().tables.mcp_oauth_tokens.find((item) => item.token_hash === hashToken(body.refresh_token));
     expect(row?.used_at).toBeNull();
+    expect(admin().tables.api_keys[0].revoked_at).toBeNull();
+  });
+
+  function plantDecoys(): { sameId: Record<string, unknown>; otherId: Record<string, unknown> } {
+    const real = admin().tables.api_keys[0];
+    const sameId: Record<string, unknown> = {
+      ...real,
+      brand_id: "22222222-2222-4222-8222-222222222222",
+      prefix: "decoysameid0001",
+      revoked_at: null,
+    };
+    const otherId: Record<string, unknown> = {
+      ...real,
+      id: "99999999-9999-4999-8999-999999999999",
+      prefix: "decoyotherid001",
+      revoked_at: null,
+    };
+    admin().tables.api_keys.push(sameId, otherId);
+    return { sameId, otherId };
+  }
+
+  async function issuedRefresh(): Promise<{ clientId: string; refreshToken: string }> {
+    const { verifier, challenge } = pkcePair();
+    const clientId = await registerClient();
+    const requestId = await startAuthorize(clientId, challenge);
+    const code = codeFrom(await allow(requestId));
+    const issued = await exchange(clientId, code, verifier);
+    expect(issued.status).toBe(200);
+    const body = (await issued.json()) as { refresh_token: string };
+    return { clientId, refreshToken: body.refresh_token };
+  }
+
+  it("revokes only the backing key on refresh replay", async () => {
+    const { clientId, refreshToken } = await issuedRefresh();
+    const rotated = await refresh(clientId, refreshToken);
+    expect(rotated.status).toBe(200);
+    const { sameId, otherId } = plantDecoys();
+    const replay = await refresh(clientId, refreshToken);
+    expect(replay.status).toBe(400);
+    expect((await replay.json()).error).toBe("invalid_grant");
+    expect(admin().tables.api_keys[0].revoked_at).toBe(new Date(now).toISOString());
+    expect(sameId.revoked_at).toBeNull();
+    expect(otherId.revoked_at).toBeNull();
+    expect(admin().tables.mcp_oauth_tokens.every((row) => row.revoked_at)).toBe(true);
+  });
+
+  it("revokes only the backing key on code replay", async () => {
+    const { verifier, challenge } = pkcePair();
+    const clientId = await registerClient();
+    const requestId = await startAuthorize(clientId, challenge);
+    const code = codeFrom(await allow(requestId));
+    const first = await exchange(clientId, code, verifier);
+    expect(first.status).toBe(200);
+    const { sameId, otherId } = plantDecoys();
+    const second = await exchange(clientId, code, verifier);
+    expect(second.status).toBe(400);
+    expect(admin().tables.api_keys[0].revoked_at).toBe(new Date(now).toISOString());
+    expect(sameId.revoked_at).toBeNull();
+    expect(otherId.revoked_at).toBeNull();
+  });
+
+  it("revokes only the backing key when a refresh loses the compare-and-set", async () => {
+    const { clientId, refreshToken } = await issuedRefresh();
+    const { sameId, otherId } = plantDecoys();
+    let armed = true;
+    admin().beforeExecute = (table, op, patch) => {
+      if (!armed || table !== "mcp_oauth_tokens" || op !== "update") return;
+      if (!patch || !Object.prototype.hasOwnProperty.call(patch, "used_at")) return;
+      const row = admin().tables.mcp_oauth_tokens.find(
+        (item) => item.kind === "refresh" && item.token_hash === hashToken(refreshToken)
+      );
+      if (!row || row.used_at) return;
+      row.used_at = new Date(now).toISOString();
+      armed = false;
+    };
+    const lost = await refresh(clientId, refreshToken);
+    expect(lost.status).toBe(400);
+    expect((await lost.json()).error).toBe("invalid_grant");
+    expect(admin().tables.api_keys[0].revoked_at).toBe(new Date(now).toISOString());
+    expect(sameId.revoked_at).toBeNull();
+    expect(otherId.revoked_at).toBeNull();
+    expect(admin().tables.mcp_oauth_tokens.every((row) => row.revoked_at)).toBe(true);
+  });
+
+  it("revokes only the backing key when the winner sees the family already revoked", async () => {
+    const { clientId, refreshToken } = await issuedRefresh();
+    const old = admin().tables.mcp_oauth_tokens.find((item) => item.token_hash === hashToken(refreshToken));
+    const decoys: { sameId?: Record<string, unknown>; otherId?: Record<string, unknown> } = {};
+    let sawInsert = false;
+    admin().beforeExecute = (table, op) => {
+      if (table === "mcp_oauth_tokens" && op === "insert" && !sawInsert) {
+        sawInsert = true;
+        const planted = plantDecoys();
+        decoys.sameId = planted.sameId;
+        decoys.otherId = planted.otherId;
+        return;
+      }
+      if (!sawInsert || table !== "mcp_oauth_tokens" || op !== "select") return;
+      if (old) old.revoked_at = new Date(now).toISOString();
+      sawInsert = false;
+    };
+    const won = await refresh(clientId, refreshToken);
+    expect(won.status).toBe(400);
+    expect((await won.json()).error).toBe("invalid_grant");
+    expect(admin().tables.api_keys[0].revoked_at).toBe(new Date(now).toISOString());
+    expect(decoys.sameId?.revoked_at ?? null).toBeNull();
+    expect(decoys.otherId?.revoked_at ?? null).toBeNull();
+    expect(admin().tables.mcp_oauth_tokens.every((row) => row.revoked_at)).toBe(true);
+  });
+
+  it("still returns invalid_grant when the backing key write fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { clientId, refreshToken } = await issuedRefresh();
+      await refresh(clientId, refreshToken);
+      admin().failUpdates.add("api_keys");
+      const replay = await refresh(clientId, refreshToken);
+      expect(replay.status).toBe(400);
+      const text = await replay.text();
+      expect(text).not.toContain(SECRET_DB);
+      expect(text).toContain("invalid_grant");
+      for (const [name, value] of replay.headers.entries()) {
+        expect(`${name}:${value}`).not.toContain(SECRET_DB);
+      }
+      expect(admin().tables.mcp_oauth_tokens.every((row) => row.revoked_at)).toBe(true);
+      expect(admin().tables.api_keys[0].revoked_at).toBeNull();
+      const lines = warn.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+      expect(lines).toContain("[mcp-oauth] backing key revoke failed");
+      expect(lines).not.toContain(SECRET_DB);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("hides database text on authorization_code and refresh_token failures", async () => {
+    const clientId = await registerClient();
+    admin().missingTables.add("mcp_oauth_codes");
+    admin().missingTables.add("mcp_oauth_tokens");
+    const codeGrant = await exchange(clientId, `tsac_${"ab".repeat(32)}`, "b".repeat(43));
+    const codeText = await codeGrant.text();
+    expect(codeGrant.status).toBe(503);
+    expect(codeText).not.toContain(SECRET_DB);
+    for (const [name, value] of codeGrant.headers.entries()) {
+      expect(`${name}:${value}`).not.toContain(SECRET_DB);
+    }
+    const refreshGrant = await refresh(clientId, `ts_ort_${"cd".repeat(32)}`);
+    const refreshText = await refreshGrant.text();
+    expect(refreshGrant.status).toBe(503);
+    expect(refreshText).not.toContain(SECRET_DB);
+    for (const [name, value] of refreshGrant.headers.entries()) {
+      expect(`${name}:${value}`).not.toContain(SECRET_DB);
+    }
   });
 });

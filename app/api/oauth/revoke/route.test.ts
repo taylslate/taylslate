@@ -117,6 +117,129 @@ describe("POST /api/oauth/revoke", () => {
     const body = await missing.json();
     expect(body.error).toBe("temporarily_unavailable");
     expect(JSON.stringify(body)).not.toContain(SECRET_DB);
+    for (const [name, value] of missing.headers.entries()) {
+      expect(`${name}:${value}`).not.toContain(SECRET_DB);
+    }
     expect(OPTIONS().headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  it("revokes the backing key for a refresh token and leaves it for an access token", async () => {
+    const userId = "11111111-1111-4111-8111-111111111111";
+    const otherUser = "22222222-2222-4222-8222-222222222222";
+    const keyId = "55555555-5555-4555-8555-555555555555";
+    const access = newAccessToken();
+    const refresh = newRefreshToken();
+    const family = randomUUID();
+    const base = {
+      family_id: family,
+      code_id: randomUUID(),
+      client_id: CLIENT,
+      user_id: userId,
+      api_key_id: keyId,
+      scopes: ["read"],
+      resource: "https://www.taylslate.com/api/v1/mcp",
+      expires_at: "2026-07-01T00:00:00.000Z",
+      revoked_at: null,
+      used_at: null,
+    };
+    bridge.admin!.tables.mcp_oauth_tokens.push(
+      { ...base, id: randomUUID(), token_hash: hashToken(access), kind: "access" },
+      { ...base, id: randomUUID(), token_hash: hashToken(refresh), kind: "refresh" }
+    );
+    const key = {
+      id: keyId,
+      brand_id: userId,
+      prefix: "backingkeyprefix",
+      revoked_at: null,
+    };
+    const sameId = {
+      id: keyId,
+      brand_id: otherUser,
+      prefix: "otheruserprefix1",
+      revoked_at: null,
+    };
+    const otherId = {
+      id: "66666666-6666-4666-8666-666666666666",
+      brand_id: userId,
+      prefix: "otherkeyprefix01",
+      revoked_at: null,
+    };
+    bridge.admin!.tables.api_keys.push(key, sameId, otherId);
+
+    const accessResponse = await revoke(access);
+    expect(accessResponse.status).toBe(200);
+    expect(key.revoked_at).toBeNull();
+    expect(sameId.revoked_at).toBeNull();
+    expect(otherId.revoked_at).toBeNull();
+    const accessRow = bridge.admin!.tables.mcp_oauth_tokens.find((row) => row.kind === "access");
+    const refreshRow = bridge.admin!.tables.mcp_oauth_tokens.find((row) => row.kind === "refresh");
+    expect(accessRow?.revoked_at).toBeTruthy();
+    expect(refreshRow?.revoked_at).toBeNull();
+
+    const refreshResponse = await revoke(refresh, { token_type_hint: "refresh_token" });
+    expect(refreshResponse.status).toBe(200);
+    expect(await refreshResponse.json()).toEqual({});
+    expect(key.revoked_at).toBeTruthy();
+    expect(sameId.revoked_at).toBeNull();
+    expect(otherId.revoked_at).toBeNull();
+    expect(bridge.admin!.tables.mcp_oauth_tokens.every((row) => row.revoked_at)).toBe(true);
+  });
+
+  it("hides database text when the token lookup fails and when the key write fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      bridge.admin!.failAll = { code: "XX000", message: SECRET_DB };
+      const failed = await revoke(`ts_ort_${"ab".repeat(32)}`);
+      const failedText = await failed.text();
+      expect(failed.status).toBe(503);
+      expect(failedText).not.toContain(SECRET_DB);
+      for (const [name, value] of failed.headers.entries()) {
+        expect(`${name}:${value}`).not.toContain(SECRET_DB);
+      }
+
+      bridge.admin = createOauthTestAdmin();
+      installOauthEnv();
+      bridge.admin.tables.mcp_oauth_clients.push({
+        id: CLIENT,
+        client_id: CLIENT_ID,
+        client_name: "Cursor",
+        redirect_uris: ["https://app.example/callback"],
+      });
+      const userId = "11111111-1111-4111-8111-111111111111";
+      const keyId = "55555555-5555-4555-8555-555555555555";
+      const refresh = newRefreshToken();
+      bridge.admin.tables.mcp_oauth_tokens.push({
+        id: randomUUID(),
+        token_hash: hashToken(refresh),
+        kind: "refresh",
+        family_id: randomUUID(),
+        code_id: randomUUID(),
+        client_id: CLIENT,
+        user_id: userId,
+        api_key_id: keyId,
+        scopes: ["read"],
+        resource: "https://www.taylslate.com/api/v1/mcp",
+        expires_at: "2026-07-01T00:00:00.000Z",
+        revoked_at: null,
+        used_at: null,
+      });
+      const key = { id: keyId, brand_id: userId, prefix: "backingkeyprefix", revoked_at: null };
+      bridge.admin.tables.api_keys.push(key);
+      bridge.admin.failUpdates.add("api_keys");
+      const carried = await revoke(refresh, { token_type_hint: "refresh_token" });
+      const carriedText = await carried.text();
+      expect(carried.status).toBe(200);
+      expect(carriedText).not.toContain(SECRET_DB);
+      for (const [name, value] of carried.headers.entries()) {
+        expect(`${name}:${value}`).not.toContain(SECRET_DB);
+      }
+      expect(bridge.admin.tables.mcp_oauth_tokens[0].revoked_at).toBeTruthy();
+      expect(key.revoked_at).toBeNull();
+      const lines = warn.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+      expect(lines).toContain("[mcp-oauth] backing key revoke failed");
+      expect(lines).not.toContain(SECRET_DB);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

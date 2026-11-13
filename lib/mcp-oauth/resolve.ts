@@ -95,6 +95,18 @@ export async function resolveOAuthAccessToken(req: Request): Promise<ResolvedOAu
   }
   assertProfileApiAccess(profile);
 
+  try {
+    const { error: touchError } = await oauthAdmin()
+      .from("api_keys")
+      .update({ last_used_at: oauthNow().toISOString() })
+      .eq("id", key.id);
+    if (touchError) {
+      console.warn("[mcp-oauth] last_used_at update failed");
+    }
+  } catch {
+    console.warn("[mcp-oauth] last_used_at update failed");
+  }
+
   const scopes = scopesFromDb(row.scopes).filter((scope) => scopesFromDb(key.scopes).includes(scope));
   await recordEvent({
     customerId: row.user_id,
