@@ -152,6 +152,36 @@ describe("resolveOAuthAccessToken", () => {
     });
   });
 
+  it("sets last_used_at after the checks pass and ignores a failed touch", async () => {
+    const token = seedAccess();
+    const resolved = await resolveOAuthAccessToken(requestFor(token));
+    expect(resolved.keyId).toBe(admin().tables.api_keys[0].id);
+    expect(admin().tables.api_keys[0].last_used_at).toBe("2026-06-01T12:00:00.000Z");
+    expect(JSON.stringify(resolved)).not.toContain(SECRET_DB);
+
+    bridge.admin = createOauthTestAdmin();
+    const blocked = seedAccess();
+    admin().tables.profiles[0].plan = "pay_as_you_go";
+    await expect(resolveOAuthAccessToken(requestFor(blocked))).rejects.toMatchObject({ status: 403 });
+    expect(admin().tables.api_keys[0].last_used_at ?? null).toBeNull();
+
+    bridge.admin = createOauthTestAdmin();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const ok = seedAccess();
+      admin().failUpdates.add("api_keys");
+      const still = await resolveOAuthAccessToken(requestFor(ok));
+      expect(still.brandId).toBe(TEST_USER);
+      expect(admin().tables.api_keys[0].last_used_at ?? null).toBeNull();
+      const lines = warn.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+      expect(lines).toContain("[mcp-oauth] last_used_at update failed");
+      expect(lines).not.toContain(SECRET_DB);
+      expect(JSON.stringify(still)).not.toContain(SECRET_DB);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("maps a missing table to unavailable and does not return database text", async () => {
     installOauthEnv();
     admin().missingTables.add("mcp_oauth_tokens");

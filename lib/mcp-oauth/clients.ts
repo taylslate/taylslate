@@ -107,10 +107,11 @@ function parseAuthMethod(value: unknown, present: boolean): "none" {
   return "none";
 }
 
-function parseClientName(value: unknown, present: boolean): string {
+export function parseClientName(value: unknown, present: boolean): string {
   if (!present) return "MCP client";
   if (typeof value !== "string") throw metadataError();
-  const cleaned = value.replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  // Format characters (bidi overrides, zero-width joiners) can disguise a name.
+  const cleaned = value.replace(/[\u0000-\u001F\u007F\p{Cf}]/gu, "").trim();
   if (cleaned.length < 1 || cleaned.length > 100) throw metadataError();
   return cleaned;
 }

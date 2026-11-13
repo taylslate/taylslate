@@ -103,6 +103,24 @@ describe("consent", () => {
     expect(SECRET_DB).toBe("secret-db-text");
   });
 
+  it("omits a missing state and echoes a sent state on deny and allow", async () => {
+    bridge.admin!.tables.mcp_oauth_requests[0].state = null;
+    const denied = await decideConsent(TEST_USER, { requestId: REQUEST, decision: "deny" });
+    const deniedUrl = new URL(denied.redirect);
+    expect(deniedUrl.searchParams.has("state")).toBe(false);
+    expect(denied.redirect).not.toContain("state=");
+    expect(deniedUrl.searchParams.get("iss")).toBe(TEST_ORIGIN);
+    expect(deniedUrl.searchParams.get("error")).toBe("access_denied");
+
+    bridge.admin!.tables.mcp_oauth_requests[0].consumed_at = null;
+    bridge.admin!.tables.mcp_oauth_requests[0].state = "stay exactly";
+    const allowed = await decideConsent(TEST_USER, { requestId: REQUEST, decision: "allow" });
+    const allowedUrl = new URL(allowed.redirect);
+    expect(allowedUrl.searchParams.get("state")).toBe("stay exactly");
+    expect(allowedUrl.searchParams.get("iss")).toBe(TEST_ORIGIN);
+    expect(allowedUrl.searchParams.get("code")).toMatch(/^tsac_[0-9a-f]{64}$/);
+  });
+
   it("allows once and a second submit does not mint another code", async () => {
     const allowed = await decideConsent(TEST_USER, { requestId: REQUEST, decision: "allow" });
     expect(new URL(allowed.redirect).searchParams.get("code")).toMatch(/^tsac_[0-9a-f]{64}$/);

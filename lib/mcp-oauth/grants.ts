@@ -110,18 +110,52 @@ async function assertLiveKey(apiKeyId: string, userId: string): Promise<void> {
   await assertProfile(userId);
 }
 
-async function revokeFamily(familyId: string): Promise<void> {
+interface GrantKeyRef {
+  api_key_id?: unknown;
+  user_id?: unknown;
+}
+
+async function revokeBackingKeys(rows: GrantKeyRef[], now: string): Promise<void> {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (typeof row.api_key_id !== "string" || typeof row.user_id !== "string") continue;
+    const marker = `${row.api_key_id}\0${row.user_id}`;
+    if (seen.has(marker)) continue;
+    seen.add(marker);
+    try {
+      await oauth(
+        oauthAdmin()
+          .from("api_keys")
+          .update({ revoked_at: now })
+          .eq("id", row.api_key_id)
+          .eq("brand_id", row.user_id)
+          .is("revoked_at", null)
+      );
+    } catch {
+      // Token rows are already revoked. A key write must not become a client 500.
+      console.warn("[mcp-oauth] backing key revoke failed");
+    }
+  }
+}
+
+async function revokeGrantRows(column: "family_id" | "code_id", value: string): Promise<void> {
   const now = oauthNow().toISOString();
-  await oauth(
-    oauthAdmin().from("mcp_oauth_tokens").update({ revoked_at: now }).eq("family_id", familyId)
+  const selected = await oauth(
+    oauthAdmin().from("mcp_oauth_tokens").select("api_key_id, user_id").eq(column, value)
   );
+  await oauth(
+    oauthAdmin().from("mcp_oauth_tokens").update({ revoked_at: now }).eq(column, value)
+  );
+  const rows = Array.isArray(selected) ? (selected as GrantKeyRef[]) : [];
+  await revokeBackingKeys(rows, now);
+}
+
+async function revokeFamily(familyId: string): Promise<void> {
+  await revokeGrantRows("family_id", familyId);
 }
 
 async function revokeByCode(codeId: string): Promise<void> {
-  const now = oauthNow().toISOString();
-  await oauth(
-    oauthAdmin().from("mcp_oauth_tokens").update({ revoked_at: now }).eq("code_id", codeId)
-  );
+  await revokeGrantRows("code_id", codeId);
 }
 
 async function issuePair(input: {

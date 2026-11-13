@@ -98,8 +98,30 @@ describe("beginAuthorization", () => {
     const result = await beginAuthorization(params({ state: huge }));
     expect(result.kind).toBe("redirect");
     if (result.kind !== "redirect") return;
-    expect(new URL(result.location).searchParams.get("state")).toBe("");
+    expect(new URL(result.location).searchParams.has("state")).toBe(false);
+    expect(result.location).not.toContain("state=");
     expect(result.location).not.toContain(huge);
+    expect(new URL(result.location).searchParams.get("iss")).toBe(TEST_ORIGIN);
+  });
+
+  it("omits a missing state and echoes a sent state", async () => {
+    const missing = params({ code_challenge_method: "plain" });
+    missing.delete("state");
+    const without = await beginAuthorization(missing);
+    expect(without.kind).toBe("redirect");
+    if (without.kind !== "redirect") return;
+    const missingUrl = new URL(without.location);
+    expect(missingUrl.searchParams.has("state")).toBe(false);
+    expect(without.location).not.toContain("state=");
+    expect(missingUrl.searchParams.get("iss")).toBe(TEST_ORIGIN);
+
+    const sent = "state value/ok";
+    const withState = await beginAuthorization(params({ code_challenge_method: "plain", state: sent }));
+    expect(withState.kind).toBe("redirect");
+    if (withState.kind !== "redirect") return;
+    const sentUrl = new URL(withState.location);
+    expect(sentUrl.searchParams.get("state")).toBe(sent);
+    expect(sentUrl.searchParams.get("iss")).toBe(TEST_ORIGIN);
   });
 
   it("maps a missing table to unavailable without database text", async () => {

@@ -64,6 +64,17 @@ const nextConfig: NextConfig = {
     // editing this list.
     "/api/**": externalSdkTracing,
   },
+  async headers() {
+    return [
+      {
+        source: "/oauth/consent/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
