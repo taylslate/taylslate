@@ -115,6 +115,20 @@ interface GrantKeyRef {
   user_id?: unknown;
 }
 
+/** Rows from the token update. Null means the payload cannot identify a key. */
+function rowsForKeyRevoke(selected: unknown): GrantKeyRef[] | null {
+  if (!Array.isArray(selected)) return null;
+  const rows: GrantKeyRef[] = [];
+  for (const row of selected) {
+    if (typeof row !== "object" || row === null) return null;
+    const apiKeyId = (row as GrantKeyRef).api_key_id;
+    const userId = (row as GrantKeyRef).user_id;
+    if (typeof apiKeyId !== "string" || typeof userId !== "string") return null;
+    rows.push({ api_key_id: apiKeyId, user_id: userId });
+  }
+  return rows;
+}
+
 async function revokeBackingKeys(rows: GrantKeyRef[], now: string): Promise<void> {
   const seen = new Set<string>();
   for (const row of rows) {
@@ -141,12 +155,18 @@ async function revokeBackingKeys(rows: GrantKeyRef[], now: string): Promise<void
 async function revokeGrantRows(column: "family_id" | "code_id", value: string): Promise<void> {
   const now = oauthNow().toISOString();
   const selected = await oauth(
-    oauthAdmin().from("mcp_oauth_tokens").select("api_key_id, user_id").eq(column, value)
+    oauthAdmin()
+      .from("mcp_oauth_tokens")
+      .update({ revoked_at: now })
+      .eq(column, value)
+      .select("api_key_id, user_id")
   );
-  await oauth(
-    oauthAdmin().from("mcp_oauth_tokens").update({ revoked_at: now }).eq(column, value)
-  );
-  const rows = Array.isArray(selected) ? (selected as GrantKeyRef[]) : [];
+  const rows = rowsForKeyRevoke(selected);
+  if (!rows) {
+    // The token update already committed. A bad payload must not become a client 500.
+    console.warn("[mcp-oauth] revoked token rows missing");
+    return;
+  }
   await revokeBackingKeys(rows, now);
 }
 
