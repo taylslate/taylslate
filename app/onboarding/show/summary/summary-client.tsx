@@ -264,7 +264,7 @@ export default function SummaryClient({
               disabled={finishing}
               className="inline-flex items-center gap-2 rounded-[var(--ts-radius)] bg-[var(--ts-ink-on-paper)] px-6 py-3 text-sm font-semibold text-[var(--ts-paper)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {finishing ? "Finishing…" : "Looks good — take me to my dashboard"}
+              {finishing ? "Finishing…" : "Next: prove you own the show"}
             </button>
           </div>
         </div>

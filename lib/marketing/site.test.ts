@@ -28,6 +28,7 @@ describe("public page metadata", () => {
       "/privacy",
       "/login",
       "/signup",
+      "/signup/show",
       "/forgot-password",
       "/reset-password",
       "/auth/magic",

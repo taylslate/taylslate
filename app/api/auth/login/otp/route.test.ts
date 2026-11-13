@@ -441,12 +441,43 @@ describe("POST /api/auth/login/otp show sign-up", () => {
       "login_otp_consume",
       expect.objectContaining({
         p_email: "host@example.com",
-        p_pending_hash: null,
-        p_clear_pending: true,
+        p_pending_outreach: "show_signup",
+        p_pending_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        p_clear_pending: false,
       }),
     );
+    const pendingExpires = Date.parse(
+      rpc.mock.calls.find((call) => call[0] === "login_otp_consume")?.[1]
+        ?.p_pending_expires as string,
+    );
+    const remaining = pendingExpires - Date.now();
+    expect(remaining).toBeGreaterThan(10 * 60 * 1000 - 5_000);
+    expect(remaining).toBeLessThanOrEqual(10 * 60 * 1000);
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(sendEmail.mock.calls[0][0].html).toContain("482913");
+  });
+
+  it("keys show_signup_ip_day with the platform client IP", async () => {
+    authUsers.current = [];
+    const res = await POST(
+      req(
+        { email: "new@example.com", intent: "show_signup" },
+        {
+          "x-vercel-forwarded-for": "198.51.100.20",
+          "x-forwarded-for": "203.0.113.5, 10.0.0.1",
+        },
+      ),
+    );
+    expect(res.status).toBe(200);
+    const dayHits = rpc.mock.calls.filter(
+      (call) =>
+        call[0] === "rate_limit_hit" &&
+        (call[1] as { p_bucket?: string }).p_bucket === "show_signup_ip_day",
+    );
+    expect(dayHits).toHaveLength(1);
+    expect(dayHits[0]?.[1]).toEqual(
+      expect.objectContaining({ p_key: "198.51.100.20" }),
+    );
   });
 
   it("answers the same body for an existing and an unknown address", async () => {

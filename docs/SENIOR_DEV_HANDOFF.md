@@ -3508,3 +3508,36 @@ The server trusts only `key`. A `show:<uuid>` must be discoverable. A `podscan:<
 - If `GET /podcasts/:id` is not on the plan, the fallback queries the podcast id and can miss.
 - The button is above the builder, not in the builder header. The discovery list has no second search bar.
 - No migration. This PR does not merge. Paul reviews.
+
+## R1-FIX
+
+### What was built
+
+A password sign-up can leave an auth user with no `profiles` row. `/signup/show` with that same email used to die at verify with `verify_failed` 403. Send now keeps a `show_signup` marker for an existing auth user (no outreach token) without reading or writing `profiles`, and still emails the `generateLink` code. The marker hash is of a code that is never emailed. Verify, after a successful code, leaves any existing profile alone. A row with a role finishes as that role. A row with no role still 403s. No row, plus a `show_signup` marker that has not expired, inserts a `show` / `free` profile keyed only by user id (`upsert` on `id`, `ignoreDuplicates`, then a re-read) and finishes at `/onboarding/show` unless `next` is already set. A race that stores some other role is not updated; verify finishes as that stored role. No `createUser` on this path.
+
+The show onboarding summary button now says `Next: prove you own the show` and still goes to `/settings/ownership`. `show_signup_ip_day` uses `loginOtpClientIp`, so `x-vercel-forwarded-for` wins over `x-forwarded-for`. `/signup/show` has its own `PUBLIC_PAGES` title, `Sign up as a show or creator | Taylslate`, from a server layout.
+
+### Where
+
+- `lib/auth/login-otp-show.ts` (`insertShowProfile`, used by `createShowAccount`) and `login-otp-show.test.ts`
+- `app/api/auth/login/otp/route.ts` and `route.test.ts`
+- `app/api/auth/login/otp/verify/route.ts` and `route.test.ts`
+- `app/onboarding/show/summary/summary-client.tsx` and `summary-client.test.tsx` (button label only)
+- `lib/marketing/site.ts` and `site.test.ts`
+- `app/(auth)/signup/show/layout.tsx` (new)
+- `docs/jobs/R1.md` (the summary-copy and `PUBLIC_PAGES` gaps point here)
+- `docs/jobs/R1-FIX.md` (new)
+
+`components/auth/show-email-code.tsx`, `proxy.ts`, `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `lib/security/rate-limit.ts` were not edited. No migration.
+
+### Tests
+
+`npx tsc --noEmit` clean. `npx vitest run`: 432 files, 3620 passed, 41 skipped. `npx eslint` on changed files: 0 errors. `npx next build` compiled, including `/signup/show`. Coverage: a no-profile auth user with a valid marker becomes `show` / `free` and `next` is `/onboarding/show`; a brand, agent, or show profile with the same marker is not written; no profile and no valid marker still 403s; an expired marker still 403s; an empty role still 403s; a race insert keeps the other role; send still returns `{ ok: true }` for existing and unknown addresses, does not call `from()` or `createUser`, and emails code `482913` while storing `show_signup` and a hash; `show_signup_ip_day` is keyed `198.51.100.20` when `x-vercel-forwarded-for` is that address and `x-forwarded-for` is `203.0.113.5, 10.0.0.1`.
+
+### Known gaps
+
+- No captcha on `/signup/show`. The existing send limits are the only brake.
+- An existing profile that uses `/signup/show` still signs in as that role. The page does not say the address already had an account.
+- A `profiles` row with an empty role still 403s, marker or not.
+- A show sign-up `next` that fails `safeLoginNext` still falls back to `/dashboard`.
+- No migration. This PR does not merge. Paul reviews.

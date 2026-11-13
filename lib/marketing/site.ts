@@ -66,6 +66,14 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
     pageFile: "app/(auth)/signup/page.tsx",
   },
   {
+    path: "/signup/show",
+    title: "Sign up as a show or creator | Taylslate",
+    description: "We'll email you a 6-digit code. No password.",
+    marketing: false,
+    metadataFile: "app/(auth)/signup/show/layout.tsx",
+    pageFile: "app/(auth)/signup/show/page.tsx",
+  },
+  {
     path: "/forgot-password",
     title: "Reset password | Taylslate",
     description: "Request a link to reset your Taylslate password.",

@@ -47,7 +47,7 @@ afterEach(() => {
 
 function finish() {
   fireEvent.click(
-    screen.getByRole("button", { name: /Looks good/ }),
+    screen.getByRole("button", { name: /prove you own the show/ }),
   );
 }
 
