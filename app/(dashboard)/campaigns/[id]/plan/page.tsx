@@ -2,6 +2,7 @@ import { getCampaignById } from "@/lib/data/queries";
 import { listPublishedSurfacesForShows } from "@/lib/data/show-surfaces";
 import { notFound, redirect } from "next/navigation";
 import type { ScoredShowRecord } from "@/lib/data/types";
+import DirectShowSearch from "./direct-show-search";
 import MediaPlanBuilder from "./media-plan-builder";
 
 interface PlanPageProps {
@@ -28,13 +29,17 @@ export default async function PlanBuilderPage({ params }: PlanPageProps) {
   );
 
   return (
-    <MediaPlanBuilder
-      campaignId={campaign.id}
-      campaignName={campaign.name}
-      budgetTotal={campaign.budget_total}
-      selectedShows={selectedShows}
-      initialPlan={campaign.media_plan ?? null}
-      surfacesByShowId={surfacesByShowId}
-    />
+    <>
+      <DirectShowSearch campaignId={campaign.id} />
+      <MediaPlanBuilder
+        key={selectedShows.map((show) => show.podcastId).join(",")}
+        campaignId={campaign.id}
+        campaignName={campaign.name}
+        budgetTotal={campaign.budget_total}
+        selectedShows={selectedShows}
+        initialPlan={campaign.media_plan ?? null}
+        surfacesByShowId={surfacesByShowId}
+      />
+    </>
   );
 }

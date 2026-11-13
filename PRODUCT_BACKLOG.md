@@ -143,10 +143,11 @@ Things that must finish before GTM. The launch bar.
 - **All three layers COMPLETE.** Layer 3 (return-to-admin) shipped + verified live July 7, 2026 (commit `a4e3805`, Codex clean) — see SHIPPED section for detail. The locked opaque-token / sha256-at-rest / atomic-single-use security requirement was met exactly (no HMAC-over-plaintext). The cookie-trust gap is closed and the impersonation loop is complete; the tool is now safe for routine use (onboarding brand/agent friends).
 
 ### Direct show search
-- Brands and agencies can search discoverable shows by name at `/shows/search`. A result links to that show's CRM page (`/crm/[showId]`).
-- Discovery is still AI-generative. A search bar inside discovery that hits Podscan, then adds the show to a media plan, is still open.
-- Catalog search coexists with AI discovery.
-- **Why:** Real brands sometimes know what they want. Forcing them through AI discovery when they want to search for "Acquired" specifically is unnecessary friction. The remaining work is Podscan search inside discovery, feeding the same media plan.
+- Catalog search at `/shows/search` shipped earlier (U1). A result links to that show's CRM page (`/crm/[showId]`). The YouTube library group on that page shipped in U1b. Neither one adds a show to a media plan.
+- **Shipped by DISC-SEARCH1.** On `/campaigns/[id]/plan`, a brand or agency searches the Taylslate catalog and Podscan by name and adds the show to that media plan in one click. The new line is priced by the existing media plan builder.
+- The discovery list was not given a second search bar. Discovery stays AI-generative. This search lives on the plan page.
+- Known gaps: the copy is the DISC-SEARCH1 default, and Chris can change it. There is no plan gate. Every brand and agency account gets the search, the same as `/shows/search`. Podscan cost is bounded by the rate limits. `lib/billing/plans.ts` was not read or changed. `getShowsFiltered` still swallows a catalog database error as an empty list. If `GET /podcasts/:id` is not on the plan, the fallback name search queries the podcast id and can miss.
+- **Why:** Real brands sometimes know what they want. Forcing them through AI discovery when they want to search for "Acquired" specifically is unnecessary friction.
 
 ### Test mode for full transaction loop
 - Currently no clean way to test full brand-side discovery → outreach → deal → IO → payment flow with two accounts you control

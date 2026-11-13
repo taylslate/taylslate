@@ -3475,3 +3475,36 @@ Security coverage: PKCE S256 is compared with `timingSafeEqual`. A reused author
 - Two refreshes that both pass the unused check can race. The loser revokes the family.
 - No captcha. The rate limits are the only brake.
 - This PR does not merge. Paul reviews.
+
+## DISC-SEARCH1
+
+### What was built
+
+On `/campaigns/[id]/plan`, a brand or agency can search a show by name and add it to the media plan in one click. Results come from the Taylslate catalog (`getShowsFiltered`, 10 rows) and a Podscan name search (10 rows). A catalog row wins when both sides share a `podscan_id`. The added show is a normal builder line. The builder reads its props once, so the page remounts it with `key={selectedShows.map((show) => show.podcastId).join(",")}`. The empty-selection redirect is unchanged.
+
+The server trusts only `key`. A `show:<uuid>` must be discoverable. A `podscan:<id>` uses an existing catalog row when one is discoverable, and otherwise saves through `podscanPodcastToShow` and `createShow` (`data_sources: ["direct_search"]`, unclaimed, unverified, no actor). The plan write sets only `scored_shows`, `selected_show_ids`, and `updated_at`, filtered on `id`, `user_id`, and the `updated_at` just read. Zero rows is a 409 and is not retried. 50 selected shows is 409 and does not insert. Responses are a fixed public shape, fixed error strings, and `Cache-Control: no-store`.
+
+### Where
+
+- `lib/discovery/direct-search.ts` and `direct-search.test.ts`
+- `app/api/campaigns/[id]/show-search/route.ts` and `route.test.ts` (GET)
+- `app/api/campaigns/[id]/show-search/add/route.ts` and `route.test.ts` (POST)
+- `app/(dashboard)/campaigns/[id]/plan/direct-show-search.tsx` and `direct-show-search.test.tsx`
+- `app/(dashboard)/campaigns/[id]/plan/page.tsx` (entry point and remount key only) and `page.test.tsx`
+- `PRODUCT_BACKLOG.md` (the "Direct show search" entry only)
+- `docs/jobs/DISC-SEARCH1.md`
+
+`media-plan-builder.tsx`, discovery views, `/shows/search`, `/api/shows`, plan handoff, selections, `lib/data/*`, `lib/podscan/*`, `lib/shows/*`, `lib/security/rate-limit.ts`, `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. No migration.
+
+### Tests
+
+`npx tsc --noEmit` clean. `npx vitest run`: 432 files, 3607 passed, 41 skipped. `npx eslint` on changed files: 0 errors. `npx next build` compiled. Coverage includes the role and owner gates, the public result keys, catalog-over-Podscan dedupe, the three-column plan update, the 50-show cap, closed rate limits (429 and 503), and `secret-db-text` absent from every response body and from rendered text. `MediaPlanBuilder` prices a searched catalog show at audience 200,000 and CPM 40 as a $24,000 line with no estimate tag.
+
+### Known gaps
+
+- Copy shipped as written. Chris can change it.
+- No plan gate. Every brand and agency account gets the search, the same as `/shows/search`. Podscan cost is bounded by the rate limits. `lib/billing/plans.ts` was not read or changed.
+- `getShowsFiltered` still swallows a catalog database error as an empty list.
+- If `GET /podcasts/:id` is not on the plan, the fallback queries the podcast id and can miss.
+- The button is above the builder, not in the builder header. The discovery list has no second search bar.
+- No migration. This PR does not merge. Paul reviews.
