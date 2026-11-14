@@ -2710,6 +2710,47 @@ Route tests: the send response has no `pitch_url` and `outreach.token` is `""`; 
 - `app/api/admin/seed-outreach/route.test.ts` is outside the Owns list. Only the token-persist assertion and the `single()` queue changed.
 - This PR does not merge. Paul reviews.
 
+## LG2
+
+### What was built
+
+`/privacy` and `/terms` now say what Taylslate reads from a creator's Google account through YouTube. Copy only. No route, style, component, or code path changed. `LEGAL_DRAFT_BANNER`, `CONSENT_LINE`, and `DataUseCopy` are unchanged.
+
+`/privacy` has a section "Google and YouTube data" after "How we use it". It names YouTube API Services, links the YouTube Terms of Service and the Google Privacy Policy, states the two permissions (`youtube.force-ssl` and `yt-analytics.readonly`), what is stored, why, who sees it, the 30-day caption deletion, the 30-day authorization re-check, token deletion on disconnect, deletion of the remaining Google data within 7 days, the revoke URL, the Limited Use sentence verbatim, and the public channel data kept by the YouTube library. The service-provider line for YouTube now names Google, the Data API, and the Analytics API. Cookies gains the 10-minute Google sign-in cookie sentence. Your rights gains the disconnect sentence. [PRIVACY CONTACT EMAIL] stays.
+
+`/terms` has a section "YouTube" after "What Taylslate does". It binds a connected channel, and any feature that shows YouTube data, to the YouTube Terms of Service, and links `/privacy`. The terms page file still does not contain the word "draft".
+
+External URLs are the link text and open in the same tab.
+
+Paul's review on PR 97 labeled the store, use, and visibility paragraphs ("What we store:", "Why we use it:", "Who can see it:"), with a lowercase word after each colon. Disconnect is at www.taylslate.com/settings/youtube. If you disconnect in Taylslate, we revoke our access at Google, delete your tokens right away, and delete the remaining Google data within 7 days. Removing Taylslate at Google is a lapsed authorization: tokens are deleted when the daily check detects it, and the 30-day deletion still applies. [CONFIRM WITH COUNSEL] on YouTube API policy III.D.3. Analytics reads are limited to videos on Taylslate deals. Results from Google data are not used in pooled anonymized data or to improve Taylslate for other users.
+
+### Where
+
+- `app/privacy/page.tsx`
+- `app/privacy/page.test.tsx`
+- `app/terms/page.tsx`
+- `app/terms/page.test.tsx`
+- `docs/jobs/LG2.md`
+- `docs/jobs/LG1.md` (one cross-reference line)
+- `docs/SENIOR_DEV_HANDOFF.md`
+
+### Tests
+
+Privacy page test keeps the draft banner, consent line, placeholders, and no em dash, and adds the exact Limited Use sentence, the four https links, and "30 days" and "7 days" in the Google section. Terms page test adds the YouTube section and the YouTube Terms link, and still rejects a percentage figure. `lib/learning/pooled-deal-priors.test.ts` still passes.
+
+`npx tsc --noEmit` clean. `npx vitest run app/privacy app/terms lib/learning/pooled-deal-priors.test.ts lib/marketing`: 5 files, 22 passed. Full `npx vitest run`: 358 files, 3063 passed, 41 skipped. `npx next build` compiled and generated 142 pages. `rg` for an em dash in `app/privacy`, `app/terms`, and `docs/jobs/LG2.md` is empty.
+
+Signed-out before and after screenshots of `/privacy` and `/terms`.
+
+### Known gaps
+
+- Placeholders are still empty: [COMPANY LEGAL NAME], [MAILING ADDRESS], [PRIVACY CONTACT EMAIL], and the terms placeholders from LG1 ([ENTITY TYPE AND STATE OF FORMATION], [LEGAL CONTACT EMAIL], [GOVERNING LAW STATE], [VENUE], [EFFECTIVE DATE], [CONFIRM CURRENT PRICING]). This job does not invent them.
+- [CONFIRM WITH COUNSEL] remains on the staff-review sentence (Google human-reading rules) and on every LG1 item that was already marked.
+- `LEGAL_DRAFT_BANNER` stays. Removing it is a one-line change in `components/marketing/legal-document.tsx`, which this job does not own. A reviewer may treat a draft policy as no policy.
+- Chris must approve every new sentence before merge. Merging is publishing. Legal copy: Chris must approve the text before merge.
+- The retention periods are the AC-YT periods. This copy does not promise a shorter one. AC-YT itself is not in this PR.
+- No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or send. This PR does not merge. Paul reviews.
+
 ## CLEAN1: CSV catalog match, one API profile read, Tay nav link
 
 ### What was built

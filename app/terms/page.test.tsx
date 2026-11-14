@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -82,5 +82,24 @@ describe("Terms of Service page", () => {
       "href",
       "/privacy",
     );
+  });
+
+  it("binds YouTube channel use to the YouTube Terms of Service", () => {
+    render(<TermsPage />);
+
+    const section = screen
+      .getByRole("heading", { level: 2, name: "YouTube" })
+      .closest("section");
+    expect(section).not.toBeNull();
+    const youtube = within(section as HTMLElement);
+
+    expect(
+      youtube.getByRole("link", { name: "https://www.youtube.com/t/terms" }),
+    ).toHaveAttribute("href", "https://www.youtube.com/t/terms");
+    expect(
+      youtube.getByRole("link", { name: "Privacy Policy" }),
+    ).toHaveAttribute("href", "/privacy");
+    expect(document.body.textContent).not.toMatch(/\d+%/);
+    expect(document.body.textContent).not.toContain("\u2014");
   });
 });
