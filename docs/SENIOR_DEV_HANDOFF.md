@@ -3591,3 +3591,28 @@ Family revoke and code replay now set `mcp_oauth_tokens.revoked_at` before any b
 - A failed token update still leaves those tokens live.
 - A missing or malformed update payload leaves the backing key live. The token rows are already revoked.
 - No migration. This PR does not merge. Paul reviews.
+
+## CONSENT-STYLE1
+
+### What was built
+
+The OAuth consent screen uses the signed-in Ink & Gold shell. `brand-app` loads Fraunces and Figtree. The canvas is warm, the card is white, and Allow and Billing are navy. Deny stays white with a hairline. Each scope row has a gold dot. The existing mark sits above the heading and is hidden from assistive tech. Copy, the allow and deny posts, and the billing link are unchanged.
+
+### Where
+
+- `app/oauth/consent/[requestId]/consent-client.tsx`
+- `app/oauth/consent/[requestId]/consent.test.tsx`
+- `docs/screenshots/CONSENT-STYLE1/` (five PNGs)
+- `docs/jobs/CONSENT-STYLE1.md`
+
+`page.tsx` was not edited. `lib/mcp-oauth/*`, `app/api/oauth`, `next.config.ts`, `proxy.ts`, `lib/brand/tokens.css`, `lib/brand/app-fonts.ts`, `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `supabase/migrations` were not edited. No migration. Migration 092 is not applied.
+
+### Tests
+
+`npx tsc --noEmit` clean. `npx vitest run`: 432 files, 3637 passed, 41 skipped. `npx eslint` on the two changed TypeScript files: 0 errors. `npx next build` compiled.
+
+### Known gaps
+
+- Dashboard cards are flat hairline panels. This card uses Tailwind `shadow-sm` for the soft lift.
+- Migration 092 is not applied.
+- No migration. This PR does not merge. Paul reviews.
