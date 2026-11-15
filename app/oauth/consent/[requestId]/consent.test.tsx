@@ -3,9 +3,18 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EXPIRED_COPY, PLAN_COPY, SCOPE_LINES } from "@/lib/mcp-oauth/copy";
 import { ConsentCard } from "./consent-client";
+
+vi.mock("@/lib/brand/app-fonts", () => ({
+  appDisplayFont: { variable: "font-display-var" },
+  appBodyFont: { variable: "font-body-var" },
+}));
+
+vi.mock("next/image", () => ({
+  default: () => null,
+}));
 
 afterEach(() => {
   cleanup();
@@ -36,6 +45,19 @@ describe("consent screen", () => {
     expect(container.querySelector("script")).toBeNull();
     expect(container.innerHTML).not.toMatch(/<script/i);
     expect(container.innerHTML).toContain("var(--ts-paper)");
+    expect(container.innerHTML).toContain("brand-app");
+    expect(container.innerHTML).toContain("var(--ts-canvas)");
+    expect(container.innerHTML).toContain("var(--ts-gold)");
+    expect(container.innerHTML).not.toContain("list-disc");
+    expect(screen.getByRole("button", { name: "Allow" }).className).toContain("bg-[var(--ts-accent)]");
+    expect(screen.getByRole("button", { name: "Allow" }).className).toContain(
+      "text-[var(--ts-accent-foreground)]",
+    );
+    expect(screen.getByRole("button", { name: "Deny" }).className).toContain("bg-[var(--ts-paper)]");
+    expect(screen.getByRole("button", { name: "Deny" }).className).toContain(
+      "border-[var(--ts-hairline-on-paper)]",
+    );
+    expect(container.querySelectorAll("[aria-hidden='true']").length).toBeGreaterThan(0);
     expect(container.innerHTML).not.toMatch(/transition-|animate-/);
   });
 
@@ -50,7 +72,10 @@ describe("consent screen", () => {
     render(<ConsentCard mode="no_api" />);
     expect(screen.getByText(PLAN_COPY)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Billing" }).getAttribute("href")).toBe("/settings/billing");
+    const billing = screen.getByRole("link", { name: "Billing" });
+    expect(billing.getAttribute("href")).toBe("/settings/billing");
+    expect(billing.className).toContain("bg-[var(--ts-accent)]");
+    expect(billing.className).toContain("text-[var(--ts-accent-foreground)]");
   });
 
   it("does not render client names as HTML in the source", () => {
