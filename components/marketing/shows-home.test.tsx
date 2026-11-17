@@ -80,10 +80,13 @@ describe("ShowsHome", () => {
         "When the episode is marked delivered, the charge runs and the payout follows.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Get started" })[0]).toHaveAttribute(
-      "href",
-      "/login",
-    );
+    const started = screen.getAllByRole("link", { name: "Get started" });
+    expect(started.length).toBeGreaterThan(0);
+    for (const link of started) {
+      expect(link).toHaveAttribute("href", "/signup/show");
+    }
+    expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/login");
+    expect(document.querySelector('img[src="/mark.png"]')).not.toBeNull();
     expect(screen.getByRole("link", { name: "For brands" })).toHaveAttribute("href", "/");
     expect(screen.queryByText("Make 2027 the year you win with podcast ads.")).toBeNull();
     expect(screen.queryByRole("heading", { name: "Pricing" })).toBeNull();

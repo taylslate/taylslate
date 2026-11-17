@@ -25,7 +25,7 @@ export function ShowsHome() {
           <Link href={`/${LAUNCH.secondaryHref}`} className={quietLink}>
             {LAUNCH.pricingNav}
           </Link>
-          <Link href={SHOWS_COPY.ctaHref} className={quietLink}>
+          <Link href={LAUNCH.loginHref} className={quietLink}>
             {LAUNCH.loginLabel}
           </Link>
           <Link

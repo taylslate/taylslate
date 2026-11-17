@@ -3616,3 +3616,40 @@ The OAuth consent screen uses the signed-in Ink & Gold shell. `brand-app` loads 
 - Dashboard cards are flat hairline panels. This card uses Tailwind `shadow-sm` for the soft lift.
 - Migration 092 is not applied.
 - No migration. This PR does not merge. Paul reviews.
+
+## WALK-FIX1
+
+### What was built
+
+Get started on `/for-shows` goes to show sign-up at `/signup/show`. Log in in that header stays on `/login`. Company Name on `/settings` loads `profiles.company_name` and saves it through `PATCH /api/settings/profile`. The route updates only that column on the caller's own row. A blank name stores null. The value is trimmed, whitespace runs collapse to one space, and control characters are stripped. Over 120 characters after trim is rejected.
+
+The missing-logo report on `/for-shows` is not a bug. The page uses the same `MarketingChrome` and `/mark.png` as the homepage. A regression check was added. The header was not changed.
+
+### Where
+
+- `lib/marketing/shows-copy.ts` (`ctaHref`)
+- `components/marketing/shows-home.tsx` (header Log in uses `LAUNCH.loginHref`)
+- `components/marketing/shows-home.test.tsx`
+- `app/(dashboard)/settings/page.tsx`
+- `app/(dashboard)/settings/page.test.tsx`
+- `app/api/settings/profile/route.ts`
+- `app/api/settings/profile/route.test.ts`
+- `app/(dashboard)/settings/api-keys/api-keys.test.tsx` (expected source hash only)
+- `docs/screenshots/WALK-FIX1/`
+- `docs/jobs/WALK-FIX1.md`
+
+`proxy.ts`, `lib/marketing/site.ts`, `lib/marketing/launch-copy.ts`, `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, `lib/security/rate-limit.ts`, and the privacy and terms pages were not edited. No migration. No new table and no new read path. The only new write is `profiles.company_name` through the user-scoped client under the existing "Users update own profile" policy.
+
+### Tests
+
+`npx tsc --noEmit` clean. `npx vitest run`: 434 files, 3647 passed, 41 skipped. `npx eslint` on changed files: 0 errors. `npx next build` compiled and generated 149 pages.
+
+Coverage: 401 without a session; 403 for a missing or foreign Origin; 429 when the limiter denies and 503 when it is unavailable; extra keys rejected; only `{ company_name }` updated on `id = auth.uid()`; a database error returns "Could not save. Try again." with no database text in the body. The settings page loads a saved name, sends one PATCH, shows "Saved.", and shows the route error on failure. Save stays disabled until the value changes.
+
+### Known gaps
+
+- "Saved." stays until the next save attempt.
+- A sidebar name that falls back to `company_name` updates on the next full load.
+- The plan summary line still has its existing em dash. That line was not edited.
+- 30 saves an hour per user. Over the limit, the shared rate-limit response is returned.
+- No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or send. This PR does not merge. Paul reviews.
