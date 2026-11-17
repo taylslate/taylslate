@@ -3697,3 +3697,36 @@ No UI change, so there are no screenshots.
 - 089's active-connection block is channel-wide across profiles, by design, pinned by test. Any active connection on that channel keeps the captions. The SQL was not changed.
 - `POST /api/deals` still returns `Failed to create deal:` plus the thrown message. This job changes the GET catch only.
 - No migration. This PR does not merge. Paul reviews.
+
+## PODSCAN-IMPORT1
+
+### What was built
+
+A local command, `npm run podscan:import`, pulls Podscan shows worth keeping into `podscan_catalog` and `show_contacts`. Dry run is the default and writes nothing. `--commit` upserts those two tables only, and only after migration 093 is present, with `--floor` and `--confirm` equal to that floor's kept count. Search sends `a OR b OR ... OR z`, slices a 10,000 cap by audience band then category, and logs a category that is still at the cap. Sponsored shows are kept even when audience is 0 or null. Other shows need the floor. Emails come from `reach.email` and from `itunes:owner` on the feed. `reach.feed_email` is unused. Podcast detail is skipped when the search hit already has `listener_engagement`.
+
+### Where
+
+- `supabase/migrations/093_podscan_import.sql` and `093_podscan_import.test.ts`
+- `lib/podscan-import/**`
+- `scripts/podscan-import.ts`
+- `package.json` (one script) and `.gitignore` (`/.podscan-import/`)
+- `docs/jobs/PODSCAN-IMPORT1.md`
+
+`lib/podscan/client.ts`, `lib/enrichment/podscan.ts`, discovery, scoring, UI, API routes, `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. Migration 093 is not applied. This PR does not merge.
+
+### Tests
+
+`npx tsc --noEmit` clean. `npx vitest run`: 449 files, 3704 passed, 41 skipped. `npx eslint` on the importer TypeScript files: 0 errors. `npx next build` compiled.
+
+Sample dry run `--dry-run --sample 25` against Podscan and Apple, no database writes: 25 sponsored and 25 unsponsored candidates, 39 sponsored in the last 12 months, kept 50 at 1000, 2500, and 5000. Email coverage at each floor: Podscan only 3, Apple only 0, both 46, neither 1. Syntax 69 pass / 26 fail. MX 69 pass / 0 fail / 26 unknown. `DEMOGRAPHICS: PASS`, `LISTENER DATA: PASS`, `SPONSOR PROBE: PASS` (20 checked, no mismatches). Rate limit first 120 remaining 119, last 120 remaining 92. Podscan calls used: 28. Two capped slices, both sampled. Already in shows: 1 at each floor. A full write from this checkpoint is 45 enrich calls, 1 day at the 4500 budget. The sample is not the catalog.
+
+### Known gaps
+
+- No letters a-z. A show with none of those letters in the searched text is missed.
+- After the sponsored pass is split into audience bands, a null audience is not returned.
+- `reach.feed_email` is unused.
+- A category still at 10,000 is logged and the run continues.
+- `latest_sponsored_at` is set only for the 20 shows in the sponsor check.
+- Reruns upsert. They do not delete an email the source dropped.
+- Migration 093 is not applied. Do not run `--commit` until 093 is applied and Chris picks the floor.
+- This lane does not touch `public.shows`.
