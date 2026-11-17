@@ -9,6 +9,7 @@ import {
 } from "@/lib/data/queries";
 import { createClient } from "@/lib/supabase/server";
 import { parseDealBody, partiesForRole } from "@/lib/deals/create-input";
+import { showNameExactPattern } from "@/lib/shows/search-pattern";
 import type { DealStatus } from "@/lib/data/types";
 
 export async function GET(request: NextRequest) {
@@ -26,8 +27,15 @@ export async function GET(request: NextRequest) {
     const deals = await getDealsFiltered(user.id, { status, show_id, brand_id });
     return NextResponse.json({ deals });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: `Failed to fetch deals: ${message}` }, { status: 500 });
+    const code =
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      typeof (err as { code?: unknown }).code === "string"
+        ? (err as { code: string }).code
+        : "error";
+    console.error("[GET /api/deals]", code);
+    return NextResponse.json({ error: "Failed to fetch deals" }, { status: 500 });
   }
 }
 
@@ -41,12 +49,19 @@ async function resolveShowId(
     return { id: show.id };
   }
 
+  const trimmedName = (showName ?? "").trim();
+  const literalStar = trimmedName.includes("*");
+  const pattern = literalStar ? "" : showNameExactPattern(showName ?? "");
+  if (!literalStar && !pattern) {
+    return { error: `No show named "${showName}"`, field: "show_name" };
+  }
+
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("shows")
-    .select("id, name")
-    .ilike("name", showName ?? "")
-    .limit(2);
+  const lookup = supabase.from("shows").select("id, name");
+  const { data, error } = await (literalStar
+    ? lookup.eq("name", trimmedName)
+    : lookup.ilike("name", pattern)
+  ).limit(2);
   if (error) return { error: "Could not look up that show", field: "show_name" };
   const rows = data ?? [];
   if (rows.length === 0) {

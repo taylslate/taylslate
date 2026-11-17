@@ -219,6 +219,28 @@ describe("GET /api/shows", () => {
     expect(getAllShows).not.toHaveBeenCalled();
   });
 
+  it("forwards the raw search param for an agent", async () => {
+    getUser.mockResolvedValueOnce({ data: { user: { id: "rep-1" } } });
+    getUserProfile.mockResolvedValueOnce({ role: "agent" });
+    getShowsFiltered.mockResolvedValueOnce([]);
+    const res = await GET(new NextRequest("http://x/api/shows?search=*"));
+    expect(res.status).toBe(200);
+    expect(getShowsFiltered).toHaveBeenCalledWith(
+      expect.objectContaining({ search: "*", agent_id: "rep-1" })
+    );
+  });
+
+  it("forwards the raw search param for a brand", async () => {
+    getUser.mockResolvedValueOnce({ data: { user: { id: "brand-1" } } });
+    getUserProfile.mockResolvedValueOnce({ role: "brand" });
+    getShowsFiltered.mockResolvedValueOnce([]);
+    const res = await GET(new NextRequest("http://x/api/shows?search=%25"));
+    expect(res.status).toBe(200);
+    expect(getShowsFiltered).toHaveBeenCalledWith(expect.objectContaining({ search: "%" }));
+    expect(getShowsFiltered.mock.calls[0][0]).not.toHaveProperty("agent_id");
+    expect(getAllShows).not.toHaveBeenCalled();
+  });
+
   it("returns the full row for a show the brand already has a deal on", async () => {
     getUser.mockResolvedValueOnce({ data: { user: { id: "brand-1" } } });
     getUserProfile.mockResolvedValueOnce({ role: "brand" });

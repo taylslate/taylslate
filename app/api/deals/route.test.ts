@@ -1,18 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { getAuthenticatedUser, createDeal, getUserProfile, ensureProfile, getShowById, createClient } =
-  vi.hoisted(() => ({
-    getAuthenticatedUser: vi.fn(),
-    createDeal: vi.fn(),
-    getUserProfile: vi.fn(),
-    ensureProfile: vi.fn(),
-    getShowById: vi.fn(),
-    createClient: vi.fn(),
-  }));
+const {
+  getAuthenticatedUser,
+  createDeal,
+  getUserProfile,
+  ensureProfile,
+  getShowById,
+  getDealsFiltered,
+  createClient,
+} = vi.hoisted(() => ({
+  getAuthenticatedUser: vi.fn(),
+  createDeal: vi.fn(),
+  getUserProfile: vi.fn(),
+  ensureProfile: vi.fn(),
+  getShowById: vi.fn(),
+  getDealsFiltered: vi.fn(),
+  createClient: vi.fn(),
+}));
 
 vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: (...a: unknown[]) => getAuthenticatedUser(...a),
-  getDealsFiltered: vi.fn(),
+  getDealsFiltered: (...a: unknown[]) => getDealsFiltered(...a),
   createDeal: (...a: unknown[]) => createDeal(...a),
   getUserProfile: (...a: unknown[]) => getUserProfile(...a),
   ensureProfile: (...a: unknown[]) => ensureProfile(...a),
@@ -23,10 +31,28 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: (...a: unknown[]) => createClient(...a),
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SHOW_ID = "11111111-1111-4111-8111-111111111111";
+
+const showLookupCalls: Array<{ method: string; column: string; value: string }> = [];
+
+function showsBuilder(rows: Array<{ id: string; name: string }>) {
+  const builder: Record<string, unknown> = {};
+  const self = () => builder;
+  builder.select = vi.fn(self);
+  builder.eq = vi.fn((column: string, value: string) => {
+    showLookupCalls.push({ method: "eq", column, value });
+    return builder;
+  });
+  builder.ilike = vi.fn((column: string, value: string) => {
+    showLookupCalls.push({ method: "ilike", column, value });
+    return builder;
+  });
+  builder.limit = vi.fn(async () => ({ data: rows, error: null }));
+  return builder;
+}
 
 function postReq(body: object): Request {
   return new Request("http://x/api/deals", {
@@ -60,6 +86,10 @@ function validBody(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  showLookupCalls.length = 0;
+  createClient.mockResolvedValue({
+    from: () => showsBuilder([{ id: SHOW_ID, name: "Hit" }]),
+  });
   getAuthenticatedUser.mockResolvedValue({ id: USER_ID, email: "brand@taylslate.com" });
   getUserProfile.mockResolvedValue({ id: USER_ID, role: "brand", email: "brand@taylslate.com" });
   getShowById.mockResolvedValue({ id: SHOW_ID, name: "Oddvice" });
@@ -125,5 +155,32 @@ describe("POST /api/deals", () => {
     const body = await res.json();
     expect(body.fields.show_id).toMatch(/No show/);
     expect(createDeal).not.toHaveBeenCalled();
+  });
+
+  it("looks up a percent in the show name as a literal", async () => {
+    const res = await POST(postReq(validBody({ show_id: undefined, show_name: "%" })) as never);
+    expect(res.status).toBe(201);
+    expect(showLookupCalls).toEqual([{ method: "ilike", column: "name", value: "\\%" }]);
+    expect(createDeal.mock.calls[0][0].show_id).toBe(SHOW_ID);
+  });
+
+  it("looks up a star in the show name with an exact match", async () => {
+    const res = await POST(postReq(validBody({ show_id: undefined, show_name: "Show*" })) as never);
+    expect(res.status).toBe(201);
+    expect(showLookupCalls).toEqual([{ method: "eq", column: "name", value: "Show*" }]);
+    expect(showLookupCalls.some((call) => call.method === "ilike")).toBe(false);
+    expect(createDeal.mock.calls[0][0].show_id).toBe(SHOW_ID);
+  });
+});
+
+describe("GET /api/deals", () => {
+  it("returns a fixed error and hides the database message", async () => {
+    getDealsFiltered.mockRejectedValueOnce(new Error("secret-db-text relation deals"));
+    const res = await GET(new Request("http://x/api/deals") as never);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Failed to fetch deals" });
+    expect(JSON.stringify(body)).not.toContain("secret-db-text");
+    expect(JSON.stringify(body)).not.toContain("relation");
   });
 });
