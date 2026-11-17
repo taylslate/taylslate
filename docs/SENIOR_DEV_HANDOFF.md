@@ -3653,3 +3653,47 @@ Coverage: 401 without a session; 403 for a missing or foreign Origin; 429 when t
 - The plan summary line still has its existing em dash. That line was not edited.
 - 30 saves an hour per user. Over the limit, the shared rate-limit response is returned.
 - No migration. Nothing was applied on `ldtmhafewfifdizgfrnn`. No live write, charge, or send. This PR does not merge. Paul reviews.
+
+## QUIET1
+
+### What was built
+
+Show name search is a literal contains match. `GET /api/shows?search=`, the catalog half of direct show search, and `getShowsFiltered` no longer pass a raw `%`, `_`, or `*` into PostgREST `ilike`. `*` is removed, because PostgREST maps it to `%` and a backslash does not escape it. One escape pass is undone first, so the search page and direct show search, which already escape `\`, `%`, and `_`, come out the same. A term that is empty after that returns `[]` with no query. A comma and a closing parenthesis stay literal on `.ilike()`.
+
+`POST /api/deals` looks up `show_name` with the same literal rules. A name that contains `*` uses `.eq`, because that character cannot be escaped in `ilike`. `GET /api/deals` returns `{ error: "Failed to fetch deals" }` and logs the error code only.
+
+The U1 wildcard gap, the U1b `*` gap on `/api/shows`, and the PR 101 cross-profile test item are closed. Migration 089's PGlite test now shows that another profile's caption on the same channel stays when one profile's connection is revoked or needs reauth. A third case pins the channel-wide active block. The SQL file was not edited.
+
+No screen, copy, or style changed. No live write.
+
+### Where
+
+- `lib/shows/search-pattern.ts` and `search-pattern.test.ts`
+- `lib/data/queries.ts` (`getShowsFiltered` search lines only) and `lib/data/show-search.test.ts`
+- `app/api/shows/route.test.ts`
+- `app/api/deals/route.ts` (`resolveShowId` and the GET catch) and `route.test.ts`
+- `supabase/migrations/089_youtube_caption_clear_by_channel.test.ts` (cases only)
+- `docs/jobs/QUIET1.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+`lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. No `.sql` file was edited. No migration.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 434 files, 3655 passed, 41 skipped.
+
+`npx eslint` on the changed files: 0 errors. Main's pre-existing lint errors are untouched.
+
+`npx next build` compiled successfully.
+
+Covers `*` returning `[]` with no query, no double escape of an already escaped percent, a comma and a closing parenthesis staying literal, `GET /api/shows` forwarding the raw search param on the brand and agent branches, a deals `show_name` of `%` sent as `\%`, a deals `show_name` of `Show*` using `.eq` and not `.ilike`, `GET /api/deals` returning the fixed error with no database text, 089 keeping the other profile's caption for a revoked connection and for `reauth_required`, and 089's channel-wide active block.
+
+No UI change, so there are no screenshots.
+
+### Known gaps
+
+- 089's active-connection block is channel-wide across profiles, by design, pinned by test. Any active connection on that channel keeps the captions. The SQL was not changed.
+- `POST /api/deals` still returns `Failed to create deal:` plus the thrown message. This job changes the GET catch only.
+- No migration. This PR does not merge. Paul reviews.

@@ -18,6 +18,7 @@ import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
 import { logEvent } from "./events";
 import { transformShow } from "./show-transform";
 import { findCatalogDuplicates } from "@/lib/shows/import-catalog-match";
+import { showNameContainsPattern } from "@/lib/shows/search-pattern";
 import { normalizeRosterShowName } from "@/lib/reps/roster-import";
 import type {
   Profile,
@@ -1184,6 +1185,9 @@ export async function getShowsFiltered(filters: {
   agent_id?: string;
   limit?: number;
 }): Promise<Show[]> {
+  const namePattern = filters.search ? showNameContainsPattern(filters.search) : "";
+  if (filters.search && !namePattern) return [];
+
   const supabase = await createClient();
 
   let showIds: string[] | null = null;
@@ -1210,8 +1214,8 @@ export async function getShowsFiltered(filters: {
   if (showIds) {
     query = query.in("id", showIds);
   }
-  if (filters.search) {
-    query = query.ilike("name", `%${filters.search}%`);
+  if (namePattern) {
+    query = query.ilike("name", namePattern);
   }
   if (filters.platform) {
     query = query.eq("platform", filters.platform);

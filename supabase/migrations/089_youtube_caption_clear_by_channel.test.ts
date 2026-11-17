@@ -45,6 +45,37 @@ const CONN_REAUTH = "e3333333-3333-4333-8333-333333333333";
 const CONN_REVOKED_AGAIN = "e4444444-4444-4444-8444-444444444444";
 const CONN_BACK = "e5555555-5555-4555-8555-555555555555";
 
+const PROFILE_B = "45555555-5555-4555-8555-555555555555";
+
+const SHOW_SHARED = "f1111111-1111-4111-8111-111111111111";
+const SHOW_SHARED_B = "f1222222-2222-4222-8222-222222222222";
+const SHOW_REAUTH = "f1333333-3333-4333-8333-333333333333";
+const SHOW_REAUTH_B = "f1444444-4444-4444-8444-444444444444";
+const SHOW_ACTIVE = "f1555555-5555-4555-8555-555555555555";
+
+const DEAL_SHARED = "f2111111-1111-4111-8111-111111111111";
+const DEAL_SHARED_B = "f2222222-2222-4222-8222-222222222222";
+const DEAL_REAUTH = "f2333333-3333-4333-8333-333333333333";
+const DEAL_REAUTH_B = "f2444444-4444-4444-8444-444444444444";
+const DEAL_ACTIVE = "f2555555-5555-4555-8555-555555555555";
+
+const IO_SHARED = "f3111111-1111-4111-8111-111111111111";
+const IO_SHARED_B = "f3222222-2222-4222-8222-222222222222";
+const IO_REAUTH = "f3333333-3333-4333-8333-333333333333";
+const IO_REAUTH_B = "f3444444-4444-4444-8444-444444444444";
+const IO_ACTIVE = "f3555555-5555-4555-8555-555555555555";
+
+const LINE_SHARED = "f4111111-1111-4111-8111-111111111111";
+const LINE_SHARED_B = "f4222222-2222-4222-8222-222222222222";
+const LINE_REAUTH = "f4333333-3333-4333-8333-333333333333";
+const LINE_REAUTH_B = "f4444444-4444-4444-8444-444444444444";
+const LINE_ACTIVE = "f4555555-5555-4555-8555-555555555555";
+
+const CONN_SHARED = "f5111111-1111-4111-8111-111111111111";
+const CONN_LAPSED = "f5222222-2222-4222-8222-222222222222";
+const CONN_WIDE_REVOKED = "f5333333-3333-4333-8333-333333333333";
+const CONN_WIDE_ACTIVE = "f5444444-4444-4444-8444-444444444444";
+
 const SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl";
 
 function migrationFiles(max: number): string[] {
@@ -449,5 +480,198 @@ describe("migration 089 on PGlite", () => {
       `select status from public.youtube_oauth_connections where id = '${CONN_ACTIVE}'`
     );
     expect(recentRevoke.rows[0]?.status).toBe("revoked");
+  });
+
+  async function ensureCrossProfiles() {
+    await db.exec(`
+      insert into public.profiles (id, email, role)
+      select '${USER}', 'show@example.com', 'show'
+      where not exists (select 1 from public.profiles where id = '${USER}');
+      insert into public.profiles (id, email, role)
+      select '${OTHER}', 'other@example.com', 'show'
+      where not exists (select 1 from public.profiles where id = '${OTHER}');
+      insert into public.show_profiles (id, user_id)
+      select '${PROFILE}', '${USER}'
+      where not exists (select 1 from public.show_profiles where id = '${PROFILE}');
+      insert into public.show_profiles (id, user_id)
+      select '${PROFILE_B}', '${OTHER}'
+      where not exists (select 1 from public.show_profiles where id = '${PROFILE_B}');
+    `);
+  }
+
+  async function seedCaption(row: {
+    showId: string;
+    showName: string;
+    channelId: string;
+    dealId: string;
+    profileId: string;
+    ioId: string;
+    ioNumber: string;
+    lineId: string;
+    text: string;
+    judgment: { match_result: string; confidence: number; start: number; end: number; reason: string };
+  }) {
+    const judgment = row.judgment;
+    await db.exec(`
+      insert into public.shows (id, name, platform, youtube_channel_id) values
+        ('${row.showId}', '${row.showName}', 'youtube', '${row.channelId}');
+      insert into public.deals (
+        id, show_id, brand_id, show_profile_id, status, num_episodes, placement, ad_format,
+        price_type, cpm_rate, guaranteed_downloads, net_per_episode, total_net, flight_start, flight_end
+      ) values (
+        '${row.dealId}', '${row.showId}', '${USER}', '${row.profileId}', 'signed', 1, 'mid-roll', 'host_read', 'flat_rate', 25, 1000, 100, 100, '2026-11-01', '2026-11-30'
+      );
+      insert into public.insertion_orders (
+        id, io_number, deal_id, advertiser_name, publisher_name, publisher_contact_name,
+        publisher_contact_email, total_downloads, total_gross, total_net
+      ) values (
+        '${row.ioId}', '${row.ioNumber}', '${row.dealId}', 'Brand', 'Show', 'Host', 'show@example.com', 1000, 100, 100
+      );
+      insert into public.io_line_items (
+        id, io_id, format, post_date, guaranteed_downloads, show_name, placement, gross_rate, gross_cpm, price_type, net_due
+      ) values (
+        '${row.lineId}', '${row.ioId}', 'youtube', '2026-10-01', 1000, '${row.showName}', 'mid-roll', 100, 25, 'flat_rate', 100
+      );
+      insert into public.airchecks (
+        io_line_item_id, provider, status, transcript_text, transcript_segments, match_result, confidence,
+        ad_start_seconds, ad_end_seconds, match_reasons, match_evidence, created_at, updated_at
+      ) values (
+        '${row.lineId}', 'youtube-captions', 'transcribed', '${row.text}', '[]'::jsonb, '${judgment.match_result}', ${judgment.confidence},
+        ${judgment.start}, ${judgment.end}, '["${judgment.reason}"]'::jsonb, '{"excerpt":"${row.text}","brand":"found"}'::jsonb,
+        now() - interval '2 days', now()
+      );
+    `);
+  }
+
+  it("keeps another profile's caption on a channel whose connection was revoked", async () => {
+    const own = { match_result: "matched", confidence: 0.64, start: 12, end: 22, reason: "Shared own kept." };
+    const other = { match_result: "matched", confidence: 0.63, start: 13, end: 23, reason: "Shared other kept." };
+    await ensureCrossProfiles();
+    await seedCaption({
+      showId: SHOW_SHARED,
+      showName: "Shared own",
+      channelId: "UCshared",
+      dealId: DEAL_SHARED,
+      profileId: PROFILE,
+      ioId: IO_SHARED,
+      ioNumber: "IO-089-5",
+      lineId: LINE_SHARED,
+      text: "shared own caption",
+      judgment: own,
+    });
+    await seedCaption({
+      showId: SHOW_SHARED_B,
+      showName: "Shared other",
+      channelId: "UCshared",
+      dealId: DEAL_SHARED_B,
+      profileId: PROFILE_B,
+      ioId: IO_SHARED_B,
+      ioNumber: "IO-089-6",
+      lineId: LINE_SHARED_B,
+      text: "shared other caption",
+      judgment: other,
+    });
+    await db.exec(`
+      insert into public.youtube_oauth_connections (
+        id, user_id, show_profile_id, channel_id, channel_title, scopes, status, revoked_at
+      ) values (
+        '${CONN_SHARED}', '${USER}', '${PROFILE}', 'UCshared', 'Shared', array['${SCOPE}'],
+        'revoked', now() - interval '8 days'
+      );
+    `);
+
+    expect(await attempt("service_role", `select public.youtube_oauth_housekeeping(now())`)).toBe("allowed");
+
+    const rows = await captions();
+    expectCleared(rows.get(LINE_SHARED), own);
+    expectKept(rows.get(LINE_SHARED_B), "shared other caption", other);
+  });
+
+  it("keeps another profile's caption when the connection needs reauth", async () => {
+    const own = { match_result: "matched", confidence: 0.61, start: 14, end: 24, reason: "Reauth own kept." };
+    const other = { match_result: "matched", confidence: 0.62, start: 16, end: 26, reason: "Reauth other kept." };
+    await ensureCrossProfiles();
+    await seedCaption({
+      showId: SHOW_REAUTH,
+      showName: "Reauth own",
+      channelId: "UCreauth",
+      dealId: DEAL_REAUTH,
+      profileId: PROFILE,
+      ioId: IO_REAUTH,
+      ioNumber: "IO-089-7",
+      lineId: LINE_REAUTH,
+      text: "reauth own caption",
+      judgment: own,
+    });
+    await seedCaption({
+      showId: SHOW_REAUTH_B,
+      showName: "Reauth other",
+      channelId: "UCreauth",
+      dealId: DEAL_REAUTH_B,
+      profileId: PROFILE_B,
+      ioId: IO_REAUTH_B,
+      ioNumber: "IO-089-8",
+      lineId: LINE_REAUTH_B,
+      text: "reauth other caption",
+      judgment: other,
+    });
+    await db.exec(`
+      update public.youtube_oauth_connections
+         set status = 'revoked',
+             refresh_token_enc = null,
+             access_token_enc = null,
+             revoked_at = now()
+       where user_id = '${USER}'
+         and status in ('active', 'reauth_required');
+      insert into public.youtube_oauth_connections (
+        id, user_id, show_profile_id, channel_id, channel_title, scopes, status, reauth_required_at
+      ) values (
+        '${CONN_LAPSED}', '${USER}', '${PROFILE}', 'UCreauth', 'Lapsed shared', array['${SCOPE}'],
+        'reauth_required', now() - interval '31 days'
+      );
+    `);
+
+    expect(await attempt("service_role", `select public.youtube_oauth_housekeeping(now())`)).toBe("allowed");
+
+    const rows = await captions();
+    expectCleared(rows.get(LINE_REAUTH), own);
+    expectKept(rows.get(LINE_REAUTH_B), "reauth other caption", other);
+  });
+
+  it("keeps a revoked line when another profile holds the active connection", async () => {
+    const own = { match_result: "matched", confidence: 0.66, start: 18, end: 28, reason: "Wide own kept." };
+    await ensureCrossProfiles();
+    await seedCaption({
+      showId: SHOW_ACTIVE,
+      showName: "Wide own",
+      channelId: "UCshared2",
+      dealId: DEAL_ACTIVE,
+      profileId: PROFILE,
+      ioId: IO_ACTIVE,
+      ioNumber: "IO-089-9",
+      lineId: LINE_ACTIVE,
+      text: "wide own caption",
+      judgment: own,
+    });
+    await db.exec(`
+      insert into public.youtube_oauth_connections (
+        id, user_id, show_profile_id, channel_id, channel_title, scopes, status, revoked_at
+      ) values (
+        '${CONN_WIDE_REVOKED}', '${USER}', '${PROFILE}', 'UCshared2', 'Wide old', array['${SCOPE}'],
+        'revoked', now() - interval '8 days'
+      );
+      insert into public.youtube_oauth_connections (
+        id, user_id, show_profile_id, channel_id, channel_title, scopes, refresh_token_enc, status
+      ) values (
+        '${CONN_WIDE_ACTIVE}', '${OTHER}', '${PROFILE_B}', 'UCshared2', 'Wide live', array['${SCOPE}'],
+        'v1.wide', 'active'
+      );
+    `);
+
+    expect(await attempt("service_role", `select public.youtube_oauth_housekeeping(now())`)).toBe("allowed");
+
+    const rows = await captions();
+    // The active-connection block in 089 is channel-wide across profiles by design.
+    expectKept(rows.get(LINE_ACTIVE), "wide own caption", own);
   });
 });
