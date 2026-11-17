@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import ConnectOnboarding from "@/components/payments/ConnectOnboarding";
 import CardForm from "@/components/payments/CardForm";
@@ -32,6 +32,11 @@ export default function SettingsPage() {
   const [email, setEmail] = useState("user@example.com");
   const [plan, setPlan] = useState<PlanId>("pay_as_you_go");
   const [profileLoaded, setProfileLoaded] = useState(false);
+  const [companyName, setCompanyName] = useState("");
+  const [savedCompanyName, setSavedCompanyName] = useState("");
+  const [companyStatus, setCompanyStatus] = useState<string | null>(null);
+  const [savingCompany, setSavingCompany] = useState(false);
+  const savingCompanyRef = useRef(false);
 
   useEffect(() => {
     async function loadProfile() {
@@ -41,7 +46,7 @@ export default function SettingsPage() {
         setEmail(user.email || "user@example.com");
         const { data: profile } = await supabase
           .from("profiles")
-          .select("role, plan")
+          .select("role, plan, company_name")
           .eq("id", user.id)
           .single();
         if (profile) {
@@ -49,12 +54,49 @@ export default function SettingsPage() {
           if (profile.plan && (profile.plan as string) in PLANS) {
             setPlan(profile.plan as PlanId);
           }
+          const loadedName =
+            typeof profile.company_name === "string" ? profile.company_name : "";
+          setCompanyName(loadedName);
+          setSavedCompanyName(loadedName);
         }
       }
       setProfileLoaded(true);
     }
     loadProfile();
   }, []);
+
+  async function saveCompanyName() {
+    if (savingCompanyRef.current || companyName === savedCompanyName) return;
+    savingCompanyRef.current = true;
+    setSavingCompany(true);
+    setCompanyStatus(null);
+    try {
+      const res = await fetch("/api/settings/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company_name: companyName }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        company_name?: unknown;
+        error?: unknown;
+      } | null;
+      if (!res.ok) {
+        setCompanyStatus(
+          typeof body?.error === "string" ? body.error : "Could not save. Try again."
+        );
+        return;
+      }
+      const saved = typeof body?.company_name === "string" ? body.company_name : "";
+      setCompanyName(saved);
+      setSavedCompanyName(saved);
+      setCompanyStatus("Saved.");
+    } catch {
+      setCompanyStatus("Could not save. Try again.");
+    } finally {
+      savingCompanyRef.current = false;
+      setSavingCompany(false);
+    }
+  }
 
   const showPayoutSection = role === "show" || role === "agent";
   const showPaymentMethodSection = role === "brand" || role === "agency";
@@ -144,13 +186,43 @@ export default function SettingsPage() {
             />
           </div>
           <div>
-            <label className={`mb-1.5 block text-sm font-medium ${inkText}`}>Company Name</label>
-            <input
-              type="text"
-              placeholder="Your company"
-              className={fieldClass}
-              style={radiusStyle}
-            />
+            <label htmlFor="company-name" className={`mb-1.5 block text-sm font-medium ${inkText}`}>
+              Company Name
+            </label>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveCompanyName();
+              }}
+            >
+              <input
+                id="company-name"
+                name="company_name"
+                type="text"
+                placeholder="Your company"
+                value={companyName}
+                maxLength={120}
+                onChange={(event) => setCompanyName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  void saveCompanyName();
+                }}
+                className={fieldClass}
+                style={radiusStyle}
+              />
+              <button
+                type="submit"
+                className={`mt-3 ${ghostBtnClass}`}
+                style={radiusStyle}
+                disabled={savingCompany || companyName === savedCompanyName}
+              >
+                Save
+              </button>
+            </form>
+            {companyStatus ? (
+              <p className={`mt-2 text-sm ${mutedText}`}>{companyStatus}</p>
+            ) : null}
           </div>
         </div>
       </div>

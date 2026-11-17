@@ -16,7 +16,7 @@ export const SHOWS_COPY = {
   h1: "Get the brief, the IO, and paid when the episode runs.",
   sub: "A brand reaches out with a real offer. You review terms, countersign, deliver, and the payout follows the charge.",
   cta: "Get started",
-  ctaHref: "/login",
+  ctaHref: "/signup/show",
   steps: [
     {
       n: "01",
