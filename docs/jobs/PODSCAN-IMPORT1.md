@@ -10,7 +10,7 @@ PODSCAN-CUTOVER1 decides how any of this reaches shows or discovery.
 
 1. A show with a sponsor seen in the last 12 months is kept, whatever the audience number. Audience 0 or null still stays. A missing audience never passes a floor by itself.
 2. No sponsor in 12 months: keep only at or above the floor. The dry run counts 1000, 2500, and 5000. The write run takes `--floor` and `--confirm` equal to that floor's kept count.
-3. Every kept show needs an email check. Store Podscan `reach.email` and the `itunes:owner` / `itunes:email` value from the RSS feed. `reach.feed_email` is left unused. The same address from both sources is stored once per source.
+3. Every kept show needs an email check. Store Podscan `reach.email` and the `itunes:owner` / `itunes:email` value from the RSS feed. `reach.feed_email` is left unused. Before the syntax check, `mailto:` is stripped, the address is taken from `Name <addr>`, and a comma-separated list is split. The report counts syntax-failure reasons and does not include the addresses. The same address from both sources is stored once per source.
 4. `podscan_audience_estimate` is an internal estimate only. It is never shown, and it is not downloads.
 
 ## Search
@@ -19,7 +19,7 @@ Podscan search requires `query`. `*` returns no rows. Every search sends:
 
 `a OR b OR c OR d OR e OR f OR g OR h OR i OR j OR k OR l OR m OR n OR o OR p OR q OR r OR s OR t OR u OR v OR w OR x OR y OR z`
 
-Two passes: `has_sponsors=true` with no audience filter, then `has_sponsors=false` with `min_audience_size=1000`. If a slice reports 10,000 or more, it is split by audience band, then by category, until the slice is under 10,000. A category that is still at the cap is logged in the dry-run report and the run keeps going. Rows are deduped by `podcast_id`. `is_duplicate` is dropped.
+Two passes: `has_sponsors=true` with no audience filter, then `has_sponsors=false` with `min_audience_size=1000`. If a slice reports 10,000 or more, it is split by audience band, then by category, until the slice is under 10,000. When the sponsored pass is split into audience bands, a second sponsored walk has no audience filter and is sliced by category only. Those rows are merged and deduped with the rest by `podcast_id`. A category that is still at the cap is logged in the dry-run report and the run keeps going. `is_duplicate` is dropped. The report counts kept shows that have no audience number.
 
 ## Rate limits
 
@@ -47,9 +47,9 @@ Write run, only after 093 is applied and the dry-run count is known:
 npm run podscan:import -- --commit --floor 1000 --confirm=<kept count at 1000>
 ```
 
-`--confirm` must equal the kept count for that floor. A second run upserts the same keys and does not insert duplicates.
+`--confirm` must equal the kept count for that floor. A second run upserts the same keys and does not insert duplicates. If the write run hits the daily limit or the call budget after the kept set is known, it upserts `podscan_catalog` and `show_contacts` for every chosen show that already has an enrich entry and prints `Upserted N of M. Re-run the same command to continue.` `--confirm` stays the full kept count.
 
-Resume: re-run the same command. The checkpoint is `.podscan-import/checkpoint.json` (gitignored, mode 0600). Candidate, probe, and contact data older than 7 days is fetched again. Enrichment already stored for a podcast id is kept when that id is still in the set.
+Resume: re-run the same command. The checkpoint is `.podscan-import/checkpoint.json` (gitignored, mode 0600). A dry run fetches candidate, probe, and contact data again after 7 days. A commit run does not. Search, probe, and contacts stay as they were, so a multi-day write cannot change the kept count and then refuse `--confirm`. Enrichment already stored for a podcast id is kept when that id is still in the set.
 
 ## Tables
 
@@ -58,7 +58,7 @@ Resume: re-run the same command. The checkpoint is `.podscan-import/checkpoint.j
 ## Known gaps
 
 - No letters a-z. A show whose name and description contain none of the letters a through z is invisible to this query.
-- Once the sponsored search is sliced by audience band, a show with a null audience is not returned by those band filters. The unsponsored pass already starts at 1,000, so a null audience was never going to pass that floor.
+- The extra sponsored walk has no audience filter and is sliced by category only. A category that is still at 10,000 is logged and paged up to the cap, ordered by audience, so a null audience in that capped category can still be missed. The unsponsored pass starts at 1,000, so a null audience does not pass that floor.
 - `reach.feed_email` is unused. The feed email still comes from `itunes:owner`.
 - A category inside one audience band that is still at 10,000 is logged and the run keeps going. That slice is paged only up to the cap.
 - `latest_sponsored_at` is filled only for the 20 sponsored shows whose `latest/sponsor` check fetched `posted_at`.

@@ -16,6 +16,11 @@ describe("feed fetch", () => {
     expect(extractOwnerEmail("<rss><!ENTITY lol 'lol'></rss>")).toBeNull();
   });
 
+  it("unwraps a CDATA owner email before decoding", () => {
+    expect(extractOwnerEmail(owner("<![CDATA[owner@sponsor.example]]>"))).toBe("owner@sponsor.example");
+    expect(extractOwnerEmail(owner("<![CDATA[ Owner&#64;sponsor.example ]]>"))).toBe("Owner@sponsor.example");
+  });
+
   it("skips doctype, entity, file, ftp, loopback, and private hosts", async () => {
     const calls: string[] = [];
     const fetchImpl: typeof fetch = async (input) => {

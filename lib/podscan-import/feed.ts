@@ -58,13 +58,17 @@ function safeChar(code: number): string {
   return String.fromCodePoint(code);
 }
 
+function unwrapCdata(text: string): string {
+  return text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1");
+}
+
 export function extractOwnerEmail(xml: string): string | null {
   if (/<!DOCTYPE/i.test(xml) || /<!ENTITY/i.test(xml)) return null;
   const owner = /<itunes:owner\b[^>]*>[\s\S]{0,4000}?<\/itunes:owner>/i.exec(xml);
   if (!owner) return null;
   const email = /<itunes:email\b[^>]*>([\s\S]{0,320}?)<\/itunes:email>/i.exec(owner[0]);
   if (!email) return null;
-  const decoded = decodeXml(email[1]).replace(/<[^>]{0,200}>/g, "").trim();
+  const decoded = decodeXml(unwrapCdata(email[1])).replace(/<[^>]{0,200}>/g, "").trim();
   return decoded || null;
 }
 

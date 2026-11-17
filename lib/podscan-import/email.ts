@@ -30,18 +30,49 @@ function rejectedDomain(domain: string): boolean {
   return REJECTED.some((item) => domain === item || domain.endsWith(`.${item}`));
 }
 
-export function checkSyntax(raw: string): { ok: boolean; email: string } {
+export const SYNTAX_FAIL_REASONS = [
+  "empty",
+  "too_long",
+  "whitespace",
+  "missing_at",
+  "multiple_at",
+  "bad_domain",
+  "rejected_domain",
+] as const;
+
+export type SyntaxFailReason = (typeof SYNTAX_FAIL_REASONS)[number];
+
+export function checkSyntax(raw: string): { ok: boolean; email: string; reason: SyntaxFailReason | null } {
   const email = raw.trim().toLowerCase();
-  if (!email || email.length > 254 || /\s/.test(email)) return { ok: false, email };
+  if (!email) return { ok: false, email, reason: "empty" };
+  if (email.length > 254) return { ok: false, email, reason: "too_long" };
+  if (/\s/.test(email)) return { ok: false, email, reason: "whitespace" };
   const parts = email.split("@");
-  if (parts.length !== 2) return { ok: false, email };
+  if (parts.length < 2) return { ok: false, email, reason: "missing_at" };
+  if (parts.length > 2) return { ok: false, email, reason: "multiple_at" };
   const [local, domain] = parts;
-  if (!local || !domain || !domain.includes(".")) return { ok: false, email };
+  if (!local || !domain || !domain.includes(".")) return { ok: false, email, reason: "bad_domain" };
   if (domain.startsWith(".") || domain.endsWith(".") || domain.includes("..")) {
-    return { ok: false, email };
+    return { ok: false, email, reason: "bad_domain" };
   }
-  if (rejectedDomain(domain)) return { ok: false, email };
-  return { ok: true, email };
+  if (rejectedDomain(domain)) return { ok: false, email, reason: "rejected_domain" };
+  return { ok: true, email, reason: null };
+}
+
+export function normalizeEmailList(raw: string): string[] {
+  const text = raw.trim();
+  if (!text) return [];
+  const angled = [...text.matchAll(/<([^<>]*)>/g)].map((match) => match[1] ?? "");
+  const pieces = angled.length > 0 ? angled : text.split(",");
+  const out: string[] = [];
+  for (const piece of pieces) {
+    let value = piece.trim().replace(/^mailto:\s*/i, "");
+    const query = value.indexOf("?");
+    if (query >= 0) value = value.slice(0, query);
+    value = value.trim();
+    if (value) out.push(value);
+  }
+  return out;
 }
 
 export function emailStatus(syntaxOk: boolean, mxOk: boolean | null): ContactRowStatus {
@@ -140,41 +171,62 @@ export interface CheckedEmail {
   syntaxOk: boolean;
   mxOk: boolean | null;
   status: ContactRowStatus;
+  syntaxFailReason: SyntaxFailReason | null;
+}
+
+export interface EmailScan {
+  checks: CheckedEmail[];
+  syntaxFailureReasons: Partial<Record<SyntaxFailReason, number>>;
+}
+
+function bumpReason(
+  reasons: Partial<Record<SyntaxFailReason, number>>,
+  reason: SyntaxFailReason
+): void {
+  reasons[reason] = (reasons[reason] ?? 0) + 1;
 }
 
 export async function checkEmails(
   inputs: Array<{ source: ContactSource; raw: string }>,
   dns: DnsLike,
   cache: Map<string, MxResult>
-): Promise<CheckedEmail[]> {
+): Promise<EmailScan> {
   const seen = new Set<string>();
   const out: CheckedEmail[] = [];
+  const syntaxFailureReasons: Partial<Record<SyntaxFailReason, number>> = {};
   for (const input of inputs) {
-    const syntax = checkSyntax(input.raw);
-    if (!syntax.email) continue;
-    const key = `${input.source}\0${syntax.email}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (!syntax.ok || syntax.email.length > 254) {
-      if (syntax.email.length > 254) continue;
+    const tokens = normalizeEmailList(input.raw);
+    for (const token of tokens) {
+      const syntax = checkSyntax(token);
+      if (!syntax.email) continue;
+      const key = `${input.source}\0${syntax.email}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!syntax.ok || syntax.email.length > 254) {
+        const reason = syntax.reason ?? (syntax.email.length > 254 ? "too_long" : "empty");
+        bumpReason(syntaxFailureReasons, reason);
+        if (syntax.email.length > 254) continue;
+        out.push({
+          source: input.source,
+          email: syntax.email,
+          syntaxOk: false,
+          mxOk: null,
+          status: "needs_manual_lookup",
+          syntaxFailReason: reason,
+        });
+        continue;
+      }
+      const domain = domainOf(syntax.email);
+      const mx = domain ? await lookupMx(domain, dns, cache) : { mxOk: false, checkedAt: "" };
       out.push({
         source: input.source,
         email: syntax.email,
-        syntaxOk: false,
-        mxOk: null,
-        status: "needs_manual_lookup",
+        syntaxOk: true,
+        mxOk: mx.mxOk,
+        status: emailStatus(true, mx.mxOk),
+        syntaxFailReason: null,
       });
-      continue;
     }
-    const domain = domainOf(syntax.email);
-    const mx = domain ? await lookupMx(domain, dns, cache) : { mxOk: false, checkedAt: "" };
-    out.push({
-      source: input.source,
-      email: syntax.email,
-      syntaxOk: true,
-      mxOk: mx.mxOk,
-      status: emailStatus(true, mx.mxOk),
-    });
   }
-  return out;
+  return { checks: out, syntaxFailureReasons };
 }

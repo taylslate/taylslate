@@ -27,6 +27,8 @@ export interface ImportReport {
   kept: { 1000: number; 2500: number; 5000: number };
   emailCoverage: { 1000: Coverage; 2500: Coverage; 5000: Coverage };
   syntax: { pass: number; fail: number };
+  syntaxFailureReasons: Record<string, number>;
+  keptNoAudience: { 1000: number; 2500: number; 5000: number };
   mx: { pass: number; fail: number; unknown: number };
   topDomains: Array<{ domain: string; count: number }>;
   feedsSkipped: Record<string, number>;
@@ -71,6 +73,15 @@ export function topDomains(domains: readonly string[], limit = 15): Array<{ doma
     .map(([domain, count]) => ({ domain, count }));
 }
 
+export function syntaxReasonLines(reasons: Record<string, number>): string[] {
+  const rows = Object.entries(reasons).filter(
+    ([reason, count]) => count > 0 && !reason.includes("@") && !/\s/.test(reason)
+  );
+  rows.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  if (rows.length === 0) return ["Syntax failure reasons: none"];
+  return ["Syntax failure reasons:", ...rows.map(([reason, count]) => `- ${reason} ${count}`)];
+}
+
 export function emptyCoverage(): Coverage {
   return { podscanOnly: 0, appleOnly: 0, both: 0, neither: 0 };
 }
@@ -105,6 +116,9 @@ export function renderReport(report: ImportReport): { json: string; markdown: st
     `Kept at 1000: ${report.kept[1000]}`,
     `Kept at 2500: ${report.kept[2500]}`,
     `Kept at 5000: ${report.kept[5000]}`,
+    `Kept with no audience at 1000: ${report.keptNoAudience[1000]}`,
+    `Kept with no audience at 2500: ${report.keptNoAudience[2500]}`,
+    `Kept with no audience at 5000: ${report.keptNoAudience[5000]}`,
     "",
     coverageBlock(1000, report.emailCoverage[1000]),
     coverageBlock(2500, report.emailCoverage[2500]),
@@ -112,6 +126,7 @@ export function renderReport(report: ImportReport): { json: string; markdown: st
     "",
     `Syntax pass: ${report.syntax.pass}`,
     `Syntax fail: ${report.syntax.fail}`,
+    ...syntaxReasonLines(report.syntaxFailureReasons),
     `MX pass: ${report.mx.pass}`,
     `MX fail: ${report.mx.fail}`,
     `MX unknown: ${report.mx.unknown}`,

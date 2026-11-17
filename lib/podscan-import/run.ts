@@ -136,6 +136,13 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
     console.log("Refusing to write without --confirm.");
     return { exitCode: 1 };
   }
+  if (args.commit) {
+    if (!deps.db) {
+      console.error("Supabase env is not set");
+      return { exitCode: 1 };
+    }
+    if (!(await tablesReady(deps.db))) return { exitCode: 1 };
+  }
 
   const nowFn = deps.now ?? (() => new Date());
   const sleepFn = deps.sleepFn ?? sleep;
@@ -160,14 +167,15 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
   };
 
   const guarded = <T>(work: () => Promise<T>): Promise<T> => gate.run(work);
+  let commitPlan: { floor: number; chosen: WorkingShow[] } | null = null;
 
   try {
     const since = activeSince(nowFn(), args.activeDays);
-    const search = await ensureSearch(args, deps, checkpoint, nowFn(), since, guarded, save);
+    const search = await ensureSearch(args, deps, checkpoint, nowFn(), since, guarded, save, args.commit);
     pruneEnrich(checkpoint, search);
-    const probe = await ensureProbe(deps, search, checkpoint, nowFn(), guarded, save);
+    const probe = await ensureProbe(deps, search, checkpoint, nowFn(), guarded, save, args.commit);
     await ensureProbeCheck(deps, search, probe, checkpoint, nowFn(), guarded, save);
-    await ensureContacts(search, checkpoint, deps, nowFn(), save);
+    await ensureContacts(search, checkpoint, deps, nowFn(), save, args.commit);
     const shows = buildShows(search, probe, checkpoint);
     const kept = {
       1000: shows.filter((show) => keepOf(show, 1000).kept),
@@ -196,9 +204,8 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
       console.error("Supabase env is not set");
       return { exitCode: 1 };
     }
-    const ready = await tablesReady(deps.db);
-    if (!ready) return { exitCode: 1 };
     const ordered = sortShows(chosen);
+    commitPlan = { floor, chosen: ordered };
     const planCalls = remainingCalls(ordered, checkpoint.enrich ?? {});
     console.log(
       [
@@ -224,12 +231,25 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
     return { exitCode: 0 };
   } catch (err) {
     await save();
-    if (err instanceof PodscanStop && err.reason === "daily") {
-      console.log(DAILY_MESSAGE);
-      return { exitCode: 0 };
-    }
-    if (err instanceof PodscanStop && err.reason === "budget") {
-      console.log(BUDGET_MESSAGE);
+    if (err instanceof PodscanStop && (err.reason === "daily" || err.reason === "budget")) {
+      if (args.commit && commitPlan && deps.db) {
+        const ready = commitPlan.chosen.filter((show) => checkpoint.enrich?.[show.candidate.podcastId]);
+        const links = await loadShowLinks(
+          deps.db,
+          ready.map((show) => show.candidate.podcastId)
+        );
+        if (links == null) {
+          console.log("Refusing to write because the shows lookup failed.");
+        } else {
+          const wrote = await writeRows(deps.db, ready, commitPlan.floor, links, checkpoint, nowFn());
+          if (!wrote) return { exitCode: 1 };
+          console.log(
+            `Upserted ${ready.length} of ${commitPlan.chosen.length}. Re-run the same command to continue.`
+          );
+        }
+        return { exitCode: 0 };
+      }
+      console.log(err.reason === "daily" ? DAILY_MESSAGE : BUDGET_MESSAGE);
       return { exitCode: 0 };
     }
     const status =
@@ -239,6 +259,10 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
     console.error(status == null ? "podscan-import failed" : `podscan-import failed status=${status}`);
     return { exitCode: 1 };
   }
+}
+
+function withoutAudience(shows: WorkingShow[]): number {
+  return shows.filter((show) => show.candidate.audienceSize == null).length;
 }
 
 function keepOf(show: WorkingShow, floor: number): { kept: boolean; reason: KeepReason | null } {
@@ -270,18 +294,15 @@ async function ensureSearch(
   now: Date,
   since: string,
   guarded: <T>(work: () => Promise<T>) => Promise<T>,
-  save: () => Promise<void>
+  save: () => Promise<void>,
+  commit: boolean
 ): Promise<SearchState> {
   const nowMs = now.getTime();
-  if (
-    checkpoint.search &&
-    checkpoint.searchSavedAt &&
-    !isStale(checkpoint.searchSavedAt, nowMs) &&
-    checkpoint.search.complete
-  ) {
+  const searchFresh = commit || !isStale(checkpoint.searchSavedAt, nowMs);
+  if (checkpoint.search && checkpoint.searchSavedAt && searchFresh && checkpoint.search.complete) {
     return checkpoint.search;
   }
-  if (checkpoint.searchSavedAt && isStale(checkpoint.searchSavedAt, nowMs)) {
+  if (!commit && checkpoint.searchSavedAt && isStale(checkpoint.searchSavedAt, nowMs)) {
     checkpoint.search = undefined;
     checkpoint.searchSavedAt = undefined;
     checkpoint.probe = undefined;
@@ -293,7 +314,7 @@ async function ensureSearch(
     checkpoint.mx = undefined;
   }
   const resume =
-    checkpoint.search && checkpoint.searchSavedAt && !isStale(checkpoint.searchSavedAt, nowMs)
+    checkpoint.search && checkpoint.searchSavedAt && (commit || !isStale(checkpoint.searchSavedAt, nowMs))
       ? checkpoint.search
       : emptySearchState();
   checkpoint.search = resume;
@@ -325,10 +346,11 @@ async function ensureProbe(
   checkpoint: Checkpoint,
   now: Date,
   guarded: <T>(work: () => Promise<T>) => Promise<T>,
-  save: () => Promise<void>
+  save: () => Promise<void>,
+  commit: boolean
 ): Promise<Record<string, string | null>> {
   const nowMs = now.getTime();
-  if (checkpoint.probeSavedAt && isStale(checkpoint.probeSavedAt, nowMs)) {
+  if (!commit && checkpoint.probeSavedAt && isStale(checkpoint.probeSavedAt, nowMs)) {
     checkpoint.probe = undefined;
     checkpoint.probeSavedAt = undefined;
     checkpoint.probeCheck = undefined;
@@ -430,10 +452,11 @@ async function ensureContacts(
   checkpoint: Checkpoint,
   deps: RunDeps,
   now: Date,
-  save: () => Promise<void>
+  save: () => Promise<void>,
+  commit: boolean
 ): Promise<void> {
   const nowMs = now.getTime();
-  if (checkpoint.contactsSavedAt && isStale(checkpoint.contactsSavedAt, nowMs)) {
+  if (!commit && checkpoint.contactsSavedAt && isStale(checkpoint.contactsSavedAt, nowMs)) {
     checkpoint.contacts = undefined;
     checkpoint.contactsSavedAt = undefined;
     checkpoint.mx = undefined;
@@ -475,7 +498,7 @@ async function ensureContacts(
       rssEmail = fetched.email;
       feedSkip = fetched.skip;
     }
-    const checks = await checkEmails(
+    const scanned = await checkEmails(
       [
         ...(row.podscanEmail ? [{ source: "podscan" as const, raw: row.podscanEmail }] : []),
         ...(rssEmail ? [{ source: "apple_rss" as const, raw: rssEmail }] : []),
@@ -489,7 +512,8 @@ async function ensureContacts(
       feedUrl,
       feedSkip,
       rssEmail,
-      checks,
+      checks: scanned.checks,
+      syntaxFailureReasons: scanned.syntaxFailureReasons,
     };
   });
   checkpoint.contacts = contacts;
@@ -516,6 +540,7 @@ function buildShows(
       feedSkip: null,
       rssEmail: null,
       checks: [],
+      syntaxFailureReasons: {},
     };
     return {
       candidate,
@@ -720,10 +745,15 @@ function assembleReport(
   let mxUnknown = 0;
   const domains: string[] = [];
   const skipped: Record<string, number> = {};
+  const syntaxFailureReasons: Record<string, number> = {};
   let hasSponsorsProbeNull = 0;
   for (const show of shows) {
     if (show.candidate.hasSponsors && !show.sponsoredLast12m) hasSponsorsProbeNull += 1;
     if (show.contact.feedSkip) skipped[show.contact.feedSkip] = (skipped[show.contact.feedSkip] ?? 0) + 1;
+    for (const [reason, count] of Object.entries(show.contact.syntaxFailureReasons ?? {})) {
+      if (!count || reason.includes("@") || /\s/.test(reason)) continue;
+      syntaxFailureReasons[reason] = (syntaxFailureReasons[reason] ?? 0) + count;
+    }
     for (const check of show.contact.checks) {
       if (check.syntaxOk) syntaxPass += 1;
       else syntaxFail += 1;
@@ -753,8 +783,14 @@ function assembleReport(
     sponsoredLast12m: shows.filter((show) => show.sponsoredLast12m).length,
     hasSponsorsProbeNull,
     kept: { 1000: kept[1000].length, 2500: kept[2500].length, 5000: kept[5000].length },
+    keptNoAudience: {
+      1000: withoutAudience(kept[1000]),
+      2500: withoutAudience(kept[2500]),
+      5000: withoutAudience(kept[5000]),
+    },
     emailCoverage: coverage,
     syntax: { pass: syntaxPass, fail: syntaxFail },
+    syntaxFailureReasons,
     mx: { pass: mxPass, fail: mxFail, unknown: mxUnknown },
     topDomains: topDomains(domains),
     feedsSkipped: skipped,

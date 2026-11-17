@@ -32,8 +32,29 @@ describe("email checks", () => {
     expect(checkSyntax("owner@foo.localhost").ok).toBe(false);
     expect(checkSyntax("owner@invalid").ok).toBe(false);
     expect(checkSyntax("no-at").ok).toBe(false);
-    expect(checkSyntax("a b@sponsor.example").ok).toBe(false);
-    expect(checkSyntax(`${"a".repeat(250)}@sponsor.example`).ok).toBe(false);
+    expect(checkSyntax("no-at").reason).toBe("missing_at");
+    expect(checkSyntax("a b@sponsor.example").reason).toBe("whitespace");
+    expect(checkSyntax("owner@example.com").reason).toBe("rejected_domain");
+    expect(checkSyntax(`${"a".repeat(250)}@sponsor.example`).reason).toBe("too_long");
+  });
+
+  it("normalizes mailto, a display name, and a comma list before the syntax check", async () => {
+    const scanned = await checkEmails(
+      [
+        { source: "podscan", raw: "mailto:Owner@Sponsor.Example" },
+        { source: "apple_rss", raw: "Host Name <owner@sponsor.example>" },
+        { source: "podscan", raw: "owner@sponsor.example, owner@example.com" },
+      ],
+      dns({}),
+      new Map()
+    );
+    expect(scanned.checks.map((check) => `${check.source}:${check.email}:${check.syntaxOk}`)).toEqual([
+      "podscan:owner@sponsor.example:true",
+      "apple_rss:owner@sponsor.example:true",
+      "podscan:owner@example.com:false",
+    ]);
+    expect(scanned.syntaxFailureReasons).toEqual({ rejected_domain: 1 });
+    expect(JSON.stringify(scanned.syntaxFailureReasons)).not.toContain("@");
   });
 
   it("falls back to an A record and caches the domain", async () => {
@@ -74,14 +95,21 @@ describe("email checks", () => {
       client,
       new Map()
     );
-    expect(checked[0]).toMatchObject({ syntaxOk: false, mxOk: null, status: "needs_manual_lookup" });
-    expect(checked[1].mxOk).toBeNull();
+    expect(checked.checks[0]).toMatchObject({
+      syntaxOk: false,
+      mxOk: null,
+      status: "needs_manual_lookup",
+      syntaxFailReason: "missing_at",
+    });
+    expect(checked.checks[1].mxOk).toBeNull();
+    expect(checked.syntaxFailureReasons.missing_at).toBe(1);
     expect(emailStatus(true, null)).toBe("needs_manual_lookup");
     expect(emailStatus(true, true)).toBe("ok");
     expect(contactStatus(["needs_manual_lookup", "ok"])).toBe("ok");
     expect(contactStatus(["needs_manual_lookup"])).toBe("needs_manual_lookup");
     const tooLong = "a".repeat(250) + "@sponsor.example";
     const dropped = await checkEmails([{ source: "podscan", raw: tooLong }], client, new Map());
-    expect(dropped).toEqual([]);
+    expect(dropped.checks).toEqual([]);
+    expect(dropped.syntaxFailureReasons.too_long).toBe(1);
   });
 });

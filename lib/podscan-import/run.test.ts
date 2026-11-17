@@ -337,7 +337,7 @@ describe("runImport", () => {
     expect(refused.exitCode).toBe(1);
     expect(logs.join("\n")).toContain("Migration 093 is not applied.");
     expect(missing.upserts).toEqual([]);
-    expect(world.calls.some((call) => call.includes("/demographics"))).toBe(false);
+    expect(world.calls).toEqual([]);
 
     const wrong = memoryDb([], false);
     const wrongLogs = spyLogs();
@@ -376,6 +376,16 @@ describe("runImport", () => {
     expect(JSON.stringify(store.tables.show_contacts)).not.toContain(FIXTURE_EMAIL.toUpperCase());
     const before = JSON.stringify(store.tables.podscan_catalog);
     const callsBefore = world.calls.length;
+    const file = join(dir, "checkpoint.json");
+    const saved = JSON.parse(await readFile(file, "utf8")) as {
+      searchSavedAt?: string;
+      probeSavedAt?: string;
+      contactsSavedAt?: string;
+    };
+    saved.searchSavedAt = "2026-11-01T00:00:00.000Z";
+    saved.probeSavedAt = "2026-11-01T00:00:00.000Z";
+    saved.contactsSavedAt = "2026-11-01T00:00:00.000Z";
+    await writeFile(file, JSON.stringify(saved), "utf8");
     const again = await runImport(
       parseArgs(["--commit", "--floor", "1000", "--confirm", "3"]),
       deps(dir, world.caller, store.db)
@@ -417,5 +427,68 @@ describe("runImport", () => {
     expect(second.exitCode).toBe(0);
     const after = world.calls.filter((call) => call === "GET /podcasts/search").length;
     expect(after).toBeGreaterThan(before);
+  });
+
+  it("upserts enriched shows when the budget stops and finishes them on the next run", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const shows = [
+      hit({
+        id: "sp_hi",
+        audience: 400,
+        email: FIXTURE_EMAIL,
+        itunes: "11",
+        rss: "https://rss.example.test/hi.xml",
+        hasSponsors: true,
+      }),
+      hit({
+        id: "sp_mid",
+        audience: 300,
+        email: FIXTURE_EMAIL,
+        itunes: "12",
+        rss: "https://rss.example.test/mid.xml",
+        hasSponsors: true,
+      }),
+      hit({
+        id: "sp_lo",
+        audience: 200,
+        email: FIXTURE_EMAIL,
+        itunes: "13",
+        rss: "https://rss.example.test/lo.xml",
+        hasSponsors: true,
+      }),
+      hit({
+        id: "sp_min",
+        audience: 100,
+        email: FIXTURE_EMAIL,
+        itunes: "14",
+        rss: "https://rss.example.test/min.xml",
+        hasSponsors: true,
+      }),
+    ];
+    const world = makeCaller(shows, []);
+    const store = memoryDb([]);
+    const args = parseArgs(["--commit", "--floor", "1000", "--confirm", "4", "--max-podscan-calls", "9"]);
+    const stopped = await runImport(args, deps(dir, world.caller, store.db));
+    expect(stopped.exitCode).toBe(0);
+    expect(logs.join("\n")).toContain("Upserted 2 of 4. Re-run the same command to continue.");
+    expect(store.tables.podscan_catalog.map((row) => row.podscan_id).sort()).toEqual(["sp_hi", "sp_mid"]);
+    expect(store.upserts.map((item) => item.onConflict)).toEqual(["podscan_id", "podscan_id,source,email"]);
+    const contactKeys = () =>
+      store.tables.show_contacts.map((row) => `${row.podscan_id}|${row.source}|${row.email}`);
+    expect(new Set(contactKeys()).size).toBe(contactKeys().length);
+    const afterStop = contactKeys().length;
+
+    const finished = await runImport(args, deps(dir, world.caller, store.db));
+    expect(finished.exitCode).toBe(0);
+    expect(store.tables.podscan_catalog.map((row) => row.podscan_id).sort()).toEqual([
+      "sp_hi",
+      "sp_lo",
+      "sp_mid",
+      "sp_min",
+    ]);
+    expect(new Set(contactKeys()).size).toBe(contactKeys().length);
+    expect(contactKeys().length).toBeGreaterThan(afterStop);
+    assertNoSecrets(logs.join("\n"));
   });
 });

@@ -1,7 +1,9 @@
 // Enumerate Podscan search hits. query is required, so every call
 // sends a OR b OR ... OR z. Slices stay under the 10,000 result cap
-// by audience band, then by category. A category that is still at
-// the cap is logged and paged up to the cap. The run keeps going.
+// by audience band, then by category. The sponsored pass also walks
+// categories with no audience filter, so a sponsored show with no
+// audience number is not dropped by a band. A category that is still
+// at the cap is logged and paged up to the cap. The run keeps going.
 
 import type { PodscanPodcast, PodscanSearchResponse } from "@/lib/podscan/types";
 
@@ -38,6 +40,7 @@ export interface Slice {
   maxAudience: number | null;
   categoryId: string | null;
   audienceSplit: boolean;
+  categoryOnly: boolean;
 }
 
 export interface CappedSlice {
@@ -188,6 +191,7 @@ function rootSlice(pass: PassName): Slice {
       maxAudience: null,
       categoryId: null,
       audienceSplit: false,
+      categoryOnly: false,
     };
   }
   return {
@@ -197,6 +201,7 @@ function rootSlice(pass: PassName): Slice {
     maxAudience: null,
     categoryId: null,
     audienceSplit: false,
+    categoryOnly: false,
   };
 }
 
@@ -268,16 +273,26 @@ export async function collectCandidates(input: {
     }
 
     if (total >= RESULT_CAP && !slice.categoryId) {
-      if (!slice.audienceSplit) {
+      if (!slice.audienceSplit && !slice.categoryOnly) {
         const bands = audienceBands(slice.minAudience, slice.maxAudience);
         if (bands.length > 1) {
           state.queue.shift();
+          if (slice.pass === "sponsored") {
+            state.queue.push({
+              ...slice,
+              minAudience: null,
+              maxAudience: null,
+              audienceSplit: true,
+              categoryOnly: true,
+            });
+          }
           for (const band of bands) {
             state.queue.push({
               ...slice,
               minAudience: band.min,
               maxAudience: band.max,
               audienceSplit: true,
+              categoryOnly: false,
             });
           }
           input.onProgress?.(state);

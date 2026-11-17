@@ -117,11 +117,33 @@ describe("candidates", () => {
             String(params.category_ids ?? "-"),
           ].join(":")
         );
-        const rootSponsored = params.has_sponsors === true && params.min_audience_size == null;
+        const categoryOnly =
+          params.has_sponsors === true &&
+          params.min_audience_size == null &&
+          params.category_ids != null;
+        const rootSponsored =
+          params.has_sponsors === true &&
+          params.min_audience_size == null &&
+          params.category_ids == null;
         const cappedBand =
           params.has_sponsors === true &&
           params.min_audience_size === 0 &&
           params.max_audience_size === 999;
+        if (categoryOnly) {
+          return page([
+            podcast("pd_null", {
+              reach: {
+                audience_size: null,
+                email: null,
+                website: null,
+                social_links: [],
+                itunes: [],
+                spotify: [],
+              },
+            }),
+            podcast("pd_null"),
+          ]);
+        }
         if (rootSponsored || cappedBand) {
           return page([], 10000);
         }
@@ -145,6 +167,9 @@ describe("candidates", () => {
       }),
     ]);
     expect(state.rows.some((row) => row.podcastId === "ignored")).toBe(false);
+    expect(state.rows.filter((row) => row.podcastId === "pd_null")).toHaveLength(1);
+    expect(state.rows.find((row) => row.podcastId === "pd_null")?.audienceSize).toBeNull();
+    expect(seen).toContain("s:-:-:news");
     expect(state.complete).toBe(true);
     expect(seen.some((line) => line.startsWith("u:1000"))).toBe(true);
   });

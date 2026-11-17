@@ -5,7 +5,7 @@ import { chmod, mkdir, open, rename } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { dirname } from "node:path";
 import type { SearchState } from "./candidates";
-import type { CheckedEmail } from "./email";
+import type { CheckedEmail, SyntaxFailReason } from "./email";
 import type { ProbeCheck } from "./sponsors";
 
 export const STALE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -17,6 +17,7 @@ export interface ContactProgress {
   feedSkip: string | null;
   rssEmail: string | null;
   checks: CheckedEmail[];
+  syntaxFailureReasons?: Partial<Record<SyntaxFailReason, number>>;
 }
 
 export interface EnrichProgress {
