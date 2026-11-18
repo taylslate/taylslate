@@ -138,6 +138,46 @@ describe("passesYouTubeMarketFilter", () => {
     ).toBe(true);
   });
 
+  it("drops a made-for-kids channel and a null flag with a kids topic", () => {
+    expect(
+      passesYouTubeMarketFilter({
+        country: "US",
+        defaultLanguage: "en",
+        title: "Cocomelon",
+        description: "Nursery rhymes and kids songs",
+        madeForKids: true,
+      })
+    ).toBe(false);
+    expect(
+      passesYouTubeMarketFilter({
+        country: "US",
+        title: "Song Lab",
+        description: "The channel for your training and your health",
+        madeForKids: false,
+        topicCategories: ["Children's music"],
+      })
+    ).toBe(true);
+    expect(
+      passesYouTubeMarketFilter({
+        country: "US",
+        title: "Pinkfong",
+        description: "The channel for your training and your health",
+        madeForKids: null,
+        topicCategories: ["https://en.wikipedia.org/wiki/Children%27s_music"],
+      })
+    ).toBe(false);
+    expect(
+      passesYouTubeMarketFilter({
+        country: "US",
+        title: "Parent Lab",
+        description: "The channel for your training and your health",
+        madeForKids: null,
+        nicheTags: ["Parenting & Family"],
+        topicCategories: ["Parenting"],
+      })
+    ).toBe(true);
+  });
+
   it("drops a channel with no country when the language is not English", () => {
     expect(
       passesYouTubeMarketFilter({
@@ -240,6 +280,25 @@ describe("discoverShows YouTube rings", () => {
           subscriberCount: 900000,
         }),
       ],
+      [
+        "KIDS_TRUE",
+        detail({
+          channelId: "KIDS_TRUE",
+          country: "US",
+          madeForKids: true,
+          subscriberCount: 900000,
+        }),
+      ],
+      [
+        "KIDS_TOPIC",
+        detail({
+          channelId: "KIDS_TOPIC",
+          country: "US",
+          madeForKids: null,
+          topicCategories: ["Nursery rhyme"],
+          subscriberCount: 800000,
+        }),
+      ],
     ]);
 
     const searchVideos = vi.fn(async (query: string, _maxResults?: number, _order?: string) => {
@@ -256,6 +315,8 @@ describe("discoverShows YouTube rings", () => {
           { channelId: "EN1", title: "English Lab", description: "a" },
           { channelId: "ES1", title: "Cocina", description: "a" },
           { channelId: "SHORT", title: "Short", description: "a" },
+          { channelId: "KIDS_TRUE", title: "Cocomelon", description: "a" },
+          { channelId: "KIDS_TOPIC", title: "Pinkfong", description: "a" },
         ];
       }
       return [];
@@ -305,6 +366,8 @@ describe("discoverShows YouTube rings", () => {
       "EN1",
       "ES1",
       "SHORT",
+      "KIDS_TRUE",
+      "KIDS_TOPIC",
     ]);
 
     const ids = result.discovered.map((show) => show.youtube_channel_id);
@@ -1063,6 +1126,7 @@ describe("YouTube library topical input", () => {
       niche_tags_version: 1,
       tagged_at: "2026-10-01T00:00:00.000Z",
       passed_market_filter: true,
+      made_for_kids: null,
       brand_flag: null,
       show_id: null,
       source: "category",

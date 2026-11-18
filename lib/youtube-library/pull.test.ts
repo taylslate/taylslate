@@ -3,10 +3,12 @@ import { YouTubeClient, type YouTubeChannelDetails } from "@/lib/enrichment/yout
 import { createMemoryYoutubeStore, draftToRecord } from "./store";
 import { categoryQueueValues } from "./categories";
 import {
+  CHANNELS_LIST_UNITS,
   createLibraryYoutubeApi,
   mapLimit,
   runPullQueue,
   scrubYoutubeError,
+  SEARCH_UNITS,
   seedQueueItems,
   uploadsBatchWorstCaseUnits,
   YOUTUBE_LIBRARY_PULL_BUDGET,
@@ -116,6 +118,36 @@ describe("pull budget", () => {
     expect(store.channels.get("brand-1")?.brand_flag).toBe("official website");
     expect(store.channels.get("brand-1")?.passed_market_filter).toBe(true);
     expect(store.channels.get("in-1")?.passed_market_filter).toBe(false);
+  });
+
+  it("stores madeForKids and fails the market filter for a kids channel", async () => {
+    const store = createMemoryYoutubeStore();
+    await store.enqueue([{ kind: "category_query", value: "kids" }]);
+    const api = {
+      search: async () => ["kids-true", "kids-false", "kids-null"],
+      list: async (ids: string[]) => ({
+        found: [
+          details("kids-true", { madeForKids: true, topicCategories: ["Entertainment"] }),
+          details("kids-false", { madeForKids: false, topicCategories: ["Children's music"] }),
+          details("kids-null", {
+            madeForKids: null,
+            topicCategories: ["https://en.wikipedia.org/wiki/Nursery_rhyme"],
+          }),
+        ].filter((row) => ids.includes(row.channelId)),
+        missing: [],
+      }),
+      seedLookupCost: () => 0,
+      lookupSeed: async () => ({ channelId: null, notFound: true }),
+    };
+    const report = await runPullQueue({ store, api, budget: 8000, seed: false, log: () => {} });
+    expect(CHANNELS_LIST_UNITS).toBe(1);
+    expect(report.units).toBe(SEARCH_UNITS + CHANNELS_LIST_UNITS);
+    expect(store.channels.get("kids-true")?.made_for_kids).toBe(true);
+    expect(store.channels.get("kids-true")?.passed_market_filter).toBe(false);
+    expect(store.channels.get("kids-false")?.made_for_kids).toBe(false);
+    expect(store.channels.get("kids-false")?.passed_market_filter).toBe(true);
+    expect(store.channels.get("kids-null")?.made_for_kids).toBeNull();
+    expect(store.channels.get("kids-null")?.passed_market_filter).toBe(false);
   });
 });
 

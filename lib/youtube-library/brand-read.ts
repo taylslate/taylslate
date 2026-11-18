@@ -4,17 +4,28 @@
 // text or a row.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { libraryRowIsMadeForKids } from "./kids";
 import { channelPassesLibraryFloors } from "./read";
-import { isMissingLibraryTable, statsFreshCutoff } from "./store";
+import { isMissingLibraryTable, isMissingMadeForKidsColumn, statsFreshCutoff } from "./store";
 
 export const LIBRARY_CREATOR_LIMIT = 20;
 export const LIBRARY_CREATOR_FETCH = 60;
 const SEARCH_MAX = 100;
 const DESCRIPTION_MAX = 300;
 
-/** Public fields plus the columns the floors and the show link need. */
-export const SAFE_COLUMNS =
-  "channel_id, title, thumbnail_url, country, subscriber_count, video_count, avg_recent_views, niche_tags, description, total_view_count, avg_views_method, stats_refreshed_at, show_id, passed_market_filter, brand_flag";
+/**
+ * Public fields plus the columns the floors, the show link, and the
+ * made-for-kids check need. topic_categories and made_for_kids are
+ * selected here and stripped before anything is returned.
+ * SAFE_COLUMNS_BEFORE_095 is the same list without made_for_kids, used
+ * when migration 095 is not applied yet.
+ */
+export const SAFE_COLUMNS_BEFORE_095 =
+  "channel_id, title, thumbnail_url, country, subscriber_count, video_count, avg_recent_views, niche_tags, description, total_view_count, avg_views_method, stats_refreshed_at, show_id, passed_market_filter, brand_flag, topic_categories";
+
+export const SAFE_COLUMNS = `${SAFE_COLUMNS_BEFORE_095}, made_for_kids`;
+
+const KIDS_SQL_FILTER = "made_for_kids.is.null,made_for_kids.eq.false";
 
 const CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
 const LIKE_ESCAPED = /\\([\\%_])/g;
@@ -52,6 +63,8 @@ interface LibraryRow {
   show_id?: unknown;
   passed_market_filter?: unknown;
   brand_flag?: unknown;
+  topic_categories?: unknown;
+  made_for_kids?: unknown;
 }
 
 type DbError = { message?: string; code?: string } | null;
@@ -122,6 +135,20 @@ export function escapeLibrarySearch(raw: string): string {
   return plain.replace(LIKE_SPECIAL, (char) => `\\${char}`);
 }
 
+function readMadeForKids(value: unknown): boolean | null {
+  if (value === true || value === "true") return true;
+  if (value === false || value === "false") return false;
+  return null;
+}
+
+function excludedAsKids(row: LibraryRow): boolean {
+  return libraryRowIsMadeForKids({
+    made_for_kids: readMadeForKids(row.made_for_kids),
+    topic_categories: asTags(row.topic_categories),
+    niche_tags: asTags(row.niche_tags),
+  });
+}
+
 function passesFloors(row: LibraryRow): boolean {
   const channelId = typeof row.channel_id === "string" ? row.channel_id : "";
   if (!CHANNEL_ID.test(channelId)) return false;
@@ -173,9 +200,40 @@ async function excludeLinked(rows: LibraryRow[]): Promise<LibraryRow[]> {
   return rows.filter((row) => !linked.has(String(row.channel_id)));
 }
 
-function missingOrThrow(error: DbError): "missing" | null {
-  if (!error) return null;
-  if (isMissingLibraryTable(error)) return "missing";
+type BrandQuery = {
+  eq: (column: string, value: unknown) => BrandQuery;
+  is: (column: string, value: unknown) => BrandQuery;
+  gte: (column: string, value: unknown) => BrandQuery;
+  ilike: (column: string, pattern: string) => BrandQuery;
+  or: (filters: string) => BrandQuery;
+  order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => BrandQuery;
+  limit: (count: number) => BrandQuery;
+  maybeSingle: () => PromiseLike<{ data: unknown; error: DbError }>;
+  then: PromiseLike<{ data: unknown; error: DbError }>["then"];
+};
+
+function startBrandQuery(columns: string, filterKids: boolean): BrandQuery {
+  let query = supabaseAdmin.from("youtube_channels").select(columns) as unknown as BrandQuery;
+  if (filterKids) query = query.or(KIDS_SQL_FILTER);
+  return query;
+}
+
+/**
+ * Select with made_for_kids. If that column is not in the database yet,
+ * retry without it. A missing table stays a miss. Adult rows still return.
+ */
+async function loadBrandRows(
+  run: (columns: string, filterKids: boolean) => Promise<{ data: unknown; error: DbError }>
+): Promise<"missing" | unknown> {
+  const first = await run(SAFE_COLUMNS, true);
+  if (!first.error) return first.data;
+  if (isMissingMadeForKidsColumn(first.error)) {
+    const second = await run(SAFE_COLUMNS_BEFORE_095, false);
+    if (!second.error) return second.data;
+    if (isMissingLibraryTable(second.error)) return "missing";
+    failRead();
+  }
+  if (isMissingLibraryTable(first.error)) return "missing";
   failRead();
 }
 
@@ -190,19 +248,19 @@ export async function searchLibraryCreators(input: {
   if (!escaped) return [];
 
   const cutoff = statsFreshCutoff(input.now ?? new Date());
-  const { data, error } = await supabaseAdmin
-    .from("youtube_channels")
-    .select(SAFE_COLUMNS)
-    .eq("passed_market_filter", true)
-    .is("brand_flag", null)
-    .is("show_id", null)
-    .gte("stats_refreshed_at", cutoff)
-    .ilike("title", `%${escaped}%`)
-    .order("avg_recent_views", { ascending: false, nullsFirst: false })
-    .limit(LIBRARY_CREATOR_FETCH);
-
-  if (missingOrThrow(error) === "missing") return [];
-  const rows = ((data ?? []) as LibraryRow[]).filter(passesFloors);
+  const loaded = await loadBrandRows(async (columns, filterKids) => {
+    const query = startBrandQuery(columns, filterKids)
+      .eq("passed_market_filter", true)
+      .is("brand_flag", null)
+      .is("show_id", null)
+      .gte("stats_refreshed_at", cutoff)
+      .ilike("title", `%${escaped}%`)
+      .order("avg_recent_views", { ascending: false, nullsFirst: false })
+      .limit(LIBRARY_CREATOR_FETCH);
+    return query;
+  });
+  if (loaded === "missing") return [];
+  const rows = ((loaded ?? []) as LibraryRow[]).filter((row) => passesFloors(row) && !excludedAsKids(row));
   const open = await excludeLinked(rows);
   return open.slice(0, limit).map(toCreator);
 }
@@ -214,19 +272,18 @@ export async function getLibraryCreator(
   if (!CHANNEL_ID.test(channelId)) return null;
 
   const cutoff = statsFreshCutoff(now);
-  const { data, error } = await supabaseAdmin
-    .from("youtube_channels")
-    .select(SAFE_COLUMNS)
-    .eq("channel_id", channelId)
-    .eq("passed_market_filter", true)
-    .is("brand_flag", null)
-    .is("show_id", null)
-    .gte("stats_refreshed_at", cutoff)
-    .maybeSingle();
-
-  if (missingOrThrow(error) === "missing") return null;
-  const row = (data ?? null) as LibraryRow | null;
-  if (!row || !passesFloors(row)) return null;
+  const loaded = await loadBrandRows(async (columns, filterKids) => {
+    const query = startBrandQuery(columns, filterKids)
+      .eq("channel_id", channelId)
+      .eq("passed_market_filter", true)
+      .is("brand_flag", null)
+      .is("show_id", null)
+      .gte("stats_refreshed_at", cutoff);
+    return query.maybeSingle();
+  });
+  if (loaded === "missing") return null;
+  const row = loaded as LibraryRow | null;
+  if (!row || !passesFloors(row) || excludedAsKids(row)) return null;
   const open = await excludeLinked([row]);
   if (open.length === 0) return null;
   return toProfile(open[0]);
