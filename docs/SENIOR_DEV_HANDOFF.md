@@ -1452,6 +1452,7 @@ No page or component was edited. Screenshots are not applicable.
 - Library reads page at most 50,000 eligible rows. C1 replaced the top-60 rank cap with a 500 safety cap.
 - `custom_url` is used in memory for the show-link check. It is not a column. The database link uses `shows.youtube_channel_id` and stored surface links.
 - No live write, charge, or send. This PR does not merge. After 074 is applied, the day-1 check is row count, units logged, and category spread. Do not rerun a campaign to prove the library until that apply.
+- KIDS-FILTER1 excludes made-for-kids channels from brand results. See that section. Migration 095 is not applied.
 
 ## C1
 
@@ -3099,6 +3100,7 @@ Screenshots are the search page before the new group, the same page after, and t
 - The next free migration (090 at the time of writing) is not written. No view, policy, or grant. Apply nothing on `ldtmhafewfifdizgfrnn` for this job.
 - The Search nav item was not changed.
 - This PR does not merge. Paul reviews.
+- KIDS-FILTER1 drops made-for-kids channels from this search. See that section. Migration 095 is not applied.
 
 ## SEC7
 
@@ -3697,3 +3699,59 @@ No UI change, so there are no screenshots.
 - 089's active-connection block is channel-wide across profiles, by design, pinned by test. Any active connection on that channel keeps the captions. The SQL was not changed.
 - `POST /api/deals` still returns `Failed to create deal:` plus the thrown message. This job changes the GET catch only.
 - No migration. This PR does not merge. Paul reviews.
+
+## KIDS-FILTER1
+
+### What was built
+
+Made-for-kids YouTube channels stay out of brand-facing results. Migration 095 adds nullable `youtube_channels.made_for_kids` and a partial index on the true rows. It does not change grants or policies. `service_role` already holds the table privileges, and a new column inherits them. The file is in the repo and is not applied. 092 is the latest migration on main. 093 is not in the repo. 094 is reserved for RELAY1, so 095 is the next free number.
+
+The library pull and the stats refresh request `channels.list` part `status` on the same call that already requests `snippet`, `statistics`, `topicDetails`, and `brandingSettings`. Google prices `channels.list` at 1 unit per call. Parts do not add units (https://developers.google.com/youtube/v3/docs/channels/list). `status.madeForKids` is stored on `made_for_kids`. True and false are stored. A missing flag is null. The pull budget, the refresh budget, and the quota reserve are unchanged because the call count is unchanged.
+
+`passesYouTubeMarketFilter` fails when the channel is made for kids. That is the filter the pull, the refresh, and the live discovery search already use. A true flag fails even when the country is US. A false flag stays in, including when a topic string also looks like children's content. A null flag fails only when `topic_categories` or niche tags contain a narrow phrase that is already on the row: children's music, kids music, or nursery rhyme, including the Wikipedia URL forms (`Children%27s_music`, `Nursery_rhyme`). Parenting & Family, Toy, Hobby, and Entertainment do not match.
+
+Until 095 is applied, the code does not crash and adult channels still return. The store probes `select made_for_kids limit 1`. A missing-column error is recognized before `isMissingLibraryTable`, because that helper also matches "does not exist" and "schema cache" and would otherwise stop the pull. Selects and upserts omit the column. An upsert that still hits the missing column retries without it. Brand search selects the column and, on that same error, retries without it. The topic fallback still runs, because `topic_categories` already exists. The store caches a missing column for the life of that process. A cron run is a new process, so the first refresh after apply stores the flag. Brand search does not cache the miss.
+
+### Where
+
+- `supabase/migrations/095_youtube_made_for_kids.sql` and `095_youtube_made_for_kids.test.ts` (repo only, not applied)
+- `lib/youtube-library/kids.ts` and `kids.test.ts`
+- `lib/enrichment/youtube.ts` (`status` on `channels.list`, `madeForKids` on the mapped channel) and `youtube.test.ts`
+- `lib/discovery/discover-shows.ts` (`passesYouTubeMarketFilter`) and `discover-shows.test.ts`
+- `lib/youtube-library/store.ts` (column on the upsert, `listEligible`, `listHighScoringChannels`)
+- `lib/youtube-library/pull.ts` (unchanged caller; the market filter and the mapped channel store the flag) and `pull.test.ts`
+- `lib/youtube-library/refresh.ts` (unchanged caller) and `refresh.test.ts`
+- `lib/youtube-library/read.ts` (`rankLibraryMatches`) and `read.test.ts`
+- `lib/youtube-library/brand-read.ts` and `brand-read.test.ts`
+- `docs/jobs/KIDS-FILTER1.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section, plus one line each on L1 and U1b)
+
+`lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `lib/billing/plans.ts` were not edited. No screen, style, copy, or animation was edited. No Vercel env change. Nothing was applied on `ldtmhafewfifdizgfrnn`.
+
+Brand read paths that now exclude kids channels:
+
+- U1b brand search: `searchLibraryCreators` and `getLibraryCreator` (`GET /api/library/creators` and `/shows/search/youtube/[channelId]`).
+- Discovery: `listEligible` and `rankLibraryMatches`, which feed `takeLibraryThenLive`.
+- Scoring: conviction scoring consumes that discovery list. Kids channels are removed before the list is returned. `lib/scoring` was not edited.
+- Library fallback: the live YouTube search inside `discoverFromYoutubeLive` uses `passesYouTubeMarketFilter` before a channel can be returned. That search runs when the library has fewer than 10 matches.
+- Refill: `listHighScoringChannels` drops the same rows so the pull does not mine them for the next searches.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 438 files, 3682 passed, 41 skipped.
+
+`npx eslint` on the changed TypeScript files: 0 errors. The 19 warnings are existing unused arguments in tests this job did not introduce.
+
+`npx next build` compiled successfully and generated 149 pages.
+
+Covers true excluded, false kept (including a children's-music topic on a false flag), and the null fallback for a Wikipedia children's-music URL and for nursery rhyme. Parenting & Family, Toy, and Hobby stay. The pull stores the flag and still spends `SEARCH_UNITS + CHANNELS_LIST_UNITS` (101) for one search and one details call. The refresh stores the flag in 1 unit, one `channels.list` for the batch. Brand search and the profile return null for a kids row, retry without the column when it is missing, and still return an adult row. Library discovery keeps the false row and drops the true row and the null nursery-rhyme row. No UI change, so there are no screenshots.
+
+### Known gaps
+
+- Migration 095 is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and Chris's own-words OK.
+- About 11,000 existing rows stay null until the normal refresh reaches them. The flag does not add API calls. `channels.list` is already 1 unit per 50 ids, and `status` is another part on that call. Covering about 11,000 rows is 220 of those calls, 220 units, for the flag itself. The refresh also reserves uploads-playlist stats: `uploadsBatchWorstCaseUnits(10)` is 13, five groups per 50 channels is 65, plus the 1 unit details call is 66. The daily refresh budget is 1,000 units, so that reservation covers 750 channels a day (15 batches). About 11,000 rows take 15 refresh days at that ceiling. The 200 second pass can stop a run sooner. The next day continues from the oldest `stats_refreshed_at`. There is no separate backfill job. The pull's 1,000 unit refresh reserve and the 2,000 unit email reserve are unchanged.
+- Until a row is refreshed, only the narrow topic fallback drops it. A kids channel whose topics are Toy, Hobby, or Entertainment (Vlad and Niki, Kids Diana Show, and similar) stays in brand results until `made_for_kids` is stored true and the market filter fails it.
+- A store process that probed before 095 was applied keeps omitting the column until that process restarts.
+- This PR does not merge. Paul reviews.

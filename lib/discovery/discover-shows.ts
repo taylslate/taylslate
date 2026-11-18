@@ -28,6 +28,7 @@ import {
   MAX_YOUTUBE_SEARCHES,
 } from "./category-mapping";
 import { podscanPodcastToShow, youtubeChannelToShow } from "./format-discovered-show";
+import { channelIsMadeForKids } from "@/lib/youtube-library/kids";
 import {
   absorbDiscoveredChannels,
   takeLibraryThenLive,
@@ -758,7 +759,19 @@ export function passesYouTubeMarketFilter(channel: {
   defaultLanguage?: string | null;
   title?: string | null;
   description?: string | null;
+  madeForKids?: boolean | null;
+  topicCategories?: readonly string[] | null;
+  nicheTags?: readonly string[] | null;
 }): boolean {
+  if (
+    channelIsMadeForKids({
+      madeForKids: channel.madeForKids,
+      topicCategories: channel.topicCategories,
+      nicheTags: channel.nicheTags,
+    })
+  ) {
+    return false;
+  }
   const country = (channel.country ?? "").trim().toUpperCase();
   if (country === "US") return true;
   if (country) return false;

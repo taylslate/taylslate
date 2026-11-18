@@ -10,6 +10,7 @@ const state = {
   shows: [] as Row[],
   channelError: null as DbError,
   showError: null as DbError,
+  missingKidsColumn: false,
   fromCalls: [] as string[],
   selects: [] as string[],
   patterns: [] as string[],
@@ -83,6 +84,21 @@ class Query {
     return this;
   }
 
+  or(filters: string) {
+    const parts = filters.split(",");
+    this.filters.push((row) =>
+      parts.some((part) => {
+        const [column, op, value] = part.split(".");
+        if (!column || !op) return false;
+        if (op === "is" && value === "null") return row[column] == null;
+        if (op === "eq" && value === "true") return row[column] === true;
+        if (op === "eq" && value === "false") return row[column] === false;
+        return false;
+      })
+    );
+    return this;
+  }
+
   order(column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) {
     const ascending = options?.ascending ?? true;
     const nullsFirst = options?.nullsFirst ?? false;
@@ -120,6 +136,19 @@ class Query {
   }
 
   private execute(single: boolean): Promise<{ data: unknown; error: DbError }> {
+    if (
+      this.table === "youtube_channels" &&
+      state.missingKidsColumn &&
+      this.columns.includes("made_for_kids")
+    ) {
+      return Promise.resolve({
+        data: null,
+        error: {
+          code: "PGRST204",
+          message: "Could not find the 'made_for_kids' column of 'youtube_channels' in the schema cache",
+        },
+      });
+    }
     const error = this.table === "youtube_channels" ? state.channelError : this.table === "shows" ? state.showError : { message: "missing", code: "42P01" };
     if (error) return Promise.resolve({ data: null, error });
     const source = this.table === "youtube_channels" ? state.channels : state.shows;
@@ -180,6 +209,7 @@ function row(overrides: Row = {}): Row {
     show_id: null,
     passed_market_filter: true,
     brand_flag: null,
+    made_for_kids: null,
     source: "category",
     source_query: "lab",
     keywords: ["secret-keyword"],
@@ -194,6 +224,7 @@ beforeEach(() => {
   state.shows = [];
   state.channelError = null;
   state.showError = null;
+  state.missingKidsColumn = false;
   state.fromCalls = [];
   state.selects = [];
   state.patterns = [];
@@ -210,7 +241,6 @@ describe("SAFE_COLUMNS", () => {
       "source",
       "source_query",
       "keywords",
-      "topic_categories",
       "tagged_at",
       "niche_tags_version",
       "created_at",
@@ -218,6 +248,8 @@ describe("SAFE_COLUMNS", () => {
     ]) {
       expect(columns).not.toContain(forbidden);
     }
+    expect(columns).toContain("topic_categories");
+    expect(columns).toContain("made_for_kids");
     expect(columns).toEqual(
       expect.arrayContaining([
         "channel_id",
@@ -257,6 +289,8 @@ describe("searchLibraryCreators", () => {
     expect(creator).not.toHaveProperty("source");
     expect(creator).not.toHaveProperty("source_query");
     expect(creator).not.toHaveProperty("keywords");
+    expect(creator).not.toHaveProperty("topic_categories");
+    expect(creator).not.toHaveProperty("made_for_kids");
     expect(JSON.stringify(creator)).not.toContain("hidden@creator.test");
     expect(JSON.stringify(creator)).not.toContain("secret-keyword");
     expect(state.selects[0]).toBe(`youtube_channels:${SAFE_COLUMNS}`);
@@ -270,9 +304,57 @@ describe("searchLibraryCreators", () => {
     ["under the recent view floor", { avg_views_method: "recent", avg_recent_views: 9999 }],
     ["under the fallback view floor", { avg_views_method: "estimated", avg_recent_views: 4999 }],
     ["linked by show_id", { show_id: "11111111-1111-4111-8111-111111111111" }],
+    ["made for kids", { made_for_kids: true }],
+    ["a null flag with a nursery-rhyme topic", { made_for_kids: null, topic_categories: ["Nursery rhyme"] }],
+    [
+      "a null flag with a children's music URL",
+      { made_for_kids: null, topic_categories: ["https://en.wikipedia.org/wiki/Children%27s_music"] },
+    ],
   ])("excludes a channel that is %s", async (_label, patch) => {
     state.channels = [row(patch)];
     await expect(searchLibraryCreators({ query: "Lab", now: NOW })).resolves.toEqual([]);
+  });
+
+  it("keeps made_for_kids false even when the topic looks like children's music", async () => {
+    state.channels = [
+      row({
+        made_for_kids: false,
+        topic_categories: ["Children's music"],
+        niche_tags: ["Children's music"],
+      }),
+    ];
+    const [creator] = await searchLibraryCreators({ query: "Lab", now: NOW });
+    expect(creator.channelId).toBe(channelId(1));
+    expect(creator).not.toHaveProperty("made_for_kids");
+  });
+
+  it("keeps a null flag when the topics are parenting, not children's content", async () => {
+    state.channels = [
+      row({
+        made_for_kids: null,
+        topic_categories: ["https://en.wikipedia.org/wiki/Parenting"],
+        niche_tags: ["Parenting & Family"],
+      }),
+    ];
+    const [creator] = await searchLibraryCreators({ query: "Lab", now: NOW });
+    expect(creator.channelId).toBe(channelId(1));
+  });
+
+  it("retries without made_for_kids when migration 095 is not applied", async () => {
+    state.missingKidsColumn = true;
+    state.channels = [
+      row({ topic_categories: ["Fitness"] }),
+      row({
+        channel_id: channelId(2),
+        title: "Lab Rhymes",
+        topic_categories: ["https://en.wikipedia.org/wiki/Nursery_rhyme"],
+      }),
+    ];
+    const creators = await searchLibraryCreators({ query: "Lab", now: NOW });
+    expect(creators.map((creator) => creator.channelId)).toEqual([channelId(1)]);
+    expect(state.selects[0]).toContain("made_for_kids");
+    expect(state.selects[1]).not.toContain("made_for_kids");
+    expect(state.selects[1]).toContain("topic_categories");
   });
 
   it("drops a channel linked from shows.youtube_channel_id", async () => {
@@ -451,6 +533,15 @@ describe("getLibraryCreator", () => {
     state.channels = [row()];
     state.shows = [{ youtube_channel_id: channelId(1) }];
     await expect(getLibraryCreator(channelId(1), NOW)).resolves.toBeNull();
+  });
+
+  it("returns null for a made-for-kids channel and for a null flag with a kids topic", async () => {
+    state.channels = [row({ made_for_kids: true })];
+    await expect(getLibraryCreator(channelId(1), NOW)).resolves.toBeNull();
+    state.channels = [row({ made_for_kids: null, topic_categories: ["Children's music"] })];
+    await expect(getLibraryCreator(channelId(1), NOW)).resolves.toBeNull();
+    state.channels = [row({ made_for_kids: false, topic_categories: ["Children's music"] })];
+    await expect(getLibraryCreator(channelId(1), NOW)).resolves.not.toBeNull();
   });
 
   it("returns null when the library table is missing", async () => {

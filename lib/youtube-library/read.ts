@@ -15,6 +15,7 @@ import {
   mapRingToCategories,
   type LibraryCategory,
 } from "./ring-categories";
+import { libraryRowIsMadeForKids } from "./kids";
 import {
   draftToRecord,
   getYoutubeLibraryStore,
@@ -184,6 +185,7 @@ export function rankLibraryMatches(
   const byId = new Map<string, RankedLibraryMatch>();
   for (const row of rows) {
     if (!row.passed_market_filter || row.brand_flag) continue;
+    if (libraryRowIsMadeForKids(row)) continue;
     if (!channelPassesLibraryFloors(row)) continue;
     const categories = channelLibraryCategories(row);
     if (categories.length === 0) continue;
