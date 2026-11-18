@@ -117,14 +117,16 @@ export function searchParams(
   return params;
 }
 
-export function categoryIdsFrom(body: unknown): string[] {
+// GET /categories is { categories: [{ category_id, category_name, category_display_name }] }.
+export function readCategories(body: unknown): { ids: string[]; recognized: boolean } {
   const list = Array.isArray(body)
     ? body
     : isRecord(body) && Array.isArray(body.categories)
       ? body.categories
       : isRecord(body) && Array.isArray(body.data)
         ? body.data
-        : [];
+        : null;
+  if (!list) return { ids: [], recognized: false };
   const ids: string[] = [];
   for (const item of list) {
     if (typeof item === "string" && item) ids.push(item);
@@ -132,7 +134,30 @@ export function categoryIdsFrom(body: unknown): string[] {
       ids.push(item.category_id);
     } else if (isRecord(item) && typeof item.id === "string" && item.id) ids.push(item.id);
   }
-  return [...new Set(ids)];
+  const unique = [...new Set(ids)];
+  return { ids: unique, recognized: list.length === 0 || unique.length > 0 };
+}
+
+export function categoryIdsFrom(body: unknown): string[] {
+  return readCategories(body).ids;
+}
+
+function searchPage(body: unknown): { podcasts: PodscanPodcast[]; total: number } {
+  if (!isRecord(body) || !Array.isArray(body.podcasts)) {
+    const err = new Error("unexpected search shape");
+    err.name = "TypeError";
+    throw err;
+  }
+  const podcasts = body.podcasts as PodscanPodcast[];
+  const pagination = isRecord(body.pagination) ? body.pagination : null;
+  const totalRaw = pagination?.total;
+  const total =
+    typeof totalRaw === "number" && Number.isFinite(totalRaw)
+      ? totalRaw
+      : typeof totalRaw === "string" && /^[0-9]+$/.test(totalRaw)
+        ? Number(totalRaw)
+        : podcasts.length;
+  return { podcasts, total };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -260,8 +285,8 @@ export async function collectCandidates(input: {
       state.queue.shift();
       continue;
     }
-    const first = await input.search(searchParams(slice, 1, opts));
-    const total = first.pagination?.total ?? first.podcasts.length;
+    const first = searchPage(await input.search(searchParams(slice, 1, opts)));
+    const total = first.total;
 
     if (input.sample != null) {
       if (total >= RESULT_CAP) state.cappedSlices.push(describe(slice, total, true));
@@ -340,7 +365,7 @@ async function pageRest(
   if (firstCount < PAGE_SIZE) return;
   for (let page = 2; page <= pages; page += 1) {
     if (input.sample != null && state.passCounts[slice.pass] >= input.sample) return;
-    const res = await input.search(searchParams(slice, page, opts));
+    const res = searchPage(await input.search(searchParams(slice, page, opts)));
     if (res.podcasts.length === 0) return;
     absorb(state, seen, res.podcasts, slice.pass, input.sample);
     if (res.podcasts.length < PAGE_SIZE) return;

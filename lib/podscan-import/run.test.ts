@@ -491,4 +491,201 @@ describe("runImport", () => {
     expect(contactKeys().length).toBeGreaterThan(afterStop);
     assertNoSecrets(logs.join("\n"));
   });
+
+  it("starts a full dry run over when the checkpoint came from a sample", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const sponsored = Array.from({ length: 30 }, (_, index) =>
+      hit({
+        id: `sp_${String(index).padStart(2, "0")}`,
+        audience: 2000,
+        email: FIXTURE_EMAIL,
+        itunes: String(5000 + index),
+        rss: `https://rss.example.test/${index}.xml`,
+        hasSponsors: true,
+      })
+    );
+    const world = makeCaller(sponsored, []);
+    const first = await runImport(parseArgs(["--dry-run", "--sample", "25"]), deps(dir, world.caller, null));
+    expect(first.exitCode).toBe(0);
+    const saved = await readCheckpoint(join(dir, "checkpoint.json"));
+    expect(saved.sample).toBe(25);
+    expect(saved.search?.passCounts.sponsored).toBe(25);
+    const searches = () => world.calls.filter((call) => call === "GET /podcasts/search").length;
+    const afterSample = searches();
+    const again = await runImport(parseArgs(["--dry-run", "--sample", "25"]), deps(dir, world.caller, null));
+    expect(again.exitCode).toBe(0);
+    expect(searches()).toBe(afterSample);
+    const full = await runImport(parseArgs(["--dry-run"]), deps(dir, world.caller, null));
+    expect(full.exitCode).toBe(0);
+    expect(searches()).toBeGreaterThan(afterSample);
+    expect(logs.join("\n")).toContain("Checkpoint sample does not match this run. Starting the search over.");
+    expect(logs.join("\n")).toContain("Candidates sponsored pass: 30");
+    const after = await readCheckpoint(join(dir, "checkpoint.json"));
+    expect(after.sample).toBeNull();
+    expect(after.search?.passCounts.sponsored).toBe(30);
+    expect(after.search?.rows.some((row) => row.podcastId === "sp_29")).toBe(true);
+    assertNoSecrets(logs.join("\n"));
+  });
+
+  it("does not commit the sample shows when the checkpoint was a sample", async () => {
+    const dir = await tempDir();
+    spyLogs();
+    const sponsored = Array.from({ length: 30 }, (_, index) =>
+      hit({
+        id: `sp_${String(index).padStart(2, "0")}`,
+        audience: 2000,
+        email: FIXTURE_EMAIL,
+        itunes: String(6000 + index),
+        rss: `https://rss.example.test/c${index}.xml`,
+        hasSponsors: true,
+      })
+    );
+    const world = makeCaller(sponsored, []);
+    const sample = await runImport(parseArgs(["--dry-run", "--sample", "25"]), deps(dir, world.caller, null));
+    expect(sample.exitCode).toBe(0);
+    const store = memoryDb([]);
+    const wrote = await runImport(
+      parseArgs(["--commit", "--floor", "1000", "--confirm", "30"]),
+      deps(dir, world.caller, store.db)
+    );
+    expect(wrote.exitCode).toBe(0);
+    const ids = store.tables.podscan_catalog.map((row) => row.podscan_id);
+    expect(ids).toHaveLength(30);
+    expect(ids).toContain("sp_25");
+    expect(ids).toContain("sp_29");
+    expect(store.upserts.map((item) => item.onConflict)).toEqual(["podscan_id", "podscan_id,source,email"]);
+  });
+
+  it("continues without category slicing when categories fails, and the log has no email or key", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const searches: Array<Record<string, string | number | boolean | undefined>> = [];
+    const caller = cappedCaller(searches, () => {
+      throw new TypeError(
+        `Unexpected token < in JSON at position 0 ${FIXTURE_EMAIL} ${API_KEY} ${SERVICE_KEY} https://podscan.fm/api/v1/categories?api_key=${API_KEY}`
+      );
+    });
+    const result = await runImport(parseArgs(["--dry-run"]), deps(dir, caller, null));
+    expect(result.exitCode).toBe(0);
+    const text = logs.join("\n");
+    expect(text).toContain("podscan-import failed step=categories name=TypeError reason=");
+    expect(text).toContain("Unexpected token < in JSON at position 0");
+    expect(text.match(/step=categories/g)).toHaveLength(1);
+    assertNoSecrets(text);
+    expect(text).not.toContain("http");
+    expect(text).not.toContain("?");
+    expect(searches.some((params) => params.category_ids != null)).toBe(false);
+  });
+
+  it("slices with the documented categories body and logs an unexpected body once", async () => {
+    const documented = {
+      categories: [
+        {
+          category_id: "ct_akrev35b2454ypql",
+          category_name: "health",
+          category_display_name: "Health",
+        },
+      ],
+    };
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const searches: Array<Record<string, string | number | boolean | undefined>> = [];
+    const ok = await runImport(
+      parseArgs(["--dry-run"]),
+      deps(dir, cappedCaller(searches, () => documented), null)
+    );
+    expect(ok.exitCode).toBe(0);
+    expect(searches.some((params) => params.category_ids === "ct_akrev35b2454ypql")).toBe(true);
+    expect(logs.join("\n")).not.toContain("step=categories");
+
+    const badDir = await tempDir();
+    const badLogs = spyLogs();
+    const badSearches: Array<Record<string, string | number | boolean | undefined>> = [];
+    const bad = await runImport(
+      parseArgs(["--dry-run"]),
+      deps(badDir, cappedCaller(badSearches, () => ({ categories: { health: { category_id: "ct_hidden" } } })), null)
+    );
+    expect(bad.exitCode).toBe(0);
+    const badText = badLogs.join("\n");
+    expect(badText).toContain("step=categories name=TypeError reason=unexpected categories shape");
+    expect(badText.match(/step=categories/g)).toHaveLength(1);
+    expect(badText).not.toContain("ct_hidden");
+    expect(badSearches.some((params) => params.category_ids != null)).toBe(false);
+    assertNoSecrets(badText);
+  });
+
+  it("still stops for a daily limit raised by the categories call", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const searches: Array<Record<string, string | number | boolean | undefined>> = [];
+    const caller = cappedCaller(searches, () => {
+      throw Object.assign(new Error(`daily quota ${API_KEY} ${FIXTURE_EMAIL}`), {
+        status: 429,
+        retryAfter: 7200,
+        rateLimitRemaining: 0,
+      });
+    });
+    const result = await runImport(parseArgs(["--dry-run"]), deps(dir, caller, null));
+    expect(result.exitCode).toBe(0);
+    const text = logs.join("\n");
+    expect(text).toContain("Daily Podscan limit reached. Re-run the same command tomorrow to resume.");
+    expect(text).not.toContain("step=categories");
+    assertNoSecrets(text);
+  });
 });
+
+function cappedCaller(
+  searches: Array<Record<string, string | number | boolean | undefined>>,
+  categories: () => unknown
+): PodscanCaller {
+  let remaining = 100;
+  return {
+    async get<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
+      remaining = Math.max(0, remaining - 1);
+      if (path === "/categories") return categories() as T;
+      if (path === "/podcasts/search") {
+        searches.push(params ?? {});
+        const broad =
+          params?.has_sponsors === true && params.category_ids == null && params.min_audience_size == null;
+        if (broad) {
+          return {
+            podcasts: [],
+            pagination: { total: 10000, per_page: 50, current_page: 1, last_page: 200, from: null, to: null },
+          } as T;
+        }
+        const id = `pd_${String(params?.category_ids ?? params?.min_audience_size ?? "u")}`;
+        return {
+          podcasts: [
+            {
+              podcast_id: id,
+              podcast_name: id,
+              podcast_categories: ["News"],
+              listener_engagement: { total_listeners: 1 },
+              reach: {
+                audience_size: 2000,
+                email: null,
+                website: null,
+                social_links: [],
+                itunes: [],
+                spotify: [],
+              },
+            },
+          ],
+          pagination: { total: 1, per_page: 50, current_page: 1, last_page: 1, from: 1, to: 1 },
+        } as T;
+      }
+      if (path.endsWith("/latest/sponsor")) return { posted_at: "2026-11-01T00:00:00.000Z" } as T;
+      if (path.endsWith("/demographics")) return { ok: true } as T;
+      throw Object.assign(new Error("missing"), { status: 404 });
+    },
+    async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+      remaining = Math.max(0, remaining - 1);
+      const ids = Array.isArray(body.podcast_ids) ? body.podcast_ids.map(String) : [];
+      const results: Record<string, string | null> = {};
+      for (const id of ids) results[id] = null;
+      return { results } as T;
+    },
+    rateLimit: () => ({ limit: 120, remaining }),
+  };
+}

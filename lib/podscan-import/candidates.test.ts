@@ -4,6 +4,7 @@ import {
   SEARCH_QUERY,
   categoryIdsFrom,
   collectCandidates,
+  readCategories,
   toCandidate,
 } from "./candidates";
 
@@ -172,5 +173,56 @@ describe("candidates", () => {
     expect(seen).toContain("s:-:-:news");
     expect(state.complete).toBe(true);
     expect(seen.some((line) => line.startsWith("u:1000"))).toBe(true);
+  });
+
+  it("slices by the documented categories object", async () => {
+    const documented = {
+      categories: [
+        {
+          category_id: "ct_akrev35b2454ypql",
+          category_name: "health",
+          category_display_name: "Health",
+        },
+        {
+          category_id: "ct_3krv4dnrrqn79l6o",
+          category_name: "technology",
+          category_display_name: "Technology",
+        },
+      ],
+    };
+    const read = readCategories(documented);
+    expect(read).toEqual({
+      ids: ["ct_akrev35b2454ypql", "ct_3krv4dnrrqn79l6o"],
+      recognized: true,
+    });
+    expect(readCategories({ categories: [] })).toEqual({ ids: [], recognized: true });
+    expect(readCategories({ categories: { health: { category_id: "ct_x" } } }).recognized).toBe(false);
+    const seen: string[] = [];
+    const state = await collectCandidates({
+      language: "en",
+      region: null,
+      since: "2025-11-17",
+      sample: null,
+      search: async (params) => {
+        seen.push(String(params.category_ids ?? "-"));
+        const broad = params.has_sponsors === true && params.category_ids == null && params.min_audience_size == null;
+        if (broad) return page([], 10000);
+        return page([podcast(`pd_${params.category_ids ?? params.min_audience_size ?? "u"}`)]);
+      },
+      categories: async () => categoryIdsFrom(documented),
+    });
+    expect(seen).toContain("ct_akrev35b2454ypql");
+    expect(seen).toContain("ct_3krv4dnrrqn79l6o");
+    expect(state.complete).toBe(true);
+    await expect(
+      collectCandidates({
+        language: "en",
+        region: null,
+        since: "2025-11-17",
+        sample: null,
+        search: async () => ({ podcasts: undefined }) as never,
+        categories: async () => [],
+      })
+    ).rejects.toThrow("unexpected search shape");
   });
 });

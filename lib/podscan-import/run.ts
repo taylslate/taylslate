@@ -7,14 +7,15 @@ import { parseArgs, type ImportArgs } from "./args";
 import { lookupAppleFeeds } from "./apple";
 import {
   activeSince,
-  categoryIdsFrom,
   collectCandidates,
   emptySearchState,
+  readCategories,
   SEARCH_QUERY,
   type CatalogCandidate,
   type SearchState,
 } from "./candidates";
 import {
+  alignCheckpointSample,
   isStale,
   readCheckpoint,
   writeJsonAtomic,
@@ -23,6 +24,7 @@ import {
   type ContactProgress,
   type EnrichProgress,
 } from "./checkpoint";
+import { formatFailure, inStep, type ImportStep } from "./failure";
 import { checkEmails, contactStatus, domainOf, type DnsLike, type MxResult } from "./email";
 import { enrichShow, isNotFound } from "./enrich";
 import { fetchOwnerEmail, mapPool, FEED_CONCURRENCY, type LookupFn } from "./feed";
@@ -63,6 +65,7 @@ export type { ImportArgs };
 
 const DAILY_MESSAGE = "Daily Podscan limit reached. Re-run the same command tomorrow to resume.";
 const BUDGET_MESSAGE = "Podscan call budget reached. Re-run the same command to resume.";
+const SAMPLE_MISMATCH = "Checkpoint sample does not match this run. Starting the search over.";
 const PODCAST_ID = /^[A-Za-z0-9_-]+$/;
 
 export interface PodscanCaller {
@@ -160,22 +163,27 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
 
   const save = async () => {
     try {
-      await writeJsonAtomic(checkpointPath, checkpoint);
-    } catch {
-      console.error("checkpoint save failed");
+      await inStep("checkpoint", () => writeJsonAtomic(checkpointPath, checkpoint));
+    } catch (err) {
+      console.error(formatFailure("checkpoint", err));
     }
   };
 
   const guarded = <T>(work: () => Promise<T>): Promise<T> => gate.run(work);
   let commitPlan: { floor: number; chosen: WorkingShow[] } | null = null;
+  let step: ImportStep = "search";
 
   try {
     const since = activeSince(nowFn(), args.activeDays);
+    step = "search";
     const search = await ensureSearch(args, deps, checkpoint, nowFn(), since, guarded, save, args.commit);
     pruneEnrich(checkpoint, search);
+    step = "probe";
     const probe = await ensureProbe(deps, search, checkpoint, nowFn(), guarded, save, args.commit);
+    step = "probeCheck";
     await ensureProbeCheck(deps, search, probe, checkpoint, nowFn(), guarded, save);
-    await ensureContacts(search, checkpoint, deps, nowFn(), save, args.commit);
+    step = "contacts";
+    await inStep("contacts", () => ensureContacts(search, checkpoint, deps, nowFn(), save, args.commit));
     const shows = buildShows(search, probe, checkpoint);
     const kept = {
       1000: shows.filter((show) => keepOf(show, 1000).kept),
@@ -185,9 +193,11 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
 
     if (!args.commit) {
       const sample = sortShows(kept[1000]).slice(0, 5);
+      step = "enrich";
       await enrichIds(deps, sample, checkpoint, nowFn(), guarded, save);
       const links = await countShows(deps.db, shows);
       buildReport(args, search, shows, kept, checkpoint, gate, links, nowFn());
+      step = "checkpoint";
       await writeReport(deps.checkpointDir, args, search, shows, kept, checkpoint, gate, links, nowFn());
       return { exitCode: 0 };
     }
@@ -216,6 +226,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
         `days at budget: ${daysAtBudget(planCalls, args.maxPodscanCalls)}`,
       ].join("\n")
     );
+    step = "enrich";
     await enrichIds(deps, ordered, checkpoint, nowFn(), guarded, save);
     const links = await loadShowLinks(
       deps.db,
@@ -225,6 +236,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
       console.log("Refusing to write because the shows lookup failed.");
       return { exitCode: 1 };
     }
+    step = "write";
     const wrote = await writeRows(deps.db, ordered, floor, links, checkpoint, nowFn());
     if (!wrote) return { exitCode: 1 };
     console.log(`Upserted catalog rows: ${ordered.length}`);
@@ -241,6 +253,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
         if (links == null) {
           console.log("Refusing to write because the shows lookup failed.");
         } else {
+          step = "write";
           const wrote = await writeRows(deps.db, ready, commitPlan.floor, links, checkpoint, nowFn());
           if (!wrote) return { exitCode: 1 };
           console.log(
@@ -252,11 +265,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
       console.log(err.reason === "daily" ? DAILY_MESSAGE : BUDGET_MESSAGE);
       return { exitCode: 0 };
     }
-    const status =
-      err && typeof err === "object" && typeof (err as { status?: unknown }).status === "number"
-        ? (err as { status: number }).status
-        : null;
-    console.error(status == null ? "podscan-import failed" : `podscan-import failed status=${status}`);
+    console.error(formatFailure(step, err));
     return { exitCode: 1 };
   }
 }
@@ -297,6 +306,9 @@ async function ensureSearch(
   save: () => Promise<void>,
   commit: boolean
 ): Promise<SearchState> {
+  if (alignCheckpointSample(checkpoint, args.sample)) {
+    console.log(SAMPLE_MISMATCH);
+  }
   const nowMs = now.getTime();
   const searchFresh = commit || !isStale(checkpoint.searchSavedAt, nowMs);
   if (checkpoint.search && checkpoint.searchSavedAt && searchFresh && checkpoint.search.complete) {
@@ -318,16 +330,36 @@ async function ensureSearch(
       ? checkpoint.search
       : emptySearchState();
   checkpoint.search = resume;
+  let categoriesNoted = false;
   const state = await collectCandidates({
     language: args.language,
     region: args.region,
     since,
     sample: args.sample,
     resume,
-    search: (params) => guarded(() => deps.caller.get<PodscanSearchResponse>("/podcasts/search", params)),
+    search: (params) =>
+      inStep("search", () => guarded(() => deps.caller.get<PodscanSearchResponse>("/podcasts/search", params))),
     categories: async () => {
-      const body = await guarded(() => deps.caller.get<unknown>("/categories"));
-      return categoryIdsFrom(body);
+      const note = (err: unknown) => {
+        if (categoriesNoted) return;
+        categoriesNoted = true;
+        console.error(formatFailure("categories", err));
+      };
+      try {
+        const body = await inStep("categories", () => guarded(() => deps.caller.get<unknown>("/categories")));
+        const read = readCategories(body);
+        if (!read.recognized) {
+          const err = new Error("unexpected categories shape");
+          err.name = "TypeError";
+          note(err);
+          return [];
+        }
+        return read.ids;
+      } catch (err) {
+        if (err instanceof PodscanStop) throw err;
+        note(err);
+        return [];
+      }
     },
     onProgress: (next) => {
       checkpoint.search = next;
@@ -360,13 +392,15 @@ async function ensureProbe(
   const missing = search.rows.map((row) => row.podcastId).filter((id) => !(id in probe));
   for (const chunk of chunkIds(missing, PROBE_CHUNK)) {
     const found = await probeSponsorRecency(chunk, (ids) =>
-      guarded(() =>
-        deps.caller.post<{ results?: Record<string, string | null> }>("/podcasts/batch-probe", {
-          podcast_ids: ids,
-          has_sponsors: true,
-          active_within_days: PROBE_ACTIVE_DAYS,
-          episodes_to_check: PROBE_EPISODES,
-        })
+      inStep("probe", () =>
+        guarded(() =>
+          deps.caller.post<{ results?: Record<string, string | null> }>("/podcasts/batch-probe", {
+            podcast_ids: ids,
+            has_sponsors: true,
+            active_within_days: PROBE_ACTIVE_DAYS,
+            episodes_to_check: PROBE_EPISODES,
+          })
+        )
       )
     );
     Object.assign(probe, found);
@@ -426,7 +460,9 @@ async function fetchLatestSponsor(
 ): Promise<{ postedAt: string | null; missing: boolean }> {
   if (!PODCAST_ID.test(podcastId)) return { postedAt: null, missing: true };
   try {
-    const body = await guarded(() => deps.caller.get<unknown>(`/podcasts/${podcastId}/latest/sponsor`));
+    const body = await inStep("probeCheck", () =>
+      guarded(() => deps.caller.get<unknown>(`/podcasts/${podcastId}/latest/sponsor`))
+    );
     return { postedAt: postedAtFrom(body), missing: false };
   } catch (err) {
     if (isNotFound(err)) return { postedAt: null, missing: true };
@@ -565,7 +601,7 @@ async function enrichIds(
   const get = (path: string): Promise<unknown> => {
     const id = path.split("/")[2] ?? "";
     if (!PODCAST_ID.test(id)) return Promise.resolve(null);
-    return guarded(() => deps.caller.get(path));
+    return inStep("enrich", () => guarded(() => deps.caller.get(path)));
   };
   for (const show of shows) {
     const id = show.candidate.podcastId;

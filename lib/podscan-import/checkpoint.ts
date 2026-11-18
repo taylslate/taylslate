@@ -34,6 +34,8 @@ export interface ProbeCheckProgress {
 
 export interface Checkpoint {
   version: 1;
+  // null is a full run. Missing means the file does not say.
+  sample?: number | null;
   searchSavedAt?: string;
   search?: SearchState;
   probeSavedAt?: string;
@@ -45,6 +47,45 @@ export interface Checkpoint {
   mx?: Record<string, { mxOk: boolean | null; checkedAt: string }>;
   enrichSavedAt?: string;
   enrich?: Record<string, EnrichProgress>;
+}
+
+export function hasImportProgress(checkpoint: Checkpoint): boolean {
+  return (
+    checkpoint.search != null ||
+    checkpoint.searchSavedAt != null ||
+    checkpoint.probe != null ||
+    checkpoint.probeSavedAt != null ||
+    checkpoint.probeCheck != null ||
+    checkpoint.probeCheckSavedAt != null ||
+    checkpoint.contacts != null ||
+    checkpoint.contactsSavedAt != null ||
+    checkpoint.mx != null ||
+    checkpoint.enrich != null ||
+    checkpoint.enrichSavedAt != null
+  );
+}
+
+export function clearImportProgress(checkpoint: Checkpoint): void {
+  checkpoint.search = undefined;
+  checkpoint.searchSavedAt = undefined;
+  checkpoint.probe = undefined;
+  checkpoint.probeSavedAt = undefined;
+  checkpoint.probeCheck = undefined;
+  checkpoint.probeCheckSavedAt = undefined;
+  checkpoint.contacts = undefined;
+  checkpoint.contactsSavedAt = undefined;
+  checkpoint.mx = undefined;
+  checkpoint.enrich = undefined;
+  checkpoint.enrichSavedAt = undefined;
+}
+
+// True when saved progress was dropped because the sample does not match.
+export function alignCheckpointSample(checkpoint: Checkpoint, sample: number | null): boolean {
+  if (checkpoint.sample !== undefined && checkpoint.sample === sample) return false;
+  const drop = hasImportProgress(checkpoint);
+  if (drop) clearImportProgress(checkpoint);
+  checkpoint.sample = sample;
+  return drop;
 }
 
 export function emptyCheckpoint(): Checkpoint {

@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { PodscanClient } from "../lib/podscan/client";
+import { formatFailure, importStepOf } from "../lib/podscan-import/failure";
 import { parseArgs, runImport, type Db, type ShowLink } from "../lib/podscan-import/run";
 
 function loadEnv(): void {
@@ -86,7 +87,7 @@ async function main(): Promise<void> {
     if (message === "PODSCAN_API_KEY is not set" || message === "Missing a flag value." || message === "Unknown flag." || message === "Bad number.") {
       console.error(message);
     } else {
-      console.error("podscan-import failed");
+      console.error(formatFailure(importStepOf(err) ?? "search", err));
     }
     code = 1;
   }

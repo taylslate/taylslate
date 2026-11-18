@@ -3730,3 +3730,7 @@ Sample dry run `--dry-run --sample 25` against Podscan and Apple, no database wr
 - Reruns upsert. They do not delete an email the source dropped.
 - Migration 093 is not applied. Do not run `--commit` until 093 is applied and Chris picks the floor.
 - This lane does not touch `public.shows`.
+
+### Note
+
+The checkpoint now stores the sample size that produced it. A full run, or a commit, does not reuse a sample checkpoint. `GET /categories` is the documented object `{ categories: [{ category_id, category_name, category_display_name }] }`. If that call throws, or the body is not a category list, the run logs one scrubbed line and continues without category slicing. Failure lines name the step, the error name, and a short scrubbed reason. Chris needs to re-run the full dry run on his Mac.
