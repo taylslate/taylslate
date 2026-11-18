@@ -3734,3 +3734,5 @@ Sample dry run `--dry-run --sample 25` against Podscan and Apple, no database wr
 ### Note
 
 The checkpoint now stores the sample size that produced it. A full run, or a commit, does not reuse a sample checkpoint. `GET /categories` is the documented object `{ categories: [{ category_id, category_name, category_display_name }] }`. If that call throws, or the body is not a category list, the run logs one scrubbed line and continues without category slicing. Failure lines name the step, the error name, and a short scrubbed reason. Chris needs to re-run the full dry run on his Mac.
+
+A dropped socket (`TypeError: terminated`, `fetch failed`, ECONNRESET, ETIMEDOUT, socket hang up) or a 5xx on search, categories, probe, probe check, or enrich is retried up to 5 times with increasing delay. Each try counts toward the Podscan budget and the 100 per minute gate. A 4xx other than 429 is not retried. The full dry run still has to be re-run on Chris's Mac.

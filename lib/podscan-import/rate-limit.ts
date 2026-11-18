@@ -1,6 +1,7 @@
 // Per-host sliding window. Podscan stays at 100/min under the live
 // limit of 120. Apple stays at 20/min. A 429 waits on Retry-After
 // and on X-RateLimit-Remaining. A daily-limit 429 stops the run.
+// A dropped socket or a 5xx is retried. A 4xx other than 429 is not.
 
 export const PODSCAN_PER_MINUTE = 100;
 export const PODSCAN_CONCURRENCY = 2;
@@ -118,6 +119,56 @@ export function podscanBackoffMs(input: {
   return Math.max(retryMs, remainingMs, 1_000);
 }
 
+// Five tries total: the first call plus four retries.
+export const TRANSIENT_ATTEMPTS = 5;
+
+export function transientBackoffMs(retryIndex: number): number {
+  const step = Math.max(0, retryIndex);
+  return Math.min(1_000 * 2 ** step, 30_000);
+}
+
+function errorMessage(err: unknown): string {
+  if (!err || typeof err !== "object") return "";
+  const message = (err as { message?: unknown }).message;
+  return typeof message === "string" ? message : "";
+}
+
+function errorCode(err: unknown): string {
+  if (!err || typeof err !== "object") return "";
+  const code = (err as { code?: unknown }).code;
+  return typeof code === "string" ? code : "";
+}
+
+function causeChain(err: unknown): unknown[] {
+  const chain: unknown[] = [];
+  let current = err;
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (!current || typeof current !== "object") break;
+    const cause = (current as { cause?: unknown }).cause;
+    if (!cause) break;
+    chain.push(cause);
+    current = cause;
+  }
+  return chain;
+}
+
+export function isTransientPodscanError(err: unknown): boolean {
+  const info = readErr(err);
+  if (info) {
+    if (info.status === 429) return false;
+    if (info.status >= 400 && info.status < 500) return false;
+    if (info.status >= 500 && info.status <= 599) return true;
+  }
+  for (const item of [err, ...causeChain(err)]) {
+    const message = errorMessage(item).toLowerCase();
+    const code = errorCode(item);
+    if (message === "terminated" || message === "fetch failed") return true;
+    if (message.includes("socket hang up")) return true;
+    if (code === "ECONNRESET" || code === "ETIMEDOUT" || code === "UND_ERR_SOCKET") return true;
+  }
+  return false;
+}
+
 export function appleBackoffMs(failureIndex: number, rng: () => number = Math.random): number {
   const base = Math.min(30_000 * 2 ** failureIndex, 5 * 60_000);
   return base + Math.floor(rng() * 1000);
@@ -163,6 +214,7 @@ export class PodscanGate {
       sleepFn?: (ms: number) => Promise<void>;
       observe?: () => { limit: number | null; remaining: number | null };
       max429Retries?: number;
+      maxTransientRetries?: number;
     }
   ) {}
 
@@ -220,6 +272,13 @@ export class PodscanGate {
         this.opts.limiter.release();
         handedOff = true;
         await sleepFn(wait);
+        return this.attempt(fn, retry + 1);
+      }
+      const maxTransient = this.opts.maxTransientRetries ?? TRANSIENT_ATTEMPTS - 1;
+      if (isTransientPodscanError(err) && retry < maxTransient) {
+        this.opts.limiter.release();
+        handedOff = true;
+        await sleepFn(transientBackoffMs(retry));
         return this.attempt(fn, retry + 1);
       }
       throw err;

@@ -633,7 +633,59 @@ describe("runImport", () => {
     expect(text).not.toContain("step=categories");
     assertNoSecrets(text);
   });
+
+  it("retries a terminated search and then finishes", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const world = makeCaller(sponsoredTwenty, oneFloor);
+    const flaky = failSearches(world.caller, 1);
+    const result = await runImport(parseArgs(["--dry-run", "--sample", "25"]), deps(dir, flaky.caller, null));
+    expect(result.exitCode).toBe(0);
+    expect(flaky.searches()).toBeGreaterThan(1);
+    expect(logs.join("\n")).toContain("Sample: 25");
+    assertNoSecrets(logs.join("\n"));
+  });
+
+  it("saves the checkpoint when a terminated search keeps failing", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const world = makeCaller(sponsoredTwenty, oneFloor);
+    const flaky = failSearches(world.caller, 20);
+    const result = await runImport(parseArgs(["--dry-run", "--sample", "25"]), deps(dir, flaky.caller, null));
+    expect(result.exitCode).toBe(1);
+    expect(flaky.searches()).toBe(5);
+    const text = logs.join("\n");
+    expect(text).toContain("podscan-import failed step=search name=TypeError reason=terminated");
+    assertNoSecrets(text);
+    const saved = await readCheckpoint(join(dir, "checkpoint.json"));
+    expect(saved.version).toBe(1);
+    expect(saved.sample).toBe(25);
+    expect(saved.search?.started).toBe(true);
+    expect(saved.search?.complete).toBe(false);
+  });
 });
+
+function failSearches(inner: PodscanCaller, failCount: number): { caller: PodscanCaller; searches: () => number } {
+  let searches = 0;
+  return {
+    searches: () => searches,
+    caller: {
+      async get<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
+        if (path === "/podcasts/search") {
+          searches += 1;
+          if (searches <= failCount) {
+            throw Object.assign(new TypeError(`terminated ${FIXTURE_EMAIL} ${API_KEY}`), {
+              cause: Object.assign(new Error("socket hang up"), { code: "UND_ERR_SOCKET" }),
+            });
+          }
+        }
+        return inner.get(path, params);
+      },
+      post: (path, body) => inner.post(path, body),
+      rateLimit: () => inner.rateLimit(),
+    },
+  };
+}
 
 function cappedCaller(
   searches: Array<Record<string, string | number | boolean | undefined>>,

@@ -7,10 +7,13 @@ import {
   PODSCAN_PER_MINUTE,
   PodscanGate,
   PodscanStop,
+  TRANSIENT_ATTEMPTS,
   appleBackoffMs,
   isDailyPodscanLimit,
+  isTransientPodscanError,
   podscanBackoffMs,
   sleep,
+  transientBackoffMs,
   withAppleRetries,
 } from "./rate-limit";
 
@@ -195,5 +198,101 @@ describe("rate limits", () => {
     await pending;
     expect(attempts).toBe(3);
     expect(backoffs).toEqual([30_000, 60_000]);
+  });
+
+  it("retries a terminated fetch with increasing delay and counts every try", async () => {
+    vi.useFakeTimers();
+    const waits: number[] = [];
+    let calls = 0;
+    const gate = new PodscanGate({
+      maxCalls: 10,
+      limiter: new HostLimiter(100, 2, () => Date.now(), sleep),
+      sleepFn: async (ms) => {
+        waits.push(ms);
+        await sleep(ms);
+      },
+      observe: () => ({ limit: 120, remaining: 100 }),
+    });
+    const pending = gate.run(async () => {
+      calls += 1;
+      if (calls < 3) {
+        throw Object.assign(new TypeError("terminated"), {
+          cause: Object.assign(new Error("socket hang up"), { code: "UND_ERR_SOCKET" }),
+        });
+      }
+      return "ok";
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(calls).toBe(2);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await pending;
+    expect(calls).toBe(3);
+    expect(gate.callsUsed).toBe(3);
+    expect(waits).toEqual([1_000, 2_000]);
+    expect(transientBackoffMs(0)).toBe(1_000);
+    expect(transientBackoffMs(3)).toBe(8_000);
+  });
+
+  it("stops after five transient tries and does not retry a 4xx", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const gate = new PodscanGate({
+      maxCalls: 10,
+      limiter: new HostLimiter(100, 2, () => Date.now(), sleep),
+      sleepFn: sleep,
+      observe: () => ({ limit: 120, remaining: 100 }),
+    });
+    const pending = gate.run(async () => {
+      calls += 1;
+      throw Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+      });
+    });
+    const failed = expect(pending).rejects.toThrow("fetch failed");
+    await vi.advanceTimersByTimeAsync(1_000 + 2_000 + 4_000 + 8_000);
+    await failed;
+    expect(calls).toBe(TRANSIENT_ATTEMPTS);
+    expect(gate.callsUsed).toBe(TRANSIENT_ATTEMPTS);
+
+    let clientErrors = 0;
+    const refused = new PodscanGate({
+      maxCalls: 10,
+      limiter: new HostLimiter(100, 2, () => Date.now(), sleep),
+      sleepFn: sleep,
+      observe: () => ({ limit: 120, remaining: 100 }),
+    });
+    const bad = refused.run(async () => {
+      clientErrors += 1;
+      throw Object.assign(new Error("bad request"), { status: 400 });
+    });
+    const rejected = expect(bad).rejects.toMatchObject({ status: 400 });
+    await vi.advanceTimersByTimeAsync(0);
+    await rejected;
+    expect(clientErrors).toBe(1);
+    expect(isTransientPodscanError(Object.assign(new Error("no"), { status: 404 }))).toBe(false);
+    expect(isTransientPodscanError(Object.assign(new Error("down"), { status: 503 }))).toBe(true);
+    expect(isTransientPodscanError(Object.assign(new Error("timeout"), { code: "ETIMEDOUT" }))).toBe(true);
+    expect(isTransientPodscanError(new TypeError("unexpected search shape"))).toBe(false);
+
+    let budgetCalls = 0;
+    const limited = new PodscanGate({
+      maxCalls: 2,
+      limiter: new HostLimiter(100, 2, () => Date.now(), sleep),
+      sleepFn: sleep,
+      observe: () => ({ limit: 120, remaining: 100 }),
+    });
+    const budget = limited.run(async () => {
+      budgetCalls += 1;
+      throw new TypeError("terminated");
+    });
+    const stopped = expect(budget).rejects.toMatchObject({ name: "PodscanStop", reason: "budget" });
+    await vi.advanceTimersByTimeAsync(1_000 + 2_000);
+    await stopped;
+    expect(budgetCalls).toBe(2);
+    expect(limited.callsUsed).toBe(2);
   });
 });
