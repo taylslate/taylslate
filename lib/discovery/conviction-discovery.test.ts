@@ -995,6 +995,32 @@ describe("runConvictionDiscovery", () => {
     });
   });
 
+  it("scores YouTube shows when every Podscan query returned 429", async () => {
+    const youtube = recoveryShow({
+      id: "yt-rate-limit",
+      name: "Tube Lab",
+      platform: "youtube",
+      audience_size: 20000,
+      youtube_channel_id: "UCtube",
+    });
+    const h = makeDeps({
+      platforms: ["podcast", "youtube"],
+      discover: async () => ({
+        discovered: [youtube],
+        sources: { podscan: 0, youtube: 1 },
+        errors: [
+          'Podscan query "recovery hardware": Podscan API error: 429 Too Many Requests',
+        ],
+      }),
+    });
+    const result = await runConvictionDiscovery("camp-1", h.deps);
+    expect(result.scoredCount).toBe(1);
+    expect(result.candidateCount).toBe(1);
+    expect(result.rings[0]?.shows.some((entry) => entry.show.platform === "youtube")).toBe(true);
+    expect(h.recordCalls).toHaveLength(1);
+    expect(result.errors.some((message) => message.includes("429"))).toBe(true);
+  });
+
   it("persists podscan_id with the show", async () => {
     const h = makeDeps({
       discovered: [recoveryShow({ podscan_id: "pd_rec1" })],

@@ -4,6 +4,14 @@
 // Docs: https://podscan.fm/docs/api
 // ============================================================
 
+import {
+  decidePodscan429,
+  isPodscanTimeout,
+  parseRetryAfterSeconds,
+  PODSCAN_FETCH_TIMEOUT_MS,
+  podscanSleep,
+} from "@/lib/podscan/client";
+
 const PODSCAN_BASE_URL = "https://podscan.fm/api/v1";
 
 // ---- Types ----
@@ -192,8 +200,10 @@ export interface PodscanLatestEpisodeSponsors {
 export class PodscanError extends Error {
   constructor(
     message: string,
-    public status: number,
-    public rateLimitRemaining?: number
+    /** Omitted on a timeout. HTTP failures still carry the status. */
+    public status?: number,
+    public rateLimitRemaining?: number,
+    public retryAfter?: number
   ) {
     super(message);
     this.name = "PodscanError";
@@ -204,13 +214,21 @@ export class PodscanError extends Error {
 
 export class PodscanClient {
   private apiKey: string;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly timeoutMs: number;
 
-  constructor(apiKey?: string) {
+  constructor(
+    apiKey?: string,
+    sleep?: (ms: number) => Promise<void>,
+    timeoutMs: number = PODSCAN_FETCH_TIMEOUT_MS
+  ) {
     const key = apiKey ?? process.env.PODSCAN_API_KEY;
     if (!key) {
       throw new Error("PODSCAN_API_KEY is not set");
     }
     this.apiKey = key;
+    this.sleep = sleep ?? podscanSleep;
+    this.timeoutMs = timeoutMs;
   }
 
   // ---- Private Helpers ----
@@ -218,7 +236,11 @@ export class PodscanClient {
   private async request<T>(
     path: string,
     params?: Record<string, string | number | boolean | undefined>,
-    retries = 2
+    attempt: { retries: number; sleptMs: number; timeoutMs: number } = {
+      retries: 2,
+      sleptMs: 0,
+      timeoutMs: this.timeoutMs,
+    }
   ): Promise<T> {
     const url = new URL(`${PODSCAN_BASE_URL}${path}`);
     if (params) {
@@ -229,28 +251,56 @@ export class PodscanClient {
       }
     }
 
-    const res = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      next: { revalidate: 3600 }, // Cache for 1 hour
-    });
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        next: { revalidate: 3600 }, // Cache for 1 hour
+        signal: AbortSignal.timeout(attempt.timeoutMs),
+      });
+    } catch (err) {
+      if (isPodscanTimeout(err)) {
+        throw new PodscanError("Podscan API timeout");
+      }
+      throw err;
+    }
 
-    if (res.status === 429 && retries > 0) {
-      // Rate limited — wait and retry (Podscan trial: 10 req/min)
-      const retryAfter = res.headers.get("Retry-After");
-      const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 7000;
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
-      return this.request<T>(path, params, retries - 1);
+    if (res.status === 429) {
+      const remaining = res.headers.get("X-RateLimit-Remaining");
+      const decision = decidePodscan429({
+        retryAfterHeader: res.headers.get("Retry-After"),
+        remainingHeader: remaining,
+        retries: attempt.retries,
+        sleptMs: attempt.sleptMs,
+      });
+      if (decision.action === "retry") {
+        console.warn(`[podscan] Rate limited, retrying in ${decision.waitMs}ms...`);
+        await this.sleep(decision.waitMs);
+        return this.request<T>(path, params, {
+          retries: attempt.retries - 1,
+          sleptMs: attempt.sleptMs + decision.waitMs,
+          timeoutMs: attempt.timeoutMs,
+        });
+      }
     }
 
     if (!res.ok) {
-      const rateLimitRemaining = res.headers.get("X-RateLimit-Remaining");
+      const rateLimitHeader = res.headers.get("X-RateLimit-Remaining");
+      const rateLimitRemaining =
+        rateLimitHeader != null && rateLimitHeader.trim() !== ""
+          ? Number(rateLimitHeader)
+          : undefined;
+      const retryAfter = parseRetryAfterSeconds(res.headers.get("Retry-After"));
       throw new PodscanError(
         `Podscan API error: ${res.status} ${res.statusText}`,
         res.status,
-        rateLimitRemaining ? parseInt(rateLimitRemaining, 10) : undefined
+        rateLimitRemaining != null && Number.isFinite(rateLimitRemaining)
+          ? rateLimitRemaining
+          : undefined,
+        retryAfter == null ? undefined : Math.round(retryAfter)
       );
     }
 
@@ -560,9 +610,11 @@ export class PodscanClient {
 
   /**
    * Aggregated listener demographics for a podcast (Premium+ endpoint).
-   * Returns null when Podscan has no demographics for the show (404) —
-   * a data state, not an error. 429s retry inside request(); any other
-   * failure throws PodscanError for the caller's fail-soft boundary.
+   * Returns null when Podscan has no demographics for the show (404),
+   * a data state, not an error. A short 429 retries inside request().
+   * A Retry-After over 10s throws PodscanError immediately. A timeout
+   * throws PodscanError with no status. Any other failure throws
+   * PodscanError for the caller's fail-soft boundary.
    */
   async getPodcastDemographics(
     podcastId: string

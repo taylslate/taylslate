@@ -357,4 +357,48 @@ describe("hydrateCandidateDemographics", () => {
     });
     expect(fetchCalls).toHaveLength(0);
   });
+
+  it("stops pass 2 when the time budget elapses and leaves the rest unhydrated", async () => {
+    let now = 0;
+    const candidates = Array.from({ length: 4 }, (_, i) =>
+      makeShow({ id: `s${i}`, name: `Show ${i}`, podscan_id: `pd_${i}` })
+    );
+    const { deps, fetchCalls } = makeDeps({
+      fetch: async () => {
+        now = 45_000;
+        return API_PAYLOAD;
+      },
+    });
+    deps.now = () => now;
+    const result = await hydrateCandidateDemographics(candidates, deps);
+    expect(fetchCalls).toEqual(["pd_0"]);
+    expect(result.fromApi).toBe(1);
+    expect(result.errors).toEqual([
+      "Demographics hydration time budget elapsed. 3 podcast(s) left unhydrated this run.",
+    ]);
+    expect(candidates[0].demographics.age_25_34).toBe(70);
+    expect(candidates[1].demographics).toEqual({});
+    expect(candidates[2].demographics).toEqual({});
+    expect(candidates[3].demographics).toEqual({});
+  });
+
+  it("honors an injected pass 2 budget", async () => {
+    let now = 0;
+    const candidates = Array.from({ length: 3 }, (_, i) =>
+      makeShow({ id: `s${i}`, name: `Show ${i}`, podscan_id: `pd_${i}` })
+    );
+    const { deps, fetchCalls } = makeDeps({
+      fetch: async () => {
+        now = 1_000;
+        return API_PAYLOAD;
+      },
+    });
+    deps.now = () => now;
+    deps.pass2BudgetMs = 1_000;
+    const result = await hydrateCandidateDemographics(candidates, deps);
+    expect(fetchCalls).toEqual(["pd_0"]);
+    expect(result.errors).toEqual([
+      "Demographics hydration time budget elapsed. 2 podcast(s) left unhydrated this run.",
+    ]);
+  });
 });

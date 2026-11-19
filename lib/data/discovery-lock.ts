@@ -48,12 +48,15 @@ export type ClaimResult =
        * The claimed row's created_at — a fencing token. releaseDiscovery deletes
        * ONLY this exact row, so a slow predecessor whose lock was TTL-stolen
        * cannot delete the SUCCESSOR's live lock (the successor's row carries a
-       * newer created_at). This matters because a run is not reliably shorter
-       * than the TTL: the Podscan client honors an uncapped Retry-After sleep
-       * (lib/enrichment/podscan.ts), so a rate-limited run can exceed 300s, get
-       * stolen, then finish and release. Null only on the fail-open path, where
+       * newer created_at). A run is not reliably shorter than the TTL.
+       * A Podscan 429 used to sleep for the full Retry-After
+       * (lib/enrichment/podscan.ts and lib/podscan/client.ts), so a
+       * rate-limited run could exceed 300s, get stolen, then finish and
+       * release. That sleep is now capped at 10s, and a Retry-After over
+       * 10s throws instead. A slow run can still be stolen for another
+       * reason. Null only on the fail-open path, where
        * there is no row to fence and release falls back to a best-effort
-       * delete-by-campaign_id (the pre-fence behavior — acceptable degradation).
+       * delete-by-campaign_id (the pre-fence behavior, acceptable degradation).
        */
       token: string | null;
     }
