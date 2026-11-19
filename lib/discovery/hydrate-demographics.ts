@@ -18,9 +18,9 @@
 // (NEUTRAL_DEGRADED_SCORE, degraded) — partial hydration is fine because the
 // scorer evaluates each show's demographics in isolation.
 //
-// No preemptive per-run fetch cap: the pool is naturally bounded by the
-// candidate count, and fromApi/fromDb counts are surfaced in the result (and
-// the conviction.scored event) so the spend is a reported number.
+// Pass 2 has a wall-clock budget (default 45s, injectable on deps). When it
+// elapses, workers stop taking new podcast ids and the rest stay unhydrated.
+// fromApi and fromDb counts are still reported on the result.
 // ============================================================
 
 import type { Show, ShowDemographics } from "@/lib/data/types";
@@ -40,6 +40,7 @@ import {
   PodscanError,
   type PodscanDemographics,
 } from "@/lib/enrichment/podscan";
+import { PodscanApiError } from "@/lib/podscan/client";
 import { podscanDemographicsToShowDemographics } from "./format-discovered-show";
 
 // ---- Injected dependencies (default to the real implementations) ----
@@ -52,6 +53,14 @@ export interface HydrateDemographicsDeps {
    * Podscan 404 = podcast has no demographics) — a skip, not an error.
    */
   fetchDemographics: (podscanId: string) => Promise<PodscanDemographics | null>;
+  /**
+   * Wall-clock budget for the Podscan demographics pass. Default 45s.
+   * When it elapses, workers stop taking new ids. In-flight fetches finish.
+   * The rest of the queue stays unhydrated.
+   */
+  pass2BudgetMs?: number;
+  /** Clock for the pass 2 budget. Tests inject one. Default is Date.now. */
+  now?: () => number;
   /**
    * Media-kit country shares from show_profiles that have a verified tie
    * to a catalog show (a deal, or a show_owner email). Omitted → skip.
@@ -92,9 +101,12 @@ export function hasDemographics(d: ShowDemographics | undefined | null): boolean
   return !!d && Object.keys(d).length > 0;
 }
 
-// Half the Podscan Premium concurrent-request cap (10) — leaves headroom for
+// Half the Podscan Premium concurrent-request cap (10). Leaves headroom for
 // anything else talking to Podscan while a discovery run is in flight.
 const FETCH_CONCURRENCY = 5;
+
+/** Stop pass 2 after this long so a slow Podscan cannot hold discovery. */
+export const DEMOGRAPHICS_PASS2_BUDGET_MS = 45_000;
 
 /** Catalog `shows.id`. Discovery ids (`discovered-podscan-…`) are not ties. */
 const CATALOG_SHOW_ID =
@@ -167,15 +179,31 @@ export async function hydrateCandidateDemographics(
 
   const queue = [...byPodscanId.entries()];
   let rateLimited = false;
+  let budgetNoted = false;
   let failCount = 0;
   let firstFailure = "";
+  const budgetMs = resolvePass2BudgetMs(deps.pass2BudgetMs);
+  const now = deps.now ?? Date.now;
+  const startedAt = now();
+
+  const budgetElapsed = (): boolean => now() - startedAt >= budgetMs;
 
   const worker = async (): Promise<void> => {
     while (queue.length > 0 && !rateLimited) {
+      if (budgetElapsed()) {
+        // Stop taking new ids. In-flight fetches still finish. One note.
+        if (!budgetNoted) {
+          budgetNoted = true;
+          result.errors.push(
+            `Demographics hydration time budget elapsed. ${queue.length} podcast(s) left unhydrated this run.`
+          );
+        }
+        return;
+      }
       const [podscanId, shows] = queue.shift()!;
       try {
         const payload = await deps.fetchDemographics(podscanId);
-        if (!payload) continue; // no key configured, or 404 (no data) — skip
+        if (!payload) continue; // no key configured, or 404 (no data). Skip.
         const demo = podscanDemographicsToShowDemographics(payload);
         if (!hasDemographics(demo)) continue; // payload had no usable sections
         for (const s of shows) {
@@ -183,11 +211,11 @@ export async function hydrateCandidateDemographics(
           result.fromApi++;
         }
       } catch (err) {
-        if (err instanceof PodscanError && err.status === 429) {
-          // The client already retried with backoff — a 429 here means the
-          // budget is really gone. Circuit-break the rest of this run; only
-          // the first worker to trip it writes the note (concurrent in-flight
-          // 429s would duplicate it).
+        if (isPodscanRateLimit(err)) {
+          // A 429 here means the client gave up: a Retry-After over 10s
+          // throws immediately, and a short retry that still fails throws
+          // too. Stop the rest of this run. Only the first worker writes
+          // the note (concurrent in-flight 429s would duplicate it).
           if (!rateLimited) {
             rateLimited = true;
             result.errors.push(
@@ -251,4 +279,17 @@ export async function hydrateCandidateDemographics(
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function resolvePass2BudgetMs(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value) || value < 0) return DEMOGRAPHICS_PASS2_BUDGET_MS;
+  return value;
+}
+
+/** Either Podscan client. A 429 stops the rest of the pass. */
+function isPodscanRateLimit(err: unknown): boolean {
+  if (err instanceof PodscanError || err instanceof PodscanApiError) {
+    return err.status === 429;
+  }
+  return false;
 }

@@ -1,5 +1,34 @@
 # Senior dev handoff
 
+## PODSCAN-RL-HOTFIX1: discovery finishes when Podscan is rate limited
+
+### What was built
+
+Brand show search (`POST /api/campaigns/[id]/discover`) no longer waits out a long Podscan `Retry-After`. On 2026-11-19 the account was at its daily limit (`429`, `X-RateLimit-Remaining: 0`, `Retry-After` about 23,000 seconds). Discovery logged the merged candidate counts and then died at Vercel's 300s limit, before scoring.
+
+Both Podscan HTTP clients now retry a 429 only when the wait is short. A missing `Retry-After` still waits 7 seconds. A `Retry-After` over 10 seconds throws immediately, including a daily limit. One call never sleeps more than 10 seconds in total. Each fetch aborts after 15 seconds (overridable on `lib/podscan/client.ts` get/post). A timeout throws an error whose message says timeout and whose status is omitted. Callers already treat that as a normal failure.
+
+Pass 2 of demographics hydration stops after 45 seconds. Workers stop taking new podcast ids, in-flight fetches finish, and one note is added to the result. The 429 circuit breaker still trips on the first 429 either client throws. Podscan search queries were already caught one by one. A 429 or a timeout drops that query's podcasts. YouTube results still flow and still score.
+
+No screen, style, copy, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. No migration, no env var, no Vercel setting, and `maxDuration` is unchanged. The import script lane was not edited.
+
+### Where
+
+- `lib/podscan/client.ts` and `lib/podscan/client.test.ts`
+- `lib/enrichment/podscan.ts` (the client discovery actually calls) and `lib/enrichment/podscan-rate-limit.test.ts`
+- `lib/discovery/hydrate-demographics.ts` and its test
+- `lib/discovery/discover-shows.test.ts`
+- `lib/discovery/conviction-discovery.test.ts`
+- `lib/data/discovery-lock.ts` (the lock comment no longer says the sleep is uncapped)
+
+### What a brand sees
+
+Shows still score. YouTube results still come back. Podcasts may have no demographics, and there may be fewer podcast results, because those Podscan calls stop instead of waiting out the limit.
+
+### Tests
+
+Covered here: a 429 with `Retry-After` 23130 throws without sleeping; a 429 with `Retry-After` 2 retries once; a fetch timeout throws; hydration stops at the budget and reports one note; a discover run whose Podscan queries all 429 still returns scored YouTube shows.
+
 ## Automated airchecks, parts 1 and 2
 
 ### What was built
