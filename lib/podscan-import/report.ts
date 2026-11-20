@@ -25,6 +25,10 @@ export interface ImportReport {
   sponsoredLast12m: number;
   hasSponsorsProbeNull: number;
   kept: { 1000: number; 2500: number; 5000: number };
+  keptFloorSponsored: { 1000: number; 2500: number; 5000: number };
+  floorConfirm: { floor: number; kept: number; keptFloorSponsored: number } | null;
+  podscanCallsForFlags: number;
+  probeFloor: number | null;
   emailCoverage: { 1000: Coverage; 2500: Coverage; 5000: Coverage };
   syntax: { pass: number; fail: number };
   syntaxFailureReasons: Record<string, number>;
@@ -116,6 +120,19 @@ export function renderReport(report: ImportReport): { json: string; markdown: st
     `Kept at 1000: ${report.kept[1000]}`,
     `Kept at 2500: ${report.kept[2500]}`,
     `Kept at 5000: ${report.kept[5000]}`,
+    `Kept at 1000 with --floor-sponsored: ${report.keptFloorSponsored[1000]}`,
+    `Kept at 2500 with --floor-sponsored: ${report.keptFloorSponsored[2500]}`,
+    `Kept at 5000 with --floor-sponsored: ${report.keptFloorSponsored[5000]}`,
+    ...(report.floorConfirm
+      ? [
+          `Kept for --floor ${report.floorConfirm.floor}: ${report.floorConfirm.kept}`,
+          `Kept for --floor ${report.floorConfirm.floor} with --floor-sponsored: ${report.floorConfirm.keptFloorSponsored}`,
+        ]
+      : []),
+    `Podscan calls for these flags: ${report.podscanCallsForFlags}`,
+    ...(report.probeFloor != null
+      ? [`Sponsor probe skipped shows under ${report.probeFloor} because --floor-sponsored is on.`]
+      : []),
     `Kept with no audience at 1000: ${report.keptNoAudience[1000]}`,
     `Kept with no audience at 2500: ${report.keptNoAudience[2500]}`,
     `Kept with no audience at 5000: ${report.keptNoAudience[5000]}`,

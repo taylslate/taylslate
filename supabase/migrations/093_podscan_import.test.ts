@@ -11,8 +11,9 @@ const statements = sql
 const TABLES = ["podscan_catalog", "show_contacts"] as const;
 
 describe("migration 093 podscan import", () => {
-  it("creates two service-only tables and is not applied", () => {
-    expect(sql).toContain("NOT applied. Apply only after merge and Chris's OK.");
+  it("creates two service-only tables and records the apply", () => {
+    expect(sql).toContain("Applied 2026-11-20 by apply_migration.");
+    expect(sql).not.toContain("NOT applied");
     for (const table of TABLES) {
       expect(statements).toContain(`create table if not exists public.${table}`);
       expect(statements).toContain(`alter table public.${table} enable row level security`);

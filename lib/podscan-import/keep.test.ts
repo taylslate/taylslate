@@ -25,6 +25,16 @@ describe("keep rule", () => {
     expect(decideKeep(fixture[6], 1000).kept).toBe(false);
   });
 
+  it("applies the floor to sponsored shows only when asked", () => {
+    expect(decideKeep(fixture[0], 1000, { floorSponsored: true })).toEqual({ kept: false, reason: null });
+    expect(decideKeep(fixture[1], 1000, { floorSponsored: true })).toEqual({ kept: false, reason: null });
+    expect(decideKeep({ sponsoredLast12m: true, audienceSize: 1000 }, 1000, { floorSponsored: true })).toEqual({
+      kept: true,
+      reason: "sponsored",
+    });
+    expect(countKept(fixture, 1000, { floorSponsored: true })).toBe(3);
+  });
+
   it("counts floors exactly", () => {
     expect(summarizeKeeps(fixture)).toEqual({
       sponsored: 2,

@@ -13,19 +13,27 @@ export type KeepReason = "sponsored" | "floor";
 
 export function decideKeep(
   show: KeepShow,
-  floor: number
+  floor: number,
+  opts?: { floorSponsored?: boolean }
 ): { kept: boolean; reason: KeepReason | null } {
-  if (show.sponsoredLast12m) return { kept: true, reason: "sponsored" };
-  if (show.audienceSize != null && show.audienceSize >= floor) {
-    return { kept: true, reason: "floor" };
+  const meetsFloor = show.audienceSize != null && show.audienceSize >= floor;
+  if (show.sponsoredLast12m && !opts?.floorSponsored) {
+    return { kept: true, reason: "sponsored" };
+  }
+  if (meetsFloor) {
+    return { kept: true, reason: show.sponsoredLast12m ? "sponsored" : "floor" };
   }
   return { kept: false, reason: null };
 }
 
-export function countKept(shows: readonly KeepShow[], floor: number): number {
+export function countKept(
+  shows: readonly KeepShow[],
+  floor: number,
+  opts?: { floorSponsored?: boolean }
+): number {
   let count = 0;
   for (const show of shows) {
-    if (decideKeep(show, floor).kept) count += 1;
+    if (decideKeep(show, floor, opts).kept) count += 1;
   }
   return count;
 }

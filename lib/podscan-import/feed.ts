@@ -90,6 +90,8 @@ function blockedV4(ip: string): boolean {
   if (a === 169 && b === 254) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a >= 224 && a <= 239) return true;
   return false;
 }
 
@@ -100,6 +102,8 @@ function blockedV6(ip: string): boolean {
     return true;
   }
   if (value.startsWith("fc") || value.startsWith("fd")) return true;
+  const head = value.split(":")[0] ?? "";
+  if (/^ff[0-9a-f]{2}$/.test(head)) return true;
   return false;
 }
 

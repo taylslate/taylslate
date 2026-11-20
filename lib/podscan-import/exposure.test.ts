@@ -20,6 +20,7 @@ function allowed(path: string): boolean {
     path.startsWith("lib/podscan-import/") ||
     path === "scripts/podscan-import.ts" ||
     path.startsWith("supabase/migrations/093_") ||
+    path.startsWith("supabase/migrations/096_") ||
     path.startsWith("docs/")
   );
 }

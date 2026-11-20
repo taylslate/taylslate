@@ -1,5 +1,5 @@
-// Local resume file. Candidate, probe, and contact data older than
-// 7 days is refetched. Writes go to a temp file, then rename.
+// Local resume file. Age does not drop it. --fresh drops it.
+// Writes go to a temp file, then rename.
 
 import { chmod, mkdir, open, rename } from "node:fs/promises";
 import { randomBytes } from "node:crypto";

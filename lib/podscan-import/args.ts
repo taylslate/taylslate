@@ -3,6 +3,10 @@ import { DEFAULT_PODSCAN_BUDGET } from "./rate-limit";
 export interface ImportArgs {
   commit: boolean;
   dryRunExplicit: boolean;
+  fresh: boolean;
+  partial: boolean;
+  floorSponsored: boolean;
+  noEnrich: boolean;
   floor: number | null;
   confirm: number | null;
   sample: number | null;
@@ -16,6 +20,10 @@ export function parseArgs(argv: readonly string[]): ImportArgs {
   const args: ImportArgs = {
     commit: false,
     dryRunExplicit: false,
+    fresh: false,
+    partial: false,
+    floorSponsored: false,
+    noEnrich: false,
     floor: null,
     confirm: null,
     sample: null,
@@ -35,6 +43,22 @@ export function parseArgs(argv: readonly string[]): ImportArgs {
     }
     if (token === "--commit") {
       args.commit = true;
+      continue;
+    }
+    if (token === "--fresh") {
+      args.fresh = true;
+      continue;
+    }
+    if (token === "--partial") {
+      args.partial = true;
+      continue;
+    }
+    if (token === "--floor-sponsored") {
+      args.floorSponsored = true;
+      continue;
+    }
+    if (token === "--no-enrich") {
+      args.noEnrich = true;
       continue;
     }
     const eq = token.indexOf("=");

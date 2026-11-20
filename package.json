@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "podscan:import": "npx --yes tsx scripts/podscan-import.ts"
+    "podscan:import": "tsx scripts/podscan-import.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -41,6 +41,7 @@
     "eslint-config-next": "16.1.6",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
+    "tsx": "4.23.15",
     "typescript": "^5",
     "vitest": "^4.1.5"
   }

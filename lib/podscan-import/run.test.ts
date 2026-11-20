@@ -412,21 +412,32 @@ describe("runImport", () => {
     expect(saved.version).toBe(1);
   });
 
-  it("refetches candidate data older than 7 days", async () => {
+  it("keeps a stale dry-run checkpoint until --fresh", async () => {
     const dir = await tempDir();
     spyLogs();
     const world = makeCaller(sponsoredTwenty, oneFloor);
     const first = await runImport(parseArgs(["--dry-run", "--sample", "25"]), deps(dir, world.caller, null));
     expect(first.exitCode).toBe(0);
     const file = join(dir, "checkpoint.json");
-    const checkpoint = JSON.parse(await readFile(file, "utf8")) as { searchSavedAt?: string };
+    const checkpoint = JSON.parse(await readFile(file, "utf8")) as {
+      searchSavedAt?: string;
+      probeSavedAt?: string;
+      search?: { rows?: Array<{ podcastId: string }> };
+    };
     checkpoint.searchSavedAt = "2026-11-01T00:00:00.000Z";
+    checkpoint.probeSavedAt = "2026-11-01T00:00:00.000Z";
+    const keptId = checkpoint.search?.rows?.[0]?.podcastId;
     await writeFile(file, JSON.stringify(checkpoint), "utf8");
     const before = world.calls.filter((call) => call === "GET /podcasts/search").length;
     const second = await runImport(parseArgs(["--dry-run", "--sample", "25"]), deps(dir, world.caller, null));
     expect(second.exitCode).toBe(0);
     const after = world.calls.filter((call) => call === "GET /podcasts/search").length;
-    expect(after).toBeGreaterThan(before);
+    expect(after).toBe(before);
+    const still = await readCheckpoint(file);
+    expect(still.search?.rows.some((row) => row.podcastId === keptId)).toBe(true);
+    const fresh = await runImport(parseArgs(["--dry-run", "--sample", "25", "--fresh"]), deps(dir, world.caller, null));
+    expect(fresh.exitCode).toBe(0);
+    expect(world.calls.filter((call) => call === "GET /podcasts/search").length).toBeGreaterThan(after);
   });
 
   it("upserts enriched shows when the budget stops and finishes them on the next run", async () => {
@@ -663,7 +674,356 @@ describe("runImport", () => {
     expect(saved.search?.started).toBe(true);
     expect(saved.search?.complete).toBe(false);
   });
+
+  it("keeps an unfinished stale search and its probe", async () => {
+    const dir = await tempDir();
+    spyLogs();
+    const world = makeCaller(
+      [hit({ id: "sp_new", audience: 2000, email: FIXTURE_EMAIL, itunes: "9", rss: "https://rss.example.test/new.xml", hasSponsors: true })],
+      []
+    );
+    const file = join(dir, "checkpoint.json");
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        sample: null,
+        searchSavedAt: "2020-01-01T00:00:00.000Z",
+        probeSavedAt: "2020-01-01T00:00:00.000Z",
+        search: {
+          started: true,
+          complete: false,
+          queue: [
+            {
+              pass: "unsponsored",
+              hasSponsors: false,
+              minAudience: 1000,
+              maxAudience: null,
+              categoryId: null,
+              audienceSplit: false,
+              categoryOnly: false,
+            },
+          ],
+          rows: [
+            {
+              podcastId: "from_disk",
+              name: "from_disk",
+              itunesId: null,
+              rssUrl: null,
+              hasSponsors: true,
+              audienceSize: 50,
+              podscanEmail: null,
+              language: "en",
+              region: null,
+              categories: [],
+              lastPostedAt: null,
+              episodeCount: null,
+              listenerEngagement: null,
+              pass: "sponsored",
+            },
+          ],
+          passCounts: { sponsored: 1, unsponsored: 0 },
+          cappedSlices: [],
+        },
+        probe: { from_disk: "ep_old" },
+      }),
+      "utf8"
+    );
+    const result = await runImport(parseArgs(["--dry-run"]), deps(dir, world.caller, null));
+    expect(result.exitCode).toBe(0);
+    const saved = await readCheckpoint(file);
+    expect(saved.search?.rows.some((row) => row.podcastId === "from_disk")).toBe(true);
+    expect(saved.probe?.from_disk).toBe("ep_old");
+  });
+
+  it("writes the checkpoint when a search slice finishes and throttles a split", async () => {
+    const dir = await tempDir();
+    spyLogs();
+    const file = join(dir, "checkpoint.json");
+    let nowMs = Date.parse("2026-11-17T12:00:00.000Z");
+    const queues: string[][] = [];
+    const caller = searchCaller(() => ({
+      categories: [{ category_id: "cat_a", category_name: "news", category_display_name: "News" }],
+    }));
+    const held = await runImport(parseArgs(["--dry-run"]), {
+      ...deps(dir, caller, null),
+      now: () => new Date(nowMs),
+      onCheckpoint: (checkpoint) => {
+        queues.push(queueLabels(checkpoint));
+      },
+    });
+    expect(held.exitCode).toBe(0);
+    const bands = (queue: string[]) => queue.filter((item) => item.startsWith("band:")).length;
+    const catAt = queues.findIndex((queue) => queue.some((item) => item.includes("cat_a")));
+    expect(queues[0]?.some((item) => item.startsWith("only:"))).toBe(true);
+    expect(catAt).toBeGreaterThan(1);
+    expect(bands(queues[catAt] ?? [])).toBeLessThan(bands(queues[catAt - 1] ?? []));
+    const mode = await import("node:fs/promises").then((fs) => fs.stat(file));
+    expect(mode.mode & 0o777).toBe(0o600);
+
+    const dir2 = await tempDir();
+    const advanced: string[][] = [];
+    const caller2 = searchCaller(() => {
+      nowMs += 60_000;
+      return { categories: [{ category_id: "cat_a", category_name: "news", category_display_name: "News" }] };
+    });
+    const moved = await runImport(parseArgs(["--dry-run"]), {
+      ...deps(dir2, caller2, null),
+      now: () => new Date(nowMs),
+      onCheckpoint: (checkpoint) => {
+        advanced.push(queueLabels(checkpoint));
+      },
+    });
+    expect(moved.exitCode).toBe(0);
+    const advancedCat = advanced.findIndex((queue) => queue.some((item) => item.includes("cat_a")));
+    expect(advancedCat).toBeGreaterThan(0);
+    expect(bands(advanced[advancedCat] ?? [])).toBe(bands(advanced[advancedCat - 1] ?? []));
+  });
+
+  it("saves contacts every 500 feeds and throttles enrich writes", async () => {
+    const dir = await tempDir();
+    spyLogs();
+    const many = Array.from({ length: 500 }, (_, index) =>
+      hit({
+        id: `sp_${index}`,
+        audience: 2000,
+        email: null,
+        itunes: null,
+        rss: `https://rss.example.test/${index}.xml`,
+        hasSponsors: true,
+      })
+    );
+    const world = makeCaller(many, []);
+    const contactSizes: number[] = [];
+    const run = deps(dir, world.caller, null);
+    const first = await runImport(parseArgs(["--dry-run", "--no-enrich"]), {
+      ...run,
+      onCheckpoint: (checkpoint) => {
+        contactSizes.push(Object.keys(checkpoint.contacts ?? {}).length);
+      },
+    });
+    expect(first.exitCode).toBe(0);
+    expect(contactSizes.filter((size) => size === 500).length).toBeGreaterThanOrEqual(2);
+
+    const enrichDir = await tempDir();
+    const shows = [
+      hit({ id: "sp_hi", audience: 300, email: null, itunes: null, rss: null, hasSponsors: true }),
+      hit({ id: "sp_mid", audience: 200, email: null, itunes: null, rss: null, hasSponsors: true }),
+      hit({ id: "sp_lo", audience: 100, email: null, itunes: null, rss: null, hasSponsors: true }),
+    ];
+    const enrichWorld = makeCaller(shows, []);
+    const enrichSizes: number[] = [];
+    const enriched = await runImport(parseArgs(["--dry-run"]), {
+      ...deps(enrichDir, enrichWorld.caller, null),
+      onCheckpoint: (checkpoint) => {
+        if (checkpoint.enrich) enrichSizes.push(Object.keys(checkpoint.enrich).length);
+      },
+    });
+    expect(enriched.exitCode).toBe(0);
+    expect(enrichSizes).toContain(1);
+    expect(enrichSizes).toContain(3);
+    expect(enrichSizes).not.toContain(2);
+  });
+
+  it("prints both kept counts and the Podscan calls for the chosen flags", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const shows = [
+      hit({ id: "sp_lo", audience: 50, email: FIXTURE_EMAIL, itunes: "1", rss: "https://rss.example.test/lo.xml", hasSponsors: true }),
+      hit({ id: "sp_hi", audience: 5000, email: FIXTURE_EMAIL, itunes: "2", rss: "https://rss.example.test/hi.xml", hasSponsors: true }),
+      hit({ id: "un_hi", audience: 4000, email: null, itunes: null, rss: null, hasSponsors: false }),
+    ];
+    const world = makeCaller(shows.slice(0, 2), shows.slice(2));
+    const result = await runImport(parseArgs(["--dry-run", "--floor", "1000"]), deps(dir, world.caller, null));
+    expect(result.exitCode).toBe(0);
+    const text = logs.join("\n");
+    expect(text).toContain("Kept for --floor 1000: 3");
+    expect(text).toContain("Kept for --floor 1000 with --floor-sponsored: 2");
+    expect(text).toContain("Kept at 1000 with --floor-sponsored: 2");
+    expect(text).toContain("Podscan calls for these flags: 0");
+    assertNoSecrets(text);
+
+    const filteredDir = await tempDir();
+    const filteredLogs = spyLogs();
+    const filtered = makeCaller(shows.slice(0, 2), shows.slice(2));
+    const narrowed = await runImport(
+      parseArgs(["--dry-run", "--floor", "1000", "--floor-sponsored", "--no-enrich"]),
+      deps(filteredDir, filtered.caller, null)
+    );
+    expect(narrowed.exitCode).toBe(0);
+    const probed = filtered.posts.flatMap((body) =>
+      Array.isArray(body.podcast_ids) ? body.podcast_ids.map(String) : []
+    );
+    expect(probed).toContain("sp_hi");
+    expect(probed).toContain("un_hi");
+    expect(probed).not.toContain("sp_lo");
+    expect(filtered.calls.some((call) => call.endsWith("/demographics"))).toBe(false);
+    const narrowedText = filteredLogs.join("\n");
+    expect(narrowedText).toContain("Podscan calls for these flags: 0");
+    expect(narrowedText).toContain("Sponsor probe skipped shows under 1000 because --floor-sponsored is on.");
+    assertNoSecrets(narrowedText);
+  });
+
+  it("commits a partial checkpoint without enrich calls and keeps saved enrich data", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const file = join(dir, "checkpoint.json");
+    const contact = {
+      appleFeedUrl: null,
+      feedSource: "none",
+      feedUrl: null,
+      feedSkip: null,
+      rssEmail: null,
+      checks: [],
+      syntaxFailureReasons: {},
+    };
+    const row = (id: string, audience: number) => ({
+      podcastId: id,
+      name: id,
+      itunesId: null,
+      rssUrl: null,
+      hasSponsors: true,
+      audienceSize: audience,
+      podscanEmail: null,
+      language: "en",
+      region: null,
+      categories: [],
+      lastPostedAt: null,
+      episodeCount: null,
+      listenerEngagement: { total_listeners: 4 },
+      pass: "sponsored",
+    });
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        sample: null,
+        searchSavedAt: "2026-11-01T00:00:00.000Z",
+        search: {
+          started: true,
+          complete: false,
+          queue: [
+            {
+              pass: "unsponsored",
+              hasSponsors: false,
+              minAudience: 1000,
+              maxAudience: null,
+              categoryId: null,
+              audienceSplit: false,
+              categoryOnly: false,
+            },
+          ],
+          rows: [row("sp_hi", 5000), row("sp_lo", 50)],
+          passCounts: { sponsored: 2, unsponsored: 0 },
+          cappedSlices: [],
+        },
+        probeSavedAt: "2026-11-01T00:00:00.000Z",
+        probe: { sp_hi: "ep_hi", sp_lo: "ep_lo" },
+        probeCheckSavedAt: "2026-11-01T00:00:00.000Z",
+        probeCheck: { pass: true, mismatches: [], checked: 0, checks: [] },
+        contactsSavedAt: "2026-11-01T00:00:00.000Z",
+        contacts: { sp_hi: contact, sp_lo: contact },
+        enrich: { sp_hi: { demographics: { band: "a" }, listener: { total_listeners: 9 } } },
+      }),
+      "utf8"
+    );
+    const calls: string[] = [];
+    const caller: PodscanCaller = {
+      async get(path) {
+        calls.push(`GET ${path}`);
+        throw new Error("search continued");
+      },
+      async post() {
+        calls.push("POST");
+        throw new Error("probe continued");
+      },
+      rateLimit: () => ({ limit: 120, remaining: 100 }),
+    };
+    const store = memoryDb([]);
+    const wrote = await runImport(
+      parseArgs(["--commit", "--partial", "--no-enrich", "--floor", "1000", "--confirm", "2"]),
+      deps(dir, caller, store.db)
+    );
+    expect(wrote.exitCode).toBe(0);
+    expect(calls).toEqual([]);
+    expect(store.tables.podscan_catalog).toHaveLength(2);
+    const hi = store.tables.podscan_catalog.find((item) => item.podscan_id === "sp_hi");
+    const lo = store.tables.podscan_catalog.find((item) => item.podscan_id === "sp_lo");
+    expect(hi?.demographics).toEqual({ band: "a" });
+    expect(hi?.listener_engagement).toEqual({ total_listeners: 9 });
+    expect(lo?.demographics).toBeNull();
+    expect(lo?.listener_engagement).toBeNull();
+    const saved = await readCheckpoint(file);
+    expect(saved.search?.complete).toBe(false);
+    expect(saved.search?.rows).toHaveLength(2);
+
+    const missing = memoryDb([], true);
+    const refused = await runImport(
+      parseArgs(["--commit", "--partial", "--no-enrich", "--floor", "1000", "--confirm", "2"]),
+      deps(dir, caller, missing.db)
+    );
+    expect(refused.exitCode).toBe(1);
+    expect(logs.join("\n")).toContain("Migration 093 is not applied.");
+    expect(calls).toEqual([]);
+
+    const wrong = memoryDb([]);
+    const mismatch = await runImport(
+      parseArgs(["--commit", "--partial", "--floor", "1000", "--confirm", "1"]),
+      deps(dir, caller, wrong.db)
+    );
+    expect(mismatch.exitCode).toBe(1);
+    expect(logs.join("\n")).toContain("Refusing to write. --confirm must equal the kept count for this floor (2).");
+    expect(wrong.upserts).toEqual([]);
+    assertNoSecrets(logs.join("\n"));
+  });
 });
+
+function queueLabels(checkpoint: { search?: { queue?: Array<{ categoryOnly?: boolean; categoryId?: string | null; minAudience?: number | null }> } }): string[] {
+  return (checkpoint.search?.queue ?? []).map(
+    (slice) => `${slice.categoryOnly ? "only" : "band"}:${slice.categoryId ?? "-"}:${slice.minAudience ?? "-"}`
+  );
+}
+
+function searchCaller(categories: () => unknown): PodscanCaller {
+  return {
+    async get<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
+      if (path === "/categories") return categories() as T;
+      if (path === "/podcasts/search") {
+        const open =
+          params?.has_sponsors === true && params.category_ids == null && params.min_audience_size == null;
+        if (open) {
+          return {
+            podcasts: [],
+            pagination: { total: 10000, per_page: 50, current_page: 1, last_page: 200, from: null, to: null },
+          } as T;
+        }
+        const id = `pd_${String(params?.category_ids ?? params?.min_audience_size ?? "u")}`;
+        return {
+          podcasts: [
+            {
+              podcast_id: id,
+              podcast_name: id,
+              podcast_categories: ["News"],
+              listener_engagement: { total_listeners: 1 },
+              reach: { audience_size: 2000, email: null, website: null, social_links: [], itunes: [], spotify: [] },
+            },
+          ],
+          pagination: { total: 1, per_page: 50, current_page: 1, last_page: 1, from: 1, to: 1 },
+        } as T;
+      }
+      if (path.endsWith("/latest/sponsor")) return { posted_at: "2026-11-01T00:00:00.000Z" } as T;
+      if (path.endsWith("/demographics")) return { ok: true } as T;
+      throw Object.assign(new Error("missing"), { status: 404 });
+    },
+    async post<T>(_path: string, body: Record<string, unknown>): Promise<T> {
+      const ids = Array.isArray(body.podcast_ids) ? body.podcast_ids.map(String) : [];
+      const results: Record<string, string | null> = {};
+      for (const id of ids) results[id] = null;
+      return { results } as T;
+    },
+    rateLimit: () => ({ limit: 120, remaining: 100 }),
+  };
+}
 
 function failSearches(inner: PodscanCaller, failCount: number): { caller: PodscanCaller; searches: () => number } {
   let searches = 0;

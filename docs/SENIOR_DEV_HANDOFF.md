@@ -3743,7 +3743,7 @@ A local command, `npm run podscan:import`, pulls Podscan shows worth keeping int
 - `package.json` (one script) and `.gitignore` (`/.podscan-import/`)
 - `docs/jobs/PODSCAN-IMPORT1.md`
 
-`lib/podscan/client.ts`, `lib/enrichment/podscan.ts`, discovery, scoring, UI, API routes, `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited. Migration 093 is not applied. This PR does not merge.
+`lib/podscan/client.ts`, `lib/enrichment/podscan.ts`, discovery, scoring, UI, API routes, `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited by the import lane. Migration 093 was applied on 2026-11-20 by apply_migration. Migration 096 is not applied.
 
 ### Tests
 
@@ -3754,12 +3754,12 @@ Sample dry run `--dry-run --sample 25` against Podscan and Apple, no database wr
 ### Known gaps
 
 - No letters a-z. A show with none of those letters in the searched text is missed.
-- The sponsored pass also walks categories with no audience filter. A category still at 10,000 can still miss a null audience. A commit run does not refetch search, probe, or contacts after 7 days. A budget or daily stop upserts shows that already have an enrich entry.
+- The sponsored pass also walks categories with no audience filter. A category still at 10,000 can still miss a null audience. A dry run does not drop a finished or stale checkpoint. `--fresh` drops it. A budget or daily stop upserts shows that already have an enrich entry.
 - `reach.feed_email` is unused.
 - A category still at 10,000 is logged and the run continues.
 - `latest_sponsored_at` is set only for the 20 shows in the sponsor check.
 - Reruns upsert. They do not delete an email the source dropped.
-- Migration 093 is not applied. Do not run `--commit` until 093 is applied and Chris picks the floor.
+- Migration 093 was applied on 2026-11-20. Migration 096 is not applied. Apply 096 only after merge and Chris's OK.
 - This lane does not touch `public.shows`.
 
 ### Note

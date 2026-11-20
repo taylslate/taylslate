@@ -66,6 +66,18 @@ describe("feed fetch", () => {
     expect(redirected.skip).toBe("redirects");
     expect(isBlockedIp("192.168.1.1")).toBe(true);
     expect(isBlockedIp("8.8.8.8")).toBe(false);
+    expect(isBlockedIp("100.64.0.1")).toBe(true);
+    expect(isBlockedIp("100.127.255.255")).toBe(true);
+    expect(isBlockedIp("100.63.255.255")).toBe(false);
+    expect(isBlockedIp("100.128.0.1")).toBe(false);
+    expect(isBlockedIp("224.0.0.1")).toBe(true);
+    expect(isBlockedIp("239.255.255.255")).toBe(true);
+    expect(isBlockedIp("223.255.255.255")).toBe(false);
+    expect(isBlockedIp("ff02::1")).toBe(true);
+    expect(isBlockedIp("ff00::")).toBe(true);
+    expect(isBlockedIp("ff::1")).toBe(false);
+    expect(isBlockedIp("::ffff:224.0.0.1")).toBe(true);
+    expect(isBlockedIp("::ffff:100.64.1.1")).toBe(true);
   });
 
   it("caps the body at 2MB and records a timeout", async () => {

@@ -152,6 +152,15 @@ function causeChain(err: unknown): unknown[] {
   return chain;
 }
 
+function isTimeoutWithoutStatus(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const name = (err as { name?: unknown }).name;
+  if (name !== "PodscanApiError" && name !== "PodscanError") return false;
+  const status = (err as { status?: unknown }).status;
+  if (typeof status === "number") return false;
+  return errorMessage(err).toLowerCase().includes("timeout");
+}
+
 export function isTransientPodscanError(err: unknown): boolean {
   const info = readErr(err);
   if (info) {
@@ -160,6 +169,7 @@ export function isTransientPodscanError(err: unknown): boolean {
     if (info.status >= 500 && info.status <= 599) return true;
   }
   for (const item of [err, ...causeChain(err)]) {
+    if (isTimeoutWithoutStatus(item)) return true;
     const message = errorMessage(item).toLowerCase();
     const code = errorCode(item);
     if (message === "terminated" || message === "fetch failed") return true;

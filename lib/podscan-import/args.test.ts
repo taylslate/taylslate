@@ -6,6 +6,10 @@ describe("parseArgs", () => {
     expect(parseArgs([])).toEqual({
       commit: false,
       dryRunExplicit: false,
+      fresh: false,
+      partial: false,
+      floorSponsored: false,
+      noEnrich: false,
       floor: null,
       confirm: null,
       sample: null,
@@ -18,6 +22,12 @@ describe("parseArgs", () => {
 
   it("reads equals and space forms", () => {
     expect(parseArgs(["--commit", "--floor", "2500", "--confirm=12", "--region", "us"]).floor).toBe(2500);
+    expect(parseArgs(["--fresh", "--partial", "--floor-sponsored", "--no-enrich"])).toMatchObject({
+      fresh: true,
+      partial: true,
+      floorSponsored: true,
+      noEnrich: true,
+    });
     expect(parseArgs(["--confirm=0"]).confirm).toBe(0);
     expect(parseArgs(["--language=en", "--active-days=30", "--max-podscan-calls=10", "--sample=25"])).toMatchObject({
       language: "en",

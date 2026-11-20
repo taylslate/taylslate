@@ -9,6 +9,7 @@ import {
   activeSince,
   collectCandidates,
   emptySearchState,
+  LOWEST_FLOOR,
   readCategories,
   SEARCH_QUERY,
   type CatalogCandidate,
@@ -16,7 +17,7 @@ import {
 } from "./candidates";
 import {
   alignCheckpointSample,
-  isStale,
+  clearImportProgress,
   readCheckpoint,
   writeJsonAtomic,
   writeTextAtomic,
@@ -63,6 +64,10 @@ import {
 export { parseArgs };
 export type { ImportArgs };
 
+export const SEARCH_SAVE_MS = 60_000;
+export const ENRICH_SAVE_MS = 30_000;
+export const CONTACT_SAVE_EVERY = 500;
+
 const DAILY_MESSAGE = "Daily Podscan limit reached. Re-run the same command tomorrow to resume.";
 const BUDGET_MESSAGE = "Podscan call budget reached. Re-run the same command to resume.";
 const SAMPLE_MISMATCH = "Checkpoint sample does not match this run. Starting the search over.";
@@ -106,6 +111,7 @@ export interface RunDeps {
   rng?: () => number;
   podscanLimiter?: HostLimiter;
   appleLimiter?: HostLimiter;
+  onCheckpoint?: (checkpoint: Checkpoint) => void;
 }
 
 interface WorkingShow {
@@ -139,6 +145,14 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
     console.log("Refusing to write without --confirm.");
     return { exitCode: 1 };
   }
+  if (args.partial && !args.commit) {
+    console.log("Pass --partial with --commit.");
+    return { exitCode: 1 };
+  }
+  if (args.fresh && args.partial) {
+    console.log("Pass either --fresh or --partial.");
+    return { exitCode: 1 };
+  }
   if (args.commit) {
     if (!deps.db) {
       console.error("Supabase env is not set");
@@ -152,6 +166,10 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
   const clock = () => nowFn().getTime();
   const checkpointPath = join(deps.checkpointDir, "checkpoint.json");
   const checkpoint = await readCheckpoint(checkpointPath);
+  if (args.partial && checkpoint.sample !== undefined && checkpoint.sample !== args.sample) {
+    console.log("Refusing a partial write because the checkpoint sample does not match this run.");
+    return { exitCode: 1 };
+  }
   const gate = new PodscanGate({
     maxCalls: args.maxPodscanCalls,
     limiter:
@@ -161,12 +179,18 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
     observe: () => deps.caller.rateLimit(),
   });
 
-  const save = async () => {
-    try {
-      await inStep("checkpoint", () => writeJsonAtomic(checkpointPath, checkpoint));
-    } catch (err) {
-      console.error(formatFailure("checkpoint", err));
-    }
+  let saveTail: Promise<void> = Promise.resolve();
+  const save = () => {
+    const run = saveTail.then(async () => {
+      try {
+        deps.onCheckpoint?.(checkpoint);
+        await inStep("checkpoint", () => writeJsonAtomic(checkpointPath, checkpoint));
+      } catch (err) {
+        console.error(formatFailure("checkpoint", err));
+      }
+    });
+    saveTail = run;
+    return run;
   };
 
   const guarded = <T>(work: () => Promise<T>): Promise<T> => gate.run(work);
@@ -176,14 +200,14 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
   try {
     const since = activeSince(nowFn(), args.activeDays);
     step = "search";
-    const search = await ensureSearch(args, deps, checkpoint, nowFn(), since, guarded, save, args.commit);
+    const search = await ensureSearch(args, deps, checkpoint, nowFn, since, guarded, save);
     pruneEnrich(checkpoint, search);
     step = "probe";
-    const probe = await ensureProbe(deps, search, checkpoint, nowFn(), guarded, save, args.commit);
+    const probe = await ensureProbe(deps, search, checkpoint, nowFn(), guarded, save, args);
     step = "probeCheck";
-    await ensureProbeCheck(deps, search, probe, checkpoint, nowFn(), guarded, save);
+    await ensureProbeCheck(deps, search, probe, checkpoint, nowFn(), guarded, save, args);
     step = "contacts";
-    await inStep("contacts", () => ensureContacts(search, checkpoint, deps, nowFn(), save, args.commit));
+    await inStep("contacts", () => ensureContacts(search, checkpoint, deps, nowFn, save));
     const shows = buildShows(search, probe, checkpoint);
     const kept = {
       1000: shows.filter((show) => keepOf(show, 1000).kept),
@@ -192,9 +216,12 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
     };
 
     if (!args.commit) {
-      const sample = sortShows(kept[1000]).slice(0, 5);
+      const proofKept = args.floorSponsored
+        ? shows.filter((show) => keepOf(show, LOWEST_FLOOR, true).kept)
+        : kept[1000];
+      const sample = sortShows(proofKept).slice(0, 5);
       step = "enrich";
-      await enrichIds(deps, sample, checkpoint, nowFn(), guarded, save);
+      if (!args.noEnrich) await enrichIds(deps, sample, checkpoint, nowFn, guarded, save);
       const links = await countShows(deps.db, shows);
       buildReport(args, search, shows, kept, checkpoint, gate, links, nowFn());
       step = "checkpoint";
@@ -203,7 +230,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
     }
 
     const floor = args.floor ?? 0;
-    const chosen = shows.filter((show) => keepOf(show, floor).kept);
+    const chosen = shows.filter((show) => keepOf(show, floor, args.floorSponsored).kept);
     if (args.confirm !== chosen.length) {
       console.log(
         `Refusing to write. --confirm must equal the kept count for this floor (${chosen.length}).`
@@ -216,7 +243,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
     }
     const ordered = sortShows(chosen);
     commitPlan = { floor, chosen: ordered };
-    const planCalls = remainingCalls(ordered, checkpoint.enrich ?? {});
+    const planCalls = args.noEnrich ? 0 : remainingCalls(ordered, checkpoint.enrich ?? {});
     console.log(
       [
         "Plan",
@@ -227,7 +254,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
       ].join("\n")
     );
     step = "enrich";
-    await enrichIds(deps, ordered, checkpoint, nowFn(), guarded, save);
+    if (!args.noEnrich) await enrichIds(deps, ordered, checkpoint, nowFn, guarded, save);
     const links = await loadShowLinks(
       deps.db,
       ordered.map((show) => show.candidate.podcastId)
@@ -237,7 +264,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
       return { exitCode: 1 };
     }
     step = "write";
-    const wrote = await writeRows(deps.db, ordered, floor, links, checkpoint, nowFn());
+    const wrote = await writeRows(deps.db, ordered, floor, links, checkpoint, nowFn(), args.noEnrich);
     if (!wrote) return { exitCode: 1 };
     console.log(`Upserted catalog rows: ${ordered.length}`);
     return { exitCode: 0 };
@@ -254,7 +281,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
           console.log("Refusing to write because the shows lookup failed.");
         } else {
           step = "write";
-          const wrote = await writeRows(deps.db, ready, commitPlan.floor, links, checkpoint, nowFn());
+          const wrote = await writeRows(deps.db, ready, commitPlan.floor, links, checkpoint, nowFn(), args.noEnrich);
           if (!wrote) return { exitCode: 1 };
           console.log(
             `Upserted ${ready.length} of ${commitPlan.chosen.length}. Re-run the same command to continue.`
@@ -274,11 +301,47 @@ function withoutAudience(shows: WorkingShow[]): number {
   return shows.filter((show) => show.candidate.audienceSize == null).length;
 }
 
-function keepOf(show: WorkingShow, floor: number): { kept: boolean; reason: KeepReason | null } {
+function keepOf(
+  show: WorkingShow,
+  floor: number,
+  floorSponsored = false
+): { kept: boolean; reason: KeepReason | null } {
   return decideKeep(
     { sponsoredLast12m: show.sponsoredLast12m, audienceSize: show.candidate.audienceSize },
-    floor
+    floor,
+    { floorSponsored }
   );
+}
+
+function includeInProbe(audienceSize: number | null, args: ImportArgs): boolean {
+  if (!args.floorSponsored) return true;
+  const floor = args.floor ?? LOWEST_FLOOR;
+  return audienceSize != null && audienceSize >= floor;
+}
+
+function callsForFlags(args: ImportArgs, shows: WorkingShow[], checkpoint: Checkpoint): number {
+  const floor = args.floor ?? LOWEST_FLOOR;
+  const chosen = shows.filter((show) => keepOf(show, floor, args.floorSponsored).kept);
+  let calls = args.noEnrich ? 0 : remainingCalls(chosen, checkpoint.enrich ?? {});
+  const probe = checkpoint.probe ?? {};
+  let unprobed = 0;
+  for (const show of shows) {
+    if (show.candidate.podcastId in probe) continue;
+    if (!includeInProbe(show.candidate.audienceSize, args)) continue;
+    unprobed += 1;
+  }
+  if (unprobed > 0) calls += Math.ceil(unprobed / PROBE_CHUNK);
+  if (!checkpoint.probeCheck || !checkpoint.probeCheckSavedAt) {
+    let picks = 0;
+    for (const show of shows) {
+      if (show.candidate.pass !== "sponsored") continue;
+      if (!includeInProbe(show.candidate.audienceSize, args)) continue;
+      picks += 1;
+      if (picks >= 20) break;
+    }
+    calls += picks;
+  }
+  return calls;
 }
 
 function sortShows(shows: WorkingShow[]): WorkingShow[] {
@@ -300,37 +363,27 @@ async function ensureSearch(
   args: ImportArgs,
   deps: RunDeps,
   checkpoint: Checkpoint,
-  now: Date,
+  nowFn: () => Date,
   since: string,
   guarded: <T>(work: () => Promise<T>) => Promise<T>,
-  save: () => Promise<void>,
-  commit: boolean
+  save: () => Promise<void>
 ): Promise<SearchState> {
-  if (alignCheckpointSample(checkpoint, args.sample)) {
+  if (args.fresh) clearImportProgress(checkpoint);
+  if (!args.partial && alignCheckpointSample(checkpoint, args.sample)) {
     console.log(SAMPLE_MISMATCH);
   }
-  const nowMs = now.getTime();
-  const searchFresh = commit || !isStale(checkpoint.searchSavedAt, nowMs);
-  if (checkpoint.search && checkpoint.searchSavedAt && searchFresh && checkpoint.search.complete) {
-    return checkpoint.search;
+  if (args.partial) {
+    const state = checkpoint.search ?? emptySearchState();
+    checkpoint.search = state;
+    if (!checkpoint.searchSavedAt) checkpoint.searchSavedAt = nowFn().toISOString();
+    await save();
+    return state;
   }
-  if (!commit && checkpoint.searchSavedAt && isStale(checkpoint.searchSavedAt, nowMs)) {
-    checkpoint.search = undefined;
-    checkpoint.searchSavedAt = undefined;
-    checkpoint.probe = undefined;
-    checkpoint.probeSavedAt = undefined;
-    checkpoint.probeCheck = undefined;
-    checkpoint.probeCheckSavedAt = undefined;
-    checkpoint.contacts = undefined;
-    checkpoint.contactsSavedAt = undefined;
-    checkpoint.mx = undefined;
-  }
-  const resume =
-    checkpoint.search && checkpoint.searchSavedAt && (commit || !isStale(checkpoint.searchSavedAt, nowMs))
-      ? checkpoint.search
-      : emptySearchState();
+  if (checkpoint.search?.complete) return checkpoint.search;
+  const resume = checkpoint.search ?? emptySearchState();
   checkpoint.search = resume;
   let categoriesNoted = false;
+  let lastSearchSave = Number.NEGATIVE_INFINITY;
   const state = await collectCandidates({
     language: args.language,
     region: args.region,
@@ -361,13 +414,18 @@ async function ensureSearch(
         return [];
       }
     },
-    onProgress: (next) => {
+    onProgress: async (next, update) => {
       checkpoint.search = next;
-      checkpoint.searchSavedAt = now.toISOString();
+      checkpoint.searchSavedAt = nowFn().toISOString();
+      const t = nowFn().getTime();
+      if (update.finishedSlice || t - lastSearchSave >= SEARCH_SAVE_MS) {
+        lastSearchSave = t;
+        await save();
+      }
     },
   });
   checkpoint.search = state;
-  checkpoint.searchSavedAt = now.toISOString();
+  checkpoint.searchSavedAt = nowFn().toISOString();
   await save();
   return state;
 }
@@ -379,17 +437,12 @@ async function ensureProbe(
   now: Date,
   guarded: <T>(work: () => Promise<T>) => Promise<T>,
   save: () => Promise<void>,
-  commit: boolean
+  args: ImportArgs
 ): Promise<Record<string, string | null>> {
-  const nowMs = now.getTime();
-  if (!commit && checkpoint.probeSavedAt && isStale(checkpoint.probeSavedAt, nowMs)) {
-    checkpoint.probe = undefined;
-    checkpoint.probeSavedAt = undefined;
-    checkpoint.probeCheck = undefined;
-    checkpoint.probeCheckSavedAt = undefined;
-  }
   const probe = checkpoint.probe ?? {};
-  const missing = search.rows.map((row) => row.podcastId).filter((id) => !(id in probe));
+  const missing = search.rows
+    .filter((row) => includeInProbe(row.audienceSize, args) && !(row.podcastId in probe))
+    .map((row) => row.podcastId);
   for (const chunk of chunkIds(missing, PROBE_CHUNK)) {
     const found = await probeSponsorRecency(chunk, (ids) =>
       inStep("probe", () =>
@@ -421,17 +474,13 @@ async function ensureProbeCheck(
   checkpoint: Checkpoint,
   now: Date,
   guarded: <T>(work: () => Promise<T>) => Promise<T>,
-  save: () => Promise<void>
+  save: () => Promise<void>,
+  args: ImportArgs
 ): Promise<void> {
-  const nowMs = now.getTime();
-  if (
-    checkpoint.probeCheck &&
-    checkpoint.probeCheckSavedAt &&
-    !isStale(checkpoint.probeCheckSavedAt, nowMs)
-  ) {
-    return;
-  }
-  const picks = search.rows.filter((row) => row.pass === "sponsored").slice(0, 20);
+  if (checkpoint.probeCheck && checkpoint.probeCheckSavedAt) return;
+  const picks = search.rows
+    .filter((row) => row.pass === "sponsored" && includeInProbe(row.audienceSize, args))
+    .slice(0, 20);
   const checks: ProbeCheck[] = [];
   for (const row of picks) {
     const latest = await fetchLatestSponsor(deps, row.podcastId, guarded);
@@ -487,16 +536,9 @@ async function ensureContacts(
   search: SearchState,
   checkpoint: Checkpoint,
   deps: RunDeps,
-  now: Date,
-  save: () => Promise<void>,
-  commit: boolean
+  nowFn: () => Date,
+  save: () => Promise<void>
 ): Promise<void> {
-  const nowMs = now.getTime();
-  if (!commit && checkpoint.contactsSavedAt && isStale(checkpoint.contactsSavedAt, nowMs)) {
-    checkpoint.contacts = undefined;
-    checkpoint.contactsSavedAt = undefined;
-    checkpoint.mx = undefined;
-  }
   const contacts = checkpoint.contacts ?? {};
   const mxCache = new Map<string, MxResult>(Object.entries(checkpoint.mx ?? {}));
   const pending = search.rows.filter((row) => !contacts[row.podcastId]);
@@ -506,7 +548,7 @@ async function ensureContacts(
     new HostLimiter(
       APPLE_PER_MINUTE,
       APPLE_CONCURRENCY,
-      () => (deps.now ?? (() => new Date()))().getTime(),
+      () => nowFn().getTime(),
       deps.sleepFn ?? sleep
     );
   const apple = await lookupAppleFeeds(appleIds, {
@@ -516,6 +558,7 @@ async function ensureContacts(
     rng: deps.rng,
   });
   const dns = deps.dns ?? (await realDns());
+  let done = 0;
   await mapPool(pending, FEED_CONCURRENCY, async (row) => {
     const appleFeed = row.itunesId ? (apple.feeds.get(row.itunesId) ?? null) : null;
     let feedSource: ContactProgress["feedSource"] = "none";
@@ -551,10 +594,17 @@ async function ensureContacts(
       checks: scanned.checks,
       syntaxFailureReasons: scanned.syntaxFailureReasons,
     };
+    done += 1;
+    if (done > 0 && done % CONTACT_SAVE_EVERY === 0) {
+      checkpoint.contacts = contacts;
+      checkpoint.mx = Object.fromEntries(mxCache);
+      checkpoint.contactsSavedAt = nowFn().toISOString();
+      await save();
+    }
   });
   checkpoint.contacts = contacts;
   checkpoint.mx = Object.fromEntries(mxCache);
-  checkpoint.contactsSavedAt = now.toISOString();
+  checkpoint.contactsSavedAt = nowFn().toISOString();
   await save();
 }
 
@@ -593,7 +643,7 @@ async function enrichIds(
   deps: RunDeps,
   shows: WorkingShow[],
   checkpoint: Checkpoint,
-  now: Date,
+  nowFn: () => Date,
   guarded: <T>(work: () => Promise<T>) => Promise<T>,
   save: () => Promise<void>
 ): Promise<void> {
@@ -603,16 +653,25 @@ async function enrichIds(
     if (!PODCAST_ID.test(id)) return Promise.resolve(null);
     return inStep("enrich", () => guarded(() => deps.caller.get(path)));
   };
+  let lastSave = Number.NEGATIVE_INFINITY;
+  let dirty = false;
   for (const show of shows) {
     const id = show.candidate.podcastId;
     if (enrich[id]) continue;
     const result = await enrichShow(id, show.candidate.listenerEngagement, get);
     enrich[id] = result;
     checkpoint.enrich = enrich;
-    checkpoint.enrichSavedAt = now.toISOString();
-    await save();
+    checkpoint.enrichSavedAt = nowFn().toISOString();
+    dirty = true;
+    const t = nowFn().getTime();
+    if (t - lastSave >= ENRICH_SAVE_MS) {
+      lastSave = t;
+      dirty = false;
+      await save();
+    }
   }
   checkpoint.enrich = enrich;
+  if (dirty) await save();
 }
 
 async function countShows(
@@ -698,7 +757,8 @@ async function writeRows(
   floor: number,
   links: ShowLinks,
   checkpoint: Checkpoint,
-  now: Date
+  now: Date,
+  noEnrich: boolean
 ): Promise<boolean> {
   const updatedAt = now.toISOString();
   const catalog: Record<string, unknown>[] = [];
@@ -708,6 +768,7 @@ async function writeRows(
     if (!decision.kept || !decision.reason) continue;
     const enrich = checkpoint.enrich?.[show.candidate.podcastId];
     const showId = links.links.get(show.candidate.podcastId) ?? null;
+    const listener = enrich ? enrich.listener : noEnrich ? null : show.candidate.listenerEngagement;
     catalog.push(
       catalogRow({
         candidate: show.candidate,
@@ -718,8 +779,8 @@ async function writeRows(
         feedUrl: show.contact.feedUrl,
         reason: decision.reason,
         floor,
-        demographics: enrich?.demographics ?? null,
-        listener: enrich?.listener ?? show.candidate.listenerEngagement,
+        demographics: enrich ? enrich.demographics : null,
+        listener,
         contactStatus: contactStatus(show.contact.checks.map((check) => check.status)),
         showId,
         updatedAt,
@@ -819,6 +880,21 @@ function assembleReport(
     sponsoredLast12m: shows.filter((show) => show.sponsoredLast12m).length,
     hasSponsorsProbeNull,
     kept: { 1000: kept[1000].length, 2500: kept[2500].length, 5000: kept[5000].length },
+    keptFloorSponsored: {
+      1000: shows.filter((show) => keepOf(show, 1000, true).kept).length,
+      2500: shows.filter((show) => keepOf(show, 2500, true).kept).length,
+      5000: shows.filter((show) => keepOf(show, 5000, true).kept).length,
+    },
+    floorConfirm:
+      args.floor == null
+        ? null
+        : {
+            floor: args.floor,
+            kept: shows.filter((show) => keepOf(show, args.floor ?? 0, false).kept).length,
+            keptFloorSponsored: shows.filter((show) => keepOf(show, args.floor ?? 0, true).kept).length,
+          },
+    podscanCallsForFlags: callsForFlags(args, shows, checkpoint),
+    probeFloor: args.floorSponsored ? (args.floor ?? LOWEST_FLOOR) : null,
     keptNoAudience: {
       1000: withoutAudience(kept[1000]),
       2500: withoutAudience(kept[2500]),
@@ -844,9 +920,9 @@ function assembleReport(
     podscanCalls: gate.callsUsed,
     maxPodscanCalls: args.maxPodscanCalls,
     writeRun: {
-      1000: planFloor(kept[1000], enrich, args.maxPodscanCalls),
-      2500: planFloor(kept[2500], enrich, args.maxPodscanCalls),
-      5000: planFloor(kept[5000], enrich, args.maxPodscanCalls),
+      1000: planFloor(activeKept(shows, 1000, args), enrich, args.maxPodscanCalls, args.noEnrich),
+      2500: planFloor(activeKept(shows, 2500, args), enrich, args.maxPodscanCalls, args.noEnrich),
+      5000: planFloor(activeKept(shows, 5000, args), enrich, args.maxPodscanCalls, args.noEnrich),
     },
     cappedSlices: search.cappedSlices,
     alreadyInShows: already,
@@ -870,11 +946,17 @@ function buildReport(
   return report;
 }
 
+function activeKept(shows: WorkingShow[], floor: number, args: ImportArgs): WorkingShow[] {
+  return shows.filter((show) => keepOf(show, floor, args.floorSponsored).kept);
+}
+
 function planFloor(
   shows: WorkingShow[],
   enrich: Record<string, EnrichProgress>,
-  budget: number
+  budget: number,
+  noEnrich = false
 ): { calls: number; days: number } {
+  if (noEnrich) return { calls: 0, days: 0 };
   const calls = remainingCalls(shows, enrich);
   return { calls, days: daysAtBudget(calls, budget) };
 }

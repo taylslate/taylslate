@@ -1,8 +1,8 @@
 -- ============================================================
 -- 093: Internal Podscan catalog and show contacts
 --
--- NOT applied. Apply only after merge and Chris's OK.
--- Apply on ldtmhafewfifdizgfrnn only after merge and Chris's OK.
+-- Applied 2026-11-20 by apply_migration.
+-- Applied on ldtmhafewfifdizgfrnn on 2026-11-20 by apply_migration.
 -- Paste into the Supabase SQL Editor. Do not run this from
 -- the app, a seed script, or a deploy hook.
 --

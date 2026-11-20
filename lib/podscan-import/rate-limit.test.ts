@@ -277,6 +277,15 @@ describe("rate limits", () => {
     expect(isTransientPodscanError(Object.assign(new Error("down"), { status: 503 }))).toBe(true);
     expect(isTransientPodscanError(Object.assign(new Error("timeout"), { code: "ETIMEDOUT" }))).toBe(true);
     expect(isTransientPodscanError(new TypeError("unexpected search shape"))).toBe(false);
+    const apiTimeout = new Error("Podscan API timeout");
+    apiTimeout.name = "PodscanApiError";
+    const enrichTimeout = new Error("Podscan API timeout");
+    enrichTimeout.name = "PodscanError";
+    expect(isTransientPodscanError(apiTimeout)).toBe(true);
+    expect(isTransientPodscanError(enrichTimeout)).toBe(true);
+    expect(
+      isTransientPodscanError(Object.assign(new Error("Podscan API timeout"), { name: "PodscanApiError", status: 400 }))
+    ).toBe(false);
 
     let budgetCalls = 0;
     const limited = new PodscanGate({
@@ -294,5 +303,33 @@ describe("rate limits", () => {
     await stopped;
     expect(budgetCalls).toBe(2);
     expect(limited.callsUsed).toBe(2);
+  });
+
+  it("retries a Podscan timeout that has no status", async () => {
+    vi.useFakeTimers();
+    const waits: number[] = [];
+    let calls = 0;
+    const gate = new PodscanGate({
+      maxCalls: 5,
+      limiter: new HostLimiter(100, 2, () => Date.now(), sleep),
+      sleepFn: async (ms) => {
+        waits.push(ms);
+        await sleep(ms);
+      },
+      observe: () => ({ limit: 120, remaining: 100 }),
+    });
+    const err = new Error("Podscan API timeout");
+    err.name = "PodscanApiError";
+    const pending = gate.run(async () => {
+      calls += 1;
+      if (calls === 1) throw err;
+      return "ok";
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await pending;
+    expect(calls).toBe(2);
+    expect(waits).toEqual([1_000]);
   });
 });

@@ -266,7 +266,7 @@ export async function collectCandidates(input: {
   since: string;
   sample: number | null;
   resume?: SearchState | null;
-  onProgress?: (state: SearchState) => void;
+  onProgress?: (state: SearchState, update: { finishedSlice: boolean }) => void | Promise<void>;
 }): Promise<SearchState> {
   const state = input.resume ?? emptySearchState();
   if (state.complete) return state;
@@ -293,7 +293,7 @@ export async function collectCandidates(input: {
       absorb(state, seen, first.podcasts, slice.pass, input.sample);
       await pageRest(state, seen, slice, total, first.podcasts.length, input, opts);
       state.queue.shift();
-      input.onProgress?.(state);
+      await input.onProgress?.(state, { finishedSlice: true });
       continue;
     }
 
@@ -320,7 +320,7 @@ export async function collectCandidates(input: {
               categoryOnly: false,
             });
           }
-          input.onProgress?.(state);
+          await input.onProgress?.(state, { finishedSlice: false });
           continue;
         }
       }
@@ -330,7 +330,7 @@ export async function collectCandidates(input: {
         for (const categoryId of categories) {
           state.queue.push({ ...slice, categoryId, audienceSplit: true });
         }
-        input.onProgress?.(state);
+        await input.onProgress?.(state, { finishedSlice: false });
         continue;
       }
     }
@@ -339,11 +339,11 @@ export async function collectCandidates(input: {
     absorb(state, seen, first.podcasts, slice.pass, null);
     await pageRest(state, seen, slice, total, first.podcasts.length, input, opts);
     state.queue.shift();
-    input.onProgress?.(state);
+    await input.onProgress?.(state, { finishedSlice: true });
   }
 
   state.complete = true;
-  input.onProgress?.(state);
+  await input.onProgress?.(state, { finishedSlice: true });
   return state;
 }
 
@@ -356,6 +356,7 @@ async function pageRest(
   input: {
     search: (params: Record<string, string | number | boolean>) => Promise<PodscanSearchResponse>;
     sample: number | null;
+    onProgress?: (state: SearchState, update: { finishedSlice: boolean }) => void | Promise<void>;
   },
   opts: { language: string; region: string | null; since: string }
 ): Promise<void> {
@@ -368,6 +369,7 @@ async function pageRest(
     const res = searchPage(await input.search(searchParams(slice, page, opts)));
     if (res.podcasts.length === 0) return;
     absorb(state, seen, res.podcasts, slice.pass, input.sample);
+    await input.onProgress?.(state, { finishedSlice: false });
     if (res.podcasts.length < PAGE_SIZE) return;
   }
 }
