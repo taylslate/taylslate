@@ -30,6 +30,7 @@ function record(channelId: string, statsRefreshedAt: string, showId: string | nu
     niche_tags_version: 1,
     tagged_at: "2026-10-01T00:00:00.000Z",
     passed_market_filter: true,
+    made_for_kids: null,
     brand_flag: null,
     show_id: showId,
     source: "category",
@@ -58,6 +59,36 @@ function details(channelId: string): YouTubeChannelDetails {
 }
 
 describe("refresh", () => {
+  it("stores madeForKids on the existing channels.list call and fails the market filter", async () => {
+    const store = createMemoryYoutubeStore();
+    await store.saveChannel(record("kids", "2026-08-01T00:00:00.000Z"));
+    await store.saveChannel(record("adult", "2026-08-02T00:00:00.000Z"));
+    const list = vi.fn(async (ids: string[]) => ({
+      found: ids.map((id) => ({
+        ...details(id),
+        madeForKids: id === "kids" ? true : false,
+      })),
+      missing: [] as string[],
+    }));
+    const report = await runRefreshQueue({
+      store,
+      api: {
+        search: async () => [],
+        list,
+        seedLookupCost: () => 0,
+        lookupSeed: async () => ({ channelId: null, notFound: true }),
+      },
+      now: new Date("2026-10-26T00:00:00.000Z"),
+      log: () => {},
+    });
+    expect(report.units).toBe(1);
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(store.channels.get("kids")?.made_for_kids).toBe(true);
+    expect(store.channels.get("kids")?.passed_market_filter).toBe(false);
+    expect(store.channels.get("adult")?.made_for_kids).toBe(false);
+    expect(store.channels.get("adult")?.passed_market_filter).toBe(true);
+  });
+
   it("refreshes the oldest stats first and stays inside 1,000 units", async () => {
     expect(YOUTUBE_LIBRARY_REFRESH_BUDGET).toBe(1000);
     const store = createMemoryYoutubeStore();

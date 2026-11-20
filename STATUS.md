@@ -1,5 +1,9 @@
 # Taylslate — STATUS
 
+## PODSCAN-RL-HOTFIX1: discovery does not wait out a Podscan 429 (Nov 19, 2026)
+
+`POST /api/campaigns/[id]/discover` finishes when Podscan is rate limited or slow. A 429 waits at most 10 seconds total, and only when `Retry-After` is 10 seconds or less (a missing header still waits 7 seconds). A longer `Retry-After` throws immediately. Each Podscan fetch aborts after 15 seconds. Demographics hydration stops taking new podcasts after 45 seconds. YouTube results still score. Podcasts may have no demographics, or there may be fewer of them. No screen was edited. No migration, no env var, no `maxDuration` change. `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` were not edited.
+
 ## AC3: a person confirms one aircheck, then the existing charge runs (Nov 11, 2026)
 
 `/admin/airchecks` lists up to 50 lines with `ready_for_review` and no decision, newest `matched_at` first, plus lines whose `charge_error` is set and whose decision is still empty. The page is reachable by URL only. It is not linked from the admin dashboard. Each row links to the existing `/admin/airchecks/[ioLineItemId]` screen. That screen was not edited.

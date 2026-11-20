@@ -55,12 +55,18 @@ export interface YouTubeChannelBrandingSettings {
   };
 }
 
+export interface YouTubeChannelStatus {
+  /** YouTube's current made-for-kids designation. Absent when status was not requested. */
+  madeForKids?: boolean;
+}
+
 export interface YouTubeChannel {
   id: string;
   snippet: YouTubeChannelSnippet;
   statistics: YouTubeChannelStatistics;
   topicDetails?: YouTubeChannelTopicDetails;
   brandingSettings?: YouTubeChannelBrandingSettings;
+  status?: YouTubeChannelStatus;
 }
 
 export interface YouTubeVideoStatistics {
@@ -95,6 +101,11 @@ export interface YouTubeChannelDetails {
   /** brandingSettings.channel.keywords, split into phrases. Empty when unset. */
   keywords?: string[];
   defaultLanguage?: string;
+  /**
+   * status.madeForKids from channels.list. True and false are stored.
+   * Null means the response did not include the flag.
+   */
+  madeForKids?: boolean | null;
 }
 
 export interface YouTubeVideoStats {
@@ -135,8 +146,11 @@ export interface UploadedVideoSample {
 }
 
 // snippet + topicDetails + brandingSettings, plus statistics for the
-// existing video-count and view filters.
-const CHANNEL_DETAIL_PARTS = "snippet,statistics,topicDetails,brandingSettings";
+// existing video-count and view filters, plus status for madeForKids.
+// channels.list costs 1 unit per call. Extra parts on that same call
+// do not add units.
+// https://developers.google.com/youtube/v3/docs/channels/list
+const CHANNEL_DETAIL_PARTS = "snippet,statistics,topicDetails,brandingSettings,status";
 
 /**
  * Wikipedia topic URL to a readable label.
@@ -340,6 +354,8 @@ function mapYouTubeChannel(channel: YouTubeChannel): YouTubeChannelDetails {
     totalViewCount: parseInt(channel.statistics.viewCount, 10) || 0,
     topicCategories,
     keywords: parseYouTubeChannelKeywords(channel.brandingSettings?.channel?.keywords),
+    madeForKids:
+      channel.status?.madeForKids === true ? true : channel.status?.madeForKids === false ? false : null,
   };
 }
 

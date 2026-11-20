@@ -35,6 +35,7 @@ function record(overrides: Partial<YoutubeChannelRecord> & { channel_id: string 
     niche_tags_version: 1,
     tagged_at: "2026-10-01T00:00:00.000Z",
     passed_market_filter: true,
+    made_for_kids: null,
     brand_flag: null,
     show_id: null,
     source: "category",
@@ -117,14 +118,45 @@ describe("library-first discovery read", () => {
         topic_categories: ["endurance athletes"],
       })
     );
+    await store.saveChannel(
+      record({
+        channel_id: "kids-true",
+        made_for_kids: true,
+        niche_tags: ["Health & Wellness"],
+        topic_categories: ["endurance athletes"],
+        source_query: "health tips",
+      })
+    );
+    await store.saveChannel(
+      record({
+        channel_id: "kids-topic",
+        made_for_kids: null,
+        niche_tags: ["Health & Wellness"],
+        topic_categories: ["https://en.wikipedia.org/wiki/Children%27s_music"],
+        source_query: "health tips",
+      })
+    );
+    await store.saveChannel(
+      record({
+        channel_id: "kids-false",
+        made_for_kids: false,
+        subscriber_count: 1,
+        niche_tags: ["Health & Wellness"],
+        topic_categories: ["endurance athletes", "Children's music"],
+        source_query: "health tips",
+      })
+    );
 
     const live = vi.fn(async () => []);
     const shows = await takeLibraryThenLive({ ...brief, store, now, live });
     expect(live).not.toHaveBeenCalled();
-    expect(shows).toHaveLength(35);
+    expect(shows).toHaveLength(36);
+    expect(shows.map((show) => show.youtube_channel_id)).toContain("kids-false");
     expect(shows.map((show) => show.youtube_channel_id)).not.toContain("stale");
     expect(shows.map((show) => show.youtube_channel_id)).not.toContain("brand");
     expect(shows.map((show) => show.youtube_channel_id)).not.toContain("off-market");
+    expect(shows.map((show) => show.youtube_channel_id)).not.toContain("kids-true");
+    expect(shows.map((show) => show.youtube_channel_id)).not.toContain("kids-topic");
     expect(shows[0].platform).toBe("youtube");
     expect(shows[0].youtube_channel_id).toBe("c68");
   });

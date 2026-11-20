@@ -21,7 +21,7 @@ vi.mock("@/lib/enrichment/podscan", async () => {
 });
 
 import { getYouTubeClientSafe, type YouTubeChannelDetails } from "@/lib/enrichment/youtube";
-import { getPodscanClientSafe } from "@/lib/enrichment/podscan";
+import { getPodscanClientSafe, PodscanError } from "@/lib/enrichment/podscan";
 import { convictionWeights, scoreShowConviction, topicalRelevanceInputs } from "@/lib/scoring/conviction";
 import type { CampaignPatternRow, RingHypothesisRow } from "@/lib/data/types";
 import { createMemoryYoutubeStore, type YoutubeChannelRecord } from "@/lib/youtube-library/store";
@@ -138,6 +138,46 @@ describe("passesYouTubeMarketFilter", () => {
     ).toBe(true);
   });
 
+  it("drops a made-for-kids channel and a null flag with a kids topic", () => {
+    expect(
+      passesYouTubeMarketFilter({
+        country: "US",
+        defaultLanguage: "en",
+        title: "Cocomelon",
+        description: "Nursery rhymes and kids songs",
+        madeForKids: true,
+      })
+    ).toBe(false);
+    expect(
+      passesYouTubeMarketFilter({
+        country: "US",
+        title: "Song Lab",
+        description: "The channel for your training and your health",
+        madeForKids: false,
+        topicCategories: ["Children's music"],
+      })
+    ).toBe(true);
+    expect(
+      passesYouTubeMarketFilter({
+        country: "US",
+        title: "Pinkfong",
+        description: "The channel for your training and your health",
+        madeForKids: null,
+        topicCategories: ["https://en.wikipedia.org/wiki/Children%27s_music"],
+      })
+    ).toBe(false);
+    expect(
+      passesYouTubeMarketFilter({
+        country: "US",
+        title: "Parent Lab",
+        description: "The channel for your training and your health",
+        madeForKids: null,
+        nicheTags: ["Parenting & Family"],
+        topicCategories: ["Parenting"],
+      })
+    ).toBe(true);
+  });
+
   it("drops a channel with no country when the language is not English", () => {
     expect(
       passesYouTubeMarketFilter({
@@ -240,6 +280,25 @@ describe("discoverShows YouTube rings", () => {
           subscriberCount: 900000,
         }),
       ],
+      [
+        "KIDS_TRUE",
+        detail({
+          channelId: "KIDS_TRUE",
+          country: "US",
+          madeForKids: true,
+          subscriberCount: 900000,
+        }),
+      ],
+      [
+        "KIDS_TOPIC",
+        detail({
+          channelId: "KIDS_TOPIC",
+          country: "US",
+          madeForKids: null,
+          topicCategories: ["Nursery rhyme"],
+          subscriberCount: 800000,
+        }),
+      ],
     ]);
 
     const searchVideos = vi.fn(async (query: string, _maxResults?: number, _order?: string) => {
@@ -256,6 +315,8 @@ describe("discoverShows YouTube rings", () => {
           { channelId: "EN1", title: "English Lab", description: "a" },
           { channelId: "ES1", title: "Cocina", description: "a" },
           { channelId: "SHORT", title: "Short", description: "a" },
+          { channelId: "KIDS_TRUE", title: "Cocomelon", description: "a" },
+          { channelId: "KIDS_TOPIC", title: "Pinkfong", description: "a" },
         ];
       }
       return [];
@@ -305,6 +366,8 @@ describe("discoverShows YouTube rings", () => {
       "EN1",
       "ES1",
       "SHORT",
+      "KIDS_TRUE",
+      "KIDS_TOPIC",
     ]);
 
     const ids = result.discovered.map((show) => show.youtube_channel_id);
@@ -1063,6 +1126,7 @@ describe("YouTube library topical input", () => {
       niche_tags_version: 1,
       tagged_at: "2026-10-01T00:00:00.000Z",
       passed_market_filter: true,
+      made_for_kids: null,
       brand_flag: null,
       show_id: null,
       source: "category",
@@ -1178,6 +1242,99 @@ describe("YouTube library topical input", () => {
       topicalRelevanceInputs({ ...fitness!, audience_interests: ["Gym workout"] })
     );
     expect(scoreShowConviction(unstamped, ring(), pattern()).topicalRelevance).toBe(20);
+  });
+});
+
+describe("Podscan search failures", () => {
+  function pattern(): CampaignPatternRow {
+    return {
+      id: "cp-1",
+      campaign_id: "camp-1",
+      customer_id: "cust-1",
+      created_at: "2026-01-01T00:00:00.000Z",
+      product_attributes: { category: "recovery hardware", key_attributes: ["sauna"] },
+      customer_description: null,
+      aov_bucket: "mid",
+      scoring_weights: null,
+    };
+  }
+
+  function ring(): RingHypothesisRow {
+    return {
+      id: "ring-1",
+      campaign_pattern_id: "cp-1",
+      created_at: "2026-01-01T00:00:00.000Z",
+      kind: "primary",
+      label: "endurance athletes",
+      reasoning: "training recovery",
+      confidence: "high",
+      confidence_score: 80,
+      brand_confirmed: true,
+      brand_decision: "confirmed",
+      slot_position: 0,
+    };
+  }
+
+  function youtubeClient() {
+    return {
+      searchVideos: vi.fn(async () => [{ channelId: "US1", title: "US One", description: "a" }]),
+      getMultipleChannelDetails: vi.fn(async (ids: string[]) =>
+        ids.map((id) => detail({ channelId: id, title: "Recovery Tube" }))
+      ),
+      getRecentVideoStats: vi.fn(async () => ({
+        videos: [],
+        averageViews: 50000,
+        averageLikes: 0,
+        averageComments: 0,
+        totalVideosAnalyzed: 5,
+      })),
+    };
+  }
+
+  const brief = {
+    target_interests: ["Health & Wellness"],
+    keywords: ["sauna"],
+    platforms: ["podcast", "youtube"],
+    ring_terms: ["endurance athletes"],
+  };
+
+  it("keeps scored YouTube shows when every Podscan query returns 429", async () => {
+    const searchEpisodes = vi.fn(async () => {
+      throw new PodscanError("Podscan API error: 429 Too Many Requests", 429, 0, 23130);
+    });
+    vi.mocked(getPodscanClientSafe).mockReturnValue({ searchEpisodes } as never);
+    vi.mocked(getYouTubeClientSafe).mockReturnValue(youtubeClient() as never);
+    try {
+      const result = await discoverShows(brief);
+      expect(searchEpisodes.mock.calls.length).toBeGreaterThan(0);
+      expect(result.sources.podscan).toBe(0);
+      expect(result.sources.youtube).toBe(1);
+      expect(result.discovered.filter((show) => show.platform === "podcast")).toHaveLength(0);
+      const youtube = result.discovered.find((show) => show.platform === "youtube");
+      expect(youtube?.youtube_channel_id).toBe("US1");
+      const scored = scoreShowConviction(youtube!, ring(), pattern());
+      expect(scored.composite).toBeGreaterThan(0);
+      expect(result.errors.length).toBe(searchEpisodes.mock.calls.length);
+      expect(result.errors.every((message) => message.includes("429"))).toBe(true);
+    } finally {
+      vi.mocked(getPodscanClientSafe).mockReturnValue(null);
+    }
+  });
+
+  it("keeps YouTube shows when a Podscan query times out", async () => {
+    const searchEpisodes = vi.fn(async () => {
+      throw new PodscanError("Podscan API timeout");
+    });
+    vi.mocked(getPodscanClientSafe).mockReturnValue({ searchEpisodes } as never);
+    vi.mocked(getYouTubeClientSafe).mockReturnValue(youtubeClient() as never);
+    try {
+      const result = await discoverShows(brief);
+      expect(result.sources.podscan).toBe(0);
+      expect(result.sources.youtube).toBe(1);
+      expect(result.errors.some((message) => message.includes("timeout"))).toBe(true);
+    } finally {
+      vi.mocked(getPodscanClientSafe).mockReturnValue(null);
+    }
   });
 });
 

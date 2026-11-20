@@ -69,9 +69,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
   } catch (err) {
     console.error("[enrich] Unexpected error:", err);
     if (err instanceof PodscanError) {
+      const status = err.status ?? 502;
       return NextResponse.json(
         { error: `Podscan API error: ${err.message}` },
-        { status: err.status >= 500 ? 502 : err.status }
+        { status: status >= 500 ? 502 : status }
       );
     }
     return NextResponse.json(

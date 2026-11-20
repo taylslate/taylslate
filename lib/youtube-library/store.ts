@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { normalizeContactEmail, type EmailSource } from "./emails";
 import { createMemoryQuotaLedger, type QuotaJob, type QuotaLedger } from "./quota";
 import { linkResolvesToChannel } from "./seeds";
+import { libraryRowIsMadeForKids } from "./kids";
 import { deterministicNicheTags, filterNicheTags, NICHE_TAGS_VERSION } from "./tags";
 
 export const YOUTUBE_STATS_MAX_AGE_DAYS = 30;
@@ -50,6 +51,19 @@ export function isMissingYt2(err: unknown): boolean {
   return code === "42703" || code === "PGRST204" || MISSING_YT2.test(message);
 }
 
+/**
+ * True when the error is specifically the missing made_for_kids column.
+ * Check this before isMissingLibraryTable. A 42703 or PGRST204 message
+ * also matches that helper ("does not exist", "schema cache"), and treating
+ * it as a missing table would stop the library crons until 095 is applied.
+ */
+export function isMissingMadeForKidsColumn(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String((err as { message?: string } | null)?.message ?? "");
+  const code = (err as { code?: string } | null)?.code ?? "";
+  if (!/made_for_kids/i.test(`${code} ${message}`)) return false;
+  return code === "42703" || code === "PGRST204" || /42703|PGRST204|schema cache|does not exist|column/i.test(`${code} ${message}`);
+}
+
 export function statsFreshCutoff(now: Date): string {
   return new Date(now.getTime() - YOUTUBE_STATS_MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
 }
@@ -80,6 +94,8 @@ export interface YoutubeChannelRecord {
   niche_tags_version: number;
   tagged_at: string | null;
   passed_market_filter: boolean;
+  /** YouTube status.madeForKids. Null until a refresh stores it, or when migration 095 is not applied. */
+  made_for_kids: boolean | null;
   brand_flag: string | null;
   show_id: string | null;
   source: YoutubeChannelSource;
@@ -334,6 +350,8 @@ export function draftToRecord(
     niche_tags_version: version,
     tagged_at: taggedAt,
     passed_market_filter: draft.passedMarketFilter,
+    made_for_kids:
+      details.madeForKids === true ? true : details.madeForKids === false ? false : null,
     brand_flag: draft.brandFlag,
     show_id: showId,
     source: existing?.source ?? draft.source,
@@ -515,7 +533,8 @@ export function createMemoryYoutubeStore(shows: ShowLinkCandidate[] = []): Youtu
         (row) =>
           row.passed_market_filter &&
           !row.brand_flag &&
-          row.stats_refreshed_at >= cutoffIso
+          row.stats_refreshed_at >= cutoffIso &&
+          !libraryRowIsMadeForKids(row)
       );
     },
     async listNeedsTags(limit, version) {
@@ -586,6 +605,7 @@ export function createMemoryYoutubeStore(shows: ShowLinkCandidate[] = []): Youtu
           (row) =>
             row.passed_market_filter &&
             !row.brand_flag &&
+            !libraryRowIsMadeForKids(row) &&
             row.avg_recent_views != null &&
             row.avg_recent_views > 0
         )
@@ -626,6 +646,11 @@ function asRecord(row: Record<string, unknown>): YoutubeChannelRecord {
     niche_tags_version: Number(row.niche_tags_version ?? 0),
     tagged_at: (row.tagged_at as string | null) ?? null,
     passed_market_filter: Boolean(row.passed_market_filter),
+    made_for_kids: row.made_for_kids === true || row.made_for_kids === "true"
+      ? true
+      : row.made_for_kids === false || row.made_for_kids === "false"
+        ? false
+        : null,
     brand_flag: (row.brand_flag as string | null) ?? null,
     show_id: (row.show_id as string | null) ?? null,
     source: row.source as YoutubeChannelSource,
@@ -637,8 +662,8 @@ function asRecord(row: Record<string, unknown>): YoutubeChannelRecord {
   };
 }
 
-function toDbRow(record: YoutubeChannelRecord): Record<string, unknown> {
-  return {
+function toDbRow(record: YoutubeChannelRecord, includeMadeForKids: boolean): Record<string, unknown> {
+  const row: Record<string, unknown> = {
     channel_id: record.channel_id,
     title: record.title,
     description: record.description,
@@ -665,6 +690,8 @@ function toDbRow(record: YoutubeChannelRecord): Record<string, unknown> {
     created_at: record.created_at,
     updated_at: record.updated_at,
   };
+  if (includeMadeForKids) row.made_for_kids = record.made_for_kids;
+  return row;
 }
 
 const CHANNEL_COLUMNS =
@@ -743,6 +770,26 @@ function supabaseQuotaLedger(): QuotaLedger {
 
 export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
   let yt2Cache: boolean | null = null;
+  let kidsColumnCache: boolean | null = null;
+
+  async function kidsColumnReady(): Promise<boolean> {
+    if (kidsColumnCache != null) return kidsColumnCache;
+    const { error } = await supabaseAdmin.from("youtube_channels").select("made_for_kids").limit(1);
+    if (!error) {
+      kidsColumnCache = true;
+      return true;
+    }
+    if (isMissingMadeForKidsColumn(error)) {
+      kidsColumnCache = false;
+      return false;
+    }
+    if (isMissingLibraryTable(error)) throw new YoutubeLibraryTableMissing();
+    throw new Error(error.message || "youtube library query failed");
+  }
+
+  async function channelColumns(): Promise<string> {
+    return (await kidsColumnReady()) ? `${CHANNEL_COLUMNS}, made_for_kids` : CHANNEL_COLUMNS;
+  }
 
   async function probeYt2(): Promise<boolean> {
     if (yt2Cache != null) return yt2Cache;
@@ -901,11 +948,11 @@ export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
     async getChannel(channelId) {
       const { data, error } = await supabaseAdmin
         .from("youtube_channels")
-        .select(CHANNEL_COLUMNS)
+        .select(await channelColumns())
         .eq("channel_id", channelId)
         .maybeSingle();
       throwIfMissing(error);
-      return data ? asRecord(data as Record<string, unknown>) : null;
+      return data ? asRecord(data as unknown as Record<string, unknown>) : null;
     },
     async getChannels(channelIds) {
       const ids = channelIds.map((id) => id.trim()).filter(Boolean);
@@ -916,10 +963,10 @@ export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
         const slice = ids.slice(i, i + page);
         const { data, error } = await supabaseAdmin
           .from("youtube_channels")
-          .select(CHANNEL_COLUMNS)
+          .select(await channelColumns())
           .in("channel_id", slice);
         throwIfMissing(error);
-        rows.push(...(data ?? []).map((row) => asRecord(row as Record<string, unknown>)));
+        rows.push(...(data ?? []).map((row) => asRecord(row as unknown as Record<string, unknown>)));
       }
       return orderChannelRows(ids, rows);
     },
@@ -929,9 +976,18 @@ export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
         existing,
         (channelId) => this.getChannel(channelId),
         async (row) => {
+          const include = await kidsColumnReady();
           const { error } = await supabaseAdmin
             .from("youtube_channels")
-            .upsert(toDbRow(row), { onConflict: "channel_id" });
+            .upsert(toDbRow(row, include), { onConflict: "channel_id" });
+          if (error && isMissingMadeForKidsColumn(error)) {
+            kidsColumnCache = false;
+            const retry = await supabaseAdmin
+              .from("youtube_channels")
+              .upsert(toDbRow(row, false), { onConflict: "channel_id" });
+            throwIfMissing(retry.error);
+            return;
+          }
           throwIfMissing(error);
         }
       );
@@ -943,12 +999,12 @@ export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
     async oldestChannels(limit) {
       const { data, error } = await supabaseAdmin
         .from("youtube_channels")
-        .select(CHANNEL_COLUMNS)
+        .select(await channelColumns())
         .order("stats_refreshed_at", { ascending: true })
         .order("channel_id", { ascending: true })
         .limit(limit);
       throwIfMissing(error);
-      return (data ?? []).map((row) => asRecord(row as Record<string, unknown>));
+      return (data ?? []).map((row) => asRecord(row as unknown as Record<string, unknown>));
     },
     async deleteChannels(ids) {
       if (ids.length === 0) return;
@@ -988,31 +1044,35 @@ export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
     async listEligible(cutoffIso) {
       const rows: YoutubeChannelRecord[] = [];
       const page = 1000;
+      const columns = await channelColumns();
+      const filterKids = columns.endsWith("made_for_kids");
       for (let from = 0; from < 50000; from += page) {
-        const { data, error } = await supabaseAdmin
+        let query = supabaseAdmin
           .from("youtube_channels")
-          .select(CHANNEL_COLUMNS)
+          .select(columns)
           .eq("passed_market_filter", true)
           .is("brand_flag", null)
-          .gte("stats_refreshed_at", cutoffIso)
+          .gte("stats_refreshed_at", cutoffIso);
+        if (filterKids) query = query.or("made_for_kids.is.null,made_for_kids.eq.false");
+        const { data, error } = await query
           .order("channel_id", { ascending: true })
           .range(from, from + page - 1);
         throwIfMissing(error);
         const batch = data ?? [];
-        rows.push(...batch.map((row) => asRecord(row as Record<string, unknown>)));
+        rows.push(...batch.map((row) => asRecord(row as unknown as Record<string, unknown>)));
         if (batch.length < page) break;
       }
-      return rows;
+      return rows.filter((row) => !libraryRowIsMadeForKids(row));
     },
     async listNeedsTags(limit, version) {
       const { data, error } = await supabaseAdmin
         .from("youtube_channels")
-        .select(CHANNEL_COLUMNS)
+        .select(await channelColumns())
         .or(`niche_tags_version.lt.${version},tagged_at.is.null`)
         .order("channel_id", { ascending: true })
         .limit(limit);
       throwIfMissing(error);
-      return (data ?? []).map((row) => asRecord(row as Record<string, unknown>));
+      return (data ?? []).map((row) => asRecord(row as unknown as Record<string, unknown>));
     },
     async saveTags(channelId, tags, version, taggedAt) {
       const { error } = await supabaseAdmin
@@ -1107,17 +1167,22 @@ export function createSupabaseYoutubeStore(): YoutubeLibraryStore {
       return next;
     },
     async listHighScoringChannels(limit) {
-      const { data, error } = await supabaseAdmin
+      const columns = await channelColumns();
+      let query = supabaseAdmin
         .from("youtube_channels")
-        .select(CHANNEL_COLUMNS)
+        .select(columns)
         .eq("passed_market_filter", true)
         .is("brand_flag", null)
-        .gt("avg_recent_views", 0)
+        .gt("avg_recent_views", 0);
+      if (columns.endsWith("made_for_kids")) query = query.or("made_for_kids.is.null,made_for_kids.eq.false");
+      const { data, error } = await query
         .order("avg_recent_views", { ascending: false })
         .order("channel_id", { ascending: true })
         .limit(limit);
       throwIfMissing(error);
-      return (data ?? []).map((row) => asRecord(row as Record<string, unknown>));
+      return (data ?? [])
+        .map((row) => asRecord(row as unknown as Record<string, unknown>))
+        .filter((row) => !libraryRowIsMadeForKids(row));
     },
   };
 }

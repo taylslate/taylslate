@@ -277,7 +277,7 @@ describe("channel details parts", () => {
     const url = new URL(raw);
     expect(url.pathname).toBe("/youtube/v3/channels");
     expect(url.searchParams.get("part")).toBe(
-      "snippet,statistics,topicDetails,brandingSettings"
+      "snippet,statistics,topicDetails,brandingSettings,status"
     );
     expect(url.searchParams.get("id")).toBe("UCfit");
     expect(rows).toHaveLength(1);
@@ -286,6 +286,58 @@ describe("channel details parts", () => {
     expect(rows[0].topicCategories).toEqual(["Physical fitness", "Nutrition"]);
     expect(rows[0].keywords).toEqual(["fitness", "home workout", "nutrition"]);
     expect(rows[0].videoCount).toBe(40);
+    expect(rows[0].madeForKids).toBeNull();
+  });
+
+  it("maps status.madeForKids without a second channels.list call", async () => {
+    const fetchMock = stubFetch({
+      items: [
+        {
+          id: "UCkids",
+          snippet: {
+            title: "Cocomelon",
+            description: "Kids songs",
+            publishedAt: "2020-01-01T00:00:00.000Z",
+            country: "US",
+            thumbnails: {},
+          },
+          statistics: {
+            viewCount: "1",
+            subscriberCount: "1",
+            hiddenSubscriberCount: false,
+            videoCount: "1",
+          },
+          status: { madeForKids: true },
+        },
+        {
+          id: "UCadult",
+          snippet: {
+            title: "Fit Lab",
+            description: "Training",
+            publishedAt: "2020-01-01T00:00:00.000Z",
+            country: "US",
+            thumbnails: {},
+          },
+          statistics: {
+            viewCount: "1",
+            subscriberCount: "1",
+            hiddenSubscriberCount: false,
+            videoCount: "1",
+          },
+          status: { madeForKids: false },
+        },
+      ],
+    });
+    const client = new YouTubeClient("test-key");
+    const rows = await client.getMultipleChannelDetails(["UCkids", "UCadult"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.searchParams.get("part")).toContain("status");
+    expect(url.searchParams.get("id")).toBe("UCkids,UCadult");
+    expect(rows.map((row) => [row.channelId, row.madeForKids])).toEqual([
+      ["UCkids", true],
+      ["UCadult", false],
+    ]);
   });
 
   it("uses the same parts for a single channel", async () => {
@@ -295,7 +347,7 @@ describe("channel details parts", () => {
     expect(row).toBeNull();
     const url = new URL(String(fetchMock.mock.calls[0][0]));
     expect(url.searchParams.get("part")).toBe(
-      "snippet,statistics,topicDetails,brandingSettings"
+      "snippet,statistics,topicDetails,brandingSettings,status"
     );
   });
 });
