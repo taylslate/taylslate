@@ -13,7 +13,9 @@
 // before this helper runs.
 
 import type { Show } from "@/lib/data/types";
+import { ownershipStatusFromRow } from "@/lib/data/show-transform";
 import { getVerifiedProfileTies } from "@/lib/shows/apply-geography";
+import { ownerShowSlug } from "@/lib/shows/surfaces";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export const PUBLIC_SHOW_FIELDS = [
@@ -72,6 +74,91 @@ export function projectShows<T extends { id: string }>(
   return shows.map((show) =>
     fullIds.has(show.id) ? show : toPublicShowFields(show)
   );
+}
+
+export function hasOwnershipStatus(show: object): boolean {
+  return Object.prototype.hasOwnProperty.call(show, "ownership_status");
+}
+
+/**
+ * Copy ownership_status from raw shows rows onto already transformed
+ * shows. transformShow leaves the column off. GET /api/shows uses this
+ * and then strips the field unless the caller is the owner or an admin.
+ * A read error returns the shows unchanged.
+ */
+export async function attachOwnershipStatus<T extends { id: string }>(shows: T[]): Promise<T[]> {
+  const ids = [...new Set(shows.map((show) => show.id).filter((id) => id.length > 0))];
+  if (ids.length === 0) return shows;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("shows")
+      .select("id, ownership_status")
+      .in("id", ids);
+    if (error) {
+      console.warn("[shows] ownership read", error.code ?? "unknown");
+      return shows;
+    }
+    const byId = new Map<string, NonNullable<Show["ownership_status"]>>();
+    for (const row of data ?? []) {
+      const id = typeof row.id === "string" ? row.id : "";
+      const status = ownershipStatusFromRow(row.ownership_status);
+      if (id && status) byId.set(id, status);
+    }
+    if (byId.size === 0) return shows;
+    return shows.map((show) => {
+      const status = byId.get(show.id);
+      if (!status) return show;
+      return { ...show, ownership_status: status };
+    });
+  } catch {
+    console.warn("[shows] ownership read", "unknown");
+    return shows;
+  }
+}
+
+/** Drop ranking state unless this caller is the show owner or an admin. */
+export function stripOwnershipStatus<T extends { id: string }>(
+  shows: T[],
+  keepIds: ReadonlySet<string>
+): T[] {
+  return shows.map((show) => {
+    if (keepIds.has(show.id)) return show;
+    if (!Object.prototype.hasOwnProperty.call(show, "ownership_status")) return show;
+    const copy = { ...show };
+    delete (copy as { ownership_status?: unknown }).ownership_status;
+    return copy;
+  });
+}
+
+/**
+ * Show ids whose ownership_status this caller may see. An admin sees
+ * every id. A show owner sees the server owner slug and a verified
+ * profile tie. A brand deal does not qualify.
+ */
+export async function ownershipVisibleIds(
+  userId: string,
+  shows: Array<ShowAccessRow & { slug?: string | null }>,
+  admin: boolean
+): Promise<Set<string>> {
+  if (admin) return new Set(shows.map((show) => show.id));
+  const keep = new Set<string>();
+  const slug = ownerShowSlug(userId);
+  for (const show of shows) {
+    if (
+      show.slug === slug &&
+      Array.isArray(show.data_sources) &&
+      show.data_sources.includes("show_owner")
+    ) {
+      keep.add(show.id);
+    }
+  }
+  const profileId = await callerShowProfileId(userId);
+  if (!profileId) return keep;
+  const ties = await getVerifiedProfileTies(await showIdentities(shows));
+  for (const tie of ties) {
+    if (tie.profileId === profileId && tie.showId) keep.add(tie.showId);
+  }
+  return keep;
 }
 
 /**

@@ -11,6 +11,10 @@ import {
   hasDemographics,
   type HydrateDemographicsDeps,
 } from "./hydrate-demographics";
+import { stampRankingOwnership } from "@/lib/ownership/persist";
+import { scoreShowConviction } from "@/lib/scoring/conviction";
+import { OWNERSHIP_RANK_BONUS } from "@/lib/ownership/tier";
+import type { CampaignPatternRow, RingHypothesisRow } from "@/lib/data/types";
 import { PodscanError, type PodscanDemographics } from "@/lib/enrichment/podscan";
 import type { Show, ShowDemographics, Platform } from "@/lib/data/types";
 
@@ -68,11 +72,58 @@ function makeDeps(opts: {
       if (opts.fetch) return opts.fetch(podscanId);
       return API_PAYLOAD;
     },
+    stampOwnership: async () => {},
   };
   return { deps, fetchCalls };
 }
 
 // ---- hasDemographics ----
+
+describe("ownership stamp", () => {
+  it("passes stored rows to the injected stamp and does not call the database helper", async () => {
+    const seen: string[] = [];
+    const candidate = makeShow({ name: "Recovery Lab" });
+    const { deps } = makeDeps({
+      rows: [
+        {
+          ...makeShow({ id: "cat-recovery", name: "Recovery Lab", ownership_status: "verified" }),
+          slug: "recovery-lab",
+        },
+      ],
+    });
+    deps.stampOwnership = async (pairs) => {
+      seen.push(pairs[0]?.stored.id ?? "");
+    };
+    await hydrateCandidateDemographics([candidate], deps);
+    expect(seen).toEqual(["cat-recovery"]);
+    expect(candidate.ownership_status).toBeUndefined();
+  });
+
+  it("applies the ranking bonus from the raw stored status", async () => {
+    const candidate = makeShow({ name: "Recovery Lab" });
+    const plain = makeShow({ name: "Recovery Lab" });
+    const { deps } = makeDeps({
+      rows: [
+        {
+          ...makeShow({
+            id: "cat-recovery",
+            name: "Recovery Lab",
+            ownership_status: "verified",
+          }),
+          slug: "recovery-lab",
+        },
+      ],
+    });
+    deps.stampOwnership = stampRankingOwnership;
+    await hydrateCandidateDemographics([candidate], deps);
+    expect(candidate.ownership_status).toBe("verified");
+    const ring = { id: "ring-1", confidence: "high" } as RingHypothesisRow;
+    const pattern = { id: "cp-1", aov_bucket: "high", product_attributes: {} } as CampaignPatternRow;
+    const scored = scoreShowConviction(candidate, ring, pattern);
+    const unscored = scoreShowConviction(plain, ring, pattern);
+    expect(scored.composite).toBe(unscored.composite + OWNERSHIP_RANK_BONUS.verified);
+  });
+});
 
 describe("hasDemographics", () => {
   it("treats {} (the discovered-show default), null, and undefined as empty", () => {

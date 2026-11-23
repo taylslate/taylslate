@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { transformShow } from "./show-transform";
+import { ownershipStatusFromRow, transformShow } from "./show-transform";
 
 describe("transformShow surfaces and medium_priors", () => {
   it("maps both JSONB columns and turns null into undefined", () => {
@@ -40,5 +40,19 @@ describe("transformShow surfaces and medium_priors", () => {
     });
     expect(empty.surfaces).toBeUndefined();
     expect(empty.medium_priors).toBeUndefined();
+  });
+
+  it("does not copy ownership_status onto the domain show", () => {
+    const show = transformShow({
+      id: "show-1",
+      name: "Recovery Lab",
+      platform: "podcast",
+      ownership_status: "verified",
+      contact_email: "host@show.test",
+    });
+    expect(show).not.toHaveProperty("ownership_status");
+    expect(show.contact.email).toBe("host@show.test");
+    expect(ownershipStatusFromRow("verified")).toBe("verified");
+    expect(ownershipStatusFromRow("pending")).toBeUndefined();
   });
 });

@@ -13,6 +13,16 @@
 
 import type { Show, ShowContact } from "./types";
 
+/**
+ * Ranking state from a raw shows row. transformShow does not copy it.
+ * Callers that score, or that return a show to its owner or an admin,
+ * read the column themselves.
+ */
+export function ownershipStatusFromRow(value: unknown): Show["ownership_status"] {
+  if (value === "unclaimed" || value === "claimed" || value === "verified") return value;
+  return undefined;
+}
+
 /** Transform flat DB row into Show with nested contact object */
 export function transformShow(row: Record<string, unknown>): Show {
   const contact: ShowContact = {

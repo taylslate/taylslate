@@ -15,8 +15,9 @@ import {
   isAdminViewCookie,
 } from "@/lib/admin/test-accounts";
 import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
+import { syncShowClaim } from "@/lib/ownership/persist";
 import { logEvent } from "./events";
-import { transformShow } from "./show-transform";
+import { ownershipStatusFromRow, transformShow } from "./show-transform";
 import { findCatalogDuplicates } from "@/lib/shows/import-catalog-match";
 import { showNameContainsPattern } from "@/lib/shows/search-pattern";
 import { normalizeRosterShowName } from "@/lib/reps/roster-import";
@@ -617,9 +618,20 @@ export async function getDealWithRelations(
 }
 
 export async function deleteDeal(id: string): Promise<boolean> {
+  let showId: string | null = null;
+  try {
+    const existing = await supabaseAdmin.from("deals").select("show_id").eq("id", id).maybeSingle();
+    if (!existing.error && typeof existing.data?.show_id === "string") {
+      showId = existing.data.show_id;
+    }
+  } catch {
+    showId = null;
+  }
   const { error } = await supabaseAdmin.from("deals").delete().eq("id", id);
   if (error) {
-    console.error("[deleteDeal] Supabase error for deal", id, ":", error.message, error.code);
+    console.error("[deleteDeal] Supabase error for deal", id, ":", error.code ?? "unknown");
+  } else if (showId) {
+    await syncShowClaim(showId);
   }
   return !error;
 }
@@ -1094,6 +1106,7 @@ export async function createShow(
     ...showData,
   };
   const actor = options?.actor;
+  delete (requested as { ownership_status?: unknown }).ownership_status;
   if (actor) {
     delete requested.is_verified;
     delete requested.is_claimed;
@@ -1177,13 +1190,24 @@ export async function getShowsBySlugs(
     console.error("[getShowsBySlugs] Error:", error.message);
     return [];
   }
-  // Keep the row's slug on the result — transformShow drops it, and callers
-  // key matches on the STORED slug (which is the dedup identity), not on a
-  // re-derived one.
-  return (data ?? []).map((row) => ({
-    ...transformShow(row),
-    slug: row.slug as string,
-  }));
+  // Keep the row's slug on the result. transformShow drops it, and callers
+  // key matches on the stored slug (the dedup identity), not on a
+  // re-derived one. Ownership and data_sources stay off transformShow so
+  // brand reads do not receive them. This lookup is the scoring path, so
+  // it copies both from the raw row.
+  return (data ?? []).map((row) => {
+    const status = ownershipStatusFromRow(row.ownership_status);
+    const rawSources: unknown[] = Array.isArray(row.data_sources)
+      ? (row.data_sources as unknown[])
+      : [];
+    const sources = rawSources.filter((source): source is string => typeof source === "string");
+    return {
+      ...transformShow(row),
+      slug: row.slug as string,
+      ...(status ? { ownership_status: status } : {}),
+      ...(sources.length > 0 ? { data_sources: sources } : {}),
+    };
+  });
 }
 
 export async function updateShow(
@@ -1196,8 +1220,9 @@ export async function updateShow(
     updated_at: new Date().toISOString(),
   });
 
-  // Don't allow updating id
+  // Don't allow updating id. Ownership is written only by lib/ownership.
   delete dbUpdates.id;
+  delete dbUpdates.ownership_status;
 
   const { data, error } = await supabaseAdmin
     .from("shows")
@@ -1424,6 +1449,8 @@ export async function importShows(
     // agent_id is the session user. A body value is ignored.
     delete dbRow.is_exclusive;
     delete dbRow.agent_id;
+    delete dbRow.ownership_status;
+    delete dbRow.data_sources;
     dbRow.agent_id = agentId;
     // The column default is true. A non-admin import must stay hidden.
     // An admin import stays discoverable unless the row says false.
@@ -2116,7 +2143,8 @@ export async function completeShowProfile(
  * 013 show policy keys on show_profile_id), so the service role performs the
  * update. Fail-soft: never throws; returns the number of deals linked.
  * profiles.email is not the match. A row that copied another login address
- * does not receive that login's deals.
+ * does not receive that login's deals. Linking a profile does not by
+ * itself mark the show claimed. Ranking uses the tight claim rule.
  */
 export async function backfillShowProfileOnAcceptedDeals(
   showProfileId: string,
@@ -2141,12 +2169,18 @@ export async function backfillShowProfileOnAcceptedDeals(
     .update({ show_profile_id: showProfileId })
     .in("outreach_id", outreachIds)
     .is("show_profile_id", null)
-    .select("id");
+    .select("id, show_id");
   if (error) {
-    console.error("[backfillShowProfileOnAcceptedDeals] Error:", error.message);
+    console.error("[backfillShowProfileOnAcceptedDeals] Error:", error.code ?? "unknown");
     return 0;
   }
   const dealIds = (linked ?? []).map((d) => (d as { id: string }).id);
+  const showIds = new Set<string>();
+  for (const row of linked ?? []) {
+    const showId = (row as { show_id?: unknown }).show_id;
+    if (typeof showId === "string" && showId) showIds.add(showId);
+  }
+  for (const showId of showIds) await syncShowClaim(showId);
   if (dealIds.length) {
     await logEvent({
       eventType: "deal.show_profile_backfilled",
@@ -2324,14 +2358,10 @@ export async function createWave12Deal(
     .select()
     .single();
   if (error || !data) {
-    console.error(
-      "[createWave12Deal] insert failed:",
-      error?.message,
-      error?.code,
-      error?.details
-    );
+    console.error("[createWave12Deal] insert failed:", error?.code ?? "unknown");
     return null;
   }
+  if (input.show_profile_id && input.show_id) await syncShowClaim(input.show_id);
   return data as Wave12Deal;
 }
 

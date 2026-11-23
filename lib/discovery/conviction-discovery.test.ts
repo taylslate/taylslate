@@ -27,6 +27,7 @@ import {
 } from "./discover-shows";
 import { isKnownPodscanInterest } from "./category-mapping";
 import { PURCHASE_POWER_SCORE } from "@/lib/scoring/purchase-power";
+import { OWNERSHIP_RANK_BONUS } from "@/lib/ownership/tier";
 import type {
   Show,
   ShowDemographics,
@@ -471,6 +472,23 @@ describe("scoreCandidatesAgainstRings (pure)", () => {
     for (let i = 1; i < comps.length; i++) {
       expect(comps[i]).toBeLessThanOrEqual(comps[i - 1]);
     }
+  });
+
+  it("keeps an unclaimed show and ranks better fit above a verified show", () => {
+    const weak = offTopicShow({ ownership_status: "verified" });
+    const strong = recoveryShow({ ownership_status: "unclaimed" });
+    fillPurchasePower([weak, strong]);
+    const groups = scoreCandidatesAgainstRings([weak, strong], [makeRing()], makePattern("mid"));
+    const shows = groups[0].shows;
+    expect(shows.map((entry) => entry.show.id)).toEqual([
+      "discovered-podscan-recovery",
+      "discovered-podscan-offtopic",
+    ]);
+    expect(shows[0].show.ownership_status).toBe("unclaimed");
+    expect(shows[1].show.ownership_status).toBe("verified");
+    expect(shows[0].score.composite - shows[1].score.composite).toBeGreaterThan(
+      OWNERSHIP_RANK_BONUS.verified
+    );
   });
 
   it("keeps a show whose geography barely overlaps the target market", () => {

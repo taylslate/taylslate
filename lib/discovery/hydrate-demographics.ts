@@ -42,6 +42,7 @@ import {
 } from "@/lib/enrichment/podscan";
 import { PodscanApiError } from "@/lib/podscan/client";
 import { podscanDemographicsToShowDemographics } from "./format-discovered-show";
+import { stampRankingOwnership, type RankingOwnershipStored } from "@/lib/ownership/persist";
 
 // ---- Injected dependencies (default to the real implementations) ----
 
@@ -70,6 +71,13 @@ export interface HydrateDemographicsDeps {
    * candidate doesn't already have.
    */
   lookupGeography?: (identities: ShowGeoIdentity[]) => Promise<VerifiedGeography[]>;
+  /**
+   * Copy ownership onto candidates before scoring. Tests stub this.
+   * The default applies the claim rule and does not write the database.
+   */
+  stampOwnership: (
+    pairs: Array<{ candidate: Show; stored: RankingOwnershipStored }>
+  ) => Promise<void>;
 }
 
 const defaultDeps: HydrateDemographicsDeps = {
@@ -80,6 +88,7 @@ const defaultDeps: HydrateDemographicsDeps = {
     return client.getPodcastDemographics(podscanId);
   },
   lookupGeography: getVerifiedAudienceGeography,
+  stampOwnership: stampRankingOwnership,
 };
 
 export interface HydrateDemographicsResult {
@@ -146,10 +155,12 @@ export async function hydrateCandidateDemographics(
     );
   }
   const rowBySlug = new Map(rows.map((r) => [r.slug, r]));
+  const ownershipPairs: Array<{ candidate: Show; stored: Show & { slug: string } }> = [];
 
   for (const c of candidates) {
     const row = rowBySlug.get(slugOf.get(c)!);
     if (!row) continue;
+    ownershipPairs.push({ candidate: c, stored: row });
     if (!c.podscan_id && row.podscan_id) c.podscan_id = row.podscan_id;
     if (!hasDemographics(c.demographics) && hasDemographics(row.demographics)) {
       c.demographics = row.demographics;
@@ -165,6 +176,20 @@ export async function hydrateCandidateDemographics(
       result.sponsorsFromDb++;
     }
   }
+
+  await deps.stampOwnership(
+    ownershipPairs.map(({ candidate, stored }) => ({
+      candidate,
+      stored: {
+        id: stored.id,
+        ownership_status: stored.ownership_status,
+        contact_email: stored.contact?.email,
+        data_sources: stored.data_sources,
+        slug: stored.slug,
+        podscan_id: stored.podscan_id,
+      },
+    }))
+  );
 
   // ---- Pass 2: Podscan fetch, deduped by podscan_id ----
   // (slug dedup can land the same podcast in the pool twice)

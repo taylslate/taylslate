@@ -8,7 +8,14 @@ import {
   getUserProfile,
 } from "@/lib/data/queries";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
-import { fullShowIdsForCaller, projectShows } from "@/lib/shows/public-fields";
+import {
+  attachOwnershipStatus,
+  fullShowIdsForCaller,
+  hasOwnershipStatus,
+  ownershipVisibleIds,
+  projectShows,
+  stripOwnershipStatus,
+} from "@/lib/shows/public-fields";
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,34 +51,45 @@ export async function GET(request: NextRequest) {
     const profile = await getUserProfile(user.id);
 
     if (profile?.role === "agent") {
-      const shows = await getShowsFiltered({
-        search,
-        platform,
-        category,
-        min_audience: minAudience,
-        max_audience: maxAudience,
-        agent_id: user.id,
-        limit,
-      });
-      return NextResponse.json(shows);
+      const shows = await attachOwnershipStatus(
+        await getShowsFiltered({
+          search,
+          platform,
+          category,
+          min_audience: minAudience,
+          max_audience: maxAudience,
+          agent_id: user.id,
+          limit,
+        })
+      );
+      if (!shows.some((show) => hasOwnershipStatus(show))) return NextResponse.json(shows);
+      if (await isShowsAdmin(user.id)) return NextResponse.json(shows);
+      return NextResponse.json(stripOwnershipStatus(shows, new Set()));
     }
 
     // Public fields unless the caller owns the show, has a verified
     // profile tie, or already has a deal on it. Agents returned their
     // own roster above, in full. Signed-out callers are rejected above.
     // A requested limit is still forwarded and still caps at 100.
-    const shows = hasFilters
-      ? await getShowsFiltered({
-          search,
-          platform,
-          category,
-          min_audience: minAudience,
-          max_audience: maxAudience,
-          limit,
-        })
-      : await getAllShows();
+    const shows = await attachOwnershipStatus(
+      hasFilters
+        ? await getShowsFiltered({
+            search,
+            platform,
+            category,
+            min_audience: minAudience,
+            max_audience: maxAudience,
+            limit,
+          })
+        : await getAllShows()
+    );
     const fullIds = await fullShowIdsForCaller(user.id, shows);
-    return NextResponse.json(projectShows(shows, fullIds));
+    const projected = projectShows(shows, fullIds);
+    if (!projected.some((show) => hasOwnershipStatus(show))) {
+      return NextResponse.json(projected);
+    }
+    const keep = await ownershipVisibleIds(user.id, shows, await isShowsAdmin(user.id));
+    return NextResponse.json(stripOwnershipStatus(projected, keep));
   } catch (error) {
     console.error("Error fetching shows:", error);
     return NextResponse.json(

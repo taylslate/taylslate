@@ -1,14 +1,19 @@
 // Ownership state for owner and admin views.
 //
-// Two states: unclaimed and verified. Pending is a tag, not a state.
-// It is true while a show_ownership_proofs row is pending, or while an
-// agent_show_relationships row is pending. Brand-facing UI does not
-// show these labels. This module does not change discovery, booking,
+// Three states: unclaimed, claimed, and verified. Pending is a tag,
+// not a state. It is true while a show_ownership_proofs row is pending,
+// or while an agent_show_relationships row is pending. Claimed is the
+// profile-control rule in tier.ts. Before migration 100 the column
+// cannot store claimed, so an unclaimed column is upgraded in this
+// read when that rule holds. Brand-facing UI does not show these
+// labels. This module does not remove shows from discovery, booking,
 // or visibility.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { claimLookup } from "@/lib/ownership/persist";
+import { ownershipTier, type OwnershipTier } from "@/lib/ownership/tier";
 
-export type OwnershipStateName = "unclaimed" | "verified";
+export type OwnershipStateName = OwnershipTier;
 
 export interface OwnershipState {
   state: OwnershipStateName;
@@ -18,6 +23,7 @@ export interface OwnershipState {
 /** Owner and admin copy. Do not render these on a brand-facing surface. */
 export const ownershipLabels = {
   verified: "Verified",
+  claimed: "Claimed",
   unclaimed: "Unclaimed",
   pending: "Pending",
 } as const;
@@ -41,16 +47,41 @@ export async function getOwnershipState(
   try {
     const { data: shows, error } = await supabaseAdmin
       .from("shows")
-      .select("id, ownership_status")
+      .select("id, ownership_status, contact_email, data_sources, slug")
       .in("id", ids);
     if (error) {
-      console.warn("[getOwnershipState] show read failed:", error.message);
+      console.warn("[getOwnershipState] show read failed:", error.code ?? "unknown");
     } else {
+      const open: Array<{
+        id: string;
+        contact_email?: unknown;
+        data_sources?: unknown;
+        slug?: unknown;
+      }> = [];
       for (const row of shows ?? []) {
         const id = text(row.id);
         const current = out.get(id);
         if (!current) continue;
-        current.state = row.ownership_status === "verified" ? "verified" : "unclaimed";
+        const tier = ownershipTier(row);
+        if (tier === "unclaimed") {
+          open.push({
+            id,
+            contact_email: row.contact_email,
+            data_sources: row.data_sources,
+            slug: row.slug,
+          });
+          continue;
+        }
+        current.state = tier;
+      }
+      if (open.length > 0) {
+        const claimed = await claimLookup(open);
+        if (claimed.ok) {
+          for (const id of claimed.ids) {
+            const current = out.get(id);
+            if (current && current.state !== "verified") current.state = "claimed";
+          }
+        }
       }
     }
 

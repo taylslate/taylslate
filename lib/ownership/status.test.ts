@@ -12,6 +12,9 @@ const db: Record<string, Row[]> = {
   shows: [],
   show_ownership_proofs: [],
   agent_show_relationships: [],
+  deals: [],
+  show_profiles: [],
+  users: [],
 };
 
 const errors: Record<string, string> = {};
@@ -26,6 +29,14 @@ function matches(row: Row, filters: Filter[]): boolean {
 
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
+    auth: {
+      admin: {
+        getUserById(id: string) {
+          const user = (db.users ?? []).find((row) => row.id === id) ?? null;
+          return Promise.resolve({ data: { user }, error: null });
+        },
+      },
+    },
     from(table: string) {
       const filters: Filter[] = [];
       const api = {
@@ -59,23 +70,29 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }));
 
+import { ownerShowSlug } from "@/lib/shows/surfaces";
 import { getOwnershipState, ownershipLabels } from "./status";
 
 const SHOW = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
+const USER = "44444444-4444-4444-8444-444444444444";
 
 beforeEach(() => {
   db.shows = [];
   db.show_ownership_proofs = [];
   db.agent_show_relationships = [];
+  db.deals = [];
+  db.show_profiles = [];
+  db.users = [];
   for (const key of Object.keys(errors)) delete errors[key];
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
 describe("ownership labels", () => {
-  it("exports Verified, Unclaimed, and Pending for owner and admin views", () => {
+  it("exports Verified, Claimed, Unclaimed, and Pending for owner and admin views", () => {
     expect(ownershipLabels).toEqual({
       verified: "Verified",
+      claimed: "Claimed",
       unclaimed: "Unclaimed",
       pending: "Pending",
     });
@@ -85,6 +102,37 @@ describe("ownership labels", () => {
 describe("getOwnershipState", () => {
   it("returns unclaimed with no pending tag when nothing is open", async () => {
     db.shows.push({ id: SHOW, ownership_status: "unclaimed" });
+    const states = await getOwnershipState([SHOW]);
+    expect(states.get(SHOW)).toEqual({ state: "unclaimed", pending: false });
+  });
+
+  it("returns claimed for a server owner slug when the column is still unclaimed", async () => {
+    db.shows.push({
+      id: SHOW,
+      ownership_status: "unclaimed",
+      data_sources: ["show_owner"],
+      slug: ownerShowSlug(USER),
+      contact_email: "host@show.test",
+    });
+    db.show_profiles.push({ id: "33333333-3333-4333-8333-333333333333", user_id: USER });
+    db.users.push({
+      id: USER,
+      email: "host@show.test",
+      email_confirmed_at: "2026-01-01T00:00:00.000Z",
+    });
+    const states = await getOwnershipState([SHOW]);
+    expect(states.get(SHOW)).toEqual({ state: "claimed", pending: false });
+  });
+
+  it("returns claimed from the column", async () => {
+    db.shows.push({ id: SHOW, ownership_status: "claimed" });
+    const states = await getOwnershipState([SHOW]);
+    expect(states.get(SHOW)).toEqual({ state: "claimed", pending: false });
+  });
+
+  it("does not treat a bare deal profile as claimed", async () => {
+    db.shows.push({ id: SHOW, ownership_status: "unclaimed" });
+    db.deals.push({ show_id: SHOW, show_profile_id: "33333333-3333-4333-8333-333333333333" });
     const states = await getOwnershipState([SHOW]);
     expect(states.get(SHOW)).toEqual({ state: "unclaimed", pending: false });
   });

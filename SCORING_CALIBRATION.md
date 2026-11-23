@@ -160,3 +160,7 @@ lexical patch.** The recompute relocates the real culprits to (a) pattern-level
 `key_attributes` tokens being folded into every ring's token set, and (b) the
 single-generic-token direct-match → 85. Both remain open calibration items;
 neither should be patched lexically.
+
+## Ownership ranking bonus (VERIFY-RANK1)
+
+Conviction ranking adds `OWNERSHIP_RANK_BONUS` from `lib/ownership/tier.ts` on every campaign: unclaimed 0, claimed 1, verified 3, on the 0-100 composite. The bonus is a sort nudge. It does not remove a show, and it does not replace audience fit or reach. The composite does not grow a claimed or verified sentence in brand-facing guidance. A verified host no longer also takes the 2-point first-campaign trusted-host bump for verification alone. That bump still fires for a recorded sponsor. `shows.is_verified` is not read. Detail is in `docs/jobs/VERIFY-RANK1.md`.
