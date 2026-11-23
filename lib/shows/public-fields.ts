@@ -13,6 +13,7 @@
 // before this helper runs.
 
 import type { Show } from "@/lib/data/types";
+import { ownershipStatusFromRow } from "@/lib/data/show-transform";
 import { getVerifiedProfileTies } from "@/lib/shows/apply-geography";
 import { ownerShowSlug } from "@/lib/shows/surfaces";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -77,6 +78,42 @@ export function projectShows<T extends { id: string }>(
 
 export function hasOwnershipStatus(show: object): boolean {
   return Object.prototype.hasOwnProperty.call(show, "ownership_status");
+}
+
+/**
+ * Copy ownership_status from raw shows rows onto already transformed
+ * shows. transformShow leaves the column off. GET /api/shows uses this
+ * and then strips the field unless the caller is the owner or an admin.
+ * A read error returns the shows unchanged.
+ */
+export async function attachOwnershipStatus<T extends { id: string }>(shows: T[]): Promise<T[]> {
+  const ids = [...new Set(shows.map((show) => show.id).filter((id) => id.length > 0))];
+  if (ids.length === 0) return shows;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("shows")
+      .select("id, ownership_status")
+      .in("id", ids);
+    if (error) {
+      console.warn("[shows] ownership read", error.code ?? "unknown");
+      return shows;
+    }
+    const byId = new Map<string, NonNullable<Show["ownership_status"]>>();
+    for (const row of data ?? []) {
+      const id = typeof row.id === "string" ? row.id : "";
+      const status = ownershipStatusFromRow(row.ownership_status);
+      if (id && status) byId.set(id, status);
+    }
+    if (byId.size === 0) return shows;
+    return shows.map((show) => {
+      const status = byId.get(show.id);
+      if (!status) return show;
+      return { ...show, ownership_status: status };
+    });
+  } catch {
+    console.warn("[shows] ownership read", "unknown");
+    return shows;
+  }
 }
 
 /** Drop ranking state unless this caller is the show owner or an admin. */

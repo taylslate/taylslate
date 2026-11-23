@@ -17,7 +17,7 @@ import {
 import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
 import { syncShowClaim } from "@/lib/ownership/persist";
 import { logEvent } from "./events";
-import { transformShow } from "./show-transform";
+import { ownershipStatusFromRow, transformShow } from "./show-transform";
 import { findCatalogDuplicates } from "@/lib/shows/import-catalog-match";
 import { showNameContainsPattern } from "@/lib/shows/search-pattern";
 import { normalizeRosterShowName } from "@/lib/reps/roster-import";
@@ -1190,13 +1190,24 @@ export async function getShowsBySlugs(
     console.error("[getShowsBySlugs] Error:", error.message);
     return [];
   }
-  // Keep the row's slug on the result — transformShow drops it, and callers
-  // key matches on the STORED slug (which is the dedup identity), not on a
-  // re-derived one.
-  return (data ?? []).map((row) => ({
-    ...transformShow(row),
-    slug: row.slug as string,
-  }));
+  // Keep the row's slug on the result. transformShow drops it, and callers
+  // key matches on the stored slug (the dedup identity), not on a
+  // re-derived one. Ownership and data_sources stay off transformShow so
+  // brand reads do not receive them. This lookup is the scoring path, so
+  // it copies both from the raw row.
+  return (data ?? []).map((row) => {
+    const status = ownershipStatusFromRow(row.ownership_status);
+    const rawSources: unknown[] = Array.isArray(row.data_sources)
+      ? (row.data_sources as unknown[])
+      : [];
+    const sources = rawSources.filter((source): source is string => typeof source === "string");
+    return {
+      ...transformShow(row),
+      slug: row.slug as string,
+      ...(status ? { ownership_status: status } : {}),
+      ...(sources.length > 0 ? { data_sources: sources } : {}),
+    };
+  });
 }
 
 export async function updateShow(

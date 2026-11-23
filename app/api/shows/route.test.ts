@@ -98,8 +98,10 @@ function chain(result: { data: unknown; error: null }) {
 function admin(opts: {
   profile?: { id: string } | null;
   deals?: Array<{ show_id: string; brand_id?: string; agency_id?: string }>;
+  ownership?: Array<{ id: string; ownership_status: string }>;
 }) {
   from.mockImplementation((table: unknown) => {
+    if (table === "shows") return chain({ data: opts.ownership ?? [], error: null });
     if (table === "show_profiles") {
       return chain({ data: opts.profile ?? null, error: null });
     }
@@ -187,6 +189,28 @@ describe("GET /api/shows", () => {
     expect(body[1]).not.toHaveProperty("contact");
     expect(body[1]).not.toHaveProperty("rate_card");
     expect(JSON.stringify(body[1])).not.toContain("other@show.test");
+  });
+
+  it("reads ownership_status from the raw row for the owner only", async () => {
+    getUser.mockResolvedValueOnce({ data: { user: { id: "show-user" } } });
+    getUserProfile.mockResolvedValueOnce({ role: "show" });
+    const owned = catalogShow(SHOW, "host@show.test");
+    const other = catalogShow(OTHER, "other@show.test");
+    getAllShows.mockResolvedValueOnce([owned, other]);
+    admin({
+      profile: { id: PROFILE },
+      ownership: [
+        { id: SHOW, ownership_status: "claimed" },
+        { id: OTHER, ownership_status: "verified" },
+      ],
+    });
+    ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
+
+    const body = await (await GET(new NextRequest("http://x/api/shows"))).json();
+    expect(body[0].ownership_status).toBe("claimed");
+    expect(body[0].rate_card).toEqual({ midroll_cpm: 25 });
+    expect(body[1]).not.toHaveProperty("ownership_status");
+    expect(body[1]).not.toHaveProperty("rate_card");
   });
 
   it("returns the full row for a verified rep's own roster", async () => {

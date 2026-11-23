@@ -13,7 +13,12 @@
 
 import type { Show, ShowContact } from "./types";
 
-function ownershipStatusFromRow(value: unknown): Show["ownership_status"] {
+/**
+ * Ranking state from a raw shows row. transformShow does not copy it.
+ * Callers that score, or that return a show to its owner or an admin,
+ * read the column themselves.
+ */
+export function ownershipStatusFromRow(value: unknown): Show["ownership_status"] {
   if (value === "unclaimed" || value === "claimed" || value === "verified") return value;
   return undefined;
 }
@@ -58,9 +63,6 @@ export function transformShow(row: Record<string, unknown>): Show {
     medium_priors: (row.medium_priors as Show["medium_priors"]) ?? undefined,
     is_claimed: (row.is_claimed as boolean) ?? false,
     is_verified: (row.is_verified as boolean) ?? false,
-    ...(ownershipStatusFromRow(row.ownership_status)
-      ? { ownership_status: ownershipStatusFromRow(row.ownership_status) }
-      : {}),
     is_discoverable: (row.is_discoverable as boolean) ?? true,
     available_slots: row.available_slots as number | undefined,
     next_available_date: row.next_available_date as string | undefined,

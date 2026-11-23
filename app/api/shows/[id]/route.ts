@@ -4,6 +4,7 @@ import { getShowById, updateShow } from "@/lib/data/queries";
 import type { Show } from "@/lib/data/types";
 import { canEditShow, isShowsAdmin, showWritePatch } from "@/lib/shows/can-edit-show";
 import {
+  attachOwnershipStatus,
   fullShowIdsForCaller,
   hasOwnershipStatus,
   ownershipVisibleIds,
@@ -25,7 +26,8 @@ export async function GET(
     }
 
     const { id } = await params;
-    const show = await getShowById(id);
+    const loaded = await getShowById(id);
+    const [show] = loaded ? await attachOwnershipStatus([loaded]) : [];
     // A missing show is 404. A hidden show (is_discoverable false) is also
     // 404, except for the creating agent (shows.agent_id) and an admin.
     // Other signed-in callers still do not see it. The catalog list stays

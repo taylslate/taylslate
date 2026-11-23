@@ -143,9 +143,10 @@ export interface Show {
    */
   is_verified: boolean;
   /**
-   * unclaimed, claimed, or verified. Absent on shows loaded before the
-   * column was selected. Claimed is computed in memory until migration
-   * 100 can store it. See lib/ownership/tier.ts.
+   * unclaimed, claimed, or verified. transformShow leaves this off so a
+   * brand page does not receive the label. Scoring and the owner or admin
+   * show API copy it from the raw row. Claimed is computed in memory until
+   * migration 100 can store it. See lib/ownership/tier.ts.
    */
   ownership_status?: "unclaimed" | "claimed" | "verified";
   /**
