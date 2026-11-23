@@ -30,6 +30,10 @@ export interface CatalogCandidate {
   lastPostedAt: string | null;
   episodeCount: number | null;
   listenerEngagement: unknown | null;
+  // Absent on rows saved before these fields existed. Null means the
+  // search hit had no value. Backfill treats a missing key as not yet read.
+  reachScore?: number | null;
+  brandSafety?: unknown | null;
   pass: PassName;
 }
 
@@ -196,8 +200,28 @@ export function toCandidate(podcast: PodscanPodcast, pass: PassName): CatalogCan
       podcast.listener_engagement != null && typeof podcast.listener_engagement === "object"
         ? podcast.listener_engagement
         : null,
+    reachScore: reachScoreValue(podcast.podcast_reach_score),
+    brandSafety: jsonObject(podcast.brand_safety),
     pass,
   };
+}
+
+function reachScoreValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && /^-?[0-9]+(\.[0-9]+)?$/.test(value)) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function jsonObject(value: unknown): unknown | null {
+  if (!value || typeof value !== "object") return null;
+  try {
+    return JSON.parse(JSON.stringify(value)) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeAudience(value: number | null | undefined): number | null {

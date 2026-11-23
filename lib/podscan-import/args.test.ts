@@ -10,6 +10,9 @@ describe("parseArgs", () => {
       partial: false,
       floorSponsored: false,
       noEnrich: false,
+      backfillScoringFields: false,
+      enrichMinAudience: null,
+      enrichMinPanelListeners: null,
       floor: null,
       confirm: null,
       sample: null,
@@ -27,6 +30,13 @@ describe("parseArgs", () => {
       partial: true,
       floorSponsored: true,
       noEnrich: true,
+    });
+    expect(
+      parseArgs(["--enrich-min-audience=5000", "--enrich-min-panel-listeners", "10", "--backfill-scoring-fields"])
+    ).toMatchObject({
+      enrichMinAudience: 5000,
+      enrichMinPanelListeners: 10,
+      backfillScoringFields: true,
     });
     expect(parseArgs(["--confirm=0"]).confirm).toBe(0);
     expect(parseArgs(["--language=en", "--active-days=30", "--max-podscan-calls=10", "--sample=25"])).toMatchObject({

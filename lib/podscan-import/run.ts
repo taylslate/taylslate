@@ -19,15 +19,27 @@ import {
   alignCheckpointSample,
   clearImportProgress,
   readCheckpoint,
+  readScoringFile,
   writeJsonAtomic,
+  writeScoringFile,
   writeTextAtomic,
   type Checkpoint,
   type ContactProgress,
   type EnrichProgress,
+  type ScoringProgress,
 } from "./checkpoint";
 import { formatFailure, inStep, type ImportStep } from "./failure";
 import { checkEmails, contactStatus, domainOf, type DnsLike, type MxResult } from "./email";
-import { enrichShow, isNotFound } from "./enrich";
+import {
+  analysisFetched,
+  enrichCallsRemaining,
+  enrichShow,
+  fetchSponsorHistory,
+  isNotFound,
+  qualifiesForEnrich,
+  scoringFromPodcastBody,
+  type EnrichGate,
+} from "./enrich";
 import { fetchOwnerEmail, mapPool, FEED_CONCURRENCY, type LookupFn } from "./feed";
 import { decideKeep, type KeepReason } from "./keep";
 import {
@@ -153,6 +165,10 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
     console.log("Pass either --fresh or --partial.");
     return { exitCode: 1 };
   }
+  if (args.backfillScoringFields && args.partial) {
+    console.log("Pass --backfill-scoring-fields without --partial.");
+    return { exitCode: 1 };
+  }
   if (args.commit) {
     if (!deps.db) {
       console.error("Supabase env is not set");
@@ -166,6 +182,12 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
   const clock = () => nowFn().getTime();
   const checkpointPath = join(deps.checkpointDir, "checkpoint.json");
   const checkpoint = await readCheckpoint(checkpointPath);
+  if (args.fresh) {
+    await writeScoringFile(deps.checkpointDir, {});
+  } else {
+    const savedScoring = await readScoringFile(deps.checkpointDir);
+    checkpoint.scoring = { ...(checkpoint.scoring ?? {}), ...savedScoring };
+  }
   if (args.partial && checkpoint.sample !== undefined && checkpoint.sample !== args.sample) {
     console.log("Refusing a partial write because the checkpoint sample does not match this run.");
     return { exitCode: 1 };
@@ -195,6 +217,8 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
 
   const guarded = <T>(work: () => Promise<T>): Promise<T> => gate.run(work);
   let commitPlan: { floor: number; chosen: WorkingShow[] } | null = null;
+  let enrichFinished = false;
+  const backfillProgress = { started: false, done: 0, total: 0 };
   let step: ImportStep = "search";
 
   try {
@@ -209,6 +233,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
     step = "contacts";
     await inStep("contacts", () => ensureContacts(search, checkpoint, deps, nowFn, save));
     const shows = buildShows(search, probe, checkpoint);
+    applySavedScoring(shows, checkpoint.scoring);
     const kept = {
       1000: shows.filter((show) => keepOf(show, 1000).kept),
       2500: shows.filter((show) => keepOf(show, 2500).kept),
@@ -221,7 +246,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
         : kept[1000];
       const sample = sortShows(proofKept).slice(0, 5);
       step = "enrich";
-      if (!args.noEnrich) await enrichIds(deps, sample, checkpoint, nowFn, guarded, save);
+      if (!args.noEnrich) await enrichIds(deps, sample, checkpoint, nowFn, guarded, save, args);
       const links = await countShows(deps.db, shows);
       buildReport(args, search, shows, kept, checkpoint, gate, links, nowFn());
       step = "checkpoint";
@@ -243,7 +268,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
     }
     const ordered = sortShows(chosen);
     commitPlan = { floor, chosen: ordered };
-    const planCalls = args.noEnrich ? 0 : remainingCalls(ordered, checkpoint.enrich ?? {});
+    const planCalls = remainingCalls(ordered, checkpoint.enrich ?? {}, args);
     console.log(
       [
         "Plan",
@@ -254,7 +279,8 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
       ].join("\n")
     );
     step = "enrich";
-    if (!args.noEnrich) await enrichIds(deps, ordered, checkpoint, nowFn, guarded, save);
+    if (!args.noEnrich) await enrichIds(deps, ordered, checkpoint, nowFn, guarded, save, args);
+    enrichFinished = true;
     const links = await loadShowLinks(
       deps.db,
       ordered.map((show) => show.candidate.podcastId)
@@ -264,15 +290,27 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
       return { exitCode: 1 };
     }
     step = "write";
-    const wrote = await writeRows(deps.db, ordered, floor, links, checkpoint, nowFn(), args.noEnrich);
+    const wrote = await writeRows(deps.db, ordered, floor, links, checkpoint, nowFn());
     if (!wrote) return { exitCode: 1 };
     console.log(`Upserted catalog rows: ${ordered.length}`);
+    if (args.backfillScoringFields && checkpoint.search?.complete) {
+      step = "backfill";
+      const backfill = await runBackfill(deps, ordered, checkpoint, nowFn, guarded, save, args, backfillProgress);
+      if (!backfill) return { exitCode: 1 };
+    }
     return { exitCode: 0 };
   } catch (err) {
     await save();
     if (err instanceof PodscanStop && (err.reason === "daily" || err.reason === "budget")) {
-      if (args.commit && commitPlan && deps.db) {
-        const ready = commitPlan.chosen.filter((show) => checkpoint.enrich?.[show.candidate.podcastId]);
+      if (backfillProgress.started) {
+        console.log(
+          `Backfill updated ${backfillProgress.done} of ${backfillProgress.total}. Re-run the same command to continue.`
+        );
+        console.log(err.reason === "daily" ? DAILY_MESSAGE : BUDGET_MESSAGE);
+        return { exitCode: 0 };
+      }
+      if (args.commit && commitPlan && deps.db && !enrichFinished) {
+        const ready = commitPlan.chosen.filter((show) => readyToWrite(show, checkpoint, args));
         const links = await loadShowLinks(
           deps.db,
           ready.map((show) => show.candidate.podcastId)
@@ -281,7 +319,7 @@ export async function runImport(args: ImportArgs, deps: RunDeps): Promise<{ exit
           console.log("Refusing to write because the shows lookup failed.");
         } else {
           step = "write";
-          const wrote = await writeRows(deps.db, ready, commitPlan.floor, links, checkpoint, nowFn(), args.noEnrich);
+          const wrote = await writeRows(deps.db, ready, commitPlan.floor, links, checkpoint, nowFn());
           if (!wrote) return { exitCode: 1 };
           console.log(
             `Upserted ${ready.length} of ${commitPlan.chosen.length}. Re-run the same command to continue.`
@@ -319,10 +357,67 @@ function includeInProbe(audienceSize: number | null, args: ImportArgs): boolean 
   return audienceSize != null && audienceSize >= floor;
 }
 
+function gateOf(args: ImportArgs): EnrichGate {
+  return { minAudience: args.enrichMinAudience, minPanelListeners: args.enrichMinPanelListeners };
+}
+
+function keptView(show: WorkingShow): { kept: boolean; audienceSize: number | null; listenerEngagement: unknown } {
+  return {
+    kept: true,
+    audienceSize: show.candidate.audienceSize,
+    listenerEngagement: show.candidate.listenerEngagement,
+  };
+}
+
+function readyToWrite(show: WorkingShow, checkpoint: Checkpoint, args: ImportArgs): boolean {
+  if (args.noEnrich) return true;
+  if (!qualifiesForEnrich(keptView(show), gateOf(args))) return true;
+  return analysisFetched(checkpoint.enrich?.[show.candidate.podcastId]);
+}
+
+function needsScoringBackfill(show: WorkingShow, scoring: Checkpoint["scoring"]): boolean {
+  const id = show.candidate.podcastId;
+  if (scoring && Object.prototype.hasOwnProperty.call(scoring, id)) return false;
+  const candidate = show.candidate;
+  return (
+    !Object.prototype.hasOwnProperty.call(candidate, "reachScore") ||
+    !Object.prototype.hasOwnProperty.call(candidate, "brandSafety")
+  );
+}
+
+function applySavedScoring(shows: WorkingShow[], scoring: Checkpoint["scoring"]): void {
+  if (!scoring) return;
+  for (const show of shows) {
+    const saved = scoring[show.candidate.podcastId];
+    if (!saved) continue;
+    show.candidate.reachScore = saved.reachScore;
+    show.candidate.brandSafety = saved.brandSafety;
+  }
+}
+
+function backfillTargets(shows: WorkingShow[], args: ImportArgs, checkpoint: Checkpoint): WorkingShow[] {
+  const floor = args.floor ?? LOWEST_FLOOR;
+  const gate = gateOf(args);
+  const gated: WorkingShow[] = [];
+  const rest: WorkingShow[] = [];
+  for (const show of shows) {
+    if (!keepOf(show, floor, args.floorSponsored).kept) continue;
+    if (!needsScoringBackfill(show, checkpoint.scoring)) continue;
+    if (qualifiesForEnrich(keptView(show), gate)) gated.push(show);
+    else rest.push(show);
+  }
+  const byAudience = (a: WorkingShow, b: WorkingShow) =>
+    (b.candidate.audienceSize ?? -1) - (a.candidate.audienceSize ?? -1) ||
+    a.candidate.podcastId.localeCompare(b.candidate.podcastId);
+  gated.sort(byAudience);
+  rest.sort(byAudience);
+  return [...gated, ...rest];
+}
+
 function callsForFlags(args: ImportArgs, shows: WorkingShow[], checkpoint: Checkpoint): number {
   const floor = args.floor ?? LOWEST_FLOOR;
   const chosen = shows.filter((show) => keepOf(show, floor, args.floorSponsored).kept);
-  let calls = args.noEnrich ? 0 : remainingCalls(chosen, checkpoint.enrich ?? {});
+  let calls = remainingCalls(chosen, checkpoint.enrich ?? {}, args);
   const probe = checkpoint.probe ?? {};
   let unprobed = 0;
   for (const show of shows) {
@@ -645,9 +740,11 @@ async function enrichIds(
   checkpoint: Checkpoint,
   nowFn: () => Date,
   guarded: <T>(work: () => Promise<T>) => Promise<T>,
-  save: () => Promise<void>
+  save: () => Promise<void>,
+  args: ImportArgs
 ): Promise<void> {
   const enrich = checkpoint.enrich ?? {};
+  const gate = gateOf(args);
   const get = (path: string): Promise<unknown> => {
     const id = path.split("/")[2] ?? "";
     if (!PODCAST_ID.test(id)) return Promise.resolve(null);
@@ -655,19 +752,31 @@ async function enrichIds(
   };
   let lastSave = Number.NEGATIVE_INFINITY;
   let dirty = false;
-  for (const show of shows) {
-    const id = show.candidate.podcastId;
-    if (enrich[id]) continue;
-    const result = await enrichShow(id, show.candidate.listenerEngagement, get);
-    enrich[id] = result;
+  const remember = async (force: boolean) => {
     checkpoint.enrich = enrich;
     checkpoint.enrichSavedAt = nowFn().toISOString();
     dirty = true;
     const t = nowFn().getTime();
-    if (t - lastSave >= ENRICH_SAVE_MS) {
+    if (force || t - lastSave >= ENRICH_SAVE_MS) {
       lastSave = t;
       dirty = false;
       await save();
+    }
+  };
+  for (const show of shows) {
+    if (!qualifiesForEnrich(keptView(show), gate)) continue;
+    const id = show.candidate.podcastId;
+    const existing = enrich[id];
+    if (analysisFetched(existing)) continue;
+    if (!existing) {
+      const result = await enrichShow(id, show.candidate.listenerEngagement, get);
+      enrich[id] = { demographics: result.demographics, listener: result.listener };
+      await remember(false);
+    }
+    if (!analysisFetched(enrich[id])) {
+      const sponsorHistory = await fetchSponsorHistory(id, get);
+      enrich[id] = { ...enrich[id], sponsorHistory };
+      await remember(false);
     }
   }
   checkpoint.enrich = enrich;
@@ -738,17 +847,47 @@ async function tablesReady(db: Db): Promise<boolean> {
       return false;
     }
   }
+  const columns = await db
+    .from("podscan_catalog")
+    .select("podcast_reach_score, brand_safety, sponsor_history")
+    .limit(0);
+  if (columns.error?.code === "42703" || columns.error?.code === "PGRST204") {
+    console.log("Migration 097 is not applied.");
+    return false;
+  }
+  if (columns.error) {
+    console.error(columns.error.code ?? "db_error");
+    return false;
+  }
   return true;
 }
 
-function remainingCalls(shows: WorkingShow[], enrich: Record<string, EnrichProgress>): number {
+function remainingCalls(
+  shows: WorkingShow[],
+  enrich: Record<string, EnrichProgress>,
+  args: ImportArgs
+): number {
+  if (args.noEnrich) return 0;
+  const gate = gateOf(args);
   let calls = 0;
   for (const show of shows) {
-    if (enrich[show.candidate.podcastId]) continue;
-    calls += 1;
-    if (show.candidate.listenerEngagement == null) calls += 1;
+    if (!qualifiesForEnrich(keptView(show), gate)) continue;
+    calls += enrichCallsRemaining(show.candidate.listenerEngagement, enrich[show.candidate.podcastId]);
   }
   return calls;
+}
+
+function knownScore(
+  show: WorkingShow,
+  scoring: Checkpoint["scoring"],
+  key: "reachScore" | "brandSafety"
+): { known: boolean; value: number | null | unknown } {
+  const saved = scoring?.[show.candidate.podcastId];
+  if (saved) return { known: true, value: saved[key] };
+  if (Object.prototype.hasOwnProperty.call(show.candidate, key)) {
+    return { known: true, value: show.candidate[key] ?? null };
+  }
+  return { known: false, value: undefined };
 }
 
 async function writeRows(
@@ -757,8 +896,7 @@ async function writeRows(
   floor: number,
   links: ShowLinks,
   checkpoint: Checkpoint,
-  now: Date,
-  noEnrich: boolean
+  now: Date
 ): Promise<boolean> {
   const updatedAt = now.toISOString();
   const catalog: Record<string, unknown>[] = [];
@@ -768,7 +906,9 @@ async function writeRows(
     if (!decision.kept || !decision.reason) continue;
     const enrich = checkpoint.enrich?.[show.candidate.podcastId];
     const showId = links.links.get(show.candidate.podcastId) ?? null;
-    const listener = enrich ? enrich.listener : noEnrich ? null : show.candidate.listenerEngagement;
+    const listener = enrich ? enrich.listener : (show.candidate.listenerEngagement ?? null);
+    const reach = knownScore(show, checkpoint.scoring, "reachScore");
+    const brand = knownScore(show, checkpoint.scoring, "brandSafety");
     catalog.push(
       catalogRow({
         candidate: show.candidate,
@@ -781,6 +921,9 @@ async function writeRows(
         floor,
         demographics: enrich ? enrich.demographics : null,
         listener,
+        sponsorHistory: enrich && analysisFetched(enrich) ? enrich.sponsorHistory : null,
+        reachScore: reach.known ? (reach.value as number | null) : undefined,
+        brandSafety: brand.known ? brand.value : undefined,
         contactStatus: contactStatus(show.contact.checks.map((check) => check.status)),
         showId,
         updatedAt,
@@ -894,6 +1037,11 @@ function assembleReport(
             keptFloorSponsored: shows.filter((show) => keepOf(show, args.floor ?? 0, true).kept).length,
           },
     podscanCallsForFlags: callsForFlags(args, shows, checkpoint),
+    backfillScoring: args.backfillScoringFields,
+    backfillCalls: args.backfillScoringFields ? backfillTargets(shows, args, checkpoint).length : 0,
+    backfillDays: args.backfillScoringFields
+      ? daysAtBudget(backfillTargets(shows, args, checkpoint).length, args.maxPodscanCalls)
+      : 0,
     probeFloor: args.floorSponsored ? (args.floor ?? LOWEST_FLOOR) : null,
     keptNoAudience: {
       1000: withoutAudience(kept[1000]),
@@ -920,9 +1068,9 @@ function assembleReport(
     podscanCalls: gate.callsUsed,
     maxPodscanCalls: args.maxPodscanCalls,
     writeRun: {
-      1000: planFloor(activeKept(shows, 1000, args), enrich, args.maxPodscanCalls, args.noEnrich),
-      2500: planFloor(activeKept(shows, 2500, args), enrich, args.maxPodscanCalls, args.noEnrich),
-      5000: planFloor(activeKept(shows, 5000, args), enrich, args.maxPodscanCalls, args.noEnrich),
+      1000: planFloor(activeKept(shows, 1000, args), enrich, args),
+      2500: planFloor(activeKept(shows, 2500, args), enrich, args),
+      5000: planFloor(activeKept(shows, 5000, args), enrich, args),
     },
     cappedSlices: search.cappedSlices,
     alreadyInShows: already,
@@ -953,12 +1101,78 @@ function activeKept(shows: WorkingShow[], floor: number, args: ImportArgs): Work
 function planFloor(
   shows: WorkingShow[],
   enrich: Record<string, EnrichProgress>,
-  budget: number,
-  noEnrich = false
+  args: ImportArgs
 ): { calls: number; days: number } {
-  if (noEnrich) return { calls: 0, days: 0 };
-  const calls = remainingCalls(shows, enrich);
-  return { calls, days: daysAtBudget(calls, budget) };
+  const calls = remainingCalls(shows, enrich, args);
+  return { calls, days: daysAtBudget(calls, args.maxPodscanCalls) };
+}
+
+async function runBackfill(
+  deps: RunDeps,
+  shows: WorkingShow[],
+  checkpoint: Checkpoint,
+  nowFn: () => Date,
+  guarded: <T>(work: () => Promise<T>) => Promise<T>,
+  save: () => Promise<void>,
+  args: ImportArgs,
+  progress: { started: boolean; done: number; total: number }
+): Promise<boolean> {
+  const targets = backfillTargets(shows, args, checkpoint);
+  progress.started = true;
+  progress.total = targets.length;
+  progress.done = 0;
+  if (!deps.db) {
+    console.error("Supabase env is not set");
+    return false;
+  }
+  const scoring: Record<string, ScoringProgress> = { ...(checkpoint.scoring ?? {}) };
+  let lastSave = Number.NEGATIVE_INFINITY;
+  let dirty = false;
+  for (const show of targets) {
+    const id = show.candidate.podcastId;
+    let scored: ScoringProgress = { reachScore: null, brandSafety: null };
+    if (PODCAST_ID.test(id)) {
+      try {
+        const body = await inStep("backfill", () => guarded(() => deps.caller.get<unknown>(`/podcasts/${id}`)));
+        scored = scoringFromPodcastBody(body);
+      } catch (err) {
+        if (!isNotFound(err)) throw err;
+      }
+    }
+    const updatedAt = nowFn().toISOString();
+    const wrote = await upsert(
+      deps.db,
+      "podscan_catalog",
+      [
+        {
+          podscan_id: id,
+          podcast_reach_score: scored.reachScore,
+          brand_safety: scored.brandSafety,
+          updated_at: updatedAt,
+        },
+      ],
+      "podscan_id"
+    );
+    if (!wrote) return false;
+    scoring[id] = scored;
+    checkpoint.scoring = scoring;
+    checkpoint.scoringSavedAt = updatedAt;
+    show.candidate.reachScore = scored.reachScore;
+    show.candidate.brandSafety = scored.brandSafety;
+    progress.done += 1;
+    await writeScoringFile(deps.checkpointDir, scoring);
+    dirty = true;
+    const t = nowFn().getTime();
+    if (t - lastSave >= ENRICH_SAVE_MS) {
+      lastSave = t;
+      dirty = false;
+      await save();
+    }
+  }
+  checkpoint.scoring = scoring;
+  if (dirty) await save();
+  console.log(`Backfill updated ${progress.done} shows.`);
+  return true;
 }
 
 async function writeReport(

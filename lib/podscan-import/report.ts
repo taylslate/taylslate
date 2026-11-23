@@ -28,6 +28,9 @@ export interface ImportReport {
   keptFloorSponsored: { 1000: number; 2500: number; 5000: number };
   floorConfirm: { floor: number; kept: number; keptFloorSponsored: number } | null;
   podscanCallsForFlags: number;
+  backfillScoring: boolean;
+  backfillCalls: number;
+  backfillDays: number;
   probeFloor: number | null;
   emailCoverage: { 1000: Coverage; 2500: Coverage; 5000: Coverage };
   syntax: { pass: number; fail: number };
@@ -130,6 +133,12 @@ export function renderReport(report: ImportReport): { json: string; markdown: st
         ]
       : []),
     `Podscan calls for these flags: ${report.podscanCallsForFlags}`,
+    ...(report.backfillScoring
+      ? [
+          `Backfill scoring calls: ${report.backfillCalls}`,
+          `Backfill scoring days: ${report.backfillDays}`,
+        ]
+      : ["Backfill scoring: off"]),
     ...(report.probeFloor != null
       ? [`Sponsor probe skipped shows under ${report.probeFloor} because --floor-sponsored is on.`]
       : []),

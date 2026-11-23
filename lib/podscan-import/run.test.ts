@@ -111,7 +111,7 @@ function makeCaller(sponsored: Hit[], unsponsored: Hit[], failDaily = false) {
   return { caller, calls, posts };
 }
 
-function memoryDb(shows: ShowLink[], missing = false) {
+function memoryDb(shows: ShowLink[], missing = false, missingColumns = false) {
   const tables: Record<string, Array<Record<string, unknown>>> = {
     shows: shows.map((row) => ({ ...row })),
     podscan_catalog: [],
@@ -121,10 +121,17 @@ function memoryDb(shows: ShowLink[], missing = false) {
   const db: Db = {
     from(table: string) {
       return {
-        select() {
+        select(columns: string) {
           return {
             async limit() {
               if (missing && table !== "shows") return { data: null, error: { code: "42P01" } };
+              if (
+                missingColumns &&
+                table === "podscan_catalog" &&
+                columns.includes("podcast_reach_score")
+              ) {
+                return { data: null, error: { code: "42703" } };
+              }
               return { data: [], error: null };
             },
             async in(column, values) {
@@ -479,7 +486,7 @@ describe("runImport", () => {
     ];
     const world = makeCaller(shows, []);
     const store = memoryDb([]);
-    const args = parseArgs(["--commit", "--floor", "1000", "--confirm", "4", "--max-podscan-calls", "9"]);
+    const args = parseArgs(["--commit", "--floor", "1000", "--confirm", "4", "--max-podscan-calls", "11"]);
     const stopped = await runImport(args, deps(dir, world.caller, store.db));
     expect(stopped.exitCode).toBe(0);
     expect(logs.join("\n")).toContain("Upserted 2 of 4. Re-run the same command to continue.");
@@ -952,7 +959,10 @@ describe("runImport", () => {
     expect(hi?.demographics).toEqual({ band: "a" });
     expect(hi?.listener_engagement).toEqual({ total_listeners: 9 });
     expect(lo?.demographics).toBeNull();
-    expect(lo?.listener_engagement).toBeNull();
+    expect(lo?.listener_engagement).toEqual({ total_listeners: 4 });
+    expect(lo?.sponsor_history).toBeNull();
+    expect(lo).not.toHaveProperty("podcast_reach_score");
+    expect(lo).not.toHaveProperty("brand_safety");
     const saved = await readCheckpoint(file);
     expect(saved.search?.complete).toBe(false);
     expect(saved.search?.rows).toHaveLength(2);
@@ -976,7 +986,543 @@ describe("runImport", () => {
     expect(wrong.upserts).toEqual([]);
     assertNoSecrets(logs.join("\n"));
   });
+
+  it("resumes an older checkpoint without searching again and fetches analysis for old enrich rows", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const file = join(dir, "checkpoint.json");
+    const oldRow = (id: string, audience: number) => ({
+      podcastId: id,
+      name: id,
+      itunesId: null,
+      rssUrl: null,
+      hasSponsors: true,
+      audienceSize: audience,
+      podscanEmail: null,
+      language: "en",
+      region: null,
+      categories: [],
+      lastPostedAt: null,
+      episodeCount: null,
+      listenerEngagement: { total_listeners: 4 },
+      pass: "sponsored",
+    });
+    const contact = emptyContact();
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        sample: null,
+        searchSavedAt: "2026-11-01T00:00:00.000Z",
+        search: {
+          started: true,
+          complete: true,
+          queue: [],
+          rows: [oldRow("old_hi", 8000), oldRow("old_lo", 1200)],
+          passCounts: { sponsored: 2, unsponsored: 0 },
+          cappedSlices: [],
+        },
+        probeSavedAt: "2026-11-01T00:00:00.000Z",
+        probe: { old_hi: "ep_hi", old_lo: "ep_lo" },
+        probeCheckSavedAt: "2026-11-01T00:00:00.000Z",
+        probeCheck: { pass: true, mismatches: [], checked: 0, checks: [] },
+        contactsSavedAt: "2026-11-01T00:00:00.000Z",
+        contacts: { old_hi: contact, old_lo: contact },
+        enrich: { old_hi: { demographics: { band: "a" }, listener: { total_listeners: 9 } } },
+      }),
+      "utf8"
+    );
+    const calls: string[] = [];
+    const caller: PodscanCaller = {
+      async get<T>(path: string): Promise<T> {
+        calls.push(path);
+        if (path.endsWith("/demographics")) return { ok: true } as T;
+        if (path.endsWith("/analysis")) {
+          return {
+            episodes_analyzed: 6,
+            sponsors: [{ name: "Acme", episode_count: 2, url: "https://secret.example/acme" }],
+          } as T;
+        }
+        throw new Error("search continued");
+      },
+      async post() {
+        throw new Error("probe continued");
+      },
+      rateLimit: () => ({ limit: 120, remaining: 100 }),
+    };
+    const store = memoryDb([]);
+    const wrote = await runImport(
+      parseArgs(["--commit", "--floor", "1000", "--confirm", "2"]),
+      deps(dir, caller, store.db)
+    );
+    expect(wrote.exitCode).toBe(0);
+    expect(calls.some((path) => path === "/podcasts/search")).toBe(false);
+    expect(calls.filter((path) => path.endsWith("/demographics"))).toEqual(["/podcasts/old_lo/demographics"]);
+    expect(calls.filter((path) => path.endsWith("/analysis")).sort()).toEqual([
+      "/podcasts/old_hi/analysis",
+      "/podcasts/old_lo/analysis",
+    ]);
+    expect(calls.some((path) => path === "/podcasts/old_hi" || path === "/podcasts/old_lo")).toBe(false);
+    const hi = store.tables.podscan_catalog.find((row) => row.podscan_id === "old_hi");
+    const lo = store.tables.podscan_catalog.find((row) => row.podscan_id === "old_lo");
+    expect(hi?.demographics).toEqual({ band: "a" });
+    expect(hi?.listener_engagement).toEqual({ total_listeners: 9 });
+    expect(lo?.demographics).toEqual({ ok: true });
+    expect(lo?.listener_engagement).toEqual({ total_listeners: 4 });
+    expect(hi?.sponsor_history).toEqual({
+      sponsors: [{ name: "Acme", episode_count: 2 }],
+      episode_counts: { episodes_analyzed: 6 },
+    });
+    expect(JSON.stringify(store.tables.podscan_catalog)).not.toContain("http");
+    const saved = await readCheckpoint(file);
+    expect(saved.search?.complete).toBe(true);
+    expect(saved.search?.rows.map((row) => row.podcastId).sort()).toEqual(["old_hi", "old_lo"]);
+    expect(logs.join("\n")).not.toContain("Starting the search over");
+    assertNoSecrets(logs.join("\n"));
+  });
+
+  it("continues an older unfinished search from its queue", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const file = join(dir, "checkpoint.json");
+    const searches: Array<Record<string, string | number | boolean | undefined>> = [];
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        sample: null,
+        searchSavedAt: "2026-11-01T00:00:00.000Z",
+        search: {
+          started: true,
+          complete: false,
+          queue: [
+            {
+              pass: "unsponsored",
+              hasSponsors: false,
+              minAudience: 1000,
+              maxAudience: null,
+              categoryId: null,
+              audienceSplit: false,
+              categoryOnly: false,
+            },
+          ],
+          rows: [
+            {
+              podcastId: "from_disk",
+              name: "from_disk",
+              itunesId: null,
+              rssUrl: null,
+              hasSponsors: true,
+              audienceSize: 50,
+              podscanEmail: null,
+              language: "en",
+              region: null,
+              categories: [],
+              lastPostedAt: null,
+              episodeCount: null,
+              listenerEngagement: { total_listeners: 4 },
+              pass: "sponsored",
+            },
+          ],
+          passCounts: { sponsored: 1, unsponsored: 0 },
+          cappedSlices: [],
+        },
+      }),
+      "utf8"
+    );
+    const caller: PodscanCaller = {
+      async get<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
+        if (path === "/podcasts/search") {
+          searches.push(params ?? {});
+          return {
+            podcasts: [],
+            pagination: { total: 0, per_page: 50, current_page: 1, last_page: 1, from: null, to: null },
+          } as T;
+        }
+        if (path === "/categories") return { categories: [] } as T;
+        if (path.endsWith("/demographics")) return { ok: true } as T;
+        if (path.endsWith("/analysis")) return { episodes_analyzed: 0, sponsors: [] } as T;
+        if (path.endsWith("/latest/sponsor")) return { posted_at: "2026-11-01T00:00:00.000Z" } as T;
+        throw Object.assign(new Error("missing"), { status: 404 });
+      },
+      async post<T>(_path: string, body: Record<string, unknown>): Promise<T> {
+        const ids = Array.isArray(body.podcast_ids) ? body.podcast_ids.map(String) : [];
+        const results: Record<string, string | null> = {};
+        for (const id of ids) results[id] = id === "from_disk" ? "ep_old" : null;
+        return { results } as T;
+      },
+      rateLimit: () => ({ limit: 120, remaining: 100 }),
+    };
+    const result = await runImport(parseArgs(["--dry-run", "--no-enrich"]), deps(dir, caller, null));
+    expect(result.exitCode).toBe(0);
+    expect(searches[0]?.has_sponsors).toBe(false);
+    expect(searches[0]?.min_audience_size).toBe(1000);
+    expect(searches.some((params) => params.has_sponsors === true && params.min_audience_size == null)).toBe(false);
+    const saved = await readCheckpoint(file);
+    expect(saved.search?.rows.some((row) => row.podcastId === "from_disk")).toBe(true);
+    expect(saved.search?.rows.find((row) => row.podcastId === "from_disk")).not.toHaveProperty("reachScore");
+    expect(logs.join("\n")).not.toContain("Starting the search over");
+    assertNoSecrets(logs.join("\n"));
+  });
+
+  it("writes below-gate shows when the daily budget stops during enrich", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const file = join(dir, "checkpoint.json");
+    const rows = [
+      scoredRow("q_hi", 8000, "sponsored", 40),
+      scoredRow("q_lo", 7000, "sponsored", 30),
+      scoredRow("u_hi", 2000, "unsponsored", 2),
+      scoredRow("u_lo", 1500, "unsponsored", 1),
+      scoredRow("drop", 100, "unsponsored", 1),
+    ];
+    await writeFile(file, JSON.stringify(finishedCheckpoint(rows)), "utf8");
+    const calls: string[] = [];
+    let podscanCalls = 0;
+    const caller = detailCaller(calls, () => ({ podcast_reach_score: 1, brand_safety: { max_risk_level: "low" } }));
+    const limited: PodscanCaller = {
+      async get(path, params) {
+        podscanCalls += 1;
+        if (podscanCalls === 3) {
+          throw Object.assign(new Error("daily quota"), {
+            status: 429,
+            retryAfter: 7200,
+            rateLimitRemaining: 0,
+          });
+        }
+        return caller.get(path, params);
+      },
+      post: (path, body) => caller.post(path, body),
+      rateLimit: () => caller.rateLimit(),
+    };
+    const store = memoryDb([]);
+    const stopped = await runImport(
+      parseArgs([
+        "--commit",
+        "--floor",
+        "1000",
+        "--confirm",
+        "4",
+        "--enrich-min-audience",
+        "5000",
+        "--enrich-min-panel-listeners",
+        "10",
+        "--backfill-scoring-fields",
+      ]),
+      deps(dir, limited, store.db)
+    );
+    expect(stopped.exitCode).toBe(0);
+    expect(logs.join("\n")).toContain("Upserted 3 of 4. Re-run the same command to continue.");
+    expect(store.tables.podscan_catalog.map((row) => row.podscan_id).sort()).toEqual(["q_hi", "u_hi", "u_lo"]);
+    const contacts = store.tables.show_contacts.map((row) => row.podscan_id);
+    expect(contacts.sort()).toEqual(["q_hi", "u_hi", "u_lo"]);
+    const below = store.tables.podscan_catalog.find((row) => row.podscan_id === "u_lo");
+    expect(below?.listener_engagement).toEqual({ total_listeners: 1 });
+    expect(below?.demographics).toBeNull();
+    expect(below?.sponsor_history).toBeNull();
+    expect(calls.some((path) => path === "/podcasts/u_lo" || path === "/podcasts/q_hi")).toBe(false);
+    expect(logs.join("\n")).not.toContain("Backfill updated");
+    assertNoSecrets(logs.join("\n"));
+  });
+
+  it("refuses a commit when migration 097 is missing", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const calls: string[] = [];
+    const caller: PodscanCaller = {
+      async get(path) {
+        calls.push(path);
+        throw new Error("should not call");
+      },
+      async post() {
+        throw new Error("should not call");
+      },
+      rateLimit: () => ({ limit: 120, remaining: 100 }),
+    };
+    const store = memoryDb([], false, true);
+    const result = await runImport(
+      parseArgs(["--commit", "--floor", "1000", "--confirm", "1"]),
+      deps(dir, caller, store.db)
+    );
+    expect(result.exitCode).toBe(1);
+    expect(logs.join("\n")).toContain("Migration 097 is not applied.");
+    expect(calls).toEqual([]);
+    expect(store.upserts).toEqual([]);
+    assertNoSecrets(logs.join("\n"));
+  });
+
+  it("reports gated enrich calls apart from backfill calls", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const rows = [9000, 8000, 7000, 6000, 5500, 5000, 2000].map((audience, index) =>
+      scoredRow(`pd_${index}`, audience, "sponsored", audience >= 5000 ? 20 : 1)
+    );
+    const enrich: Record<string, unknown> = {};
+    for (const row of rows.slice(0, 5)) {
+      enrich[row.podcastId] = {
+        demographics: { ok: true },
+        listener: row.listenerEngagement,
+        sponsorHistory: { sponsors: [], episode_counts: { episodes_analyzed: 1 } },
+      };
+    }
+    await writeFile(join(dir, "checkpoint.json"), JSON.stringify(finishedCheckpoint(rows, { enrich })), "utf8");
+    const caller: PodscanCaller = {
+      async get() {
+        throw new Error("dry run should not enrich the remainder");
+      },
+      async post() {
+        throw new Error("probe continued");
+      },
+      rateLimit: () => ({ limit: 120, remaining: 100 }),
+    };
+    const result = await runImport(
+      parseArgs([
+        "--dry-run",
+        "--floor",
+        "1000",
+        "--enrich-min-audience",
+        "5000",
+        "--enrich-min-panel-listeners",
+        "10",
+        "--backfill-scoring-fields",
+      ]),
+      deps(dir, caller, null)
+    );
+    expect(result.exitCode).toBe(0);
+    const text = logs.join("\n");
+    expect(text).toContain("Podscan calls for these flags: 2");
+    expect(text).toContain("Write run at 1000: calls 2, days 1");
+    expect(text).toContain("Backfill scoring calls: 7");
+    expect(text).toContain("Backfill scoring days: 1");
+    assertNoSecrets(text);
+  });
+
+  it("backfills scoring only after the write, gated shows first, and keeps a partial backfill", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const rows = [
+      scoredRow("g_hi", 9000, "sponsored", 40),
+      scoredRow("g_lo", 6000, "sponsored", 3),
+      scoredRow("r_hi", 4000, "unsponsored", 2),
+      scoredRow("r_lo", 2000, "unsponsored", 1),
+      scoredRow("drop", 100, "unsponsored", 1),
+    ];
+    const enrich: Record<string, unknown> = {};
+    for (const row of rows) {
+      if (row.audienceSize < 1000 && row.pass !== "sponsored") continue;
+      enrich[row.podcastId] = {
+        demographics: { ok: true },
+        listener: row.listenerEngagement,
+        sponsorHistory: { sponsors: [], episode_counts: {} },
+      };
+    }
+    await writeFile(join(dir, "checkpoint.json"), JSON.stringify(finishedCheckpoint(rows, { enrich })), "utf8");
+    const order: string[] = [];
+    const calls: string[] = [];
+    const caller = detailCaller(calls, (id) => ({
+      podcast_id: id,
+      podcast_reach_score: id === "g_hi" ? 90 : id === "g_lo" ? 60 : id === "r_hi" ? 40 : 20,
+      brand_safety: { max_risk_level: "low", most_common_recommendation: "safe" },
+      podcast_description: "skip me",
+      reach: { email: FIXTURE_EMAIL, website: "https://secret.example" },
+    }));
+    const wrapped: PodscanCaller = {
+      get: (path, params) => {
+        order.push(`GET ${path}`);
+        return caller.get(path, params);
+      },
+      post: (path, body) => caller.post(path, body),
+      rateLimit: () => caller.rateLimit(),
+    };
+    const store = memoryDb([]);
+    const original = store.db.from.bind(store.db);
+    store.db.from = (table: string) => {
+      const query = original(table);
+      return {
+        ...query,
+        upsert: async (batch, options) => {
+          order.push(`UPSERT ${table}`);
+          return query.upsert(batch, options);
+        },
+      };
+    };
+    const args = [
+      "--commit",
+      "--floor",
+      "1000",
+      "--confirm",
+      "4",
+      "--enrich-min-audience",
+      "5000",
+      "--enrich-min-panel-listeners",
+      "10",
+      "--backfill-scoring-fields",
+    ];
+    const stopped = await runImport(
+      parseArgs([...args, "--max-podscan-calls", "2"]),
+      deps(dir, wrapped, store.db)
+    );
+    expect(stopped.exitCode).toBe(0);
+    const firstDetail = order.findIndex((item) => item === "GET /podcasts/g_hi");
+    const catalogWrite = order.findIndex((item) => item === "UPSERT podscan_catalog");
+    const contactWrite = order.findIndex((item) => item === "UPSERT show_contacts");
+    expect(catalogWrite).toBeGreaterThanOrEqual(0);
+    expect(contactWrite).toBeGreaterThan(catalogWrite);
+    expect(firstDetail).toBeGreaterThan(contactWrite);
+    expect(calls.filter((path) => /^\/podcasts\/[^/]+$/.test(path))).toEqual(["/podcasts/g_hi", "/podcasts/g_lo"]);
+    expect(store.tables.podscan_catalog.find((row) => row.podscan_id === "g_hi")?.podcast_reach_score).toBe(90);
+    expect(store.tables.podscan_catalog.find((row) => row.podscan_id === "g_lo")?.brand_safety).toEqual({
+      max_risk_level: "low",
+      most_common_recommendation: "safe",
+    });
+    expect(store.tables.podscan_catalog.find((row) => row.podscan_id === "r_hi")).not.toHaveProperty("podcast_reach_score");
+    expect(store.tables.podscan_catalog.find((row) => row.podscan_id === "drop")).toBeUndefined();
+    expect(JSON.stringify(store.tables.podscan_catalog)).not.toContain("http");
+    expect(JSON.stringify(store.tables.podscan_catalog)).not.toContain("skip me");
+
+    const againCalls: string[] = [];
+    const again = detailCaller(againCalls, (id) => ({
+      podcast_id: id,
+      podcast_reach_score: id === "r_hi" ? 40 : 20,
+      brand_safety: { max_risk_level: "medium", most_common_recommendation: "warning" },
+    }));
+    const finished = await runImport(parseArgs(args), deps(dir, again, store.db));
+    expect(finished.exitCode).toBe(0);
+    expect(againCalls.filter((path) => /^\/podcasts\/[^/]+$/.test(path))).toEqual([
+      "/podcasts/r_hi",
+      "/podcasts/r_lo",
+    ]);
+    expect(store.tables.podscan_catalog.find((row) => row.podscan_id === "g_hi")?.podcast_reach_score).toBe(90);
+    expect(store.tables.podscan_catalog.find((row) => row.podscan_id === "r_lo")?.podcast_reach_score).toBe(20);
+    expect(logs.join("\n")).toContain("Backfill updated 2 of 4. Re-run the same command to continue.");
+    assertNoSecrets(logs.join("\n"));
+  });
+
+  it("does not backfill unless the flag is set", async () => {
+    const dir = await tempDir();
+    spyLogs();
+    const rows = [scoredRow("kept", 8000, "sponsored", 20)];
+    const enrich = {
+      kept: {
+        demographics: { ok: true },
+        listener: rows[0].listenerEngagement,
+        sponsorHistory: { sponsors: [], episode_counts: {} },
+      },
+    };
+    await writeFile(join(dir, "checkpoint.json"), JSON.stringify(finishedCheckpoint(rows, { enrich })), "utf8");
+    const calls: string[] = [];
+    const store = memoryDb([]);
+    const result = await runImport(
+      parseArgs(["--commit", "--floor", "1000", "--confirm", "1"]),
+      deps(dir, detailCaller(calls, () => ({ podcast_reach_score: 1, brand_safety: { max_risk_level: "low" } })), store.db)
+    );
+    expect(result.exitCode).toBe(0);
+    expect(calls.filter((path) => path === "/podcasts/kept")).toEqual([]);
+    expect(store.tables.podscan_catalog[0]).not.toHaveProperty("podcast_reach_score");
+  });
 });
+
+function emptyContact(): Record<string, unknown> {
+  return {
+    appleFeedUrl: null,
+    feedSource: "none",
+    feedUrl: null,
+    feedSkip: null,
+    rssEmail: null,
+    checks: [
+      {
+        source: "podscan",
+        email: FIXTURE_EMAIL,
+        syntaxOk: true,
+        mxOk: true,
+        status: "ok",
+        syntaxFailReason: null,
+      },
+    ],
+    syntaxFailureReasons: {},
+  };
+}
+
+function scoredRow(
+  id: string,
+  audience: number,
+  pass: "sponsored" | "unsponsored",
+  listeners: number
+): Record<string, unknown> & { podcastId: string; audienceSize: number; pass: string; listenerEngagement: { total_listeners: number } } {
+  return {
+    podcastId: id,
+    name: id,
+    itunesId: null,
+    rssUrl: null,
+    hasSponsors: pass === "sponsored",
+    audienceSize: audience,
+    podscanEmail: null,
+    language: "en",
+    region: null,
+    categories: [],
+    lastPostedAt: null,
+    episodeCount: null,
+    listenerEngagement: { total_listeners: listeners },
+    pass,
+  };
+}
+
+function finishedCheckpoint(rows: Array<{ podcastId: string; pass: string }>, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  const contact = emptyContact();
+  const probe: Record<string, string | null> = {};
+  const contacts: Record<string, unknown> = {};
+  for (const row of rows) {
+    probe[row.podcastId] = row.pass === "sponsored" ? `ep_${row.podcastId}` : null;
+    contacts[row.podcastId] = contact;
+  }
+  return {
+    version: 1,
+    sample: null,
+    searchSavedAt: "2026-11-01T00:00:00.000Z",
+    search: {
+      started: true,
+      complete: true,
+      queue: [],
+      rows,
+      passCounts: {
+        sponsored: rows.filter((row) => row.pass === "sponsored").length,
+        unsponsored: rows.filter((row) => row.pass === "unsponsored").length,
+      },
+      cappedSlices: [],
+    },
+    probeSavedAt: "2026-11-01T00:00:00.000Z",
+    probe,
+    probeCheckSavedAt: "2026-11-01T00:00:00.000Z",
+    probeCheck: { pass: true, mismatches: [], checked: 0, checks: [] },
+    contactsSavedAt: "2026-11-01T00:00:00.000Z",
+    contacts,
+    ...extra,
+  };
+}
+
+function detailCaller(
+  calls: string[],
+  detail: (id: string) => unknown
+): PodscanCaller {
+  return {
+    async get<T>(path: string): Promise<T> {
+      calls.push(path);
+      if (path.endsWith("/demographics")) return { ok: true } as T;
+      if (path.endsWith("/analysis")) return { episodes_analyzed: 1, sponsors: [{ name: "Acme", episode_count: 1 }] } as T;
+      if (path.endsWith("/latest/sponsor")) return { posted_at: "2026-11-01T00:00:00.000Z" } as T;
+      const id = path.split("/")[2] ?? "";
+      if (/^\/podcasts\/[^/]+$/.test(path)) return detail(id) as T;
+      throw new Error("unexpected path");
+    },
+    async post<T>(_path: string, body: Record<string, unknown>): Promise<T> {
+      const ids = Array.isArray(body.podcast_ids) ? body.podcast_ids.map(String) : [];
+      const results: Record<string, string | null> = {};
+      for (const id of ids) results[id] = null;
+      return { results } as T;
+    },
+    rateLimit: () => ({ limit: 120, remaining: 100 }),
+  };
+}
 
 function queueLabels(checkpoint: { search?: { queue?: Array<{ categoryOnly?: boolean; categoryId?: string | null; minAudience?: number | null }> } }): string[] {
   return (checkpoint.search?.queue ?? []).map(

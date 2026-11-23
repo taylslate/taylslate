@@ -7,6 +7,9 @@ export interface ImportArgs {
   partial: boolean;
   floorSponsored: boolean;
   noEnrich: boolean;
+  backfillScoringFields: boolean;
+  enrichMinAudience: number | null;
+  enrichMinPanelListeners: number | null;
   floor: number | null;
   confirm: number | null;
   sample: number | null;
@@ -24,6 +27,9 @@ export function parseArgs(argv: readonly string[]): ImportArgs {
     partial: false,
     floorSponsored: false,
     noEnrich: false,
+    backfillScoringFields: false,
+    enrichMinAudience: null,
+    enrichMinPanelListeners: null,
     floor: null,
     confirm: null,
     sample: null,
@@ -61,6 +67,10 @@ export function parseArgs(argv: readonly string[]): ImportArgs {
       args.noEnrich = true;
       continue;
     }
+    if (token === "--backfill-scoring-fields") {
+      args.backfillScoringFields = true;
+      continue;
+    }
     const eq = token.indexOf("=");
     const flag = eq === -1 ? token : token.slice(0, eq);
     const inline = eq === -1 ? null : token.slice(eq + 1);
@@ -69,6 +79,8 @@ export function parseArgs(argv: readonly string[]): ImportArgs {
       throw new Error("Missing a flag value.");
     }
     if (flag === "--floor") args.floor = parseWhole(value);
+    else if (flag === "--enrich-min-audience") args.enrichMinAudience = parseWhole(value);
+    else if (flag === "--enrich-min-panel-listeners") args.enrichMinPanelListeners = parseWhole(value);
     else if (flag === "--confirm") args.confirm = parseWhole(value);
     else if (flag === "--sample") args.sample = parseWhole(value);
     else if (flag === "--max-podscan-calls") args.maxPodscanCalls = parseWhole(value);

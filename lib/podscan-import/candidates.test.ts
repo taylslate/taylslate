@@ -47,6 +47,10 @@ describe("candidates", () => {
           podcast("pd_1", { is_duplicate: true }),
           podcast("pd_2", {
             podcast_itunes_id: "99",
+            podcast_reach_score: 81,
+            brand_safety: { max_risk_level: "low", most_common_recommendation: "safe" },
+            podcast_description: "do not store",
+            podcast_image_url: "https://images.example.test/cover.jpg",
             listener_engagement: { total_listeners: 3 } as PodscanPodcast["listener_engagement"],
             reach: {
               audience_size: 1500,
@@ -69,6 +73,11 @@ describe("candidates", () => {
     expect(state.rows[0]?.podscanEmail).toBe("keep@sponsor.example");
     expect(JSON.stringify(state.rows)).not.toContain("hidden@sponsor.example");
     expect(state.rows[0]?.listenerEngagement).toEqual({ total_listeners: 3 });
+    expect(state.rows[0]?.reachScore).toBe(81);
+    expect(state.rows[0]?.brandSafety).toEqual({ max_risk_level: "low", most_common_recommendation: "safe" });
+    expect(state.rows[0]).not.toHaveProperty("podcast_description");
+    expect(JSON.stringify(state.rows[0])).not.toContain("images.example.test");
+    expect(JSON.stringify(state.rows[0])).not.toContain("do not store");
     const bad = toCandidate(podcast("../etc"), "sponsored");
     expect(bad).toBeNull();
   });
