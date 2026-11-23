@@ -3,7 +3,7 @@
 
 import { chmod, mkdir, open, rename } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type { SearchState } from "./candidates";
 import type { CheckedEmail, SyntaxFailReason } from "./email";
 import type { ProbeCheck } from "./sponsors";
@@ -23,6 +23,14 @@ export interface ContactProgress {
 export interface EnrichProgress {
   demographics: unknown;
   listener: unknown;
+  // Absent on rows enriched before analysis was stored. Null means the
+  // analysis call returned empty data.
+  sponsorHistory?: unknown;
+}
+
+export interface ScoringProgress {
+  reachScore: number | null;
+  brandSafety: unknown | null;
 }
 
 export interface ProbeCheckProgress {
@@ -47,6 +55,8 @@ export interface Checkpoint {
   mx?: Record<string, { mxOk: boolean | null; checkedAt: string }>;
   enrichSavedAt?: string;
   enrich?: Record<string, EnrichProgress>;
+  scoringSavedAt?: string;
+  scoring?: Record<string, ScoringProgress>;
 }
 
 export function hasImportProgress(checkpoint: Checkpoint): boolean {
@@ -61,7 +71,9 @@ export function hasImportProgress(checkpoint: Checkpoint): boolean {
     checkpoint.contactsSavedAt != null ||
     checkpoint.mx != null ||
     checkpoint.enrich != null ||
-    checkpoint.enrichSavedAt != null
+    checkpoint.enrichSavedAt != null ||
+    checkpoint.scoring != null ||
+    checkpoint.scoringSavedAt != null
   );
 }
 
@@ -77,6 +89,8 @@ export function clearImportProgress(checkpoint: Checkpoint): void {
   checkpoint.mx = undefined;
   checkpoint.enrich = undefined;
   checkpoint.enrichSavedAt = undefined;
+  checkpoint.scoring = undefined;
+  checkpoint.scoringSavedAt = undefined;
 }
 
 // True when saved progress was dropped because the sample does not match.
@@ -126,6 +140,27 @@ export async function writeJsonAtomic(
   hooks?: { beforeRename?: () => void }
 ): Promise<void> {
   await writeTextAtomic(filePath, JSON.stringify(value), hooks);
+}
+
+export async function readScoringFile(dir: string): Promise<Record<string, ScoringProgress>> {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const text = await readFile(join(dir, "scoring-backfill.json"), "utf8");
+    const parsed = JSON.parse(text) as { version?: unknown; scoring?: unknown };
+    if (!parsed || parsed.version !== 1 || !isScoringMap(parsed.scoring)) return {};
+    return parsed.scoring;
+  } catch {
+    return {};
+  }
+}
+
+export async function writeScoringFile(dir: string, scoring: Record<string, ScoringProgress>): Promise<void> {
+  await writeJsonAtomic(join(dir, "scoring-backfill.json"), { version: 1, scoring });
+}
+
+function isScoringMap(value: unknown): value is Record<string, ScoringProgress> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return true;
 }
 
 export async function readCheckpoint(filePath: string): Promise<Checkpoint> {

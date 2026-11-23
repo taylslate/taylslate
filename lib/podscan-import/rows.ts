@@ -15,13 +15,16 @@ export interface CatalogInput {
   floor: number;
   demographics: unknown;
   listener: unknown;
+  sponsorHistory: unknown;
+  reachScore: number | null | undefined;
+  brandSafety: unknown | null | undefined;
   contactStatus: ContactRowStatus;
   showId: string | null;
   updatedAt: string;
 }
 
 export function catalogRow(input: CatalogInput): Record<string, unknown> {
-  return {
+  const row: Record<string, unknown> = {
     podscan_id: input.candidate.podcastId,
     show_id: input.showId,
     name: input.candidate.name || input.candidate.podcastId,
@@ -43,9 +46,13 @@ export function catalogRow(input: CatalogInput): Record<string, unknown> {
     podscan_audience_estimate: input.candidate.audienceSize,
     demographics: input.demographics,
     listener_engagement: input.listener,
+    sponsor_history: input.sponsorHistory,
     contact_status: input.contactStatus,
     updated_at: input.updatedAt,
   };
+  if (input.reachScore !== undefined) row.podcast_reach_score = input.reachScore;
+  if (input.brandSafety !== undefined) row.brand_safety = input.brandSafety;
+  return row;
 }
 
 export function contactRows(input: {

@@ -1,5 +1,60 @@
 # Senior dev handoff
 
+## PODSCAN-IMPORT2
+
+### What was built
+
+The local Podscan import keeps going from the checkpoint already on disk. Search params, slicing, and the queue are unchanged. `--fresh` is still the only flag that drops a saved search.
+
+`--no-enrich` skips demographics, analysis, and the podcast detail call. The catalog keeps `listener_engagement` from the search hit. Demographics stay null unless that show already has an enrich entry.
+
+New search hits store `podcast_reach_score` and the `brand_safety` object from the search response. No extra Podscan call. Rows already in the checkpoint leave those null. Search is not repeated to fill them.
+
+Enrich calls run only for kept shows that pass one gate. `--enrich-min-audience N` uses audience size. `--enrich-min-panel-listeners M` uses `listener_engagement.total_listeners`. A kept show qualifies when audience is at least N or panel listeners are at least M. Either flag works alone. Neither flag enriches every kept show. Shows that miss the gate are still written, with search listener data, reach score, brand safety, and contacts. A commit that hits the daily limit during enrich still upserts those shows and their contact rows.
+
+Qualifying shows also call `GET /podcasts/{id}/analysis`. `sponsor_history` stores sponsor name and episode count, plus the episode counts on that response. A 404 stores null. An enrich entry from the older code gets the analysis call on resume and does not repeat demographics. `Podscan calls for these flags` and the write-run day counts include analysis and leave out shows the gate skips.
+
+`--backfill-scoring-fields` runs only after search, probe, contacts, and gated enrich are finished and the catalog write has succeeded. It fills the two scoring fields for kept shows that were searched before this code. Gated kept shows go first, highest audience first, then the other kept shows. Shows that fail the keep rule are not called. Each show is one `GET /podcasts/{id}`, because that podcast object carries both fields. `/podcasts/{id}/brand-safety` is not used. It does not return the reach score. Each finished show is upserted before the next call. A daily limit or the call budget stops the backfill the same way enrich stops. A commit without the flag does not run it. The dry run prints backfill calls and days on their own lines.
+
+Migration 097 is NOT applied. The CEO must name 097 before it is applied. Until then a commit prints `Migration 097 is not applied.` and writes nothing. RLS is unchanged. No new policy. No grant to anon or authenticated. Emails are not logged.
+
+### Where
+
+- `lib/podscan-import/**`
+- `scripts/podscan-import.ts` (unchanged)
+- `supabase/migrations/097_podscan_catalog_scoring_fields.sql` and its test
+- `docs/jobs/PODSCAN-IMPORT2.md`
+- `docs/jobs/PODSCAN-IMPORT1.md` (one sentence points here)
+
+`lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. No Vercel env change. The migration was not applied.
+
+### How to run
+
+Must-have commit. `--floor-sponsored` stays off. `--confirm` is the kept count at floor 1000.
+
+```
+npm run podscan:import -- --commit --floor 1000 --confirm=<kept count at 1000> --enrich-min-audience 5000 --enrich-min-panel-listeners 10
+```
+
+Follow-on backfill, after that commit finishes:
+
+```
+npm run podscan:import -- --commit --floor 1000 --confirm=<kept count at 1000> --enrich-min-audience 5000 --enrich-min-panel-listeners 10 --backfill-scoring-fields
+```
+
+Apply 097 only after the CEO names it, and before either commit.
+
+### Tests
+
+`npx tsc --noEmit` clean. `npx vitest run`: 456 files, 3768 passed, 41 skipped. `npx eslint` on the importer TypeScript files: 0 errors. `npx next build` compiled.
+
+### Known gaps
+
+- Migration 097 is in the repo and is not applied.
+- Rows already in the checkpoint do not get a reach score or brand safety until `--backfill-scoring-fields`.
+- Backfill does not call shows that fail the keep rule.
+- Sponsor history does not store urls, product names, guests, or hosts.
+
 ## PODSCAN-RL-HOTFIX1: discovery finishes when Podscan is rate limited
 
 ### What was built
@@ -3730,6 +3785,8 @@ No UI change, so there are no screenshots.
 - No migration. This PR does not merge. Paul reviews.
 
 ## PODSCAN-IMPORT1
+
+PODSCAN-IMPORT2 is the current import note. It keeps this checkpoint, adds the enrich gate, analysis, scoring fields, and the optional backfill. The paragraph below is the IMPORT1 behavior those changes sit on.
 
 ### What was built
 

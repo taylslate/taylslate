@@ -8,6 +8,7 @@ export const IMPORT_STEPS = [
   "probeCheck",
   "contacts",
   "enrich",
+  "backfill",
   "write",
   "checkpoint",
 ] as const;
