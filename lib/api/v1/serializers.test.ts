@@ -84,8 +84,7 @@ describe("api v1 serializers", () => {
 
     expectAllowlist(show, SHOW_FIELDS);
     expect(show.verified).toBe(false);
-    expect(show.ownership_status).toBe("unclaimed");
-    expect(show).not.toHaveProperty("is_verified");
+    expect(show).not.toHaveProperty("ownership_status");
     expect(show.audience_size).toBe(12000);
     expect(show.rates).toEqual({
       preroll_cpm: null,
@@ -105,12 +104,9 @@ describe("api v1 serializers", () => {
     expect(show).not.toHaveProperty("is_verified");
     expect(JSON.stringify(show)).not.toContain("acct_secret");
 
-    const tied = serializeShow({ id: "s", name: "S" }, true);
+    const tied = serializeShow({ id: "s", name: "S", ownership_status: "claimed" }, true);
     expect(tied.verified).toBe(true);
-    expect(tied.ownership_status).toBe("claimed");
-    expect(
-      serializeShow({ id: "s", name: "S", ownership_status: "verified" }, true).ownership_status
-    ).toBe("verified");
+    expect(tied).not.toHaveProperty("ownership_status");
   });
 
   it("returns exactly the campaign allowlist and drops nested contact fields", () => {

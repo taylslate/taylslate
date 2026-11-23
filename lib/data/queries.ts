@@ -1439,6 +1439,7 @@ export async function importShows(
     delete dbRow.is_exclusive;
     delete dbRow.agent_id;
     delete dbRow.ownership_status;
+    delete dbRow.data_sources;
     dbRow.agent_id = agentId;
     // The column default is true. A non-admin import must stay hidden.
     // An admin import stays discoverable unless the row says false.
@@ -2131,7 +2132,8 @@ export async function completeShowProfile(
  * 013 show policy keys on show_profile_id), so the service role performs the
  * update. Fail-soft: never throws; returns the number of deals linked.
  * profiles.email is not the match. A row that copied another login address
- * does not receive that login's deals.
+ * does not receive that login's deals. Linking a profile does not by
+ * itself mark the show claimed. Ranking uses the tight claim rule.
  */
 export async function backfillShowProfileOnAcceptedDeals(
   showProfileId: string,

@@ -12,7 +12,7 @@ import {
 } from "@/lib/discovery/format-discovered-show";
 import { getEffectiveWeights } from "./weights";
 import { TRUSTED_HOST_NOTE } from "./trusted-host";
-import { OWNERSHIP_RANK_BONUS, OWNERSHIP_RANK_NOTE } from "@/lib/ownership/tier";
+import { OWNERSHIP_RANK_BONUS } from "@/lib/ownership/tier";
 import type { GenreBenchmark } from "./benchmarks";
 import type {
   Show,
@@ -686,8 +686,8 @@ describe("genre benchmarks and trusted hosts", () => {
     expect(returning.composite).toBe(71 + OWNERSHIP_RANK_BONUS.verified);
     expect(first.composite).toBe(returning.composite);
     expect(first.band).toBe<ConvictionBand>("medium");
-    expect(first.guidanceLines).toContain(OWNERSHIP_RANK_NOTE.verified);
     expect(first.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
+    expect((first.guidanceLines ?? []).join(" ")).not.toMatch(/claimed show|verified show/i);
     expect(returning.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
     expect(ignoredFlag.composite).toBe(71);
     expect(ignoredFlag.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
@@ -704,9 +704,8 @@ describe("genre benchmarks and trusted hosts", () => {
       firstTimeBrand: true,
     });
     expect(result.composite).toBe(71 + OWNERSHIP_RANK_BONUS.claimed);
-    expect(result.guidanceLines).toContain(OWNERSHIP_RANK_NOTE.claimed);
     expect(result.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
-    expect(result.guidanceLines ?? []).not.toContain(OWNERSHIP_RANK_NOTE.verified);
+    expect((result.guidanceLines ?? []).join(" ")).not.toMatch(/claimed show|verified show/i);
   });
 
   it("does not count verification twice when a verified host also has a sponsor", () => {
@@ -727,7 +726,7 @@ describe("genre benchmarks and trusted hosts", () => {
     expect(returning.composite).toBe(71 + OWNERSHIP_RANK_BONUS.verified);
     expect(first.composite).toBe(returning.composite + 2);
     expect(first.guidanceLines).toContain(TRUSTED_HOST_NOTE);
-    expect(first.guidanceLines).toContain(OWNERSHIP_RANK_NOTE.verified);
+    expect((first.guidanceLines ?? []).join(" ")).not.toMatch(/verified show/i);
     expect(returning.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
   });
 

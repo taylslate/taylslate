@@ -6,19 +6,24 @@
 -- Paste it into the Supabase SQL Editor only after Chris names it.
 --
 -- shows.ownership_status was unclaimed or verified (migration 061).
--- Claimed is the third value. A show is claimed when a show account
--- controls the profile, rates, and replies, and the show is not
--- verified. That is the same control tie as public.user_owns_show
--- (migration 077), without the verified-proof branch:
---   1. a deals row has this show_id and a non-null show_profile_id, or
---   2. data_sources contains show_owner, contact_email is set, and
---      that email matches auth.users.email for a user who has a
---      show_profiles row.
+-- Claimed is the third value. A show is claimed only when one of
+-- these holds, and the show is not verified:
+--   1. Deal. The show accepted or signed, the deal is not declined
+--      or cancelled, show_profiles.user_id is the actor_id recorded
+--      on that deal.created, io.show_signed, or io.counter_accepted
+--      event, outreaches.sent_to_email matches show_contacts.email
+--      with source podscan or apple_rss for this show, and that
+--      auth user has email_confirmed_at. A brand-typed address does
+--      not count. A profile id alone does not count.
+--   2. Owner row. data_sources contains show_owner, slug is
+--      owner- plus that show_profiles.user_id (the slug
+--      resolveOwnerShowId writes), contact_email is that user's
+--      confirmed auth email.
 -- A verified proof stays verified. This file never downgrades
--- verified. Pending stays a tag on show_ownership_proofs, not a
--- value of this column. shows.is_claimed is not read and is not
--- dropped. A podscan id is not a tie. An agent roster link is not
--- a claim.
+-- verified. Pending stays a tag. shows.is_claimed is not read.
+-- An agent roster link is not a claim. user_owns_show is not this
+-- rule. It still treats a looser link as edit rights. That is a
+-- separate security item.
 --
 -- No new table. No new function. No search_path change. No grant.
 -- No RLS change. Authenticated keeps SELECT only on shows.
@@ -45,7 +50,7 @@ alter table public.shows
   check (ownership_status in ('unclaimed', 'claimed', 'verified'));
 
 comment on column public.shows.ownership_status is
-  'Unclaimed, claimed, or verified. Claimed means a show account controls the profile, rates, and replies, and ownership is not verified. Pending is still a tag, not a state. is_claimed is deprecated.';
+  'Unclaimed, claimed, or verified. Claimed requires a sourced show accept or signature with that show user as the recorded actor, or a server owner slug. A deal profile alone is not claimed. Pending is still a tag. is_claimed and is_verified are deprecated.';
 
 comment on column public.shows.is_verified is
   'Deprecated. Ranking reads ownership_status. Do not branch on this flag.';
@@ -58,19 +63,41 @@ where s.ownership_status is distinct from 'verified'
     exists (
       select 1
       from public.deals as d
+      join public.show_profiles as sp on sp.id = d.show_profile_id
+      join public.outreaches as o on o.id = d.outreach_id
+      join auth.users as u on u.id = sp.user_id
+      join public.domain_events as ev
+        on ev.actor_id = sp.user_id
+       and ev.event_type in ('deal.created', 'io.show_signed', 'io.counter_accepted')
+       and (
+         (ev.entity_type = 'deal' and ev.entity_id = d.id)
+         or (ev.entity_type = 'outreach' and ev.entity_id = o.id)
+       )
       where d.show_id = s.id
-        and d.show_profile_id is not null
+        and d.status is distinct from 'cancelled'
+        and o.response_status is distinct from 'declined'
+        and (o.response_status = 'accepted' or d.show_signed_at is not null)
+        and u.email_confirmed_at is not null
+        and exists (
+          select 1
+          from public.show_contacts as sc
+          where sc.source in ('podscan', 'apple_rss')
+            and lower(btrim(sc.email)) = lower(btrim(o.sent_to_email))
+            and sc.show_id = s.id
+        )
     )
     or (
       'show_owner' = any (s.data_sources)
-      and s.contact_email is not null
-      and btrim(s.contact_email) <> ''
+      and s.slug like 'owner-%'
       and exists (
         select 1
-        from auth.users as u
-        join public.show_profiles as sp on sp.user_id = u.id
-        where u.email is not null
-          and lower(btrim(u.email)) = lower(btrim(s.contact_email))
+        from public.show_profiles as sp
+        join auth.users as u on u.id = sp.user_id
+        where s.slug = 'owner-' || sp.user_id::text
+          and u.email_confirmed_at is not null
+          and u.email is not null
+          and s.contact_email is not null
+          and lower(btrim(s.contact_email)) = lower(btrim(u.email))
       )
     )
   );

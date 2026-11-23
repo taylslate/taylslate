@@ -52,7 +52,6 @@ const FIELD_SCHEMAS: Record<string, Schema> = {
   next_available_date: nullableString,
   contact: { $ref: "#/components/schemas/Contact" },
   verified: { type: "boolean" },
-  ownership_status: { type: "string", enum: ["unclaimed", "claimed", "verified"] },
   brand_url: nullableString,
   target_age_range: nullableString,
   target_gender: nullableString,

@@ -21,11 +21,16 @@ describe("migration 100 claimed ownership state", () => {
     );
   });
 
-  it("backfills claimed without downgrading verified", () => {
+  it("backfills claimed only for a sourced show action or a server owner slug", () => {
     expect(statements).toMatch(/set ownership_status = 'claimed'/i);
     expect(statements).toMatch(/ownership_status is distinct from 'verified'/i);
-    expect(statements).toMatch(/show_profile_id is not null/i);
-    expect(statements).toMatch(/'show_owner' = any \(s\.data_sources\)/i);
+    expect(statements).toMatch(/email_confirmed_at is not null/i);
+    expect(statements).toMatch(/show_contacts/i);
+    expect(statements).toMatch(/source in \('podscan', 'apple_rss'\)/i);
+    expect(statements).toMatch(/response_status is distinct from 'declined'/i);
+    expect(statements).toMatch(/response_status = 'accepted' or d\.show_signed_at is not null/i);
+    expect(statements).toMatch(/event_type in \('deal.created', 'io.show_signed', 'io.counter_accepted'\)/i);
+    expect(statements).toMatch(/s\.slug = 'owner-' \|\| sp\.user_id::text/i);
     expect(statements).not.toMatch(/set ownership_status = 'unclaimed'/i);
     expect(statements).not.toMatch(/set ownership_status = 'verified'/i);
   });

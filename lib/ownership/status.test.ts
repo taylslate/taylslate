@@ -98,11 +98,11 @@ describe("getOwnershipState", () => {
     expect(states.get(SHOW)).toEqual({ state: "claimed", pending: false });
   });
 
-  it("returns claimed from a profile link when the column is still unclaimed", async () => {
+  it("does not treat a bare deal profile as claimed", async () => {
     db.shows.push({ id: SHOW, ownership_status: "unclaimed" });
     db.deals.push({ show_id: SHOW, show_profile_id: "33333333-3333-4333-8333-333333333333" });
     const states = await getOwnershipState([SHOW]);
-    expect(states.get(SHOW)).toEqual({ state: "claimed", pending: false });
+    expect(states.get(SHOW)).toEqual({ state: "unclaimed", pending: false });
   });
 
   it("returns verified without a pending tag", async () => {

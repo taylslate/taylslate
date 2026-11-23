@@ -42,7 +42,7 @@ import {
 } from "@/lib/enrichment/podscan";
 import { PodscanApiError } from "@/lib/podscan/client";
 import { podscanDemographicsToShowDemographics } from "./format-discovered-show";
-import { stampRankingOwnership } from "@/lib/ownership/persist";
+import { stampRankingOwnership, type RankingOwnershipStored } from "@/lib/ownership/persist";
 
 // ---- Injected dependencies (default to the real implementations) ----
 
@@ -71,6 +71,13 @@ export interface HydrateDemographicsDeps {
    * candidate doesn't already have.
    */
   lookupGeography?: (identities: ShowGeoIdentity[]) => Promise<VerifiedGeography[]>;
+  /**
+   * Copy ownership onto candidates before scoring. Tests stub this.
+   * The default applies the claim rule and does not write the database.
+   */
+  stampOwnership: (
+    pairs: Array<{ candidate: Show; stored: RankingOwnershipStored }>
+  ) => Promise<void>;
 }
 
 const defaultDeps: HydrateDemographicsDeps = {
@@ -81,6 +88,7 @@ const defaultDeps: HydrateDemographicsDeps = {
     return client.getPodcastDemographics(podscanId);
   },
   lookupGeography: getVerifiedAudienceGeography,
+  stampOwnership: stampRankingOwnership,
 };
 
 export interface HydrateDemographicsResult {
@@ -169,7 +177,7 @@ export async function hydrateCandidateDemographics(
     }
   }
 
-  await stampRankingOwnership(
+  await deps.stampOwnership(
     ownershipPairs.map(({ candidate, stored }) => ({
       candidate,
       stored: {
@@ -177,6 +185,8 @@ export async function hydrateCandidateDemographics(
         ownership_status: stored.ownership_status,
         contact_email: stored.contact?.email,
         data_sources: stored.data_sources,
+        slug: stored.slug,
+        podscan_id: stored.podscan_id,
       },
     }))
   );

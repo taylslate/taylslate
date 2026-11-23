@@ -68,11 +68,33 @@ function makeDeps(opts: {
       if (opts.fetch) return opts.fetch(podscanId);
       return API_PAYLOAD;
     },
+    stampOwnership: async () => {},
   };
   return { deps, fetchCalls };
 }
 
 // ---- hasDemographics ----
+
+describe("ownership stamp", () => {
+  it("passes stored rows to the injected stamp and does not call the database helper", async () => {
+    const seen: string[] = [];
+    const candidate = makeShow({ name: "Recovery Lab" });
+    const { deps } = makeDeps({
+      rows: [
+        {
+          ...makeShow({ id: "cat-recovery", name: "Recovery Lab", ownership_status: "verified" }),
+          slug: "recovery-lab",
+        },
+      ],
+    });
+    deps.stampOwnership = async (pairs) => {
+      seen.push(pairs[0]?.stored.id ?? "");
+    };
+    await hydrateCandidateDemographics([candidate], deps);
+    expect(seen).toEqual(["cat-recovery"]);
+    expect(candidate.ownership_status).toBeUndefined();
+  });
+});
 
 describe("hasDemographics", () => {
   it("treats {} (the discovered-show default), null, and undefined as empty", () => {

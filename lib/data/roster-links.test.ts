@@ -166,6 +166,7 @@ describe("importShows", () => {
         platform: "podcast",
         agent_id: "someone-else",
         is_discoverable: true,
+        data_sources: ["show_owner"],
       },
     ]);
     expect(inserted).toMatchObject({
@@ -177,6 +178,7 @@ describe("importShows", () => {
     });
     expect(showRow).toMatchObject({ agent_id: "agent-1", is_discoverable: false });
     expect(showRow).not.toHaveProperty("is_exclusive");
+    expect(showRow).not.toHaveProperty("data_sources");
     expect(result.imported).toHaveLength(1);
     expect(result.skipped).toEqual([]);
     expect(result.errors).toEqual([]);

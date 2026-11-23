@@ -2,8 +2,6 @@
 // object field by field. Payment, payout, fee, envelope, and note columns
 // are not copied. Net amounts and other party ids are left out.
 
-import { ownershipTierForRead, type OwnershipTier } from "@/lib/ownership/tier";
-
 export const DEMOGRAPHIC_FIELDS = [
   "age_18_24",
   "age_25_34",
@@ -57,7 +55,6 @@ export const SHOW_FIELDS = [
   "next_available_date",
   "contact",
   "verified",
-  "ownership_status",
 ] as const;
 
 export const CONTACT_FIELDS = ["name", "email", "method"] as const;
@@ -215,7 +212,6 @@ export interface SerializedShow {
   next_available_date: string | null;
   contact: SerializedContact;
   verified: boolean;
-  ownership_status: OwnershipTier;
 }
 
 export interface SerializedProduct {
@@ -355,7 +351,6 @@ export function serializeShow(
       method: textOrNull(row.contact_method),
     },
     verified,
-    ownership_status: ownershipTierForRead(row.ownership_status, verified),
   };
   return body;
 }

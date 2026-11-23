@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  OWNERSHIP_RANK_BONUS,
-  ownershipRankBonus,
-  ownershipTier,
-  ownershipTierForRead,
-} from "./tier";
+import { OWNERSHIP_RANK_BONUS, ownershipRankBonus, ownershipTier } from "./tier";
 
 describe("ownershipTier", () => {
   it("reads the three stored values and treats anything else as unclaimed", () => {
@@ -15,12 +10,8 @@ describe("ownershipTier", () => {
     expect(ownershipTier({ ownership_status: "pending" })).toBe("unclaimed");
   });
 
-  it("uses the computed profile tie only while the column is not claimed or verified", () => {
-    expect(ownershipTierForRead("unclaimed", true)).toBe("claimed");
-    expect(ownershipTierForRead(null, true)).toBe("claimed");
-    expect(ownershipTierForRead("unclaimed", false)).toBe("unclaimed");
-    expect(ownershipTierForRead("verified", true)).toBe("verified");
-    expect(ownershipTierForRead("claimed", false)).toBe("claimed");
+  it("keeps a stored unclaimed value unclaimed", () => {
+    expect(ownershipTier({ ownership_status: "unclaimed" })).toBe("unclaimed");
   });
 
   it("keeps the bonus small, with verified above claimed and unclaimed at zero", () => {

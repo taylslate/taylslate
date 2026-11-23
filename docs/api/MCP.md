@@ -83,7 +83,7 @@ Migration 092 creates the OAuth tables and is not applied with this change. Unti
 
 A show on `propose_outreach` must be discoverable, or owned by this brand through a deal. Otherwise the tool result is not found and no row is written.
 
-Show reads match `GET /api/v1/shows`. Contact and rates are included only when this brand is tied to the show. A full show includes `ownership_status`: `unclaimed`, `claimed`, or `verified`. `verified` stays the profile-tie flag.
+Show reads match `GET /api/v1/shows`. Contact and rates are included only when this brand is tied to the show. `ownership_status` is not on this payload.
 
 ## Example: tools/list
 
