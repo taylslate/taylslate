@@ -1,8 +1,8 @@
 // Load the facts a discovery card's market signals can state.
 //
 // Host-reported brand history and expected CPM come from show_profiles only
-// through getVerifiedProfileTies: a deal link, or a show_owner row whose
-// contact email matches the profile owner. show_profiles.podscan_id is
+// through a tie that showEditGrantIds allows. A deal show_profile_id alone
+// is not enough. show_profiles.podscan_id is
 // user-writable and is not a tie. Catalog columns on shows (podscan_id,
 // current_sponsors, past_sponsors) are read as stored. A failed read leaves
 // that fact unknown. The returned map has one entry per requested show.
@@ -11,6 +11,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { CostBasis, ShowBrandHistoryEntry, ShowRateCard } from "@/lib/data/types";
 import {
   getVerifiedProfileTies,
+  keepGrantedProfileTies,
   type ShowGeoIdentity,
   type VerifiedProfileTie,
 } from "@/lib/shows/apply-geography";
@@ -296,7 +297,8 @@ function isCancelled(status: string): boolean {
 }
 
 const defaultDeps: MarketSignalDeps = {
-  lookupProfileTies: getVerifiedProfileTies,
+  lookupProfileTies: async (identities) =>
+    keepGrantedProfileTies(await getVerifiedProfileTies(identities)),
   async showProfilesByIds(ids) {
     return readProfiles(ids);
   },

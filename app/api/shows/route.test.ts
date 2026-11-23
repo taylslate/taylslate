@@ -1,18 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { createShow, claimShow, getUserProfile, getUser, getAllShows, getShowsFiltered, isShowsAdmin, from, ties } =
-  vi.hoisted(() => ({
-    createShow: vi.fn(),
-    claimShow: vi.fn(),
-    getUserProfile: vi.fn(),
-    getUser: vi.fn(),
-    getAllShows: vi.fn(),
-    getShowsFiltered: vi.fn(),
-    isShowsAdmin: vi.fn(),
-    from: vi.fn(),
-    ties: vi.fn(),
-  }));
+const {
+  createShow,
+  claimShow,
+  getUserProfile,
+  getUser,
+  getAllShows,
+  getShowsFiltered,
+  isShowsAdmin,
+  from,
+  ties,
+  grantIds,
+} = vi.hoisted(() => ({
+  createShow: vi.fn(),
+  claimShow: vi.fn(),
+  getUserProfile: vi.fn(),
+  getUser: vi.fn(),
+  getAllShows: vi.fn(),
+  getShowsFiltered: vi.fn(),
+  isShowsAdmin: vi.fn(),
+  from: vi.fn(),
+  ties: vi.fn(),
+  grantIds: vi.fn(),
+}));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({ auth: { getUser } }),
@@ -36,6 +47,10 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 vi.mock("@/lib/shows/apply-geography", () => ({
   getVerifiedProfileTies: (...args: unknown[]) => ties(...args),
+}));
+
+vi.mock("@/lib/ownership/edit-rights", () => ({
+  showEditGrantIds: (...args: unknown[]) => grantIds(...args),
 }));
 
 import { GET, POST } from "./route";
@@ -120,6 +135,7 @@ beforeEach(() => {
   createShow.mockResolvedValue({ id: "show-1", name: "Night Desk" });
   claimShow.mockResolvedValue({ id: "rel-1" });
   ties.mockResolvedValue([]);
+  grantIds.mockResolvedValue(new Set());
   admin({});
 });
 
@@ -167,8 +183,9 @@ describe("GET /api/shows", () => {
     expect(encoded).not.toContain("rate_card");
     expect(encoded).not.toContain("midroll_cpm");
     expect(encoded).not.toContain("pd_secret");
-    const identity = ties.mock.calls[0][0][0] as Record<string, unknown>;
-    expect(identity).not.toHaveProperty("podscanId");
+    expect(grantIds).toHaveBeenCalledWith("brand-1", [SHOW, OTHER]);
+    expect(JSON.stringify(grantIds.mock.calls)).not.toContain("pd_secret");
+    expect(ties).not.toHaveBeenCalled();
   });
 
   it("returns the full row for a show the caller owns", async () => {
@@ -177,8 +194,7 @@ describe("GET /api/shows", () => {
     const owned = catalogShow(SHOW, "host@show.test");
     const other = catalogShow(OTHER, "other@show.test");
     getAllShows.mockResolvedValueOnce([owned, other]);
-    admin({ profile: { id: PROFILE } });
-    ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
+    grantIds.mockResolvedValue(new Set([SHOW]));
 
     const res = await GET(new NextRequest("http://x/api/shows"));
     expect(res.status).toBe(200);
@@ -205,6 +221,7 @@ describe("GET /api/shows", () => {
       ],
     });
     ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
+    grantIds.mockResolvedValue(new Set([SHOW]));
 
     const body = await (await GET(new NextRequest("http://x/api/shows"))).json();
     expect(body[0].ownership_status).toBe("claimed");

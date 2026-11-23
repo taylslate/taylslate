@@ -1,17 +1,17 @@
 // Who may write a catalog show.
 //
-// True for an internal admin (INTERNAL_ADMIN_EMAILS on the auth login
-// email), an agent whose roster link is approved, and a show user
-// tied by getVerifiedProfileTies. shows.agent_id alone is not enough.
-// A pending or rejected link does not grant edit rights.
-// A podscan id on the profile is not a tie. Anyone else is false.
-// profiles.email and profiles.role are not an admin grant. Role admin
-// is not a profiles value.
+// True only for an internal admin (INTERNAL_ADMIN_EMAILS on the auth
+// login, via showEditGrant) or a show that same helper grants: a
+// server owner row, a verified proof tied to this auth user, or the
+// dormant sourced-deal rule. A deal show_profile_id is not enough.
+// A show_owner email without the server slug is not enough.
+// An approved roster link is not an edit grant. shows.agent_id is
+// not an edit grant. profiles.email and profiles.role are not read.
+// Role admin is not a profiles value.
 
-import { supabaseAdmin } from "@/lib/supabase/admin";
 import { isInternalAdmin } from "@/lib/auth/admin";
 import { getAuthEmail } from "@/lib/auth/auth-email";
-import { getVerifiedProfileTies } from "@/lib/shows/apply-geography";
+import { showEditGrant } from "@/lib/ownership/edit-rights";
 
 const ADMIN_WRITE_FIELDS = [
   "agent_id",
@@ -26,26 +26,6 @@ const ADMIN_WRITE_FIELDS = [
 /** Ranking state. Only the ownership writer sets this. Never a client patch. */
 const OWNERSHIP_WRITE_FIELDS = ["ownership_status"] as const;
 
-interface ProfileRow {
-  id?: string;
-  role?: string | null;
-}
-
-interface ShowRow {
-  id?: string;
-  contact_email?: string | null;
-  data_sources?: unknown;
-}
-
-function textList(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const out: string[] = [];
-  for (const item of value) {
-    if (typeof item === "string") out.push(item);
-  }
-  return out;
-}
-
 export async function isShowsAdmin(userId: string): Promise<boolean> {
   if (!userId) return false;
   return isInternalAdmin(await getAuthEmail(userId));
@@ -53,48 +33,7 @@ export async function isShowsAdmin(userId: string): Promise<boolean> {
 
 export async function canEditShow(userId: string, showId: string): Promise<boolean> {
   if (!userId || !showId) return false;
-  if (await isShowsAdmin(userId)) return true;
-
-  const profile = await loadProfile(userId);
-  if (!profile) return false;
-
-  const { data, error } = await supabaseAdmin
-    .from("shows")
-    .select("id, contact_email, data_sources")
-    .eq("id", showId)
-    .maybeSingle();
-  if (error || !data) return false;
-  const show = data as ShowRow;
-
-  const { data: rel, error: relError } = await supabaseAdmin
-    .from("agent_show_relationships")
-    .select("id")
-    .eq("agent_id", userId)
-    .eq("show_id", showId)
-    .eq("status", "approved")
-    .maybeSingle();
-  if (relError) return false;
-  if (rel) return true;
-
-  if (profile.role !== "show") return false;
-
-  const { data: showProfile, error: profileError } = await supabaseAdmin
-    .from("show_profiles")
-    .select("id")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (profileError || !showProfile) return false;
-  const profileId = (showProfile as { id?: string }).id;
-  if (!profileId) return false;
-
-  const ties = await getVerifiedProfileTies([
-    {
-      showId,
-      contactEmail: show.contact_email ?? undefined,
-      dataSources: textList(show.data_sources),
-    },
-  ]);
-  return ties.some((tie) => tie.showId === showId && tie.profileId === profileId);
+  return showEditGrant(userId, showId);
 }
 
 /** Drop id, created_at, and admin-only columns unless the caller is an admin. */
@@ -110,14 +49,4 @@ export function showWritePatch(
     for (const field of ADMIN_WRITE_FIELDS) delete next[field];
   }
   return next;
-}
-
-async function loadProfile(userId: string): Promise<ProfileRow | null> {
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .select("id, role")
-    .eq("id", userId)
-    .maybeSingle();
-  if (error || !data) return null;
-  return data as ProfileRow;
 }

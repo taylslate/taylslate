@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { from, ties } = vi.hoisted(() => ({
+const { from, ties, grantIds } = vi.hoisted(() => ({
   from: vi.fn(),
   ties: vi.fn(),
+  grantIds: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -13,8 +14,13 @@ vi.mock("@/lib/shows/apply-geography", () => ({
   getVerifiedProfileTies: (...args: unknown[]) => ties(...args),
 }));
 
+vi.mock("@/lib/ownership/edit-rights", () => ({
+  showEditGrantIds: (...args: unknown[]) => grantIds(...args),
+}));
+
 import {
   fullShowIdsForCaller,
+  ownershipVisibleIds,
   projectShows,
   PUBLIC_SHOW_FIELDS,
   toPublicShowFields,
@@ -81,6 +87,7 @@ function admin(opts: {
 beforeEach(() => {
   vi.clearAllMocks();
   ties.mockResolvedValue([]);
+  grantIds.mockResolvedValue(new Set());
   admin({});
 });
 
@@ -145,29 +152,39 @@ describe("projectShows", () => {
   });
 });
 
-describe("fullShowIdsForCaller", () => {
-  it("returns nothing for a brand with no tie and does not pass podscan id", async () => {
-    const ids = await fullShowIdsForCaller(USER, [secretShow]);
-    expect(ids).toEqual(new Set());
-    expect(ties).toHaveBeenCalledTimes(1);
-    const identity = ties.mock.calls[0][0][0] as Record<string, unknown>;
-    expect(identity).toEqual({
-      showId: SHOW,
-      contactEmail: "host@show.test",
-      dataSources: ["show_owner"],
-    });
-    expect(identity).not.toHaveProperty("podscanId");
-    expect(identity).not.toHaveProperty("podscan_id");
-    expect(JSON.stringify(ties.mock.calls)).not.toContain("pd_secret");
+describe("ownershipVisibleIds", () => {
+  it("uses the edit grant and ignores a loose profile tie", async () => {
+    ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
+    grantIds.mockResolvedValue(new Set());
+    expect(await ownershipVisibleIds(USER, [secretShow], false)).toEqual(new Set());
+    expect(grantIds).toHaveBeenCalledWith(USER, [SHOW]);
+
+    grantIds.mockResolvedValue(new Set([SHOW]));
+    expect(await ownershipVisibleIds(USER, [secretShow], false)).toEqual(new Set([SHOW]));
   });
 
-  it("includes the show when the caller's show profile is the verified tie", async () => {
-    admin({ profile: { id: PROFILE } });
-    ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
-    expect(await fullShowIdsForCaller(USER, [secretShow])).toEqual(new Set([SHOW]));
+  it("returns every id for an admin without asking the grant", async () => {
+    expect(await ownershipVisibleIds(USER, [secretShow], true)).toEqual(new Set([SHOW]));
+    expect(grantIds).not.toHaveBeenCalled();
+  });
+});
 
-    ties.mockResolvedValue([{ showId: SHOW, profileId: "someone-else" }]);
+describe("fullShowIdsForCaller", () => {
+  it("returns nothing for a brand with no grant and does not pass podscan id", async () => {
+    const ids = await fullShowIdsForCaller(USER, [secretShow]);
+    expect(ids).toEqual(new Set());
+    expect(grantIds).toHaveBeenCalledWith(USER, [SHOW]);
+    expect(ties).not.toHaveBeenCalled();
+    expect(JSON.stringify(grantIds.mock.calls)).not.toContain("pd_secret");
+  });
+
+  it("includes the show when the edit grant allows it and ignores a loose profile tie", async () => {
+    ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
+    grantIds.mockResolvedValue(new Set());
     expect(await fullShowIdsForCaller(USER, [secretShow])).toEqual(new Set());
+
+    grantIds.mockResolvedValue(new Set([SHOW]));
+    expect(await fullShowIdsForCaller(USER, [secretShow])).toEqual(new Set([SHOW]));
   });
 
   it("includes a show the brand or agency already has a deal on", async () => {

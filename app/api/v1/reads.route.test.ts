@@ -444,7 +444,7 @@ describe("brand isolation", () => {
       audience_size: 2000,
       categories: ["culture"],
     });
-    expect(ownedShow.verified).toBe(true);
+    expect(ownedShow.verified).toBe(false);
     expect(Object.keys(ownedShow).sort()).toEqual([...SHOW_FIELDS].sort());
     const body = JSON.stringify(rows);
     expect(body).not.toContain("secret@example.com");
@@ -469,7 +469,7 @@ describe("brand isolation", () => {
 
     const owned = await call(getShow, "/api/v1/shows/" + SHOW_OWNED, secret, SHOW_OWNED);
     expect(owned.status).toBe(200);
-    expect((await owned.json()).data.verified).toBe(true);
+    expect((await owned.json()).data.verified).toBe(false);
 
     const hidden = await call(getShow, "/api/v1/shows/" + SHOW_HIDDEN, secret, SHOW_HIDDEN);
     expect(hidden.status).toBe(404);
@@ -479,7 +479,73 @@ describe("brand isolation", () => {
     expect(junk.status).toBe(404);
   });
 
-  it("returns the full row to the owner and to a verified rep", async () => {
+  it("sets verified only when ownership_status and a proof both say verified", async () => {
+    const secret = await readKey();
+    bridge.data!.tables.brand_profiles.push({ id: PROFILE, user_id: BRAND });
+    bridge.data!.tables.shows.push(
+      {
+        id: SHOW_PUBLIC,
+        name: "Column only",
+        platform: "podcast",
+        categories: ["business"],
+        audience_size: 5000,
+        is_discoverable: true,
+        ownership_status: "verified",
+        contact_email: "secret@example.com",
+        created_at: "2026-03-03T00:00:00.000Z",
+      },
+      {
+        id: SHOW_HOST,
+        name: "Email only",
+        platform: "podcast",
+        categories: ["culture"],
+        audience_size: 2000,
+        is_discoverable: true,
+        ownership_status: "unclaimed",
+        contact_email: "host@example.com",
+        data_sources: ["show_owner"],
+        created_at: "2026-03-02T00:00:00.000Z",
+      }
+    );
+    bridge.data!.tables.deals.push(
+      {
+        id: DEAL_BRAND,
+        brand_id: BRAND,
+        show_id: SHOW_PUBLIC,
+        status: "planning",
+        created_at: "2026-03-03T00:00:00.000Z",
+      },
+      {
+        id: DEAL_TIED,
+        brand_id: BRAND,
+        show_id: SHOW_HOST,
+        show_profile_id: SHOW_PROFILE,
+        status: "planning",
+        created_at: "2026-03-02T00:00:00.000Z",
+      }
+    );
+    bridge.data!.tables.show_profiles.push({ id: SHOW_PROFILE, user_id: HOST });
+
+    const before = await call(listShows, "/api/v1/shows", secret);
+    const beforeRows = ((await before.json()) as { data: ShowJson[] }).data;
+    const columnOnly = beforeRows.find((row) => row.id === SHOW_PUBLIC);
+    const emailOnly = beforeRows.find((row) => row.id === SHOW_HOST);
+    expect(columnOnly?.verified).toBe(false);
+    expect(emailOnly?.verified).toBe(false);
+
+    bridge.data!.tables.show_ownership_proofs.push({
+      show_id: SHOW_PUBLIC,
+      user_id: HOST,
+      status: "verified",
+    });
+    const after = await call(listShows, "/api/v1/shows", secret);
+    const proved = ((await after.json()) as { data: ShowJson[] }).data.find(
+      (row) => row.id === SHOW_PUBLIC
+    );
+    expect(proved?.verified).toBe(true);
+  });
+
+  it("does not open contact or verified from an email or a deal profile id", async () => {
     const secret = await readKey();
     const brand = bridge.data!.tables.profiles.find((row) => row.id === BRAND);
     if (!brand) throw new Error("missing brand profile");
@@ -540,13 +606,10 @@ describe("brand isolation", () => {
     const untied = byId.get(SHOW_PUBLIC);
     if (!ownerShow || !repShow || !untied) throw new Error("missing show row");
 
-    expect(ownerShow.contact?.email).toBe("owner@example.com");
-    expect(ownerShow.rates?.midroll_cpm).toBe(40);
-    expect(ownerShow.verified).toBe(true);
-    expect(Object.keys(ownerShow).sort()).toEqual([...SHOW_FIELDS].sort());
-    expect(repShow.contact?.email).toBe("rep-secret@example.com");
-    expect(repShow.rates?.preroll_cpm).toBe(15);
-    expect(repShow.verified).toBe(true);
+    expect(ownerShow.contact).toBeUndefined();
+    expect(ownerShow.verified).toBeUndefined();
+    expect(repShow.contact).toBeUndefined();
+    expect(repShow.verified).toBeUndefined();
     expect(untied).toEqual({
       id: SHOW_PUBLIC,
       name: "Untied",
@@ -557,7 +620,7 @@ describe("brand isolation", () => {
 
     const owner = await call(getShow, "/api/v1/shows/" + SHOW_OWNER, secret, SHOW_OWNER);
     expect(owner.status).toBe(200);
-    expect((await owner.json()).data.contact.email).toBe("owner@example.com");
+    expect((await owner.json()).data.contact).toBeUndefined();
 
     bridge.authUsers = [{ id: BRAND, email: "attacker@example.com" }];
     brand.email = "owner@example.com";
@@ -569,7 +632,9 @@ describe("brand isolation", () => {
 
     const rep = await call(getShow, "/api/v1/shows/" + SHOW_REP, secret, SHOW_REP);
     expect(rep.status).toBe(200);
-    expect((await rep.json()).data.contact.email).toBe("rep-secret@example.com");
+    const repBody = await rep.json();
+    expect(repBody.data.contact).toBeUndefined();
+    expect(repBody.data.verified).toBeUndefined();
   });
 
   it("includes legacy brand_id deals and Wave 12 profile deals, and hides the rest", async () => {
