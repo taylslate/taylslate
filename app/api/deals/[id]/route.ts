@@ -355,6 +355,16 @@ export async function PATCH(
     const pending: Record<string, unknown> = { ...raw };
     for (const key of ECHO_MONEY_KEYS) {
       if (!Object.prototype.hasOwnProperty.call(pending, key)) continue;
+      // The legacy flat-rate form always sends cpm_rate 0. The stored rate
+      // is the computed CPM from the flat price, so 0 is not a change.
+      if (
+        key === "cpm_rate" &&
+        row.price_type === "flat_rate" &&
+        finiteNumber(pending[key]) === 0
+      ) {
+        delete pending[key];
+        continue;
+      }
       if (!sameStoredMoney(key, pending[key], row[key])) return refusal(400);
       delete pending[key];
     }
@@ -372,9 +382,12 @@ export async function PATCH(
         if (notes === undefined) return refusal(400);
         updates.notes = notes;
       } else if (key === "status") {
-        if (value === "completed") return refusal(403);
+        if (value === "completed") {
+          if (existing.status === "completed") continue;
+          return refusal(403);
+        }
         const next = cleanEnum(value, VALID_STATUSES);
-        if (!next || next === "completed") return refusal(400);
+        if (!next) return refusal(400);
         if (next !== existing.status) {
           const transitions = VALID_TRANSITIONS[existing.status as DealStatus];
           if (!transitions || !transitions.includes(next as DealStatus)) return refusal(400);

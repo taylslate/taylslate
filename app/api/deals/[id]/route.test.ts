@@ -284,6 +284,48 @@ describe("PATCH /api/deals/[id] field allowlist", () => {
     expect(updateDeal).toHaveBeenCalledWith("deal-1", { notes: "Keep the host read." });
   });
 
+  it("saves notes on a flat-rate deal when the form sends cpm_rate 0", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "planning",
+      brand_signed_at: null,
+      show_signed_at: null,
+      price_type: "flat_rate",
+      cpm_rate: 25,
+      guaranteed_downloads: 10000,
+      num_episodes: 3,
+      net_per_episode: 250,
+      total_net: 750,
+    });
+    const res = await PATCH(
+      patchReq({
+        notes: "Keep the host read.",
+        price_type: "flat_rate",
+        cpm_rate: 0,
+        net_per_episode: 250,
+        total_net: 750,
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expect(updateDeal).toHaveBeenCalledWith("deal-1", { notes: "Keep the host read." });
+  });
+
+  it("keeps a resent completed status and saves the note", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "completed",
+      brand_signed_at: null,
+      show_signed_at: null,
+    });
+    const res = await PATCH(
+      patchReq({ notes: "Still wrapped.", status: "completed" }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expect(updateDeal).toHaveBeenCalledWith("deal-1", { notes: "Still wrapped." });
+  });
+
   it("refuses a changed cpm_rate", async () => {
     getDealById.mockResolvedValue({
       ...wave12Row,
@@ -299,6 +341,20 @@ describe("PATCH /api/deals/[id] field allowlist", () => {
       patchReq({ notes: "Keep the host read.", cpm_rate: 40 }) as never,
       params as never
     );
+    expect(res.status).toBe(400);
+    expect(updateDeal).not.toHaveBeenCalled();
+  });
+
+  it("still refuses cpm_rate 0 on a cpm deal", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "planning",
+      brand_signed_at: null,
+      show_signed_at: null,
+      price_type: "cpm",
+      cpm_rate: 25,
+    });
+    const res = await PATCH(patchReq({ notes: "No.", cpm_rate: 0 }) as never, params as never);
     expect(res.status).toBe(400);
     expect(updateDeal).not.toHaveBeenCalled();
   });

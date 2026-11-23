@@ -20,7 +20,7 @@ Show (legacy `agent_id`, or the user on `show_profiles`):
 
 Refused on every party: CPM and totals, episode counts, downloads, `price_type`, `agreed_cpm`, ids (`brand_id`, `show_id`, profile ids, `campaign_id`, `outreach_id`), payment method and SetupIntent columns, `card_on_file_at`, `promo_code`, DocuSign and signature columns, cancellation columns.
 
-The legacy screen resends `price_type`, `cpm_rate`, `guaranteed_downloads`, `num_episodes`, and on a flat deal `net_per_episode` and `total_net`. Those are dropped when they equal the stored value. A different value is 400. They are never written.
+The legacy screen resends `price_type`, `cpm_rate`, `guaranteed_downloads`, `num_episodes`, and on a flat deal `net_per_episode` and `total_net`. Those are dropped when they equal the stored value. A flat-rate save sends `cpm_rate` 0, and that 0 is dropped when the stored `price_type` is `flat_rate`. A different value is 400. They are never written. Sending `completed` is 403 only when that is a change. A deal that is already `completed` can resend that status.
 
 Edits are also refused once `docusign_envelope_id` is set. `DELETE /api/deals/[id]` is 403 once either signature timestamp is set, once that envelope id is set, or once a price record exists. `deal_id` is `ON DELETE RESTRICT`. GET and DELETE failures use a fixed sentence.
 

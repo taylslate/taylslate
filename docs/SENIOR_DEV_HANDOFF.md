@@ -3887,7 +3887,7 @@ Covers true excluded, false kept (including a children's-music topic on a false 
 
 `PATCH /api/deals/[id]` no longer writes the request body through the service role. Each party has an allowlist. The check uses the auth user id, not an email.
 
-A buyer (`brand_id`, `agency_id`, or the user on the brand profile) may set notes, the legacy status moves, placement, ad format, flight dates, the content flags, competitor names, exclusivity days, and ROFR days. A show (`agent_id`, or the user on the show profile) may set notes and those same status moves. Money, identity, payment, and signature columns are refused. The legacy screen always resends `price_type`, `cpm_rate`, `guaranteed_downloads`, `num_episodes`, and on a flat deal `net_per_episode` and `total_net`. Those keys are dropped when the value equals the stored value, and they are not written. A different value is 400. `planning` to `io_sent` and `io_sent` to `live` still work. Setting `completed` is 403. After `brand_signed_at`, `show_signed_at`, or `docusign_envelope_id` is set, every edit is 403. There is no post-signing field on this route. A disallowed key rejects the whole body. The JSON error is a fixed sentence with no database text and no ids. GET and DELETE errors are fixed sentences too.
+A buyer (`brand_id`, `agency_id`, or the user on the brand profile) may set notes, the legacy status moves, placement, ad format, flight dates, the content flags, competitor names, exclusivity days, and ROFR days. A show (`agent_id`, or the user on the show profile) may set notes and those same status moves. Money, identity, payment, and signature columns are refused. The legacy screen always resends `price_type`, `cpm_rate`, `guaranteed_downloads`, `num_episodes`, and on a flat deal `net_per_episode` and `total_net`. Those keys are dropped when the value equals the stored value, and they are not written. A flat-rate save sends `cpm_rate` 0. That 0 is dropped when the stored `price_type` is `flat_rate`, because the stored rate is the computed CPM. A different value is 400. `planning` to `io_sent` and `io_sent` to `live` still work. Setting `completed` is 403 when the stored status is not already `completed`. A resent `completed` is dropped. After `brand_signed_at`, `show_signed_at`, or `docusign_envelope_id` is set, every edit is 403. There is no post-signing field on this route. A disallowed key rejects the whole body. The JSON error is a fixed sentence with no database text and no ids. GET and DELETE errors are fixed sentences too.
 
 `updateDeal` refuses the write if any key is outside that buyer list, so a body cannot ride through the admin client. The IO send route still sets status to `io_sent`.
 
@@ -3927,7 +3927,7 @@ No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/bil
 
 `npx tsc --noEmit` is clean.
 
-`npx vitest run`: 463 files, 3814 passed, 41 skipped.
+`npx vitest run`: 463 files, 3822 passed, 41 skipped.
 
 `npx eslint` on the changed TypeScript files: 0 errors.
 
