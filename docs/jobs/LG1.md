@@ -127,3 +127,5 @@ Fee percentages and plan prices were read in `lib/billing/plans.ts` only to avoi
 ## Tests
 
 `proxy.test.ts`, `lib/marketing/site.test.ts`, `app/terms/page.test.tsx`, `app/privacy/page.test.tsx`.
+
+Google and YouTube account disclosures for the sensitive-scope review are in `docs/jobs/LG2.md`.

@@ -73,4 +73,76 @@ describe("Privacy Policy page", () => {
       "/privacy",
     );
   });
+
+  it("discloses Google and YouTube data, retention, and Limited Use", () => {
+    render(<PrivacyPage />);
+
+    const heading = screen.getByRole("heading", {
+      level: 2,
+      name: "Google and YouTube data",
+    });
+    const google = heading.closest("section")?.textContent ?? "";
+
+    expect(google).toContain(
+      "Taylslate's use and transfer to any other app of information received from Google APIs will adhere to the Google API Services User Data Policy (https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.",
+    );
+    expect(google).toContain("What we store:");
+    expect(google).toContain("Why we use it:");
+    expect(google).toContain("Who can see it:");
+    expect(google).toContain(
+      "If your authorization lapses and you do not reconnect, we delete your Google data 30 days later.",
+    );
+    expect(google).toContain(
+      "yt-analytics.readonly lets us read YouTube Analytics for videos on your Taylslate deals.",
+    );
+    expect(google).toContain(
+      "If you disconnect in Taylslate, we revoke our access at Google, delete your tokens right away, and delete the remaining Google data within 7 days.",
+    );
+    expect(google).toContain(
+      "If you remove Taylslate at Google, we treat that as a lapsed authorization and delete your tokens when our daily check detects it.",
+    );
+    expect(google).toContain(
+      "[CONFIRM WITH COUNSEL] Whether YouTube API policy III.D.3 requires deletion within 7 days after that revocation at Google.",
+    );
+    expect(google).not.toContain("Either way, we delete your tokens right away");
+    expect(google).not.toContain(
+      "We revoke our access at Google and delete your tokens right away.",
+    );
+    expect(google).toContain("What we store: your channel ID");
+    expect(google).toContain("Why we use it: only to check");
+    expect(google).toContain("Who can see it: you, and Taylslate staff");
+    expect(google).toContain(
+      "Results from Google data are not used in pooled anonymized data or to improve Taylslate for other users.",
+    );
+    expect(google).toContain("30 days");
+    expect(google).toContain("7 days");
+    expect(google).not.toContain("the YouTube page in your Taylslate settings");
+    expect(google).not.toContain("\u2014");
+    expect(
+      screen.getByRole("link", { name: "www.taylslate.com/settings/youtube" }),
+    ).toHaveAttribute("href", "https://www.taylslate.com/settings/youtube");
+
+    for (const href of [
+      "https://www.youtube.com/t/terms",
+      "https://policies.google.com/privacy",
+      "https://security.google.com/settings/security/permissions",
+      "https://developers.google.com/terms/api-services-user-data-policy",
+    ]) {
+      expect(screen.getByRole("link", { name: href })).toHaveAttribute(
+        "href",
+        href,
+      );
+    }
+
+    expect(document.body.textContent).toContain(
+      "Google (YouTube Data API and YouTube Analytics API): public channel data, and, for creators who connect a channel, the data described under Google and YouTube data.",
+    );
+    expect(document.body.textContent).toContain(
+      "Connecting a YouTube channel sets a short-lived cookie (10 minutes) that protects the Google sign-in step.",
+    );
+    expect(document.body.textContent).toContain(
+      "You can also disconnect YouTube as described under Google and YouTube data.",
+    );
+    expect(document.body.textContent).toContain("[PRIVACY CONTACT EMAIL]");
+  });
 });
