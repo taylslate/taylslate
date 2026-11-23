@@ -1,8 +1,8 @@
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { alignCheckpointSample, emptyCheckpoint, isStale, readCheckpoint, writeJsonAtomic, writeTextAtomic } from "./checkpoint";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { alignCheckpointSample, emptyCheckpoint, isStale, readCheckpoint, readScoringFile, writeJsonAtomic, writeScoringFile, writeTextAtomic } from "./checkpoint";
 
 const dirs: string[] = [];
 
@@ -78,6 +78,36 @@ describe("checkpoint", () => {
     expect(alignCheckpointSample(legacy, null)).toBe(true);
     expect(legacy.sample).toBeNull();
     expect(legacy.searchSavedAt).toBeUndefined();
+  });
+
+  it("skips bad scoring entries and warns with a count", async () => {
+    const dir = await tempDir();
+    const warnings: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warnings.push(args.map((arg) => String(arg)).join(" "));
+    });
+    try {
+    await writeTextAtomic(
+      join(dir, "scoring-backfill.json"),
+      JSON.stringify({
+        version: 1,
+        scoring: {
+          pd_ok: { reachScore: 12, brandSafety: { max_risk_level: "low" } },
+          pd_bad: { reachScore: "nope", brandSafety: null, note: "owner@sponsor.example" },
+          pd_missing: { brandSafety: null },
+        },
+      })
+    );
+    const read = await readScoringFile(dir);
+    expect(read).toEqual({ pd_ok: { reachScore: 12, brandSafety: { max_risk_level: "low" } } });
+    expect(warnings).toEqual(["Skipped 2 scoring checkpoint entries."]);
+    expect(warnings.join("\n")).not.toContain("@");
+    spy.mockRestore();
+    await writeScoringFile(dir, { pd_ok: { reachScore: null, brandSafety: null } });
+    expect(await readScoringFile(dir)).toEqual({ pd_ok: { reachScore: null, brandSafety: null } });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("treats candidate data older than 7 days as stale", () => {

@@ -144,6 +144,17 @@ export function scoringFromPodcastBody(body: unknown): { reachScore: number | nu
   };
 }
 
+// The brand-safety route returns a full report. The catalog keeps the
+// aggregation object, which is the same summary search stores, and
+// drops category evidence.
+export function brandSafetyFromEndpoint(body: unknown): unknown | null {
+  if (!isRecord(body)) return null;
+  if (isRecord(body.aggregation)) return safetyObject(body.aggregation);
+  if (isRecord(body.brand_safety)) return safetyObject(body.brand_safety);
+  if ("max_risk_level" in body || "most_common_recommendation" in body) return safetyObject(body);
+  return null;
+}
+
 function scoreNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && /^-?[0-9]+(\.[0-9]+)?$/.test(value)) {

@@ -37,6 +37,7 @@ import {
   fetchSponsorHistory,
   isNotFound,
   qualifiesForEnrich,
+  brandSafetyFromEndpoint,
   scoringFromPodcastBody,
   type EnrichGate,
 } from "./enrich";
@@ -949,13 +950,22 @@ async function upsert(
   rows: Record<string, unknown>[],
   onConflict: string
 ): Promise<boolean> {
-  for (let i = 0; i < rows.length; i += 500) {
-    const batch = rows.slice(i, i + 500);
-    if (batch.length === 0) continue;
-    const { error } = await db.from(table).upsert(batch, { onConflict });
-    if (error) {
-      console.error(error.code ?? "db_error");
-      return false;
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const row of rows) {
+    const key = Object.keys(row).sort().join("\0");
+    const list = groups.get(key) ?? [];
+    list.push(row);
+    groups.set(key, list);
+  }
+  for (const group of groups.values()) {
+    for (let i = 0; i < group.length; i += 500) {
+      const batch = group.slice(i, i + 500);
+      if (batch.length === 0) continue;
+      const { error } = await db.from(table).upsert(batch, { onConflict });
+      if (error) {
+        console.error(error.code ?? "db_error");
+        return false;
+      }
     }
   }
   return true;
@@ -1132,11 +1142,24 @@ async function runBackfill(
     const id = show.candidate.podcastId;
     let scored: ScoringProgress = { reachScore: null, brandSafety: null };
     if (PODCAST_ID.test(id)) {
+      let needSafety = true;
       try {
         const body = await inStep("backfill", () => guarded(() => deps.caller.get<unknown>(`/podcasts/${id}`)));
         scored = scoringFromPodcastBody(body);
+        needSafety = scored.brandSafety == null;
       } catch (err) {
         if (!isNotFound(err)) throw err;
+      }
+      if (needSafety) {
+        try {
+          const body = await inStep("backfill", () =>
+            guarded(() => deps.caller.get<unknown>(`/podcasts/${id}/brand-safety`))
+          );
+          const safety = brandSafetyFromEndpoint(body);
+          if (safety != null) scored = { reachScore: scored.reachScore, brandSafety: safety };
+        } catch (err) {
+          if (!isNotFound(err)) throw err;
+        }
       }
     }
     const updatedAt = nowFn().toISOString();

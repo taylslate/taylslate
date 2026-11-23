@@ -147,8 +147,8 @@ export async function readScoringFile(dir: string): Promise<Record<string, Scori
     const { readFile } = await import("node:fs/promises");
     const text = await readFile(join(dir, "scoring-backfill.json"), "utf8");
     const parsed = JSON.parse(text) as { version?: unknown; scoring?: unknown };
-    if (!parsed || parsed.version !== 1 || !isScoringMap(parsed.scoring)) return {};
-    return parsed.scoring;
+    if (!parsed || parsed.version !== 1) return {};
+    return scoringMapFrom(parsed.scoring);
   } catch {
     return {};
   }
@@ -158,8 +158,28 @@ export async function writeScoringFile(dir: string, scoring: Record<string, Scor
   await writeJsonAtomic(join(dir, "scoring-backfill.json"), { version: 1, scoring });
 }
 
-function isScoringMap(value: unknown): value is Record<string, ScoringProgress> {
+function scoringMapFrom(value: unknown): Record<string, ScoringProgress> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, ScoringProgress> = {};
+  let skipped = 0;
+  for (const [id, entry] of Object.entries(value)) {
+    if (!isScoringEntry(entry)) {
+      skipped += 1;
+      continue;
+    }
+    out[id] = { reachScore: entry.reachScore, brandSafety: entry.brandSafety };
+  }
+  if (skipped > 0) console.warn(`Skipped ${skipped} scoring checkpoint entries.`);
+  return out;
+}
+
+function isScoringEntry(value: unknown): value is ScoringProgress {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!("reachScore" in value) || !("brandSafety" in value)) return false;
+  const score = value.reachScore;
+  if (score !== null && (typeof score !== "number" || !Number.isFinite(score))) return false;
+  const safety = value.brandSafety;
+  if (safety !== null && (typeof safety !== "object" || Array.isArray(safety))) return false;
   return true;
 }
 

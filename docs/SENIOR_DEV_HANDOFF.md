@@ -14,7 +14,7 @@ Enrich calls run only for kept shows that pass one gate. `--enrich-min-audience 
 
 Qualifying shows also call `GET /podcasts/{id}/analysis`. `sponsor_history` stores sponsor name and episode count, plus the episode counts on that response. A 404 stores null. An enrich entry from the older code gets the analysis call on resume and does not repeat demographics. `Podscan calls for these flags` and the write-run day counts include analysis and leave out shows the gate skips.
 
-`--backfill-scoring-fields` runs only after search, probe, contacts, and gated enrich are finished and the catalog write has succeeded. It fills the two scoring fields for kept shows that were searched before this code. Gated kept shows go first, highest audience first, then the other kept shows. Shows that fail the keep rule are not called. Each show is one `GET /podcasts/{id}`, because that podcast object carries both fields. `/podcasts/{id}/brand-safety` is not used. It does not return the reach score. Each finished show is upserted before the next call. A daily limit or the call budget stops the backfill the same way enrich stops. A commit without the flag does not run it. The dry run prints backfill calls and days on their own lines.
+`--backfill-scoring-fields` runs only after search, probe, contacts, and gated enrich are finished and the catalog write has succeeded. It fills the two scoring fields for kept shows that were searched before this code. Gated kept shows go first, highest audience first, then the other kept shows. Shows that fail the keep rule are not called. Each show starts with `GET /podcasts/{id}`. If that call 404s or returns no brand safety, the run calls `GET /podcasts/{id}/brand-safety` once before it saves, and stores the aggregation object. A show is marked done with nulls only after that second call. The backfill only targets rows saved before the reach score and brand safety fields existed, so a new search hit with an explicit null is not retried. Each finished show is upserted before the next call. Catalog upserts are grouped by column set so a row that omits a score cannot write null over a stored score. A daily limit or the call budget stops the backfill the same way enrich stops. A commit without the flag does not run it. The dry run prints backfill calls and days on their own lines.
 
 Migration 097 is NOT applied. The CEO must name 097 before it is applied. Until then a commit prints `Migration 097 is not applied.` and writes nothing. RLS is unchanged. No new policy. No grant to anon or authenticated. Emails are not logged.
 
@@ -46,7 +46,7 @@ Apply 097 only after the CEO names it, and before either commit.
 
 ### Tests
 
-`npx tsc --noEmit` clean. `npx vitest run`: 456 files, 3768 passed, 41 skipped. `npx eslint` on the importer TypeScript files: 0 errors. `npx next build` compiled.
+`npx tsc --noEmit` clean. `npx vitest run`: 456 files, 3772 passed, 41 skipped. `npx eslint` on the importer TypeScript files: 0 errors. `npx next build` compiled.
 
 ### Known gaps
 

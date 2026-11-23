@@ -1420,7 +1420,222 @@ describe("runImport", () => {
     expect(calls.filter((path) => path === "/podcasts/kept")).toEqual([]);
     expect(store.tables.podscan_catalog[0]).not.toHaveProperty("podcast_reach_score");
   });
+
+  it("falls back to brand safety once and marks nulls only after both calls", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const rows = [
+      scoredRow("missing", 9000, "sponsored", 20),
+      scoredRow("partial", 8000, "sponsored", 20),
+      scoredRow("ready", 7000, "sponsored", 20),
+      scoredRow("empty", 6000, "sponsored", 20),
+    ];
+    const enrich: Record<string, unknown> = {};
+    for (const row of rows) {
+      enrich[row.podcastId] = {
+        demographics: { ok: true },
+        listener: row.listenerEngagement,
+        sponsorHistory: { sponsors: [], episode_counts: {} },
+      };
+    }
+    await writeFile(join(dir, "checkpoint.json"), JSON.stringify(finishedCheckpoint(rows, { enrich })), "utf8");
+    const calls: string[] = [];
+    const caller: PodscanCaller = {
+      async get<T>(path: string): Promise<T> {
+        calls.push(path);
+        if (path === "/podcasts/missing" || path === "/podcasts/empty") {
+          throw Object.assign(new Error("missing"), { status: 404 });
+        }
+        if (path === "/podcasts/missing/brand-safety") {
+          return {
+            aggregation: { max_risk_level: "low", most_common_recommendation: "safe" },
+            categories: [{ evidence: [{ excerpt: FIXTURE_EMAIL }] }],
+          } as T;
+        }
+        if (path === "/podcasts/empty/brand-safety") {
+          throw Object.assign(new Error("missing"), { status: 404 });
+        }
+        if (path === "/podcasts/partial") return { podcast_reach_score: 44, brand_safety: null } as T;
+        if (path === "/podcasts/partial/brand-safety") {
+          return { aggregation: { max_risk_level: "medium", most_common_recommendation: "warning" } } as T;
+        }
+        if (path === "/podcasts/ready") {
+          return { podcast_reach_score: 10, brand_safety: { max_risk_level: "none" } } as T;
+        }
+        throw new Error("unexpected path");
+      },
+      async post() {
+        throw new Error("probe continued");
+      },
+      rateLimit: () => ({ limit: 120, remaining: 100 }),
+    };
+    const store = memoryDb([]);
+    const args = [
+      "--commit",
+      "--floor",
+      "1000",
+      "--confirm",
+      "4",
+      "--backfill-scoring-fields",
+    ];
+    const first = await runImport(parseArgs(args), deps(dir, caller, store.db));
+    expect(first.exitCode).toBe(0);
+    expect(calls.filter((path) => path.includes("brand-safety")).sort()).toEqual([
+      "/podcasts/empty/brand-safety",
+      "/podcasts/missing/brand-safety",
+      "/podcasts/partial/brand-safety",
+    ]);
+    expect(calls).not.toContain("/podcasts/ready/brand-safety");
+    const row = (id: string) => store.tables.podscan_catalog.find((item) => item.podscan_id === id);
+    expect(row("missing")?.podcast_reach_score).toBeNull();
+    expect(row("missing")?.brand_safety).toEqual({ max_risk_level: "low", most_common_recommendation: "safe" });
+    expect(JSON.stringify(row("missing")?.brand_safety)).not.toContain("@");
+    expect(row("partial")?.podcast_reach_score).toBe(44);
+    expect(row("partial")?.brand_safety).toEqual({
+      max_risk_level: "medium",
+      most_common_recommendation: "warning",
+    });
+    expect(row("ready")?.brand_safety).toEqual({ max_risk_level: "none" });
+    expect(row("empty")?.podcast_reach_score).toBeNull();
+    expect(row("empty")?.brand_safety).toBeNull();
+    const before = calls.length;
+    const again = await runImport(parseArgs(args), deps(dir, caller, store.db));
+    expect(again.exitCode).toBe(0);
+    expect(calls.length).toBe(before);
+    assertNoSecrets(logs.join("\n"));
+  });
+
+  it("does not mark a show done when the brand safety call fails", async () => {
+    const dir = await tempDir();
+    spyLogs();
+    const rows = [scoredRow("boom", 9000, "sponsored", 20)];
+    const enrich = {
+      boom: {
+        demographics: { ok: true },
+        listener: rows[0].listenerEngagement,
+        sponsorHistory: { sponsors: [], episode_counts: {} },
+      },
+    };
+    await writeFile(join(dir, "checkpoint.json"), JSON.stringify(finishedCheckpoint(rows, { enrich })), "utf8");
+    const calls: string[] = [];
+    const caller: PodscanCaller = {
+      async get<T>(path: string): Promise<T> {
+        calls.push(path);
+        if (path === "/podcasts/boom") throw Object.assign(new Error("missing"), { status: 404 });
+        throw Object.assign(new Error("down"), { status: 400 });
+      },
+      async post() {
+        throw new Error("probe continued");
+      },
+      rateLimit: () => ({ limit: 120, remaining: 100 }),
+    };
+    const store = memoryDb([]);
+    const result = await runImport(
+      parseArgs(["--commit", "--floor", "1000", "--confirm", "1", "--backfill-scoring-fields"]),
+      deps(dir, caller, store.db)
+    );
+    expect(result.exitCode).toBe(1);
+    expect(calls).toEqual(["/podcasts/boom", "/podcasts/boom/brand-safety"]);
+    expect(store.tables.podscan_catalog[0]).not.toHaveProperty("podcast_reach_score");
+    const saved = await readCheckpoint(join(dir, "checkpoint.json"));
+    expect(saved.scoring?.boom).toBeUndefined();
+  });
+
+  it("does not null stored scores when a batch mixes rows with and without them", async () => {
+    const dir = await tempDir();
+    spyLogs();
+    const oldRow = scoredRow("old_show", 9000, "sponsored", 20);
+    const freshRow = {
+      ...scoredRow("new_show", 8000, "sponsored", 20),
+      reachScore: 55,
+      brandSafety: { max_risk_level: "low" },
+    };
+    const enrich = {
+      old_show: {
+        demographics: { ok: true },
+        listener: oldRow.listenerEngagement,
+        sponsorHistory: { sponsors: [], episode_counts: {} },
+      },
+      new_show: {
+        demographics: { ok: true },
+        listener: freshRow.listenerEngagement,
+        sponsorHistory: { sponsors: [], episode_counts: {} },
+      },
+    };
+    await writeFile(
+      join(dir, "checkpoint.json"),
+      JSON.stringify(finishedCheckpoint([oldRow, freshRow], { enrich })),
+      "utf8"
+    );
+    const store = supabaseBatchDb([
+      {
+        podscan_id: "old_show",
+        podcast_reach_score: 80,
+        brand_safety: { max_risk_level: "medium" },
+      },
+    ]);
+    const result = await runImport(
+      parseArgs(["--commit", "--floor", "1000", "--confirm", "2"]),
+      deps(dir, detailCaller([], () => { throw new Error("no podscan"); }), store.db)
+    );
+    expect(result.exitCode).toBe(0);
+    const old = store.tables.podscan_catalog.find((row) => row.podscan_id === "old_show");
+    const fresh = store.tables.podscan_catalog.find((row) => row.podscan_id === "new_show");
+    expect(old?.podcast_reach_score).toBe(80);
+    expect(old?.brand_safety).toEqual({ max_risk_level: "medium" });
+    expect(fresh?.podcast_reach_score).toBe(55);
+    expect(fresh?.brand_safety).toEqual({ max_risk_level: "low" });
+    const catalogBatches = store.upserts.filter((item) => item.table === "podscan_catalog");
+    expect(catalogBatches).toHaveLength(2);
+    expect(catalogBatches.some((item) => item.rows.every((row) => !("podcast_reach_score" in row)))).toBe(true);
+    expect(catalogBatches.some((item) => item.rows.every((row) => "podcast_reach_score" in row))).toBe(true);
+  });
 });
+
+function supabaseBatchDb(catalog: Array<Record<string, unknown>>) {
+  const tables: Record<string, Array<Record<string, unknown>>> = {
+    shows: [],
+    podscan_catalog: catalog.map((row) => ({ ...row })),
+    show_contacts: [],
+  };
+  const upserts: Array<{ table: string; onConflict: string; rows: Record<string, unknown>[] }> = [];
+  const db: Db = {
+    from(table: string) {
+      return {
+        select() {
+          return {
+            async limit() {
+              return { data: [], error: null };
+            },
+            async in(column, values) {
+              const rows = (tables[table] ?? []).filter((row) => values.includes(String(row[column] ?? "")));
+              return { data: rows as unknown as ShowLink[], error: null };
+            },
+          };
+        },
+        async upsert(rows, options) {
+          upserts.push({ table, onConflict: options.onConflict, rows: rows.map((row) => ({ ...row })) });
+          const columns = new Set<string>();
+          for (const row of rows) {
+            for (const key of Object.keys(row)) columns.add(key);
+          }
+          const keys = options.onConflict.split(",").map((key) => key.trim());
+          const existing = tables[table] ?? [];
+          for (const row of rows) {
+            const full: Record<string, unknown> = {};
+            for (const column of columns) full[column] = column in row ? row[column] : null;
+            const idx = existing.findIndex((item) => keys.every((key) => item[key] === full[key]));
+            if (idx === -1) existing.push(full);
+            else existing[idx] = { ...existing[idx], ...full };
+          }
+          tables[table] = existing;
+          return { data: null, error: null };
+        },
+      };
+    },
+  };
+  return { db, tables, upserts };
+}
 
 function emptyContact(): Record<string, unknown> {
   return {
