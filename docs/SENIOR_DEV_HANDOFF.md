@@ -4043,3 +4043,48 @@ Covered here: a second account that accepts a brand outreach cannot edit; the sa
 - Deal-based edit stays off until a signed-in show action records `auth.uid()` as `domain_events.actor_id`.
 - Later: clearing `verified` when a verified owner changes `rss_url`, `youtube_channel_id`, or `name`. Not this PR.
 - Later: `addDealGrants` reads `domain_events` for the actor with no row limit. The branch is dormant because no current route records that actor. Not this PR.
+
+## VERIFY-BADGE1
+
+### What was built
+
+Brands see a small "Verified" badge next to a show name only when that show proved ownership. Claimed and unclaimed shows show nothing.
+
+`verifiedShowIds` in `lib/shows/verified-flag.ts` is the one rule. It uses the service-role client. An id is included only when `shows.ownership_status` is `verified` and a `show_ownership_proofs` row for that show has `status` `verified`. Reads use `.in()` in chunks of 80. Any read error returns an empty set. The log is `[shows] verified read` plus a Postgres code, or `unknown`. It does not include a show id.
+
+A deal, a show profile, a contact email, `shows.is_claimed`, `shows.is_verified`, and `getVerifiedProfileTies` are not read. `/api/v1` calls the same helper. Its `verified` boolean is unchanged. `ownership_status` stays off the v1 payload and off the brand search payload.
+
+The campaign page stamps `verified` onto the test, scale, and bench cards after the tier read. Ranking does not use the flag. The conviction bonus from VERIFY-RANK1 is unchanged. `GET /api/shows` adds the boolean on the brand and show paths that feed search. The agent roster body is unchanged. The badge renders only when `verified === true`. The accessible name is "Verified show". Colors are existing `--ts-*` tokens. No new animation.
+
+No migration. Nothing was written to `ldtmhafewfifdizgfrnn`. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. No Vercel env change.
+
+### Where
+
+- `lib/shows/verified-flag.ts` and its test
+- `components/shows/VerifiedBadge.tsx` and its test
+- `lib/api/v1/reads.ts` (calls the helper)
+- `lib/discovery/tiered-universe.ts` (optional `verified` on the card type; the tier reader does not set it)
+- `app/(dashboard)/campaigns/[id]/page.tsx` (stamps the flag)
+- `app/(dashboard)/campaigns/[id]/conviction-discovery-view.tsx` and its test
+- `app/(dashboard)/shows/search/search-client.tsx` and its test
+- `app/api/shows/route.ts` and its test
+- `docs/jobs/VERIFY-BADGE1.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 473 files, 3890 passed, 41 skipped.
+
+`npx eslint` on the changed TypeScript files: the new files are clean. `search-client.tsx` still reports the pre-existing `react-hooks/set-state-in-effect` error on the idle branch of the search effect. That line is unchanged from main. `conviction-discovery-view.test.tsx` still has two pre-existing unused-var warnings (`score`, `entry`).
+
+`npx next build` compiled successfully and generated 149 pages.
+
+Covers a verified column plus a verified proof, a verified column with no proof, claimed and unclaimed rows, a verified proof on a claimed or unclaimed show, `is_verified` and `is_claimed` alone, a read error, a thrown read, chunked `.in()` calls, v1 `verified` still false for a deal or an email and true only with the column and a proof, the search payload dropping `ownership_status`, and the badge on test, scale, and bench cards plus search results only when `verified` is true.
+
+### Known gaps
+
+- Live `ldtmhafewfifdizgfrnn` has no verified shows today. The screenshots use a mocked verified show.
+- The agent roster response from `GET /api/shows` does not add `verified`. Brand search does not use that branch.
+- This PR does not merge.

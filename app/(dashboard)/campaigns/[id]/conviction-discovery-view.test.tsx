@@ -247,6 +247,47 @@ describe("ConvictionDiscoveryView — tiered dual output", () => {
     expect(screen.getByText("Bench Show")).toBeInTheDocument();
   });
 
+  it("shows a Verified badge only on shows the server marked verified", async () => {
+    const view = renderTiered({
+      test: [
+        tieredShow({
+          showId: "t1",
+          verified: true,
+          show: show({ id: "t1", name: "Test Show" }),
+        }),
+      ],
+      scale: [
+        tieredShow({
+          showId: "s1",
+          tier: "scale",
+          verified: false,
+          show: show({ id: "s1", name: "Scale Show" }),
+        }),
+      ],
+      bench: [
+        tieredShow({
+          showId: "b1",
+          tier: "dropped",
+          verified: true,
+          composite: 30,
+          band: "speculative",
+          show: show({ id: "b1", name: "Bench Show" }),
+        }),
+      ],
+    });
+
+    expect(screen.getByTestId("test-show-card").querySelector("[data-testid='verified-badge']")).toHaveAccessibleName(
+      "Verified show"
+    );
+    expect(screen.getByTestId("scale-show-card").querySelector("[data-testid='verified-badge']")).toBeNull();
+    expect(view.container.textContent).not.toContain("Claimed");
+
+    await userEvent.click(screen.getByRole("button", { name: /Other matches \(1\)/ }));
+    expect(screen.getByTestId("bench-show-card").querySelector("[data-testid='verified-badge']")).toHaveAccessibleName(
+      "Verified show"
+    );
+  });
+
   it("makes both test and scale shows cart-selectable (bench is not)", () => {
     renderTiered({
       test: [tieredShow({ showId: "t1", show: show({ id: "t1", name: "Test Show" }) })],

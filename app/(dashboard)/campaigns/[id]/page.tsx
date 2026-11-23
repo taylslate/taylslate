@@ -22,6 +22,18 @@ import CampaignDetail from "./campaign-detail";
 import DiscoveryList from "./discovery-list";
 import ConvictionDiscoveryView from "./conviction-discovery-view";
 import { listPublishedSurfacesForShows } from "@/lib/data/show-surfaces";
+import { verifiedShowIds } from "@/lib/shows/verified-flag";
+
+function stampVerified(tiered: TieredUniverse, verified: ReadonlySet<string>): TieredUniverse {
+  const stamp = (rows: TieredUniverse["test"]) =>
+    rows.map((row) => ({ ...row, verified: verified.has(row.showId) }));
+  return {
+    ...tiered,
+    test: stamp(tiered.test),
+    scale: stamp(tiered.scale),
+    bench: stamp(tiered.bench),
+  };
+}
 
 export default async function CampaignDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -80,16 +92,18 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     });
     // Signals and annotations are independent reads. Neither one decides
     // which shows stay in the list.
-    const [annotationsByShow, marketSignalsByShow] = await Promise.all([
+    const showIds = Array.from(new Set(tieredShows.map((s) => s.showId)));
+    const [annotationsByShow, marketSignalsByShow, verifiedIds] = await Promise.all([
       (async (): Promise<Record<string, FounderAnnotationRow[]>> => {
-        if (!isAdmin || tieredShows.length === 0) return {};
-        const showIds = Array.from(new Set(tieredShows.map((s) => s.showId)));
+        if (!isAdmin || showIds.length === 0) return {};
         return getFounderAnnotationsForShows(showIds);
       })(),
       tieredShows.length > 0
         ? loadMarketSignalsForShows(tieredShows.map(showRefFromTiered), signalContext)
         : Promise.resolve({} as Record<string, MarketSignal[]>),
+      verifiedShowIds(showIds),
     ]);
+    if (tiered) tiered = stampVerified(tiered, verifiedIds);
 
     const surfaceIds = tiered
       ? [...tiered.test, ...tiered.scale, ...tiered.bench].map((show) => show.showId)

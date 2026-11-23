@@ -54,6 +54,7 @@ import {
   useTransition,
 } from "react";
 import SurfaceAddons from "@/components/shows/SurfaceAddons";
+import VerifiedBadge from "@/components/shows/VerifiedBadge";
 import type { SellableSurface } from "@/lib/shows/surfaces";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -1357,6 +1358,7 @@ function TestShowCard({
             <span className={`truncate text-sm font-semibold ${inkText}`}>
               {name}
             </span>
+            {entry.verified === true ? <VerifiedBadge /> : null}
             <BandBadge label={meta.label} />
             {ringLabel && <RingTag label={ringLabel} />}
           </div>
@@ -1477,6 +1479,7 @@ function ScaleShowCard({
             <span className={`truncate text-sm font-semibold ${inkText}`}>
               {name}
             </span>
+            {entry.verified === true ? <VerifiedBadge /> : null}
             <BandBadge label={meta.label} />
             {ringLabel && <RingTag label={ringLabel} />}
           </div>
@@ -1574,6 +1577,7 @@ function BenchShowCard({
             <span className={`truncate text-sm font-medium ${inkText}`}>
               {name}
             </span>
+            {entry.verified === true ? <VerifiedBadge /> : null}
             <BandBadge label={meta.label} />
             {ringLabel && <RingTag label={ringLabel} />}
           </div>

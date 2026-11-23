@@ -16,6 +16,7 @@ import {
   projectShows,
   stripOwnershipStatus,
 } from "@/lib/shows/public-fields";
+import { verifiedShowIds } from "@/lib/shows/verified-flag";
 
 export async function GET(request: NextRequest) {
   try {
@@ -86,10 +87,10 @@ export async function GET(request: NextRequest) {
     const fullIds = await fullShowIdsForCaller(user.id, shows);
     const projected = projectShows(shows, fullIds);
     if (!projected.some((show) => hasOwnershipStatus(show))) {
-      return NextResponse.json(projected);
+      return NextResponse.json(await withVerified(projected));
     }
     const keep = await ownershipVisibleIds(user.id, shows, await isShowsAdmin(user.id));
-    return NextResponse.json(stripOwnershipStatus(projected, keep));
+    return NextResponse.json(await withVerified(stripOwnershipStatus(projected, keep)));
   } catch (error) {
     console.error("Error fetching shows:", error);
     return NextResponse.json(
@@ -97,6 +98,14 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// Brand search reads this boolean. It does not copy ownership_status.
+async function withVerified<T extends { id: string }>(
+  shows: T[]
+): Promise<Array<T & { verified: boolean }>> {
+  const verified = await verifiedShowIds(shows.map((show) => show.id));
+  return shows.map((show) => ({ ...show, verified: verified.has(show.id) }));
 }
 
 export async function POST(request: NextRequest) {

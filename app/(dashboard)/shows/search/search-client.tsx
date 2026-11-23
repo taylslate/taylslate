@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import VerifiedBadge from "@/components/shows/VerifiedBadge";
 
 export const SHOW_SEARCH_LIMIT = 50;
 export const SHOW_SEARCH_MAX = 100;
@@ -16,6 +17,7 @@ export type PublicShow = {
   platform: "podcast" | "youtube";
   audienceSize: number;
   categories: string[];
+  verified: boolean;
 };
 
 type Status = "idle" | "loading" | "ready" | "error";
@@ -119,6 +121,7 @@ export function toPublicShow(row: unknown): PublicShow | null {
     platform: show.platform,
     audienceSize,
     categories,
+    verified: show.verified === true,
   };
 }
 
@@ -316,6 +319,7 @@ export default function ShowSearchClient() {
                     <h2 className="truncate font-semibold text-[var(--ts-ink-on-paper)]">
                       {show.name}
                     </h2>
+                    {show.verified === true ? <VerifiedBadge /> : null}
                     <span className="shrink-0 rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--ts-ink-muted-on-paper)]">
                       {show.platform}
                     </span>
