@@ -63,8 +63,8 @@ export interface HydrateDemographicsDeps {
   /** Clock for the pass 2 budget. Tests inject one. Default is Date.now. */
   now?: () => number;
   /**
-   * Media-kit country shares from show_profiles that have a verified tie
-   * to a catalog show (a deal, or a show_owner email). Omitted → skip.
+   * Media-kit country shares from show_profiles that showEditGrantIds
+   * allows. A deal profile id alone is not a tie. Omitted means skip.
    * A shared name or show_profiles.podscan_id is not a tie. The podscanId
    * on the identity is the catalog shows.podscan_id, used for the Podscan
    * demographics fetch, and is not a profile join. Fills country keys the

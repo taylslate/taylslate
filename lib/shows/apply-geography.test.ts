@@ -61,6 +61,24 @@ function rowsFor(table: string): Row[] {
 
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
+    auth: {
+      admin: {
+        getUserById(id: string) {
+          const email = authEmails.byId.get(id);
+          if (!email) return Promise.resolve({ data: { user: null }, error: null });
+          return Promise.resolve({
+            data: {
+              user: {
+                id,
+                email,
+                email_confirmed_at: "2026-01-01T00:00:00.000Z",
+              },
+            },
+            error: null,
+          });
+        },
+      },
+    },
     from(table: string) {
       const filters: Filter[] = [];
       let payload: Row | null = null;
@@ -111,6 +129,7 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }));
 
+import { ownerShowSlug } from "@/lib/shows/surfaces";
 import {
   applyAudienceGeographyToShow,
   geographyForIdentity,
@@ -210,7 +229,7 @@ describe("audience geography ties", () => {
     ).toBe(false);
   });
 
-  it("writes through a deal and leaves the show named by a stored podscan id alone", async () => {
+  it("does not write geography for a bare deal profile id", async () => {
     db.shows.push({
       id: OTHER_ID,
       slug: "other-show",
@@ -229,24 +248,37 @@ describe("audience geography ties", () => {
       audience_geography: { canada: 12 },
     });
     expect(ok).toBe(true);
-    expect(db.shows[0].demographics).toMatchObject({ canada: 12, male: 55 });
+    expect(db.shows[0].demographics).toEqual({ us: 70, male: 55 });
     expect(db.shows[1].demographics).toEqual({ us: 10 });
   });
 
-  it("writes geography when a deal links the profile to the catalog show", async () => {
+  it("does not write when the profile has no user id", async () => {
     db.deals.push({ show_id: CATALOG_ID, show_profile_id: "prof-imposter" });
     const ok = await applyAudienceGeographyToShow({
       id: "prof-imposter",
-      user_id: "user-imposter",
       audience_geography: { canada: 12 },
     });
     expect(ok).toBe(true);
-    expect(db.shows[0].demographics).toMatchObject({ canada: 12, male: 55 });
+    expect(db.shows[0].demographics).toEqual({ us: 70, male: 55 });
+    expect(filtersSeen).toEqual([]);
   });
 
-  it("writes geography onto the show_owner row with a matching contact email", async () => {
+  it("does not write a show_owner row that only matches the contact email", async () => {
     db.shows[0].data_sources = ["show_owner"];
     db.shows[0].contact_email = "Imposter@Example.com";
+    const ok = await applyAudienceGeographyToShow({
+      id: "prof-imposter",
+      user_id: "user-imposter",
+      audience_geography: { australia: 8 },
+    });
+    expect(ok).toBe(true);
+    expect(db.shows[0].demographics).toEqual({ us: 70, male: 55 });
+  });
+
+  it("writes geography onto the server owner slug", async () => {
+    db.shows[0].data_sources = ["show_owner"];
+    db.shows[0].contact_email = "Imposter@Example.com";
+    db.shows[0].slug = ownerShowSlug("user-imposter");
     const ok = await applyAudienceGeographyToShow({
       id: "prof-imposter",
       user_id: "user-imposter",
@@ -318,7 +350,7 @@ describe("geography lookup", () => {
     ).toBe(false);
   });
 
-  it("returns the tied profile's geography for the deal's show, ignoring its podscan id", async () => {
+  it("does not add a deal-only tie to scoring geography", async () => {
     db.deals.push({ show_id: CATALOG_ID, show_profile_id: "prof-imposter" });
     db.show_profiles[0].podscan_id = "pd_other";
     const rows = await getVerifiedAudienceGeography([
@@ -327,6 +359,20 @@ describe("geography lookup", () => {
         podscanId: "pd_smartless",
         contactEmail: "host@smartless.com",
         dataSources: ["podscan"],
+      },
+    ]);
+    expect(rows).toEqual([]);
+  });
+
+  it("returns geography when the edit grant holds", async () => {
+    db.shows[0].data_sources = ["show_owner"];
+    db.shows[0].contact_email = "imposter@example.com";
+    db.shows[0].slug = ownerShowSlug("user-imposter");
+    const rows = await getVerifiedAudienceGeography([
+      {
+        showId: CATALOG_ID,
+        contactEmail: "imposter@example.com",
+        dataSources: ["show_owner"],
       },
     ]);
     expect(rows).toEqual([{ showId: CATALOG_ID, geography: { uk: 99 } }]);

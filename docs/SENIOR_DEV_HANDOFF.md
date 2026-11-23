@@ -4008,13 +4008,15 @@ Covers a bare deal profile that stays unclaimed, a sourced accept whose recorded
 
 Catalog edit is limited to the real show owner or an admin. A brand can no longer gain edit rights by sending outreach to an email it controls and accepting it. `deals.show_profile_id` and a `show_owner` contact email are not enough.
 
-`showEditGrant` in `lib/ownership/edit-rights.ts` is the shared check. `canEditShow` calls it. `ownershipVisibleIds` calls it before `ownership_status` is returned. `replaceOwnerSurfaces` calls it before a catalog show receives surfaces. Identity is `auth.uid()` through `getUserById`. `profiles.email` is not read.
+`showEditGrant` in `lib/ownership/edit-rights.ts` is the shared check. `canEditShow` calls it. `ownershipVisibleIds` calls it before `ownership_status` is returned. `fullShowIdsForCaller` calls it, so a deal profile id does not unlock contact or the rate card. `replaceOwnerSurfaces` calls it, and a verified proof is a catalog candidate, so those surfaces land on the catalog show. Identity is `auth.uid()` through `getUserById`. `profiles.email` is not read. An admin grant also requires `email_confirmed_at`.
 
 The rule matches claimed ranking in `lib/ownership/persist.ts`, plus a verified `show_ownership_proofs` row whose `user_id` is this auth user. The verify flow already stores that id. Admin approve stores the admin on `decided_by` and leaves `user_id` in place. A verified column with no proof for this user does not grant edit. The deal branch requires an accepted or signed deal, a sourced `show_contacts` email (`podscan` or `apple_rss`), a confirmed login, and `domain_events.actor_id` equal to this user. No current route records that actor, so the branch is dormant. An approved roster link is not an edit grant. Create, import, and claim are unchanged.
 
-Migration 101 replaces `user_owns_show` and is not applied. The header says NOT APPLIED LIVE, CHRIS MUST NAME IT. The function stays security invoker and calls `private.show_edit_grant`, a security definer with `search_path = ''`, because authenticated cannot read `show_contacts`, `domain_events`, or `auth.users`. The helper returns a boolean only. Execute stays with authenticated and service_role. anon and public stay revoked. No new table. The app does not call the function, so owner and admin edits work before 101 is pasted. Until then, a direct PostgREST write to `show_surfaces` still uses the old body.
+Geography writes return immediately when the profile has no `user_id`, and they write only shows `showEditGrantIds` grants. Scoring geography and market-signal profile ties use that same filter. A bare deal or a show_owner email without the server slug does not change `shows.demographics` and does not add host history. The v1 `verified` flag is true only when `ownership_status` is `verified` and a verified proof row exists for that show.
 
-`getVerifiedProfileTies` is unchanged. Geography and the v1 `verified` flag still use it. That is not an edit grant. The brand verified badge is a separate job.
+Migration 101 replaces `user_owns_show` and is not applied. The header says NOT APPLIED LIVE, CHRIS MUST NAME IT. The function stays security invoker and calls `private.show_edit_grant`, a security definer with `search_path = ''`, because authenticated cannot read `show_contacts`, `domain_events`, or `auth.users`. The helper returns a boolean only. Execute stays with authenticated and service_role. anon and public stay revoked. No new table. Apply 101 in the same step as the merge. Until then, a direct PostgREST write to `show_surfaces` still uses the old body, and that path is exploitable. App edits already use the helper.
+
+`getVerifiedProfileTies` itself is unchanged. Callers that used to trust it for edit, geography, the full show, or verified no longer do.
 
 No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. The importer was not edited. The exposure allowlist adds `supabase/migrations/101_` so the migration may name `show_contacts`. Nothing was written to `ldtmhafewfifdizgfrnn`.
 
@@ -4033,11 +4035,11 @@ No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/bil
 
 ### Tests
 
-Covered here: a second account that accepts a brand outreach cannot edit; the same accept with no recorded actor cannot edit; a future sourced show action can; the server owner slug can; a forged slug cannot; an unconfirmed login cannot; a verified proof grants only the stored user id; an admin grant uses the auth login and does not read `profiles.email`; an approved roster link does not edit; a bare deal does not receive surfaces; PGlite shows the same results for `user_owns_show`, including a blocked surface insert.
+Covered here: a second account that accepts a brand outreach cannot edit; the same accept with no recorded actor cannot edit; a future sourced show action can; the server owner slug can; a forged slug cannot; an unconfirmed login cannot, including an unconfirmed admin; a verified proof grants only the stored user id; an admin grant uses the confirmed auth login and does not read `profiles.email`; an approved roster link does not edit; a bare deal does not receive surfaces; a verified proof does; a bare deal and a show_owner email without the server slug leave demographics unchanged; a granted owner still writes; a deal-only tie adds no scoring geography and no market-signal host history; v1 `verified` stays false for a deal or an email tie and turns true only with the column and a proof; PGlite shows the same results for `user_owns_show`, including a blocked surface insert.
 
 ### Known gaps
 
-- Migration 101 is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and only when Chris names 101.
-- Until 101 is applied, direct PostgREST writes to `show_surfaces` still use the previous `user_owns_show` body. App edits already use the new helper.
+- Migration 101 is not applied. Apply it on `ldtmhafewfifdizgfrnn` in the same step as the merge, and only when Chris names 101. Until then, direct PostgREST writes to `show_surfaces` still use the previous `user_owns_show` body, and that path is exploitable. App edits already use the new helper.
 - Deal-based edit stays off until a signed-in show action records `auth.uid()` as `domain_events.actor_id`.
-- `getVerifiedProfileTies` still treats a deal profile id as a read tie for geography, the v1 `verified` flag, and the full show object. That is not catalog edit.
+- Later: clearing `verified` when a verified owner changes `rss_url`, `youtube_channel_id`, or `name`. Not this PR.
+- Later: `addDealGrants` reads `domain_events` for the actor with no row limit. The branch is dormant because no current route records that actor. Not this PR.

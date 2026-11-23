@@ -155,6 +155,13 @@ describe("canEditShow", () => {
     expect(tables).not.toContain("profiles");
   });
 
+  it("does not grant an unconfirmed admin login", async () => {
+    process.env.INTERNAL_ADMIN_EMAILS = "ops@taylslate.com";
+    confirm(USER, "ops@taylslate.com", false);
+    expect(await canEditShow(USER, SHOW)).toBe(false);
+    expect(await isShowsAdmin(USER)).toBe(true);
+  });
+
   it("does not grant edit to an approved roster link", async () => {
     confirm(USER, "rep@taylslate.com");
     db.shows.push({ id: SHOW, agent_id: USER, contact_email: "", data_sources: [] });

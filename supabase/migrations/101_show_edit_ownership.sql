@@ -43,9 +43,11 @@
 -- function can call the helper.
 --
 -- Idempotent. Safe to re-run. The app does not call either
--- function. Deploying the app before this file is applied does
--- not break owner or admin edits. Until it is applied, a direct
--- PostgREST write to show_surfaces still uses the previous body.
+-- function. App edits use the service role after canEditShow, so
+-- those routes do not break before this file is applied.
+-- Apply 101 in the same step as the merge. Until it is applied,
+-- a direct PostgREST write to show_surfaces still uses the
+-- previous body, and that path is exploitable.
 --
 -- Introspection (run after applying, read only):
 --   select n.nspname, p.proname, p.prosecdef, p.proconfig

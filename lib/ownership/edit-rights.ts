@@ -81,7 +81,7 @@ async function readLogin(userId: string): Promise<Login> {
     const email = lower(result.data?.user?.email);
     const confirmed = text(result.data?.user?.email_confirmed_at).length > 0;
     return {
-      admin: isInternalAdmin(email || null),
+      admin: confirmed && isInternalAdmin(email || null),
       confirmedEmail: email && confirmed ? email : null,
     };
   } catch {

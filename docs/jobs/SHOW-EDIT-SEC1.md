@@ -6,7 +6,7 @@ Migration 101 is not applied. The header says NOT APPLIED LIVE, CHRIS MUST NAME 
 
 A caller may edit a show only when one of these holds for `auth.uid()`:
 
-1. Admin. `isShowsAdmin` is unchanged. It reads `INTERNAL_ADMIN_EMAILS` against the auth login from `getUserById`. `profiles.email` is not an admin grant. SQL has no admin branch because the allowlist is not in the database. App writes use the service role after this check.
+1. Admin. The auth login from `getUserById` is on `INTERNAL_ADMIN_EMAILS` and `email_confirmed_at` is set. `isShowsAdmin` is unchanged and does not read that flag. `profiles.email` is not an admin grant. SQL has no admin branch because the allowlist is not in the database. App writes use the service role after this check.
 2. Server owner row. `data_sources` contains `show_owner`, `slug` is `ownerShowSlug(uid)` (the slug `resolveOwnerShowId` writes), a `show_profiles` row exists for that user, `contact_email` equals that user's auth login, and `email_confirmed_at` is not null. Same owner-row rule as `claimLookup` in `lib/ownership/persist.ts`.
 3. Verified proof. `show_ownership_proofs.status` is `verified` and `user_id` is this auth user. The verify flow (`lib/ownership/check.ts`) inserts `user_id` and later sets that same row to `verified`. Admin approve (`lib/ownership/review.ts`) sets `decided_by` and does not replace `user_id`. A `shows.ownership_status` of `verified` with no proof for this user does not grant edit. Pending, rejected, contested, and expired proofs do not grant edit.
 4. Deal. The same rule as `claimLookup`. The outreach was accepted or `deals.show_signed_at` is set. Declined and cancelled deals are out. `show_profiles.user_id` is `domain_events.actor_id` on `deal.created`, `io.show_signed`, or `io.counter_accepted` for that deal or outreach. `outreaches.sent_to_email` matches `show_contacts.email` for this show with source `podscan` or `apple_rss`. The auth user has `email_confirmed_at`. No current route records that actor. Token accept logs `deal.created` with no actor. Accept-counter records the brand. The DocuSign webhook logs `io.show_signed` with no actor. This lane does not add that plumbing. The branch stays, and its test is a future signed-in show action.
@@ -20,9 +20,15 @@ Not an edit grant:
 - `profiles.email` or `profiles.role`.
 - An approved `agent_show_relationships` row, or `shows.agent_id`. Roster create, import, and `POST /api/shows/[id]/claim` are unchanged. They are not catalog edit.
 
-`showEditGrant` / `showEditGrantIds` in `lib/ownership/edit-rights.ts` is the only app check. `canEditShow` calls it. `ownershipVisibleIds` calls it for who may see `ownership_status`. `replaceOwnerSurfaces` calls it before attaching a catalog show, so a bare deal no longer receives surfaces. The owner slug path still creates or reuses `owner-{uid}`.
+`showEditGrant` / `showEditGrantIds` in `lib/ownership/edit-rights.ts` is the shared check. `canEditShow` calls it. `ownershipVisibleIds` calls it for who may see `ownership_status`. `fullShowIdsForCaller` calls it for the owner portion of the full show object. A brand deal still returns the full object through `brand_id`, `agency_id`, or `brand_profile_id`. `replaceOwnerSurfaces` calls it before attaching a catalog show. Candidates include a verified proof for this user, so that catalog show receives the surfaces. A bare deal does not. The owner slug path still creates or reuses `owner-{uid}`.
 
-`getVerifiedProfileTies` is unchanged. Geography, the v1 show `verified` flag, and `fullShowIdsForCaller` still use it. Those are not edit rights. The brand verified badge is a separate job. A brand deal still returns the full show object through `brand_id`, `agency_id`, or `brand_profile_id`, and `ownership_status` is still stripped unless the edit grant or an admin says otherwise.
+An admin grant requires `email_confirmed_at`. `isShowsAdmin` itself is unchanged and does not read that flag.
+
+Geography writes (`findTiedShows`) return immediately when the profile has no `user_id`. Candidate shows from a deal or a contact email are written only when `showEditGrantIds` grants them. `getVerifiedAudienceGeography` and the market-signal profile lookup keep a tie only when that grant holds, so a deal-only tie does not enter scoring or host-reported signals.
+
+The v1 show `verified` flag is true only when `shows.ownership_status` is `verified` and a `show_ownership_proofs` row for that show is `verified`. A deal profile id or a contact email does not set it. The column is not copied onto the payload.
+
+`getVerifiedProfileTies` itself is unchanged. Callers that used to treat its result as edit, geography, a full row, or verified now filter it or no longer call it.
 
 ## Migration 101
 
@@ -30,7 +36,7 @@ Not an edit grant:
 
 Execute stays with `authenticated` and `service_role`. `anon` and `PUBLIC` stay revoked. Usage on schema `private` is granted to `authenticated` and `service_role` so the invoker function can call the helper. No new table.
 
-The app does not call either function. Owner and admin edits work before 101 is applied, because those writes use the service role after `canEditShow`. Until 101 is applied, a direct PostgREST write to `show_surfaces` still uses the previous function body.
+The app does not call either function. Owner and admin edits in the app use the service role after `canEditShow`, so those routes are safe before 101 is pasted. Apply 101 in the same step as the merge. Until it is applied, a direct PostgREST write to `show_surfaces` still uses the previous function body, and that path is exploitable.
 
 ## Security
 

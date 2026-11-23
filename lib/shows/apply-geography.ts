@@ -2,14 +2,10 @@
 // WRITE PARSED GEOGRAPHY ONTO A VERIFIED SHOW ROW
 //
 // show_profiles holds the kit. Discovery scores `shows`. A profile
-// may copy country shares onto a catalog row only through a verified
-// tie:
-//   1. a deal whose show_profile_id is this profile and whose show_id
-//      is the catalog row
-//   2. the private show_owner row (data_sources contains show_owner)
-//      whose contact_email matches the profile owner's auth login
-//   3. a verified show_ownership_proofs row for that show_id and
-//      show_profile_id
+// may copy country shares onto a catalog row only when showEditGrantIds
+// grants that show to profile.user_id. A deal show_profile_id alone
+// does not. A show_owner contact email without the server owner slug
+// does not. A profile with no user_id writes nothing.
 //
 // show_profiles.podscan_id is self-reported. It is not a tie. A profile
 // that stores another show's Podscan id does not read or write that show.
@@ -24,6 +20,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getAuthEmail, getAuthUserIdByEmail } from "@/lib/auth/auth-email";
+import { showEditGrantIds } from "@/lib/ownership/edit-rights";
 import type { AudienceGeography, ShowDemographics, ShowProfile } from "@/lib/data/types";
 import {
   GEO_KEYS,
@@ -32,7 +29,9 @@ import {
 } from "@/lib/shows/media-kit-geo";
 
 /** `podscan_id` may be present on the row. Geography ignores it. */
-type GeoProfile = Pick<ShowProfile, "id" | "user_id" | "podscan_id" | "audience_geography">;
+type GeoProfile = Pick<ShowProfile, "id" | "podscan_id" | "audience_geography"> & {
+  user_id?: string | null;
+};
 
 interface GeoShow {
   id: string;
@@ -109,7 +108,7 @@ export async function getVerifiedAudienceGeography(
 ): Promise<VerifiedGeography[]> {
   const out: VerifiedGeography[] = [];
   try {
-    const ties = await getVerifiedProfileTies(identities);
+    const ties = await keepGrantedProfileTies(await getVerifiedProfileTies(identities));
     const profileIds = unique(ties.map((tie) => tie.profileId));
     if (profileIds.length > 0) {
       const { data: profiles, error: profileError } = await supabaseAdmin
@@ -230,59 +229,121 @@ export function geographyForIdentity(
   return hit?.geography ?? null;
 }
 
-async function findTiedShows(profile: GeoProfile): Promise<GeoShow[]> {
-  const found = new Map<string, GeoShow>();
-  const add = (rows: GeoShow[]) => {
-    for (const row of rows) {
-      if (row.id && !found.has(row.id)) found.set(row.id, row);
+/**
+ * Ties that showEditGrantIds allows for the profile's auth user.
+ * A deal link or a contact email that the grant rejects is dropped.
+ * Fail closed: a profile or grant read error drops every tie.
+ */
+export async function keepGrantedProfileTies(
+  ties: VerifiedProfileTie[]
+): Promise<VerifiedProfileTie[]> {
+  if (ties.length === 0) return [];
+  const profileIds = unique(ties.map((tie) => tie.profileId));
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("show_profiles")
+      .select("id, user_id")
+      .in("id", profileIds);
+    if (error) {
+      console.warn("[show-edit]", errorCode(error));
+      return [];
     }
-  };
-
-  if (profile.id) add(await showsByDeal(profile.id));
-  if (profile.user_id) add(await showsByOwner(profile.user_id));
-  return [...found.values()];
+    const userByProfile = new Map<string, string>();
+    for (const row of data ?? []) {
+      const id = text(row.id);
+      const userId = text(row.user_id);
+      if (id && userId) userByProfile.set(id, userId);
+    }
+    const showsByUser = new Map<string, string[]>();
+    for (const tie of ties) {
+      const userId = userByProfile.get(tie.profileId);
+      if (!userId || !tie.showId) continue;
+      const list = showsByUser.get(userId) ?? [];
+      list.push(tie.showId);
+      showsByUser.set(userId, list);
+    }
+    const allowed = new Set<string>();
+    for (const [userId, showIds] of showsByUser) {
+      const granted = await showEditGrantIds(userId, unique(showIds));
+      for (const showId of granted) allowed.add(`${userId}:${showId}`);
+    }
+    return ties.filter((tie) => {
+      const userId = userByProfile.get(tie.profileId);
+      return !!userId && allowed.has(`${userId}:${tie.showId}`);
+    });
+  } catch {
+    console.warn("[show-edit]", "unknown");
+    return [];
+  }
 }
 
-async function showsByDeal(showProfileId: string): Promise<GeoShow[]> {
-  const { data: deals, error } = await supabaseAdmin
+async function findTiedShows(profile: GeoProfile): Promise<GeoShow[]> {
+  const userId = text(profile.user_id);
+  if (!userId) return [];
+  const candidateIds = unique([
+    ...(profile.id ? await dealCandidateIds(profile.id) : []),
+    ...(await ownerCandidateIds(userId)),
+  ]);
+  if (candidateIds.length === 0) return [];
+  const granted = await showEditGrantIds(userId, candidateIds);
+  const ids = candidateIds.filter((id) => granted.has(id));
+  if (ids.length === 0) return [];
+  return loadDemographics(ids);
+}
+
+async function dealCandidateIds(showProfileId: string): Promise<string[]> {
+  const { data, error } = await supabaseAdmin
     .from("deals")
     .select("show_id")
     .eq("show_profile_id", showProfileId);
   if (error) {
-    console.warn("[applyAudienceGeographyToShow] deal lookup failed:", error.message);
+    console.warn("[applyAudienceGeographyToShow] deal lookup", errorCode(error));
     return [];
   }
-  const showIds = unique((deals ?? []).map((row) => text(row.show_id)));
-  if (showIds.length === 0) return [];
-  const { data, error: showError } = await supabaseAdmin
-    .from("shows")
-    .select("id, demographics")
-    .in("id", showIds);
-  if (showError) {
-    console.warn("[applyAudienceGeographyToShow] deal show lookup failed:", showError.message);
-    return [];
-  }
-  return (data ?? []) as GeoShow[];
+  return unique((data ?? []).map((row) => text(row.show_id)));
 }
 
-async function showsByOwner(userId: string): Promise<GeoShow[]> {
+async function ownerCandidateIds(userId: string): Promise<string[]> {
   const email = await getAuthEmail(userId);
   if (!email) return [];
 
   const { data, error: showError } = await supabaseAdmin
     .from("shows")
-    .select("id, demographics, contact_email, data_sources")
+    .select("id, contact_email, data_sources")
     .contains("data_sources", ["show_owner"])
     .ilike("contact_email", escapeIlike(email));
   if (showError) {
-    console.warn("[applyAudienceGeographyToShow] owner show lookup failed:", showError.message);
+    console.warn("[applyAudienceGeographyToShow] owner show lookup", errorCode(showError));
     return [];
   }
-  return ((data ?? []) as Array<GeoShow & { contact_email?: string | null; data_sources?: string[] | null }>)
-    .filter(
-      (row) => isShowOwnerRow(row.data_sources) && emailsMatch(row.contact_email, email)
-    )
-    .map((row) => ({ id: row.id, demographics: row.demographics }));
+  const ids: string[] = [];
+  for (const row of (data ?? []) as Array<{
+    id?: string;
+    contact_email?: string | null;
+    data_sources?: string[] | null;
+  }>) {
+    if (!row.id || !isShowOwnerRow(row.data_sources) || !emailsMatch(row.contact_email, email)) {
+      continue;
+    }
+    ids.push(row.id);
+  }
+  return ids;
+}
+
+async function loadDemographics(ids: string[]): Promise<GeoShow[]> {
+  const { data, error } = await supabaseAdmin
+    .from("shows")
+    .select("id, demographics")
+    .in("id", ids);
+  if (error) {
+    console.warn("[applyAudienceGeographyToShow] show read", errorCode(error));
+    return [];
+  }
+  return (data ?? []) as GeoShow[];
+}
+
+function errorCode(error: { code?: string; message?: string } | null): string {
+  return typeof error?.code === "string" && error.code ? error.code : "unknown";
 }
 
 async function profileByLoginEmail(email: string): Promise<{ id: string } | null> {

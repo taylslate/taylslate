@@ -6,15 +6,15 @@
 // deals.brand_id = brand user, or a brand_profiles row owned by that user.
 // Campaigns match campaigns.user_id. A show is visible when is_discoverable
 // is true, or when one of this brand's deals points at it.
-// `verified` is true only when getVerifiedProfileTies reports a tie.
-// ownership_status is not copied. Whether a claimed or verified show
-// should appear on this read is an open decision.
-// The shows.is_verified column is not copied. Contact, the rate card,
+// `verified` is true only when shows.ownership_status is verified and a
+// show_ownership_proofs row for that show is verified. A deal profile
+// id and a contact email are not enough. ownership_status is read and
+// is not copied onto the payload. The shows.is_verified column is not
+// copied. Contact, the rate card,
 // sponsors, slots, and income demographics stay on this response.
 // Callers reach it only with a key tied to a profiles row.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { getVerifiedProfileTies } from "@/lib/shows/apply-geography";
 import { ApiReadError } from "@/lib/api/v1/handler";
 import {
   cursorFilter,
@@ -70,6 +70,7 @@ const SHOW_COLUMNS = [
   "contact_email",
   "contact_method",
   "data_sources",
+  "ownership_status",
   "created_at",
 ].join(", ");
 
@@ -405,15 +406,7 @@ async function ownedCampaign(
 }
 
 async function serializeShows(rows: Record<string, unknown>[]): Promise<SerializedShow[]> {
-  const ties = await getVerifiedProfileTies(
-    rows.map((row) => ({
-      showId: typeof row.id === "string" ? row.id : undefined,
-      contactEmail: typeof row.contact_email === "string" ? row.contact_email : undefined,
-      dataSources: sourceList(row.data_sources),
-    }))
-  );
-  const verified = new Set<string>();
-  for (const tie of ties) verified.add(tie.showId);
+  const verified = await verifiedShowIds(rows);
   const out: SerializedShow[] = [];
   for (const row of rows) {
     const id = typeof row.id === "string" ? row.id : "";
@@ -422,11 +415,33 @@ async function serializeShows(rows: Record<string, unknown>[]): Promise<Serializ
   return out;
 }
 
-function sourceList(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const out: string[] = [];
-  for (const item of value) {
-    if (typeof item === "string") out.push(item);
+async function verifiedShowIds(rows: Record<string, unknown>[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  const ids = rows
+    .filter((row) => row.ownership_status === "verified")
+    .map((row) => row.id)
+    .filter((id): id is string => typeof id === "string" && isUuid(id));
+  if (ids.length === 0) return out;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("show_ownership_proofs")
+      .select("show_id, status")
+      .in("show_id", ids)
+      .eq("status", "verified");
+    if (error) {
+      console.warn("[api.v1] verified read", error.code ?? "unknown");
+      return out;
+    }
+    const proved = new Set<string>();
+    for (const row of data ?? []) {
+      const showId = typeof row.show_id === "string" ? row.show_id : "";
+      if (showId && row.status === "verified") proved.add(showId);
+    }
+    for (const id of ids) {
+      if (proved.has(id)) out.add(id);
+    }
+  } catch {
+    console.warn("[api.v1] verified read", "unknown");
   }
   return out;
 }

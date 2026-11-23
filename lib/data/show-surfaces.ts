@@ -165,7 +165,7 @@ export async function listPublishedSurfacesForShows(
  */
 async function verifiedCatalogShowIds(profile: ShowProfile, email: string): Promise<string[]> {
   if (!profile.id || !profile.user_id) return [];
-  const identities = await catalogIdentitiesForProfile(profile.id, email);
+  const identities = await catalogIdentitiesForProfile(profile.id, email, profile.user_id);
   const ids = identities
     .map((identity) => identity.showId)
     .filter((id): id is string => !!id);
@@ -176,7 +176,8 @@ async function verifiedCatalogShowIds(profile: ShowProfile, email: string): Prom
 
 async function catalogIdentitiesForProfile(
   profileId: string,
-  email: string
+  email: string,
+  userId: string
 ): Promise<ShowGeoIdentity[]> {
   const byId = new Map<string, ShowGeoIdentity>();
   const add = (row: {
@@ -248,8 +249,44 @@ async function catalogIdentitiesForProfile(
         }
       }
     }
+
+    if (userId) {
+      const { data: proofs, error: proofError } = await supabaseAdmin
+        .from("show_ownership_proofs")
+        .select("show_id")
+        .eq("user_id", userId)
+        .eq("status", "verified");
+      if (proofError) {
+        console.error("[resolveOwnerShowId] proof lookup", proofError.code ?? "unknown");
+      } else {
+        const proofIds = [
+          ...new Set(
+            ((proofs ?? []) as { show_id?: string | null }[])
+              .map((row) => row.show_id)
+              .filter((id): id is string => !!id && !byId.has(id))
+          ),
+        ];
+        if (proofIds.length > 0) {
+          const { data: proved, error: provedError } = await supabaseAdmin
+            .from("shows")
+            .select("id, contact_email, data_sources")
+            .in("id", proofIds);
+          if (provedError) {
+            console.error("[resolveOwnerShowId] proof show lookup", provedError.code ?? "unknown");
+          } else {
+            for (const row of (proved ?? []) as Array<{
+              id: string;
+              contact_email?: string | null;
+              data_sources?: string[] | null;
+            }>) {
+              add(row);
+            }
+          }
+        }
+      }
+    }
   } catch (err) {
-    console.error("[resolveOwnerShowId] catalog identities", err);
+    console.error("[resolveOwnerShowId] catalog identities", err instanceof Error ? err.name : "unknown");
   }
 
   return [...byId.values()];

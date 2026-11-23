@@ -16,6 +16,7 @@ const db = {
   profiles: [] as Row[],
   deals: [] as Row[],
   show_surfaces: [] as Row[],
+  show_ownership_proofs: [] as Row[],
 };
 
 const filtersSeen: Array<{ table: string; filters: Filter[] }> = [];
@@ -47,6 +48,7 @@ function rowsFor(table: string): Row[] {
   if (table === "profiles") return db.profiles;
   if (table === "deals") return db.deals;
   if (table === "show_surfaces") return db.show_surfaces;
+  if (table === "show_ownership_proofs") return db.show_ownership_proofs;
   return [];
 }
 
@@ -187,6 +189,7 @@ beforeEach(() => {
   db.profiles = [{ id: "user-1", email: "host@recovery.test" }];
   db.deals = [];
   db.show_surfaces = [];
+  db.show_ownership_proofs = [];
   filtersSeen.length = 0;
   createShow.mockReset();
   createShow.mockResolvedValue({ id: "created-show" });
@@ -210,6 +213,15 @@ describe("replaceOwnerSurfaces catalog show", () => {
     expect(filtersSeen.some((call) => call.filters.some((filter) => filter.column === "podscan_id"))).toBe(
       false
     );
+  });
+
+  it("attaches the catalog show a verified proof grants", async () => {
+    db.show_ownership_proofs = [
+      { show_id: CATALOG, user_id: "user-1", status: "verified" },
+    ];
+    const saved = await replaceOwnerSurfaces("user-1", "host@recovery.test", profile(), [draft()]);
+    expect(saved?.[0]?.show_id).toBe(CATALOG);
+    expect(createShow).not.toHaveBeenCalled();
   });
 
   it("attaches the show_owner row whose contact email matches the login", async () => {

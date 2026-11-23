@@ -183,8 +183,9 @@ describe("GET /api/shows", () => {
     expect(encoded).not.toContain("rate_card");
     expect(encoded).not.toContain("midroll_cpm");
     expect(encoded).not.toContain("pd_secret");
-    const identity = ties.mock.calls[0][0][0] as Record<string, unknown>;
-    expect(identity).not.toHaveProperty("podscanId");
+    expect(grantIds).toHaveBeenCalledWith("brand-1", [SHOW, OTHER]);
+    expect(JSON.stringify(grantIds.mock.calls)).not.toContain("pd_secret");
+    expect(ties).not.toHaveBeenCalled();
   });
 
   it("returns the full row for a show the caller owns", async () => {
@@ -193,8 +194,7 @@ describe("GET /api/shows", () => {
     const owned = catalogShow(SHOW, "host@show.test");
     const other = catalogShow(OTHER, "other@show.test");
     getAllShows.mockResolvedValueOnce([owned, other]);
-    admin({ profile: { id: PROFILE } });
-    ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
+    grantIds.mockResolvedValue(new Set([SHOW]));
 
     const res = await GET(new NextRequest("http://x/api/shows"));
     expect(res.status).toBe(200);

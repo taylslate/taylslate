@@ -5,20 +5,18 @@
 // when those strings are non-empty. image_url is the shows image column.
 // Contact, rate card, and every other key stay off that object.
 //
-// The full show object is returned only when the caller is tied. A tie is
-// the caller's show_profiles row in getVerifiedProfileTies, a deals row
-// whose brand_id, agency_id, or brand_profile_id is the caller, or an
-// approved agent_show_relationships row. show_profiles.podscan_id is not
-// read and is not a tie. GET /api/shows still returns an agent's roster
-// before this helper runs.
+// The full show object is returned when showEditGrantIds grants the show,
+// when a deals row names this caller as brand_id, agency_id, or
+// brand_profile_id, or when an approved roster link does. A deal
+// show_profile_id is not a full-row grant. show_profiles.podscan_id is
+// not read. GET /api/shows still returns an agent's roster before this
+// helper runs.
 //
-// ownership_status is not part of that tie. showEditGrantIds decides who
-// may see it. A deal show_profile_id does not.
+// ownership_status uses the same edit grant. A brand deal does not.
 
 import type { Show } from "@/lib/data/types";
 import { ownershipStatusFromRow } from "@/lib/data/show-transform";
 import { showEditGrantIds } from "@/lib/ownership/edit-rights";
-import { getVerifiedProfileTies } from "@/lib/shows/apply-geography";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export const PUBLIC_SHOW_FIELDS = [
@@ -165,13 +163,7 @@ export async function fullShowIdsForCaller(
 
   try {
     const showIds = shows.map((show) => show.id);
-    const profileId = await callerShowProfileId(userId);
-    const ties = await getVerifiedProfileTies(await showIdentities(shows));
-    if (profileId) {
-      for (const tie of ties) {
-        if (tie.profileId === profileId && tie.showId) ids.add(tie.showId);
-      }
-    }
+    for (const showId of await showEditGrantIds(userId, showIds)) ids.add(showId);
 
     const brandProfileIds = await callerBrandProfileIds(userId);
     for (const showId of await dealShowIdsForCaller(userId, showIds, brandProfileIds)) {
@@ -180,58 +172,10 @@ export async function fullShowIdsForCaller(
     for (const showId of await rosterShowIds(userId, showIds)) {
       ids.add(showId);
     }
-  } catch (err) {
-    console.warn(
-      "[fullShowIdsForCaller]",
-      err instanceof Error ? err.message : err
-    );
+  } catch {
+    console.warn("[fullShowIdsForCaller]", "unknown");
   }
   return ids;
-}
-
-async function callerShowProfileId(userId: string): Promise<string | undefined> {
-  const { data, error } = await supabaseAdmin
-    .from("show_profiles")
-    .select("id")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) {
-    console.warn("[fullShowIdsForCaller] show profile read failed:", error.message);
-    return undefined;
-  }
-  const row = data as { id?: unknown } | null;
-  return nonEmpty(row?.id);
-}
-
-async function showIdentities(shows: ShowAccessRow[]) {
-  const fallback = shows.map((show) => ({
-    showId: show.id,
-    contactEmail: nonEmpty(show.contact?.email),
-    dataSources: stringList(show.data_sources),
-  }));
-  const { data, error } = await supabaseAdmin
-    .from("shows")
-    .select("id, contact_email, data_sources")
-    .in(
-      "id",
-      shows.map((show) => show.id)
-    );
-  if (error || !Array.isArray(data) || data.length === 0) return fallback;
-  const out: Array<{
-    showId: string;
-    contactEmail?: string;
-    dataSources?: string[];
-  }> = [];
-  for (const row of data as Array<{ id?: unknown; contact_email?: unknown; data_sources?: unknown }>) {
-    const showId = nonEmpty(row.id);
-    if (!showId) continue;
-    out.push({
-      showId,
-      contactEmail: nonEmpty(row.contact_email),
-      dataSources: stringList(row.data_sources),
-    });
-  }
-  return out.length > 0 ? out : fallback;
 }
 
 async function callerBrandProfileIds(userId: string): Promise<Set<string>> {
@@ -303,13 +247,4 @@ function nonEmpty(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
-}
-
-function stringList(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const out: string[] = [];
-  for (const item of value) {
-    if (typeof item === "string") out.push(item);
-  }
-  return out;
 }

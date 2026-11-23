@@ -168,17 +168,16 @@ describe("GET /api/shows/[id]", () => {
         description: "Evening news",
       },
     });
-    const identity = ties.mock.calls[0][0][0] as Record<string, unknown>;
-    expect(identity).not.toHaveProperty("podscanId");
-    expect(identity).not.toHaveProperty("podscan_id");
+    expect(grantIds).toHaveBeenCalledWith("brand-1", [SHOW]);
+    expect(JSON.stringify(grantIds.mock.calls)).not.toContain("pd_secret");
+    expect(ties).not.toHaveBeenCalled();
   });
 
   it("returns the full row for the owner", async () => {
     getUser.mockResolvedValueOnce({ data: { user: { id: "show-user" } } });
     const show = catalogShow();
     getShowById.mockResolvedValueOnce(show);
-    admin({ profile: { id: PROFILE } });
-    ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
+    grantIds.mockResolvedValue(new Set([SHOW]));
     const res = await getShow();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ show });

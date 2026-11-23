@@ -107,6 +107,7 @@ const TABLE_NAMES = [
   "conviction_scores",
   "profiles",
   "show_profiles",
+  "show_ownership_proofs",
 ];
 
 export function createDomainAdmin(): DomainAdmin {
