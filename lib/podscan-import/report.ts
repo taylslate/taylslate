@@ -30,7 +30,9 @@ export interface ImportReport {
   podscanCallsForFlags: number;
   backfillScoring: boolean;
   backfillCalls: number;
+  backfillCallsMax: number;
   backfillDays: number;
+  backfillDaysMax: number;
   probeFloor: number | null;
   emailCoverage: { 1000: Coverage; 2500: Coverage; 5000: Coverage };
   syntax: { pass: number; fail: number };
@@ -135,8 +137,8 @@ export function renderReport(report: ImportReport): { json: string; markdown: st
     `Podscan calls for these flags: ${report.podscanCallsForFlags}`,
     ...(report.backfillScoring
       ? [
-          `Backfill scoring calls: ${report.backfillCalls}`,
-          `Backfill scoring days: ${report.backfillDays}`,
+          `Backfill scoring calls: ${report.backfillCalls} to ${report.backfillCallsMax}`,
+          `Backfill scoring days: ${report.backfillDays} to ${report.backfillDaysMax}`,
         ]
       : ["Backfill scoring: off"]),
     ...(report.probeFloor != null

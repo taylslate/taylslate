@@ -5,6 +5,7 @@ import {
   enrichShow,
   fetchSponsorHistory,
   listenerFromDetail,
+  brandSafetyFromEndpoint,
   qualifiesForEnrich,
   scoringFromPodcastBody,
   sponsorHistoryFrom,
@@ -128,6 +129,15 @@ describe("enrich", () => {
       reachScore: null,
       brandSafety: null,
     });
+    const aggregation = { max_risk_level: "low", most_common_recommendation: "safe", episode_count: 4 };
+    expect(
+      brandSafetyFromEndpoint({
+        aggregation,
+        categories: [{ name: "crime", evidence: [{ excerpt: "owner@sponsor.example said it" }] }],
+      })
+    ).toEqual(aggregation);
+    expect(JSON.stringify(brandSafetyFromEndpoint({ aggregation }))).not.toContain("@");
+    expect(brandSafetyFromEndpoint(null)).toBeNull();
   });
 
   it("rethrows a non-404 error", async () => {

@@ -38,11 +38,11 @@ The dry run line `Podscan calls for these flags` and the write-run day counts in
 
 Order: gated kept shows first, highest audience first, then the other kept shows, highest audience first. Shows that fail the keep rule are not called.
 
-Each show is one `GET /podcasts/{id}`. That response is the podcast object, the same shape as a search hit, so it carries both fields. `/podcasts/{id}/brand-safety` is not used. That route does not return `podcast_reach_score`.
+Each show starts with `GET /podcasts/{id}`. That response is the podcast object, the same shape as a search hit. If that call 404s or returns no `brand_safety`, the run calls `GET /podcasts/{id}/brand-safety` once before it saves, and stores that response's aggregation object. A show is marked done with nulls only after that second call. The backfill only targets rows saved before the reach score and brand safety fields existed, so a new search hit with an explicit null is not retried.
 
 Each finished show is upserted before the next call. A small `scoring-backfill.json` file records the show. The main checkpoint is saved on the same 30 second cadence as enrich, and again when the run stops. A daily limit or the call budget stops the backfill the same way enrich stops. Already upserted shows stay. A later run continues with the rest.
 
-A commit without the flag does not run this phase. The dry run prints `Backfill scoring calls` and `Backfill scoring days` on their own lines when the flag is on, and `Backfill scoring: off` when it is not. Those numbers are not added to `Podscan calls for these flags`.
+A commit without the flag does not run this phase. The dry run prints `Backfill scoring calls: N to 2N` and days for the best and worst case when the flag is on, and `Backfill scoring: off` when it is not. Those numbers are not added to `Podscan calls for these flags`. If the daily limit or the call budget stops on the brand-safety call after the detail call has finished, the reach score is kept and the show stays unfinished. The next run makes only the brand-safety call.
 
 ## Commands
 
