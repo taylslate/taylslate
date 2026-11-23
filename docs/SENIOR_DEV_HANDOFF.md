@@ -3944,3 +3944,57 @@ Covers an allowed note, a refused money field, a refused edit after `brand_signe
 - v1 and MCP do not return the price record yet.
 - Rebook races are a follow-up. Two bookings for the same brand and show can both take the same `prior_record_id` if they link at the same time. The next change should add a partial unique index on `prior_record_id` where it is not null, so only one later row can point at a given earlier row.
 - This PR does not merge. Paul reviews.
+
+## VERIFY-RANK1: claimed ownership feeds ranking
+
+### What was built
+
+`shows.ownership_status` can be `unclaimed`, `claimed`, or `verified`. Claimed means a show account controls the profile, rates, and replies, and ownership is not verified. The rule is the same control tie as `public.user_owns_show` (migration 077) and the non-proof branches of `getVerifiedProfileTies`: a deal with `show_profile_id` set, or a `show_owner` row whose `contact_email` matches the auth login of a user who has a `show_profiles` row. A verified proof stays `verified`. A pending proof stays a tag. An agent roster claim does not set this column. `shows.is_claimed` stays deprecated. `shows.is_verified` stays and is not read.
+
+Ranking uses `ownershipTier` in `lib/scoring/conviction.ts`. The bonus is `OWNERSHIP_RANK_BONUS`: unclaimed 0, claimed 1, verified 3, on the 0-100 composite, then clamped. It is a sort nudge on every campaign. Unclaimed shows stay in the list. The first-campaign trusted-host bump still adds 2 points for a recorded sponsor. A verified host does not also take that 2 for verification, because the ranking bonus already counted it. The live sort is `scoreCandidatesAgainstRings`. `lib/scoring/index.ts` is the old Podscan scorer and was left alone.
+
+`syncShowClaim` runs when a deal is created with a show profile, when onboarding backfills that profile onto accepted deals, when a show account resolves or creates its owner show, and when a deal is deleted. If the rule no longer holds, claimed goes back to unclaimed. Verified is never downgraded. O2 and O4 still write `verified` through `writeOwnershipStatus`.
+
+Before migration 100, a `claimed` write hits check constraint `23514`. That write logs `[ownership] 23514` and continues. Claim, verify, and profile flows still succeed. Ranking and `getOwnershipState` apply the rule in memory. `GET /api/v1/shows` and MCP show reads include `ownership_status`. `verified` on that payload stays the profile-tie flag. A tie with an unclaimed column is reported as `claimed`.
+
+Migration 100 widens the check and backfills claimed where the rule holds. It does not downgrade verified. No new table, function, grant, or RLS change. The header says NOT APPLIED LIVE, CHRIS MUST NAME IT. It was not applied.
+
+No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/billing`, `plans.ts`, `lib/airchecks`, and `lib/podscan-import` were not edited. Migrations 097 to 099 were not edited. No Vercel env change. Nothing was written to the live database.
+
+### Where
+
+- `supabase/migrations/100_ownership_claimed_state.sql` and its test
+- `lib/ownership/tier.ts` and `tier.test.ts`
+- `lib/ownership/persist.ts` and `persist.test.ts`
+- `lib/ownership/status.ts` and `status.test.ts`
+- `lib/ownership/check.ts` and `lib/ownership/review.ts` (verified writes go through `writeOwnershipStatus`)
+- `lib/scoring/conviction.ts`, `conviction.test.ts`, and `lib/scoring/trusted-host.ts`
+- `lib/discovery/hydrate-demographics.ts` (copies the tier onto candidates before scoring)
+- `lib/discovery/conviction-discovery.test.ts` (unclaimed stays, and better fit still ranks first)
+- `lib/data/queries.ts` (deal create, onboarding backfill, deal delete, and stripping the column from show writes)
+- `lib/data/show-surfaces.ts` (owner show resolve)
+- `lib/data/show-transform.ts` and `lib/data/types.ts`
+- `lib/shows/can-edit-show.ts` (client patches cannot set `ownership_status`)
+- `lib/api/v1/serializers.ts`, `reads.ts`, and `openapi.ts`
+- `docs/jobs/VERIFY-RANK1.md`, plus short pointers in `docs/jobs/O1.md`, `O2.md`, `O4.md`, `docs/api/MCP.md`, and `SCORING_CALIBRATION.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 466 files, 3843 passed, 41 skipped.
+
+`npx eslint` on the changed TypeScript files: 0 errors. One warning is the pre-existing unused `genres` binding in `lib/scoring/conviction.test.ts`. This job did not add it.
+
+`npx next build` compiled successfully and generated 149 pages.
+
+Covers the three tiers, the 23514 claimed write that logs only the code and leaves the row unclaimed, a successful claimed write, no downgrade of verified, a deal link that claims and then unclaims when the link is gone, a show_owner login with a profile, a show_owner login without a profile, an in-memory stamp before the column can store claimed, the ranking bonus without a second verification bump, an unclaimed show with better fit outranking a verified show, both shows kept, client patches dropping `ownership_status`, and the API field. No UI change, so there are no screenshots.
+
+### Known gaps
+
+- Migration 100 is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and only when Chris names 100.
+- Until 100 is applied, the column stays `unclaimed` or `verified`. Ranking and the API still report `claimed` from the rule. The log line is `[ownership] 23514`.
+- `lib/scoring/index.ts` does not apply the bonus. Live discovery does not use that scorer.
+- An agent roster claim is still a pending rep link. It does not set `ownership_status`.
+- This PR does not merge. Paul reviews.

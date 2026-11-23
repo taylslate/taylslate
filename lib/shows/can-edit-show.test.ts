@@ -167,6 +167,7 @@ describe("showWritePatch", () => {
       is_claimed: true,
       podscan_id: "pod",
       is_discoverable: false,
+      ownership_status: "verified",
     };
     expect(showWritePatch(body, false)).toEqual({ description: "updated" });
     expect(showWritePatch(body, true)).toEqual({

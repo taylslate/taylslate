@@ -19,6 +19,7 @@ import {
 } from "@/lib/ownership/code";
 import { readRssProofText } from "@/lib/ownership/rss-proof";
 import { readYoutubeDescription } from "@/lib/ownership/youtube-proof";
+import { writeOwnershipStatus } from "@/lib/ownership/persist";
 import { releaseHeldPayoutsForShow } from "@/lib/payouts/release";
 
 export const OWNERSHIP_START_DAY_MAX = 5;
@@ -428,11 +429,8 @@ function releaseAfterResponse(showId: string): void {
 }
 
 async function markShowVerified(showId: string, proofId: string): Promise<void> {
-  const { error } = await supabaseAdmin
-    .from("shows")
-    .update({ ownership_status: "verified" })
-    .eq("id", showId);
-  if (error) logOwnershipError(error.code, proofId);
+  const written = await writeOwnershipStatus(showId, "verified");
+  if (!written.ok) logOwnershipError(written.code, proofId);
 }
 
 type RowOutcome = "verified" | "contested" | "expired" | "miss" | "unavailable" | "error";

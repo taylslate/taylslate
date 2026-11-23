@@ -15,6 +15,7 @@ import {
   isAdminViewCookie,
 } from "@/lib/admin/test-accounts";
 import { categoriesToPurchasePowerScore } from "@/lib/scoring/purchase-power";
+import { syncShowClaim } from "@/lib/ownership/persist";
 import { logEvent } from "./events";
 import { transformShow } from "./show-transform";
 import { findCatalogDuplicates } from "@/lib/shows/import-catalog-match";
@@ -617,9 +618,20 @@ export async function getDealWithRelations(
 }
 
 export async function deleteDeal(id: string): Promise<boolean> {
+  let showId: string | null = null;
+  try {
+    const existing = await supabaseAdmin.from("deals").select("show_id").eq("id", id).maybeSingle();
+    if (!existing.error && typeof existing.data?.show_id === "string") {
+      showId = existing.data.show_id;
+    }
+  } catch {
+    showId = null;
+  }
   const { error } = await supabaseAdmin.from("deals").delete().eq("id", id);
   if (error) {
-    console.error("[deleteDeal] Supabase error for deal", id, ":", error.message, error.code);
+    console.error("[deleteDeal] Supabase error for deal", id, ":", error.code ?? "unknown");
+  } else if (showId) {
+    await syncShowClaim(showId);
   }
   return !error;
 }
@@ -1094,6 +1106,7 @@ export async function createShow(
     ...showData,
   };
   const actor = options?.actor;
+  delete (requested as { ownership_status?: unknown }).ownership_status;
   if (actor) {
     delete requested.is_verified;
     delete requested.is_claimed;
@@ -1196,8 +1209,9 @@ export async function updateShow(
     updated_at: new Date().toISOString(),
   });
 
-  // Don't allow updating id
+  // Don't allow updating id. Ownership is written only by lib/ownership.
   delete dbUpdates.id;
+  delete dbUpdates.ownership_status;
 
   const { data, error } = await supabaseAdmin
     .from("shows")
@@ -1424,6 +1438,7 @@ export async function importShows(
     // agent_id is the session user. A body value is ignored.
     delete dbRow.is_exclusive;
     delete dbRow.agent_id;
+    delete dbRow.ownership_status;
     dbRow.agent_id = agentId;
     // The column default is true. A non-admin import must stay hidden.
     // An admin import stays discoverable unless the row says false.
@@ -2141,12 +2156,18 @@ export async function backfillShowProfileOnAcceptedDeals(
     .update({ show_profile_id: showProfileId })
     .in("outreach_id", outreachIds)
     .is("show_profile_id", null)
-    .select("id");
+    .select("id, show_id");
   if (error) {
-    console.error("[backfillShowProfileOnAcceptedDeals] Error:", error.message);
+    console.error("[backfillShowProfileOnAcceptedDeals] Error:", error.code ?? "unknown");
     return 0;
   }
   const dealIds = (linked ?? []).map((d) => (d as { id: string }).id);
+  const showIds = new Set<string>();
+  for (const row of linked ?? []) {
+    const showId = (row as { show_id?: unknown }).show_id;
+    if (typeof showId === "string" && showId) showIds.add(showId);
+  }
+  for (const showId of showIds) await syncShowClaim(showId);
   if (dealIds.length) {
     await logEvent({
       eventType: "deal.show_profile_backfilled",
@@ -2324,14 +2345,10 @@ export async function createWave12Deal(
     .select()
     .single();
   if (error || !data) {
-    console.error(
-      "[createWave12Deal] insert failed:",
-      error?.message,
-      error?.code,
-      error?.details
-    );
+    console.error("[createWave12Deal] insert failed:", error?.code ?? "unknown");
     return null;
   }
+  if (input.show_profile_id && input.show_id) await syncShowClaim(input.show_id);
   return data as Wave12Deal;
 }
 

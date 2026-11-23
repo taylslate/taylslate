@@ -133,8 +133,21 @@ export interface Show {
   rss_url?: string;
 
   // Verification
+  /**
+   * Deprecated. Do not branch on this flag. Ownership is ownership_status.
+   */
   is_claimed: boolean;
+  /**
+   * Deprecated. Nothing sets this flag. Ranking reads ownership_status
+   * through ownershipTier. Do not branch on this column.
+   */
   is_verified: boolean;
+  /**
+   * unclaimed, claimed, or verified. Absent on shows loaded before the
+   * column was selected. Claimed is computed in memory until migration
+   * 100 can store it. See lib/ownership/tier.ts.
+   */
+  ownership_status?: "unclaimed" | "claimed" | "verified";
   /**
    * Discovery visibility (migration 031). FALSE excludes the show from all
    * shared brand-facing discovery/catalog reads (getAllShows / getShowsFiltered).

@@ -12,6 +12,7 @@ import {
 } from "@/lib/discovery/format-discovered-show";
 import { getEffectiveWeights } from "./weights";
 import { TRUSTED_HOST_NOTE } from "./trusted-host";
+import { OWNERSHIP_RANK_BONUS, OWNERSHIP_RANK_NOTE } from "@/lib/ownership/tier";
 import type { GenreBenchmark } from "./benchmarks";
 import type {
   Show,
@@ -661,8 +662,15 @@ describe("genre benchmarks and trusted hosts", () => {
     );
   });
 
-  it("adds a small bump and a note for a trusted host when the brand is buying its first campaign", () => {
+  it("adds the ownership bonus on every campaign and does not also add it as the first-campaign bump", () => {
     const show = makeShow({
+      categories: ["Recovery"],
+      demographics: demoFor(80),
+      audience_purchase_power: 20,
+      is_verified: true,
+      ownership_status: "verified",
+    });
+    const plain = makeShow({
       categories: ["Recovery"],
       demographics: demoFor(80),
       audience_purchase_power: 20,
@@ -672,10 +680,54 @@ describe("genre benchmarks and trusted hosts", () => {
     const first = scoreShowConviction(show, makeRing(), patternWithTarget("high"), {
       firstTimeBrand: true,
     });
-    expect(returning.composite).toBe(71);
-    expect(first.composite).toBe(73);
+    const ignoredFlag = scoreShowConviction(plain, makeRing(), patternWithTarget("high"), {
+      firstTimeBrand: true,
+    });
+    expect(returning.composite).toBe(71 + OWNERSHIP_RANK_BONUS.verified);
+    expect(first.composite).toBe(returning.composite);
     expect(first.band).toBe<ConvictionBand>("medium");
+    expect(first.guidanceLines).toContain(OWNERSHIP_RANK_NOTE.verified);
+    expect(first.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
+    expect(returning.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
+    expect(ignoredFlag.composite).toBe(71);
+    expect(ignoredFlag.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
+  });
+
+  it("adds the claimed bonus without the verified note or the first-campaign bump", () => {
+    const show = makeShow({
+      categories: ["Recovery"],
+      demographics: demoFor(80),
+      audience_purchase_power: 20,
+      ownership_status: "claimed",
+    });
+    const result = scoreShowConviction(show, makeRing(), patternWithTarget("high"), {
+      firstTimeBrand: true,
+    });
+    expect(result.composite).toBe(71 + OWNERSHIP_RANK_BONUS.claimed);
+    expect(result.guidanceLines).toContain(OWNERSHIP_RANK_NOTE.claimed);
+    expect(result.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
+    expect(result.guidanceLines ?? []).not.toContain(OWNERSHIP_RANK_NOTE.verified);
+  });
+
+  it("does not count verification twice when a verified host also has a sponsor", () => {
+    const base = makeShow({
+      categories: ["Recovery"],
+      demographics: demoFor(80),
+      audience_purchase_power: 20,
+    });
+    const verified = makeShow({
+      ...base,
+      ownership_status: "verified",
+      current_sponsors: ["LMNT"],
+    });
+    const returning = scoreShowConviction(verified, makeRing(), patternWithTarget("high"));
+    const first = scoreShowConviction(verified, makeRing(), patternWithTarget("high"), {
+      firstTimeBrand: true,
+    });
+    expect(returning.composite).toBe(71 + OWNERSHIP_RANK_BONUS.verified);
+    expect(first.composite).toBe(returning.composite + 2);
     expect(first.guidanceLines).toContain(TRUSTED_HOST_NOTE);
+    expect(first.guidanceLines).toContain(OWNERSHIP_RANK_NOTE.verified);
     expect(returning.guidanceLines ?? []).not.toContain(TRUSTED_HOST_NOTE);
   });
 

@@ -45,7 +45,12 @@ import { getEffectiveWeights, type ScoringWeights } from "./weights";
 import { geographyGuidance } from "./geo-guidance";
 import { purchaseRateGuidance, type GenreBenchmark } from "./benchmarks";
 import {
-  isTrustedHost,
+  OWNERSHIP_RANK_BONUS,
+  OWNERSHIP_RANK_NOTE,
+  ownershipTier,
+} from "@/lib/ownership/tier";
+import {
+  trustedHostBump,
   TRUSTED_HOST_COMPOSITE_BUMP,
   TRUSTED_HOST_NOTE,
 } from "./trusted-host";
@@ -191,7 +196,19 @@ export function scoreShowConviction(
   const guidanceLines: string[] = [];
   if (geo.line) guidanceLines.push(geo.line);
   if (benchmark.line) guidanceLines.push(benchmark.line);
-  if (context?.firstTimeBrand && isTrustedHost(show)) {
+  // Ownership is a bonus on every campaign. It never removes a show.
+  const tier = ownershipTier(show);
+  const ownershipBonus = OWNERSHIP_RANK_BONUS[tier];
+  if (ownershipBonus > 0 && tier !== "unclaimed") {
+    composite = score100(composite + ownershipBonus);
+    guidanceLines.push(OWNERSHIP_RANK_NOTE[tier]);
+  }
+  // First-campaign sponsor bump. Verification is the bonus above, so a
+  // verified host with no sponsor does not also take TRUSTED_HOST_COMPOSITE_BUMP.
+  if (
+    context?.firstTimeBrand &&
+    trustedHostBump(show, ownershipBonus > 0 && tier === "verified")
+  ) {
     composite = score100(composite + TRUSTED_HOST_COMPOSITE_BUMP);
     guidanceLines.push(TRUSTED_HOST_NOTE);
   }

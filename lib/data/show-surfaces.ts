@@ -4,6 +4,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createShow } from "@/lib/data/queries";
+import { syncShowClaim } from "@/lib/ownership/persist";
 import type { ShowProfile } from "@/lib/data/types";
 import {
   getVerifiedProfileTies,
@@ -313,7 +314,10 @@ async function resolveOwnerShowId(
     catalogOwnedByOther,
     existingOwnerShowId,
   });
-  if (choice.showId) return choice.showId;
+  if (choice.showId) {
+    await syncShowClaim(choice.showId);
+    return choice.showId;
+  }
 
   const created = await createShow({
     name: profile.show_name?.trim() || "Show",
@@ -333,6 +337,7 @@ async function resolveOwnerShowId(
     is_verified: false,
     is_discoverable: false,
   });
+  if (created?.id) await syncShowClaim(created.id);
   return created?.id ?? null;
 }
 

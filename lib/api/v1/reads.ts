@@ -7,6 +7,8 @@
 // Campaigns match campaigns.user_id. A show is visible when is_discoverable
 // is true, or when one of this brand's deals points at it.
 // `verified` is true only when getVerifiedProfileTies reports a tie.
+// `ownership_status` is the stored tier, or claimed when that tie exists
+// and the column is still unclaimed (before migration 100).
 // The shows.is_verified column is not copied. Contact, the rate card,
 // sponsors, slots, and income demographics stay on this response.
 // Callers reach it only with a key tied to a profiles row.
@@ -68,6 +70,7 @@ const SHOW_COLUMNS = [
   "contact_email",
   "contact_method",
   "data_sources",
+  "ownership_status",
   "created_at",
 ].join(", ");
 

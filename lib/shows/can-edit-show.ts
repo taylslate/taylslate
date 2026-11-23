@@ -21,6 +21,9 @@ const ADMIN_WRITE_FIELDS = [
   "is_discoverable",
 ] as const;
 
+/** Ranking state. Only the ownership writer sets this. Never a client patch. */
+const OWNERSHIP_WRITE_FIELDS = ["ownership_status"] as const;
+
 interface ProfileRow {
   id?: string;
   role?: string | null;
@@ -100,6 +103,7 @@ export function showWritePatch(
   const next = { ...body };
   delete next.id;
   delete next.created_at;
+  for (const field of OWNERSHIP_WRITE_FIELDS) delete next[field];
   if (!admin) {
     for (const field of ADMIN_WRITE_FIELDS) delete next[field];
   }

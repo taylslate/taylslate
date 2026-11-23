@@ -12,6 +12,7 @@ const db: Record<string, Row[]> = {
   shows: [],
   show_ownership_proofs: [],
   agent_show_relationships: [],
+  deals: [],
 };
 
 const errors: Record<string, string> = {};
@@ -68,14 +69,16 @@ beforeEach(() => {
   db.shows = [];
   db.show_ownership_proofs = [];
   db.agent_show_relationships = [];
+  db.deals = [];
   for (const key of Object.keys(errors)) delete errors[key];
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
 describe("ownership labels", () => {
-  it("exports Verified, Unclaimed, and Pending for owner and admin views", () => {
+  it("exports Verified, Claimed, Unclaimed, and Pending for owner and admin views", () => {
     expect(ownershipLabels).toEqual({
       verified: "Verified",
+      claimed: "Claimed",
       unclaimed: "Unclaimed",
       pending: "Pending",
     });
@@ -87,6 +90,19 @@ describe("getOwnershipState", () => {
     db.shows.push({ id: SHOW, ownership_status: "unclaimed" });
     const states = await getOwnershipState([SHOW]);
     expect(states.get(SHOW)).toEqual({ state: "unclaimed", pending: false });
+  });
+
+  it("returns claimed from the column", async () => {
+    db.shows.push({ id: SHOW, ownership_status: "claimed" });
+    const states = await getOwnershipState([SHOW]);
+    expect(states.get(SHOW)).toEqual({ state: "claimed", pending: false });
+  });
+
+  it("returns claimed from a profile link when the column is still unclaimed", async () => {
+    db.shows.push({ id: SHOW, ownership_status: "unclaimed" });
+    db.deals.push({ show_id: SHOW, show_profile_id: "33333333-3333-4333-8333-333333333333" });
+    const states = await getOwnershipState([SHOW]);
+    expect(states.get(SHOW)).toEqual({ state: "claimed", pending: false });
   });
 
   it("returns verified without a pending tag", async () => {

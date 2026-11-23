@@ -17,6 +17,7 @@ import { rosterRepLabel, type RepNameFields } from "@/lib/reps/roster-notify";
 import { releaseHeldPayoutsForShow } from "@/lib/payouts/release";
 import { rosterReviewNote } from "@/lib/reps/roster-review";
 import { type RateLimitRule, RATE_LIMIT_MESSAGE } from "@/lib/security/rate-limit";
+import { writeOwnershipStatus } from "@/lib/ownership/persist";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export const OWNERSHIP_MANUAL_DAY_MAX = 3;
@@ -639,9 +640,9 @@ function releaseAfterResponse(showId: string): void {
 }
 
 async function finishAdminVerify(showId: string, adminId: string, nowIso: string): Promise<{ ok: true } | Fail> {
-  const show = await supabaseAdmin.from("shows").update({ ownership_status: "verified" }).eq("id", showId);
-  if (show.error) {
-    logCode(ADMIN_TAG, show.error.code);
+  const show = await writeOwnershipStatus(showId, "verified");
+  if (!show.ok) {
+    logCode(ADMIN_TAG, show.code);
     return { ok: false, status: 500, error: OWNERSHIP_APPROVE_FAILED };
   }
   const siblings = await supabaseAdmin
