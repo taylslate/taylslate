@@ -6,15 +6,16 @@
 // deals.brand_id = brand user, or a brand_profiles row owned by that user.
 // Campaigns match campaigns.user_id. A show is visible when is_discoverable
 // is true, or when one of this brand's deals points at it.
-// `verified` is true only when shows.ownership_status is verified and a
-// show_ownership_proofs row for that show is verified. A deal profile
-// id and a contact email are not enough. ownership_status is read and
-// is not copied onto the payload. The shows.is_verified column is not
-// copied. Contact, the rate card,
+// `verified` is true only when verifiedShowIds says so: ownership_status
+// is verified and a show_ownership_proofs row for that show is verified.
+// A deal profile id and a contact email are not enough. ownership_status
+// is read and is not copied onto the payload. The shows.is_verified
+// column is not copied. Contact, the rate card,
 // sponsors, slots, and income demographics stay on this response.
 // Callers reach it only with a key tied to a profiles row.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { verifiedShowIds } from "@/lib/shows/verified-flag";
 import { ApiReadError } from "@/lib/api/v1/handler";
 import {
   cursorFilter,
@@ -406,42 +407,15 @@ async function ownedCampaign(
 }
 
 async function serializeShows(rows: Record<string, unknown>[]): Promise<SerializedShow[]> {
-  const verified = await verifiedShowIds(rows);
+  const ids: string[] = [];
+  for (const row of rows) {
+    if (typeof row.id === "string") ids.push(row.id);
+  }
+  const verified = await verifiedShowIds(ids);
   const out: SerializedShow[] = [];
   for (const row of rows) {
     const id = typeof row.id === "string" ? row.id : "";
     out.push(serializeShow(row, verified.has(id)));
-  }
-  return out;
-}
-
-async function verifiedShowIds(rows: Record<string, unknown>[]): Promise<Set<string>> {
-  const out = new Set<string>();
-  const ids = rows
-    .filter((row) => row.ownership_status === "verified")
-    .map((row) => row.id)
-    .filter((id): id is string => typeof id === "string" && isUuid(id));
-  if (ids.length === 0) return out;
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("show_ownership_proofs")
-      .select("show_id, status")
-      .in("show_id", ids)
-      .eq("status", "verified");
-    if (error) {
-      console.warn("[api.v1] verified read", error.code ?? "unknown");
-      return out;
-    }
-    const proved = new Set<string>();
-    for (const row of data ?? []) {
-      const showId = typeof row.show_id === "string" ? row.show_id : "";
-      if (showId && row.status === "verified") proved.add(showId);
-    }
-    for (const id of ids) {
-      if (proved.has(id)) out.add(id);
-    }
-  } catch {
-    console.warn("[api.v1] verified read", "unknown");
   }
   return out;
 }

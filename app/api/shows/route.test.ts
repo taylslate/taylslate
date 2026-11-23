@@ -96,7 +96,7 @@ function catalogShow(id: string, email: string) {
   };
 }
 
-function chain(result: { data: unknown; error: null }) {
+function chain(result: { data: unknown; error: { code: string } | null }) {
   const builder: Record<string, unknown> = {};
   const self = () => builder;
   builder.select = self;
@@ -114,9 +114,16 @@ function admin(opts: {
   profile?: { id: string } | null;
   deals?: Array<{ show_id: string; brand_id?: string; agency_id?: string }>;
   ownership?: Array<{ id: string; ownership_status: string }>;
+  proofs?: Array<{ show_id: string; status: string }>;
+  showsError?: { code: string } | null;
 }) {
   from.mockImplementation((table: unknown) => {
-    if (table === "shows") return chain({ data: opts.ownership ?? [], error: null });
+    if (table === "shows") {
+      return chain({ data: opts.ownership ?? [], error: opts.showsError ?? null });
+    }
+    if (table === "show_ownership_proofs") {
+      return chain({ data: opts.proofs ?? [], error: null });
+    }
     if (table === "show_profiles") {
       return chain({ data: opts.profile ?? null, error: null });
     }
@@ -168,6 +175,7 @@ describe("GET /api/shows", () => {
         categories: ["News"],
         image_url: "https://img.test/night.png",
         description: "Evening news",
+        verified: false,
       },
       {
         id: OTHER,
@@ -175,6 +183,7 @@ describe("GET /api/shows", () => {
         platform: "podcast",
         audience_size: 800,
         categories: [],
+        verified: false,
       },
     ]);
     const encoded = JSON.stringify(body);
@@ -199,7 +208,7 @@ describe("GET /api/shows", () => {
     const res = await GET(new NextRequest("http://x/api/shows"));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body[0]).toEqual(owned);
+    expect(body[0]).toEqual({ ...owned, verified: false });
     expect(body[0].contact.email).toBe("host@show.test");
     expect(body[0].rate_card).toEqual({ midroll_cpm: 25 });
     expect(body[1]).not.toHaveProperty("contact");
@@ -296,6 +305,40 @@ describe("GET /api/shows", () => {
     expect(body[0]).not.toHaveProperty("ownership_status");
     expect(body[1]).not.toHaveProperty("rate_card");
     expect(body[1]).not.toHaveProperty("contact");
+  });
+
+  it("sets verified only when ownership_status and a proof are both verified", async () => {
+    getUser.mockResolvedValueOnce({ data: { user: { id: "brand-1" } } });
+    getUserProfile.mockResolvedValueOnce({ role: "brand" });
+    getAllShows.mockResolvedValueOnce([
+      catalogShow(SHOW, "host@show.test"),
+      catalogShow(OTHER, "other@show.test"),
+    ]);
+    admin({
+      ownership: [
+        { id: SHOW, ownership_status: "verified" },
+        { id: OTHER, ownership_status: "verified" },
+      ],
+      proofs: [{ show_id: SHOW, status: "verified" }],
+    });
+
+    const body = await (await GET(new NextRequest("http://x/api/shows"))).json();
+    expect(body[0].verified).toBe(true);
+    expect(body[1].verified).toBe(false);
+    expect(body[0]).not.toHaveProperty("ownership_status");
+    expect(body[1]).not.toHaveProperty("ownership_status");
+    expect(JSON.stringify(body)).not.toContain("host@show.test");
+  });
+
+  it("leaves verified false when the ownership read fails", async () => {
+    getUser.mockResolvedValueOnce({ data: { user: { id: "brand-1" } } });
+    getUserProfile.mockResolvedValueOnce({ role: "brand" });
+    getAllShows.mockResolvedValueOnce([catalogShow(SHOW, "host@show.test")]);
+    admin({ showsError: { code: "08006" } });
+
+    const body = await (await GET(new NextRequest("http://x/api/shows"))).json();
+    expect(body[0].verified).toBe(false);
+    expect(body[0]).not.toHaveProperty("ownership_status");
   });
 });
 

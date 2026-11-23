@@ -125,7 +125,24 @@ describe("toPublicShow", () => {
       platform: "podcast",
       audienceSize: 12400,
       categories: ["Business", "Technology"],
+      verified: false,
     });
+  });
+
+  it("keeps verified only when the payload boolean is true", () => {
+    expect(toPublicShow({ ...visibleShow, verified: true })?.verified).toBe(true);
+    expect(
+      toPublicShow({
+        ...visibleShow,
+        verified: "true",
+        ownership_status: "verified",
+        is_verified: true,
+        is_claimed: true,
+      })?.verified
+    ).toBe(false);
+    expect(toPublicShow({ ...visibleShow, ownership_status: "claimed" })).not.toHaveProperty(
+      "ownership_status"
+    );
   });
 });
 
@@ -338,5 +355,38 @@ describe("ShowSearchClient", () => {
     expect(await screen.findByRole("link", { name: /Acquired/ })).toBeInTheDocument();
     expect(screen.queryByText("Sign in to search shows.")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "YouTube creators" })).not.toBeInTheDocument();
+  });
+
+  it("shows a Verified badge only when the show is verified", async () => {
+    vi.mocked(fetch).mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/api/library/creators")) return jsonResponse([]);
+      return jsonResponse([
+        { ...visibleShow, verified: true },
+        {
+          ...visibleShow,
+          id: HIDDEN_ID,
+          name: "Open Desk",
+          is_discoverable: true,
+          ownership_status: "claimed",
+          is_claimed: true,
+          verified: false,
+        },
+      ]);
+    });
+    const user = userEvent.setup();
+    const view = render(<ShowSearchClient />);
+    await user.type(screen.getByRole("searchbox", { name: "Search shows" }), "Acquired");
+
+    const verifiedLink = await screen.findByRole("link", { name: /Acquired/ });
+    expect(verifiedLink).toHaveTextContent("Verified");
+    expect(verifiedLink.querySelector("[data-testid='verified-badge']")).toHaveAccessibleName(
+      "Verified show"
+    );
+    const open = screen.getByRole("link", { name: /Open Desk/ });
+    expect(open.querySelector("[data-testid='verified-badge']")).toBeNull();
+    expect(view.container.textContent).not.toContain("Claimed");
+    expect(view.container.textContent).not.toMatch(/ownership_status/);
+    expect(screen.queryAllByText("Verified")).toHaveLength(1);
   });
 });

@@ -98,6 +98,11 @@ export interface TieredShow {
   budgetDeltaCents: number | null;
   brandSaved: boolean;
   brandDismissed: boolean;
+  /**
+   * Brand badge flag. The campaign page sets it from verifiedShowIds.
+   * Ranking does not read it. The tier reader leaves it unset.
+   */
+  verified?: boolean;
   /** True when tier+cost were derived on read (persisted tier was null). */
   computedOnRead: boolean;
   /**
