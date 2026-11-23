@@ -56,6 +56,25 @@ vi.mock("@/lib/data/queries", () => ({
 
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
+    auth: {
+      admin: {
+        getUserById(id: string) {
+          if (id !== "user-1") {
+            return Promise.resolve({ data: { user: null }, error: null });
+          }
+          return Promise.resolve({
+            data: {
+              user: {
+                id,
+                email: "host@recovery.test",
+                email_confirmed_at: "2026-01-01T00:00:00.000Z",
+              },
+            },
+            error: null,
+          });
+        },
+      },
+    },
     from(table: string) {
       const filters: Filter[] = [];
       let mode: "select" | "insert" | "delete" = "select";
@@ -183,11 +202,11 @@ describe("replaceOwnerSurfaces catalog show", () => {
     );
   });
 
-  it("attaches the catalog show a deal ties to this profile", async () => {
+  it("does not attach a catalog show from a deal profile id alone", async () => {
     db.deals = [{ show_id: CATALOG, show_profile_id: "prof-1" }];
     const saved = await replaceOwnerSurfaces("user-1", "host@recovery.test", profile(), [draft()]);
-    expect(saved?.[0]?.show_id).toBe(CATALOG);
-    expect(createShow).not.toHaveBeenCalled();
+    expect(saved?.[0]?.show_id).toBe("created-show");
+    expect(createShow).toHaveBeenCalledOnce();
     expect(filtersSeen.some((call) => call.filters.some((filter) => filter.column === "podscan_id"))).toBe(
       false
     );

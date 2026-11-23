@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { from, ties } = vi.hoisted(() => ({
+const { from, ties, grantIds } = vi.hoisted(() => ({
   from: vi.fn(),
   ties: vi.fn(),
+  grantIds: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -13,8 +14,13 @@ vi.mock("@/lib/shows/apply-geography", () => ({
   getVerifiedProfileTies: (...args: unknown[]) => ties(...args),
 }));
 
+vi.mock("@/lib/ownership/edit-rights", () => ({
+  showEditGrantIds: (...args: unknown[]) => grantIds(...args),
+}));
+
 import {
   fullShowIdsForCaller,
+  ownershipVisibleIds,
   projectShows,
   PUBLIC_SHOW_FIELDS,
   toPublicShowFields,
@@ -81,6 +87,7 @@ function admin(opts: {
 beforeEach(() => {
   vi.clearAllMocks();
   ties.mockResolvedValue([]);
+  grantIds.mockResolvedValue(new Set());
   admin({});
 });
 
@@ -142,6 +149,23 @@ describe("projectShows", () => {
       audience_size: 12000,
       categories: ["News"],
     });
+  });
+});
+
+describe("ownershipVisibleIds", () => {
+  it("uses the edit grant and ignores a loose profile tie", async () => {
+    ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
+    grantIds.mockResolvedValue(new Set());
+    expect(await ownershipVisibleIds(USER, [secretShow], false)).toEqual(new Set());
+    expect(grantIds).toHaveBeenCalledWith(USER, [SHOW]);
+
+    grantIds.mockResolvedValue(new Set([SHOW]));
+    expect(await ownershipVisibleIds(USER, [secretShow], false)).toEqual(new Set([SHOW]));
+  });
+
+  it("returns every id for an admin without asking the grant", async () => {
+    expect(await ownershipVisibleIds(USER, [secretShow], true)).toEqual(new Set([SHOW]));
+    expect(grantIds).not.toHaveBeenCalled();
   });
 });
 

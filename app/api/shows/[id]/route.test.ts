@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { getShowById, updateShow, getUser, canEditShow, isShowsAdmin, from, ties } =
+const { getShowById, updateShow, getUser, canEditShow, isShowsAdmin, from, ties, grantIds } =
   vi.hoisted(() => ({
     getShowById: vi.fn(),
     updateShow: vi.fn(),
@@ -10,6 +10,7 @@ const { getShowById, updateShow, getUser, canEditShow, isShowsAdmin, from, ties 
     isShowsAdmin: vi.fn(),
     from: vi.fn(),
     ties: vi.fn(),
+    grantIds: vi.fn(),
   }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -27,6 +28,10 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 vi.mock("@/lib/shows/apply-geography", () => ({
   getVerifiedProfileTies: (...args: unknown[]) => ties(...args),
+}));
+
+vi.mock("@/lib/ownership/edit-rights", () => ({
+  showEditGrantIds: (...args: unknown[]) => grantIds(...args),
 }));
 
 vi.mock("@/lib/shows/can-edit-show", () => ({
@@ -131,6 +136,7 @@ beforeEach(() => {
   canEditShow.mockResolvedValue(false);
   isShowsAdmin.mockResolvedValue(false);
   ties.mockResolvedValue([]);
+  grantIds.mockResolvedValue(new Set());
   admin({});
 });
 
@@ -190,6 +196,7 @@ describe("GET /api/shows/[id]", () => {
     getShowById.mockResolvedValueOnce(show);
     admin({ profile: { id: PROFILE } });
     ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
+    grantIds.mockResolvedValue(new Set([SHOW]));
     const owner = await getShow();
     expect((await owner.json()).show.ownership_status).toBe("claimed");
 
@@ -211,6 +218,7 @@ describe("GET /api/shows/[id]", () => {
     getShowById.mockResolvedValueOnce(show);
     admin({ profile: { id: PROFILE }, ownership: raw });
     ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
+    grantIds.mockResolvedValue(new Set([SHOW]));
     const ownerBody = await (await getShow()).json();
     expect(ownerBody.show.ownership_status).toBe("verified");
     expect(ownerBody.show.rate_card).toEqual(show.rate_card);
@@ -219,6 +227,7 @@ describe("GET /api/shows/[id]", () => {
     getShowById.mockResolvedValueOnce(show);
     admin({ deals: [{ show_id: SHOW, brand_id: "brand-1" }], ownership: raw });
     ties.mockResolvedValue([]);
+    grantIds.mockResolvedValue(new Set());
     const brandBody = await (await getShow()).json();
     expect(brandBody.show.rate_card).toEqual(show.rate_card);
     expect(brandBody.show).not.toHaveProperty("ownership_status");

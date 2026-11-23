@@ -37,7 +37,7 @@ Not a claim:
 
 Onboarding backfill still attaches `show_profile_id` so the show can work the deal. That attachment does not by itself mark the show claimed.
 
-`user_owns_show` and `getVerifiedProfileTies` still treat the looser deal and email links as edit rights. That is a separate security item. This lane does not change those functions.
+`user_owns_show` and `getVerifiedProfileTies` treated the looser deal and email links as edit rights when this lane shipped. SHOW-EDIT-SEC1 closes that for edit rights. See `docs/jobs/SHOW-EDIT-SEC1.md`. `getVerifiedProfileTies` itself is unchanged and is no longer the edit check.
 
 `show_contacts` stays off brand APIs. The claim read is service role only. `lib/podscan-import/exposure.test.ts` allows `lib/ownership/` and migration 100 to name that table so this check can exist. It does not copy the email into a response.
 

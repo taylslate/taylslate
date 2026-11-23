@@ -6,10 +6,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createShow } from "@/lib/data/queries";
 import { syncShowClaim } from "@/lib/ownership/persist";
 import type { ShowProfile } from "@/lib/data/types";
-import {
-  getVerifiedProfileTies,
-  type ShowGeoIdentity,
-} from "@/lib/shows/apply-geography";
+import { showEditGrantIds } from "@/lib/ownership/edit-rights";
+import type { ShowGeoIdentity } from "@/lib/shows/apply-geography";
 import {
   chooseSurfaceShowId,
   groupPublishedSurfaces,
@@ -161,20 +159,19 @@ export async function listPublishedSurfacesForShows(
 
 /**
  * Catalog shows this profile may attach surfaces to. Candidates come
- * from a deal or a show_owner contact email, then getVerifiedProfileTies
- * confirms the profile. A podscan id is never the lookup key.
+ * from a deal or a show_owner contact email, then showEditGrantIds
+ * keeps only shows this auth user may edit. A bare deal profile id
+ * does not attach. A podscan id is never the lookup key.
  */
 async function verifiedCatalogShowIds(profile: ShowProfile, email: string): Promise<string[]> {
-  if (!profile.id) return [];
+  if (!profile.id || !profile.user_id) return [];
   const identities = await catalogIdentitiesForProfile(profile.id, email);
-  if (identities.length === 0) return [];
-  const ties = await getVerifiedProfileTies(identities);
-  const allowed = new Set(
-    ties.filter((tie) => tie.profileId === profile.id).map((tie) => tie.showId)
-  );
-  return identities
+  const ids = identities
     .map((identity) => identity.showId)
-    .filter((id): id is string => !!id && allowed.has(id));
+    .filter((id): id is string => !!id);
+  if (ids.length === 0) return [];
+  const allowed = await showEditGrantIds(profile.user_id, ids);
+  return ids.filter((id) => allowed.has(id));
 }
 
 async function catalogIdentitiesForProfile(
@@ -277,7 +274,8 @@ async function resolveOwnerShowId(
   email: string,
   profile: ShowProfile
 ): Promise<string | null> {
-  // Catalog attachment goes through a deal or a show_owner email.
+  // Candidates come from a deal or a show_owner email. showEditGrantIds
+  // keeps a catalog show only when this user may edit it.
   // show_profiles.podscan_id is self-reported and is not a tie.
   const verifiedShowIds = await verifiedCatalogShowIds(profile, email);
   let catalogShowId: string | null = null;

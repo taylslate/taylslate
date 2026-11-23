@@ -1,158 +1,241 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ownerShowSlug } from "@/lib/shows/surfaces";
 
-const { from, ties, authEmail } = vi.hoisted(() => ({
-  from: vi.fn(),
-  ties: vi.fn(),
-  authEmail: vi.fn(),
-}));
+type Row = Record<string, unknown>;
+
+const db: Record<string, Row[]> = {
+  shows: [],
+  deals: [],
+  outreaches: [],
+  show_profiles: [],
+  domain_events: [],
+  show_ownership_proofs: [],
+  users: [],
+  profiles: [],
+  agent_show_relationships: [],
+};
+
+const tables: string[] = [];
+let authErrorCode = "";
+const warn = vi.fn();
+
+function matches(row: Row, filters: Array<{ op: string; column: string; value: unknown }>): boolean {
+  return filters.every((filter) => {
+    const cell = row[filter.column];
+    if (filter.op === "in") return Array.isArray(filter.value) && (filter.value as unknown[]).includes(cell);
+    return cell === filter.value;
+  });
+}
 
 vi.mock("@/lib/supabase/admin", () => ({
-  supabaseAdmin: { from: (...args: unknown[]) => from(...args) },
-}));
-
-vi.mock("@/lib/auth/auth-email", () => ({
-  getAuthEmail: (...args: unknown[]) => authEmail(...args),
-}));
-
-vi.mock("@/lib/shows/apply-geography", () => ({
-  getVerifiedProfileTies: (...args: unknown[]) => ties(...args),
+  supabaseAdmin: {
+    from(table: string) {
+      tables.push(table);
+      const filters: Array<{ op: string; column: string; value: unknown }> = [];
+      const api = {
+        select() {
+          return api;
+        },
+        eq(column: string, value: unknown) {
+          filters.push({ op: "eq", column, value });
+          return api;
+        },
+        in(column: string, value: unknown) {
+          filters.push({ op: "in", column, value });
+          return api;
+        },
+        maybeSingle() {
+          const rows = (db[table] ?? []).filter((row) => matches(row, filters));
+          return Promise.resolve({ data: rows[0] ?? null, error: null });
+        },
+        then(
+          resolve: (value: { data: Row[] | null; error: { code?: string } | null }) => unknown,
+          reject?: (reason: unknown) => unknown
+        ) {
+          const rows = (db[table] ?? []).filter((row) => matches(row, filters));
+          return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+        },
+      };
+      return api;
+    },
+    auth: {
+      admin: {
+        getUserById(id: string) {
+          if (authErrorCode) {
+            return Promise.resolve({ data: { user: null }, error: { code: authErrorCode } });
+          }
+          const user = (db.users ?? []).find((row) => row.id === id) ?? null;
+          return Promise.resolve({ data: { user }, error: null });
+        },
+      },
+    },
+  },
 }));
 
 import { canEditShow, isShowsAdmin, showWritePatch } from "./can-edit-show";
+import { showEditGrantIds } from "@/lib/ownership/edit-rights";
 
 const USER = "11111111-1111-4111-8111-111111111111";
+const OTHER = "99999999-9999-4999-8999-999999999999";
 const SHOW = "22222222-2222-4222-8222-222222222222";
+const SHOW_B = "88888888-8888-4888-8888-888888888888";
 const PROFILE = "33333333-3333-4333-8333-333333333333";
+const BRAND = "55555555-5555-4555-8555-555555555555";
+const DEAL = "66666666-6666-4666-8666-666666666666";
+const OUTREACH = "77777777-7777-4777-8777-777777777777";
 
-interface Row {
-  data: Record<string, unknown> | null;
+function confirm(id: string, email: string, confirmed = true) {
+  db.users.push({
+    id,
+    email,
+    email_confirmed_at: confirmed ? "2026-01-01T00:00:00.000Z" : null,
+  });
 }
 
-function table(rows: Record<string, Row>) {
-  from.mockImplementation((name: string) => {
-    const filters: Record<string, unknown> = {};
-    const builder = {
-      select: () => builder,
-      eq: (column: string, value: unknown) => {
-        filters[column] = value;
-        return builder;
-      },
-      maybeSingle: async () => {
-        const row = rows[name];
-        if (!row) return { data: null, error: null };
-        if (name === "agent_show_relationships") {
-          const rel = row.data;
-          if (!rel) return { data: null, error: null };
-          if (filters.agent_id !== rel.agent_id || filters.show_id !== rel.show_id) {
-            return { data: null, error: null };
-          }
-          if (filters.status !== undefined && filters.status !== rel.status) {
-            return { data: null, error: null };
-          }
-        }
-        return { data: row.data, error: null };
-      },
-    };
-    return builder;
+function ownerRow(id: string, userId: string, email: string, slug = ownerShowSlug(userId)) {
+  db.shows.push({
+    id,
+    contact_email: email,
+    data_sources: ["show_owner"],
+    slug,
+  });
+  db.show_profiles.push({ id: PROFILE, user_id: userId });
+}
+
+function acceptedDeal() {
+  db.shows.push({
+    id: SHOW,
+    contact_email: "real-host@show.test",
+    data_sources: ["podscan"],
+    slug: "real-show",
+  });
+  db.show_profiles.push({ id: PROFILE, user_id: USER });
+  db.deals.push({
+    id: DEAL,
+    show_id: SHOW,
+    show_profile_id: PROFILE,
+    outreach_id: OUTREACH,
+    status: "show_signed",
+    show_signed_at: "2026-04-01T00:00:00.000Z",
+  });
+  db.outreaches.push({
+    id: OUTREACH,
+    sent_to_email: "second@brand.test",
+    response_status: "accepted",
   });
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  ties.mockResolvedValue([]);
-  authEmail.mockResolvedValue(null);
+  for (const key of Object.keys(db)) db[key] = [];
+  tables.length = 0;
+  authErrorCode = "";
+  warn.mockReset();
+  vi.spyOn(console, "warn").mockImplementation(warn);
   delete process.env.INTERNAL_ADMIN_EMAILS;
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("canEditShow", () => {
   it("allows an internal admin from the auth login, not profiles.email", async () => {
     process.env.INTERNAL_ADMIN_EMAILS = "ops@taylslate.com";
-    authEmail.mockResolvedValue("ops@taylslate.com");
-    table({
-      profiles: { data: { id: USER, email: "attacker@example.test", role: "brand" } },
-    });
+    confirm(USER, "ops@taylslate.com");
+    db.profiles.push({ id: USER, email: "attacker@example.test", role: "brand" });
     expect(await canEditShow(USER, SHOW)).toBe(true);
     expect(await isShowsAdmin(USER)).toBe(true);
+    expect(tables).not.toContain("profiles");
 
-    authEmail.mockResolvedValue("attacker@example.test");
-    table({
-      profiles: { data: { id: USER, email: "ops@taylslate.com", role: "admin" } },
-    });
+    db.users[0].email = "attacker@example.test";
+    db.profiles[0].email = "ops@taylslate.com";
+    db.profiles[0].role = "admin";
     expect(await canEditShow(USER, SHOW)).toBe(false);
     expect(await isShowsAdmin(USER)).toBe(false);
+    expect(tables).not.toContain("profiles");
   });
 
-  it("allows an agent only when the roster link is approved", async () => {
-    table({
-      profiles: { data: { id: USER, email: "rep@taylslate.com", role: "agent" } },
-      shows: { data: { id: SHOW, agent_id: USER, contact_email: "", data_sources: [] } },
-      agent_show_relationships: {
-        data: { id: "rel", agent_id: USER, show_id: SHOW, status: "approved" },
-      },
+  it("does not grant edit to an approved roster link", async () => {
+    confirm(USER, "rep@taylslate.com");
+    db.shows.push({ id: SHOW, agent_id: USER, contact_email: "", data_sources: [] });
+    db.agent_show_relationships.push({
+      id: "rel",
+      agent_id: USER,
+      show_id: SHOW,
+      status: "approved",
+    });
+    expect(await canEditShow(USER, SHOW)).toBe(false);
+    expect(tables).not.toContain("agent_show_relationships");
+    expect(tables).not.toContain("profiles");
+  });
+
+  it("refuses a brand who accepts outreach on a second account", async () => {
+    confirm(USER, "second@brand.test");
+    confirm(BRAND, "brand@taylslate.com");
+    acceptedDeal();
+    db.domain_events.push({
+      actor_id: BRAND,
+      entity_type: "deal",
+      entity_id: DEAL,
+      event_type: "deal.created",
+    });
+    db.profiles.push({ id: USER, email: "real-host@show.test", role: "show" });
+    expect(await canEditShow(USER, SHOW)).toBe(false);
+    expect(tables).not.toContain("profiles");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("@");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(SHOW);
+  });
+
+  it("allows the server owner row and rejects a slug spoof", async () => {
+    confirm(USER, "host@show.test");
+    ownerRow(SHOW, USER, "Host@Show.test");
+    ownerRow(SHOW_B, USER, "Host@Show.test", "odd-lots");
+    db.show_profiles.length = 1;
+    const granted = await showEditGrantIds(USER, [SHOW, SHOW_B]);
+    expect(granted).toEqual(new Set([SHOW]));
+    expect(await canEditShow(USER, SHOW)).toBe(true);
+    expect(await canEditShow(USER, SHOW_B)).toBe(false);
+
+    db.shows[1].slug = ownerShowSlug(OTHER);
+    expect(await canEditShow(USER, SHOW_B)).toBe(false);
+    expect(tables).not.toContain("profiles");
+  });
+
+  it("refuses an unconfirmed login on the owner row", async () => {
+    confirm(USER, "host@show.test", false);
+    ownerRow(SHOW, USER, "host@show.test");
+    expect(await canEditShow(USER, SHOW)).toBe(false);
+  });
+
+  it("allows a verified proof tied to this user and ignores verified alone", async () => {
+    confirm(USER, "host@show.test", false);
+    db.shows.push({ id: SHOW, ownership_status: "verified", slug: "catalog" });
+    db.show_ownership_proofs.push({
+      show_id: SHOW,
+      user_id: OTHER,
+      status: "verified",
+    });
+    expect(await canEditShow(USER, SHOW)).toBe(false);
+
+    db.show_ownership_proofs.push({
+      show_id: SHOW,
+      user_id: USER,
+      status: "verified",
     });
     expect(await canEditShow(USER, SHOW)).toBe(true);
 
-    for (const status of ["pending", "rejected"]) {
-      table({
-        profiles: { data: { id: USER, email: "rep@taylslate.com", role: "agent" } },
-        shows: { data: { id: SHOW, agent_id: USER, contact_email: "", data_sources: [] } },
-        agent_show_relationships: {
-          data: { id: "rel", agent_id: USER, show_id: SHOW, status },
-        },
-      });
-      expect(await canEditShow(USER, SHOW)).toBe(false);
-    }
-
-    table({
-      profiles: { data: { id: USER, email: "rep@taylslate.com", role: "agent" } },
-      shows: { data: { id: SHOW, agent_id: USER, contact_email: "", data_sources: [] } },
-    });
+    db.show_ownership_proofs[1].status = "pending";
     expect(await canEditShow(USER, SHOW)).toBe(false);
   });
 
-  it("refuses a brand, an unrelated agent, and an unrelated show user", async () => {
-    table({
-      profiles: { data: { id: USER, email: "brand@taylslate.com", role: "brand" } },
-      shows: { data: { id: SHOW, agent_id: "other", contact_email: "host@show.test", data_sources: ["show_owner"] } },
-    });
+  it("logs a code only when the auth read fails", async () => {
+    authErrorCode = "500";
+    db.profiles.push({ id: USER, email: "host@show.test" });
     expect(await canEditShow(USER, SHOW)).toBe(false);
-
-    table({
-      profiles: { data: { id: USER, email: "rep@taylslate.com", role: "agent" } },
-      shows: { data: { id: SHOW, agent_id: "other", contact_email: "", data_sources: [] } },
-      agent_show_relationships: {
-        data: { id: "rel", agent_id: USER, show_id: SHOW, status: "pending" },
-      },
-    });
-    expect(await canEditShow(USER, SHOW)).toBe(false);
-
-    table({
-      profiles: { data: { id: USER, email: "host@other.test", role: "show" } },
-      shows: { data: { id: SHOW, agent_id: null, contact_email: "host@show.test", data_sources: ["show_owner"] } },
-      show_profiles: { data: { id: PROFILE } },
-    });
-    ties.mockResolvedValue([]);
-    expect(await canEditShow(USER, SHOW)).toBe(false);
-    expect(ties).toHaveBeenCalledWith([
-      {
-        showId: SHOW,
-        contactEmail: "host@show.test",
-        dataSources: ["show_owner"],
-      },
-    ]);
-  });
-
-  it("allows a show user only through getVerifiedProfileTies", async () => {
-    table({
-      profiles: { data: { id: USER, email: "host@show.test", role: "show" } },
-      shows: { data: { id: SHOW, agent_id: null, contact_email: "host@show.test", data_sources: ["show_owner"] } },
-      show_profiles: { data: { id: PROFILE } },
-    });
-    ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
-    expect(await canEditShow(USER, SHOW)).toBe(true);
-
-    ties.mockResolvedValue([{ showId: SHOW, profileId: "someone-else" }]);
-    expect(await canEditShow(USER, SHOW)).toBe(false);
+    expect(warn.mock.calls.some((call) => call[0] === "[show-edit]" && call[1] === "500")).toBe(true);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("@");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(SHOW);
+    expect(tables).not.toContain("profiles");
   });
 });
 

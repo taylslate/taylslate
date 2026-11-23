@@ -23,6 +23,7 @@ function allowed(path: string): boolean {
     path.startsWith("supabase/migrations/096_") ||
     path.startsWith("supabase/migrations/097_") ||
     path.startsWith("supabase/migrations/100_") ||
+    path.startsWith("supabase/migrations/101_") ||
     path.startsWith("lib/ownership/") ||
     path.startsWith("docs/")
   );
