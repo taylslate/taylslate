@@ -3,7 +3,13 @@ import { createClient } from "@/lib/supabase/server";
 import { getShowById, updateShow } from "@/lib/data/queries";
 import type { Show } from "@/lib/data/types";
 import { canEditShow, isShowsAdmin, showWritePatch } from "@/lib/shows/can-edit-show";
-import { fullShowIdsForCaller, projectShows } from "@/lib/shows/public-fields";
+import {
+  fullShowIdsForCaller,
+  hasOwnershipStatus,
+  ownershipVisibleIds,
+  projectShows,
+  stripOwnershipStatus,
+} from "@/lib/shows/public-fields";
 
 export async function GET(
   _request: NextRequest,
@@ -35,7 +41,12 @@ export async function GET(
     }
     const fullIds = await fullShowIdsForCaller(user.id, [show]);
     const [projected] = projectShows([show], fullIds);
-    return NextResponse.json({ show: projected });
+    if (!hasOwnershipStatus(projected)) {
+      return NextResponse.json({ show: projected });
+    }
+    const keep = await ownershipVisibleIds(user.id, [show], await isShowsAdmin(user.id));
+    const [visible] = stripOwnershipStatus([projected], keep);
+    return NextResponse.json({ show: visible });
   } catch (error) {
     console.error("Error fetching show:", error);
     return NextResponse.json({ error: "Failed to fetch show" }, { status: 500 });

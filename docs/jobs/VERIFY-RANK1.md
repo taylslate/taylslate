@@ -20,7 +20,7 @@ The live ranker is `scoreShowConviction` in `lib/scoring/conviction.ts`, sorted 
 
 ## Claimed rule
 
-A deal profile id is not enough. A brand can choose `show_id` and type `sent_to_email`, so that link can be forged. Claimed requires one of these, and the matched auth user must have `email_confirmed_at`.
+A deal profile id is not enough. A brand can choose `show_id` and type `sent_to_email`, so that link can be forged. Claimed requires one of these, and the matched auth user must have `email_confirmed_at`. That flag is read with `supabaseAdmin.auth.admin.getUserById`, in small chunks. The auth schema is not queried. A lookup error fails closed and logs the code only.
 
 1. Deal. The outreach `response_status` is `accepted`, or `deals.show_signed_at` is set. Declined and cancelled deals are out. Unsigned deals that were not accepted are out. `show_profiles.user_id` is `domain_events.actor_id` on `deal.created`, `io.show_signed`, or `io.counter_accepted` for that deal or outreach. `outreaches.sent_to_email` matches `show_contacts.email` for this show with source `podscan` or `apple_rss`. A brand-typed address does not count.
 2. Owner row. `data_sources` contains `show_owner`, `slug` is `owner-` plus that `show_profiles.user_id` (the slug `resolveOwnerShowId` writes through `ownerShowSlug`), and `contact_email` is that user's confirmed login.
@@ -32,7 +32,8 @@ Not a claim:
 - An agent roster claim (`POST /api/shows/[id]/claim`).
 - `shows.is_claimed` or a matching `show_profiles.podscan_id`.
 - A deal whose only tie is `show_profile_id`.
-- Token accept and the DocuSign webhook do not record the show user as `actor_id`. Those deals stay unclaimed until an event records that user.
+- Token accept (`app/api/outreach/[token]/_shared.ts`) logs `deal.created` with no actor. Accept-counter records the brand. The DocuSign webhook logs `io.show_signed` with no actor. None of those routes record `auth.uid()` for the show. Deal-based claims stay off until a later lane records a signed-in show action that way. This lane does not add that plumbing. The code path stays, and its test is labeled as a future signed-in show action, not a current route.
+- Until that actor exists, claimed comes only from the owner-row branch.
 
 Onboarding backfill still attaches `show_profile_id` so the show can work the deal. That attachment does not by itself mark the show claimed.
 
@@ -46,13 +47,13 @@ Verified is never downgraded. `writeOwnershipStatus` adds `ownership_status <> v
 
 `syncShowClaim` runs when a deal is created with a `show_profile_id`, when onboarding backfills that id onto accepted deals, when a show account resolves or creates its owner show, and when a deal is deleted. If the rule no longer holds, a claimed row goes back to unclaimed. A verified row stays verified.
 
-`writeOwnershipStatus` is the only writer of the column from the app. O2 (`markShowVerified`) and O4 (`finishAdminVerify`) call it with `verified`. A client patch cannot set `ownership_status`. Non-admin patches cannot set `data_sources`. `importShows` drops `data_sources` and `ownership_status`. `updateShow` and `createShow` drop `ownership_status`.
+`writeOwnershipStatus` is the only writer of the column from the app. O2 (`markShowVerified`) and O4 (`finishAdminVerify`) call it with `verified`. A client patch cannot set `ownership_status`. Non-admin patches cannot set `data_sources` or `slug`. `importShows` drops `data_sources` and `ownership_status`. `updateShow` and `createShow` drop `ownership_status`.
 
 ## Before migration 100
 
 The live check constraint allows only `unclaimed` and `verified`. A write of `claimed` returns Postgres `23514`. That write logs `[ownership] 23514` and returns. Claim, verify, profile, and deal flows continue. The column stays `unclaimed`.
 
-Ranking does not wait on the column. Hydration calls the injected `stampOwnership` dep, which defaults to `stampRankingOwnership`. It copies a stored `claimed` or `verified` value onto the candidate. When the stored value is still `unclaimed`, it applies the tight rule in memory and does not write. A stored `unclaimed` is not reported as claimed on `/api/v1/shows` or MCP. Those reads do not include `ownership_status`. Whether they should is an open decision for Chris. `getOwnershipState` is for owner and admin labels, which are not rendered on brand surfaces.
+Ranking does not wait on the column. Hydration calls the injected `stampOwnership` dep, which defaults to `stampRankingOwnership`. It copies a stored `claimed` or `verified` value onto the candidate. When the stored value is still `unclaimed`, it applies the tight rule in memory and does not write. A stored `unclaimed` is not reported as claimed on `/api/v1/shows` or MCP. Those reads do not include `ownership_status`. Whether they should is an open decision for Chris. `GET /api/shows` and `GET /api/shows/[id]` also omit `ownership_status` unless the caller is the show owner or an admin. A brand with a deal still sees the rest of the full row. Non-admin patches cannot set `slug`. `getOwnershipState` passes `slug` so an owner row can show Claimed on the owner and admin view. Those labels are not rendered on brand surfaces.
 
 After 100 is applied, the same writes store `claimed`, and the backfill sets it where the rule already holds.
 

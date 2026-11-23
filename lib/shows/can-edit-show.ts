@@ -20,6 +20,7 @@ const ADMIN_WRITE_FIELDS = [
   "podscan_id",
   "is_discoverable",
   "data_sources",
+  "slug",
 ] as const;
 
 /** Ranking state. Only the ownership writer sets this. Never a client patch. */

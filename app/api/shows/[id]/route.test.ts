@@ -176,6 +176,30 @@ describe("GET /api/shows/[id]", () => {
     expect(await res.json()).toEqual({ show });
   });
 
+  it("omits ownership_status for a brand with a deal and keeps it for the owner and an admin", async () => {
+    const show = { ...catalogShow(), ownership_status: "claimed" as const };
+    getUser.mockResolvedValueOnce({ data: { user: { id: "brand-1" } } });
+    getShowById.mockResolvedValueOnce(show);
+    admin({ deals: [{ show_id: SHOW, brand_id: "brand-1" }] });
+    const brand = await getShow();
+    expect((await brand.json()).show).not.toHaveProperty("ownership_status");
+
+    getUser.mockResolvedValueOnce({ data: { user: { id: "show-user" } } });
+    getShowById.mockResolvedValueOnce(show);
+    admin({ profile: { id: PROFILE } });
+    ties.mockResolvedValue([{ showId: SHOW, profileId: PROFILE }]);
+    const owner = await getShow();
+    expect((await owner.json()).show.ownership_status).toBe("claimed");
+
+    getUser.mockResolvedValueOnce({ data: { user: { id: "admin-1" } } });
+    isShowsAdmin.mockResolvedValue(true);
+    getShowById.mockResolvedValueOnce(show);
+    admin({ deals: [{ show_id: SHOW, brand_id: "admin-1" }] });
+    const adminRes = await getShow();
+    expect((await adminRes.json()).show.ownership_status).toBe("claimed");
+    isShowsAdmin.mockResolvedValue(false);
+  });
+
   it("returns the full row for a verified rep", async () => {
     getUser.mockResolvedValueOnce({ data: { user: { id: "rep-1" } } });
     const show = catalogShow();

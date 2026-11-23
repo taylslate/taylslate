@@ -16,6 +16,7 @@ const db: Record<string, Row[]> = {
 const calls: string[] = [];
 let checkViolation = false;
 let staleUnclaimedRead = false;
+let authErrorCode = "";
 const warn = vi.fn();
 
 function matches(row: Row, filters: Array<{ op: string; column: string; value: unknown }>): boolean {
@@ -36,13 +37,17 @@ vi.mock("@/lib/supabase/admin", () => ({
     from(table: string) {
       return builder(table);
     },
-    schema(name: string) {
-      return {
-        from(table: string) {
-          calls.push(`${name}.${table}`);
-          return builder(table);
+    auth: {
+      admin: {
+        getUserById(id: string) {
+          calls.push("auth.admin.getUserById");
+          if (authErrorCode) {
+            return Promise.resolve({ data: { user: null }, error: { code: authErrorCode } });
+          }
+          const user = (db.users ?? []).find((row) => row.id === id) ?? null;
+          return Promise.resolve({ data: { user }, error: null });
         },
-      };
+      },
     },
   },
 }));
@@ -148,6 +153,7 @@ beforeEach(() => {
   calls.length = 0;
   checkViolation = false;
   staleUnclaimedRead = false;
+  authErrorCode = "";
   warn.mockReset();
   vi.spyOn(console, "warn").mockImplementation(warn);
 });
@@ -164,10 +170,13 @@ describe("tight claim rule", () => {
     expect(db.shows[0].ownership_status).toBe("unclaimed");
   });
 
-  it("claims when the show user accepted a sourced address and confirmed the login", async () => {
+  it("covers a future signed-in show action, not a current accept route", async () => {
+    // Current token accept, counter accept, and the DocuSign webhook do not
+    // record the show user as actor_id. This fixture is that future event.
     qualifyingDeal();
     await syncShowClaim(SHOW);
     expect(db.shows[0].ownership_status).toBe("claimed");
+    expect(calls.filter((call) => call === "auth.admin.getUserById").length).toBeGreaterThan(0);
   });
 
   it("does not claim a declined or unsigned deal", async () => {
@@ -239,9 +248,20 @@ describe("tight claim rule", () => {
     ]);
     expect(lookup).toEqual({ ok: true, ids: new Set([SHOW]) });
     const profileReads = calls.filter((call) => call === "show_profiles.in.user_id");
-    const authReads = calls.filter((call) => call === "auth.users");
+    const authReads = calls.filter((call) => call === "auth.admin.getUserById");
     expect(profileReads).toHaveLength(1);
     expect(authReads).toHaveLength(1);
+  });
+
+  it("fails closed when getUserById errors and does not use an auth schema", async () => {
+    qualifyingDeal();
+    authErrorCode = "500";
+    const lookup = await claimLookup([{ id: SHOW, podscan_id: "pd_show" }]);
+    expect(lookup).toEqual({ ok: false });
+    expect(warn.mock.calls.some((call) => call[0] === "[ownership]" && call[1] === "500")).toBe(true);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("@");
+    const admin = (await import("@/lib/supabase/admin")).supabaseAdmin as { schema?: unknown };
+    expect(admin.schema).toBeUndefined();
   });
 
   it("logs only 23514 and continues when claimed is rejected", async () => {

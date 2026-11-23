@@ -8,7 +8,13 @@ import {
   getUserProfile,
 } from "@/lib/data/queries";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
-import { fullShowIdsForCaller, projectShows } from "@/lib/shows/public-fields";
+import {
+  fullShowIdsForCaller,
+  hasOwnershipStatus,
+  ownershipVisibleIds,
+  projectShows,
+  stripOwnershipStatus,
+} from "@/lib/shows/public-fields";
 
 export async function GET(request: NextRequest) {
   try {
@@ -53,7 +59,9 @@ export async function GET(request: NextRequest) {
         agent_id: user.id,
         limit,
       });
-      return NextResponse.json(shows);
+      if (!shows.some((show) => hasOwnershipStatus(show))) return NextResponse.json(shows);
+      if (await isShowsAdmin(user.id)) return NextResponse.json(shows);
+      return NextResponse.json(stripOwnershipStatus(shows, new Set()));
     }
 
     // Public fields unless the caller owns the show, has a verified
@@ -71,7 +79,12 @@ export async function GET(request: NextRequest) {
         })
       : await getAllShows();
     const fullIds = await fullShowIdsForCaller(user.id, shows);
-    return NextResponse.json(projectShows(shows, fullIds));
+    const projected = projectShows(shows, fullIds);
+    if (!projected.some((show) => hasOwnershipStatus(show))) {
+      return NextResponse.json(projected);
+    }
+    const keep = await ownershipVisibleIds(user.id, shows, await isShowsAdmin(user.id));
+    return NextResponse.json(stripOwnershipStatus(projected, keep));
   } catch (error) {
     console.error("Error fetching shows:", error);
     return NextResponse.json(

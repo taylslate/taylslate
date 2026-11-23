@@ -47,12 +47,17 @@ export async function getOwnershipState(
   try {
     const { data: shows, error } = await supabaseAdmin
       .from("shows")
-      .select("id, ownership_status, contact_email, data_sources")
+      .select("id, ownership_status, contact_email, data_sources, slug")
       .in("id", ids);
     if (error) {
       console.warn("[getOwnershipState] show read failed:", error.code ?? "unknown");
     } else {
-      const open: Array<{ id: string; contact_email?: unknown; data_sources?: unknown }> = [];
+      const open: Array<{
+        id: string;
+        contact_email?: unknown;
+        data_sources?: unknown;
+        slug?: unknown;
+      }> = [];
       for (const row of shows ?? []) {
         const id = text(row.id);
         const current = out.get(id);
@@ -63,6 +68,7 @@ export async function getOwnershipState(
             id,
             contact_email: row.contact_email,
             data_sources: row.data_sources,
+            slug: row.slug,
           });
           continue;
         }

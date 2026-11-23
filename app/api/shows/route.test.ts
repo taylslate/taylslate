@@ -244,14 +244,15 @@ describe("GET /api/shows", () => {
   it("returns the full row for a show the brand already has a deal on", async () => {
     getUser.mockResolvedValueOnce({ data: { user: { id: "brand-1" } } });
     getUserProfile.mockResolvedValueOnce({ role: "brand" });
-    const tied = catalogShow(SHOW, "host@show.test");
+    const tied = { ...catalogShow(SHOW, "host@show.test"), ownership_status: "claimed" };
     const open = catalogShow(OTHER, "other@show.test");
     getAllShows.mockResolvedValueOnce([tied, open]);
     admin({ deals: [{ show_id: SHOW, brand_id: "brand-1" }] });
 
     const res = await GET(new NextRequest("http://x/api/shows"));
     const body = await res.json();
-    expect(body[0]).toEqual(tied);
+    expect(body[0].rate_card).toEqual(tied.rate_card);
+    expect(body[0]).not.toHaveProperty("ownership_status");
     expect(body[1]).not.toHaveProperty("rate_card");
     expect(body[1]).not.toHaveProperty("contact");
   });

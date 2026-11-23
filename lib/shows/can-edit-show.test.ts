@@ -169,6 +169,7 @@ describe("showWritePatch", () => {
       is_discoverable: false,
       ownership_status: "verified",
       data_sources: ["show_owner"],
+      slug: "owner-forged",
     };
     expect(showWritePatch(body, false)).toEqual({ description: "updated" });
     expect(showWritePatch(body, true)).toEqual({
@@ -179,6 +180,7 @@ describe("showWritePatch", () => {
       podscan_id: "pod",
       is_discoverable: false,
       data_sources: ["show_owner"],
+      slug: "owner-forged",
     });
   });
 });

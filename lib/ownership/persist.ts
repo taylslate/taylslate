@@ -81,38 +81,36 @@ async function rowsIn(
   }
 }
 
+const AUTH_LOOKUP_CHUNK = 8;
+
 async function confirmedLogins(
   userIds: string[]
 ): Promise<{ ok: true; emailById: Map<string, string> } | { ok: false; code: string }> {
   const ids = unique(userIds);
   if (ids.length === 0) return { ok: true, emailById: new Map() };
+  const emailById = new Map<string, string>();
   try {
-    const auth = (
-      supabaseAdmin as unknown as {
-        schema?: (name: string) => {
-          from: (table: string) => {
-            select: (cols: string) => {
-              in: (
-                col: string,
-                vals: string[]
-              ) => PromiseLike<{ data: DbRow[] | null; error: { code?: string } | null }>;
-            };
-          };
-        };
+    for (let start = 0; start < ids.length; start += AUTH_LOOKUP_CHUNK) {
+      const chunk = ids.slice(start, start + AUTH_LOOKUP_CHUNK);
+      const results = await Promise.all(
+        chunk.map((id) => supabaseAdmin.auth.admin.getUserById(id))
+      );
+      for (const result of results) {
+        if (result.error) {
+          const code = errorCode(result.error);
+          console.warn("[ownership]", code);
+          return { ok: false, code };
+        }
+        const user = result.data?.user;
+        const id = text(user?.id);
+        const email = lower(user?.email);
+        if (!id || !email || !text(user?.email_confirmed_at)) continue;
+        emailById.set(id, email);
       }
-    ).schema;
-    if (!auth) return { ok: false, code: "unknown" };
-    const { data, error } = await auth("auth").from("users").select("id, email, email_confirmed_at").in("id", ids);
-    if (error) return { ok: false, code: errorCode(error) };
-    const emailById = new Map<string, string>();
-    for (const row of data ?? []) {
-      const id = text(row.id);
-      const email = lower(row.email);
-      if (!id || !email || !text(row.email_confirmed_at)) continue;
-      emailById.set(id, email);
     }
     return { ok: true, emailById };
   } catch {
+    console.warn("[ownership]", "unknown");
     return { ok: false, code: "unknown" };
   }
 }

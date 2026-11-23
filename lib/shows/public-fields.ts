@@ -14,6 +14,7 @@
 
 import type { Show } from "@/lib/data/types";
 import { getVerifiedProfileTies } from "@/lib/shows/apply-geography";
+import { ownerShowSlug } from "@/lib/shows/surfaces";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export const PUBLIC_SHOW_FIELDS = [
@@ -72,6 +73,55 @@ export function projectShows<T extends { id: string }>(
   return shows.map((show) =>
     fullIds.has(show.id) ? show : toPublicShowFields(show)
   );
+}
+
+export function hasOwnershipStatus(show: object): boolean {
+  return Object.prototype.hasOwnProperty.call(show, "ownership_status");
+}
+
+/** Drop ranking state unless this caller is the show owner or an admin. */
+export function stripOwnershipStatus<T extends { id: string }>(
+  shows: T[],
+  keepIds: ReadonlySet<string>
+): T[] {
+  return shows.map((show) => {
+    if (keepIds.has(show.id)) return show;
+    if (!Object.prototype.hasOwnProperty.call(show, "ownership_status")) return show;
+    const copy = { ...show };
+    delete (copy as { ownership_status?: unknown }).ownership_status;
+    return copy;
+  });
+}
+
+/**
+ * Show ids whose ownership_status this caller may see. An admin sees
+ * every id. A show owner sees the server owner slug and a verified
+ * profile tie. A brand deal does not qualify.
+ */
+export async function ownershipVisibleIds(
+  userId: string,
+  shows: Array<ShowAccessRow & { slug?: string | null }>,
+  admin: boolean
+): Promise<Set<string>> {
+  if (admin) return new Set(shows.map((show) => show.id));
+  const keep = new Set<string>();
+  const slug = ownerShowSlug(userId);
+  for (const show of shows) {
+    if (
+      show.slug === slug &&
+      Array.isArray(show.data_sources) &&
+      show.data_sources.includes("show_owner")
+    ) {
+      keep.add(show.id);
+    }
+  }
+  const profileId = await callerShowProfileId(userId);
+  if (!profileId) return keep;
+  const ties = await getVerifiedProfileTies(await showIdentities(shows));
+  for (const tie of ties) {
+    if (tie.profileId === profileId && tie.showId) keep.add(tie.showId);
+  }
+  return keep;
 }
 
 /**

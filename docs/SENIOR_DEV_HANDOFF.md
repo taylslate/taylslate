@@ -3983,7 +3983,7 @@ No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/bil
 
 `npx tsc --noEmit` is clean.
 
-`npx vitest run`: 466 files, 3846 passed, 41 skipped.
+`npx vitest run`: 466 files, 3849 passed, 41 skipped.
 
 `npx eslint` on the changed TypeScript files: 0 errors. One warning is the pre-existing unused `genres` binding in `lib/scoring/conviction.test.ts`. This job did not add it.
 
@@ -3997,7 +3997,7 @@ Covers a bare deal profile that stays unclaimed, a sourced accept whose recorded
 - Until 100 is applied, the column stays `unclaimed` or `verified`. Ranking still applies the tight rule in memory. The log line is `[ownership] 23514`. The public API does not report claimed from an unclaimed column.
 - `lib/scoring/index.ts` does not apply the bonus. Live discovery does not use that scorer.
 - An agent roster claim is still a pending rep link. It does not set `ownership_status`.
-- Token accept and the DocuSign webhook do not record the show user as `actor_id`. Those deals stay unclaimed.
+- Deal-based claims stay off until a signed-in show action records `auth.uid()` as `domain_events.actor_id`. Token accept logs `deal.created` with no actor. Accept-counter records the brand. The DocuSign webhook logs `io.show_signed` with no actor. This lane does not add that plumbing. Until then, claimed comes only from the owner-row branch. The deal-branch test covers that future event, not a current route. Confirmed logins are read with `auth.admin.getUserById`, not the auth schema.
 - Open security item, separate lane: `user_owns_show` and `getVerifiedProfileTies` (used by `canEditShow`) still treat a deal `show_profile_id` or a `show_owner` contact email as edit rights. Those links are forgeable the same way this ranking rule used to be. This lane does not change them.
 - Whether `/api/v1/shows` and MCP should return `ownership_status` is an open decision for Chris. They do not, in this lane.
 - This PR does not merge. Paul reviews.
