@@ -340,10 +340,34 @@ describe("deal price records", () => {
     expect(row.actual_downloads).toBe(20000);
     expect(row.outcome_status).toBe("delivered");
     expect(row.delivered_at).toEqual(expect.any(String));
-    const firstAt = row.delivered_at;
+    row.delivered_at = "2020-01-01T00:00:00.000Z";
     await recordDeliveryOutcome("deal-1");
     expect(row.delivered_units).toBe(2);
-    expect(row.delivered_at).toBe(firstAt);
+    expect(row.delivered_at).not.toBe("2020-01-01T00:00:00.000Z");
+  });
+
+  it("moves make_good to delivered only when every line is delivered", async () => {
+    seedDeal("deal-1");
+    await createDealPriceRecord("deal-1");
+    state.tables.deal_price_records[0].outcome_status = "make_good";
+    await recordDeliveryOutcome("deal-1");
+    expect(state.tables.deal_price_records[0].outcome_status).toBe("make_good");
+    state.tables.io_line_items[1].verified = true;
+    state.tables.io_line_items[1].actual_downloads = 8000;
+    await recordDeliveryOutcome("deal-1");
+    expect(state.tables.deal_price_records[0].outcome_status).toBe("delivered");
+  });
+
+  it("fills a missing signed IO url on a later booking pass", async () => {
+    seedDeal("deal-1", { signed_io_pdf_url: null });
+    await recordBookedDeal("deal-1");
+    expect(state.tables.deal_price_records[0].signed_io_pdf_url).toBeNull();
+    state.tables.deals[0].signed_io_pdf_url = "deals/deal-1/signed-io.pdf";
+    await recordBookedDeal("deal-1");
+    expect(state.tables.deal_price_records[0].signed_io_pdf_url).toBe("deals/deal-1/signed-io.pdf");
+    state.tables.deals[0].signed_io_pdf_url = "deals/deal-1/other.pdf";
+    await recordBookedDeal("deal-1");
+    expect(state.tables.deal_price_records[0].signed_io_pdf_url).toBe("deals/deal-1/signed-io.pdf");
   });
 
   it("records approved make-goods", async () => {

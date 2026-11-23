@@ -118,15 +118,6 @@ do $$
 begin
   if not exists (
     select 1 from pg_constraint
-    where conname = 'deal_price_records_deal_id_fkey'
-      and conrelid = 'public.deal_price_records'::regclass
-  ) then
-    alter table public.deal_price_records
-      add constraint deal_price_records_deal_id_fkey
-      foreign key (deal_id) references public.deals(id) on delete cascade;
-  end if;
-  if not exists (
-    select 1 from pg_constraint
     where conname = 'deal_price_records_io_id_fkey'
       and conrelid = 'public.deal_price_records'::regclass
   ) then
@@ -171,6 +162,11 @@ begin
       foreign key (prior_record_id) references public.deal_price_records(id) on delete set null;
   end if;
 end $$;
+
+alter table public.deal_price_records drop constraint if exists deal_price_records_deal_id_fkey;
+alter table public.deal_price_records
+  add constraint deal_price_records_deal_id_fkey
+  foreign key (deal_id) references public.deals(id) on delete restrict;
 
 alter table public.deal_price_records drop constraint if exists deal_price_records_deal_id_key;
 alter table public.deal_price_records
@@ -281,8 +277,11 @@ begin
      or new.flight_start is distinct from old.flight_start
      or new.flight_end is distinct from old.flight_end
      or new.booked_at is distinct from old.booked_at
-     or new.signed_io_pdf_url is distinct from old.signed_io_pdf_url
      or new.created_at is distinct from old.created_at
+     or (
+       new.signed_io_pdf_url is distinct from old.signed_io_pdf_url
+       and not (old.signed_io_pdf_url is null and new.signed_io_pdf_url is not null)
+     )
   then
     raise exception 'deal_price_record_snapshot_locked'
       using errcode = '42501';

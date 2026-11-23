@@ -37,6 +37,8 @@ describe("migration 099 sql", () => {
     expect(statements).toMatch(/pricing_basis in \('cpm', 'flat', 'per_engaged_view'\)/);
     expect(statements).toMatch(/medium in \('podcast', 'youtube', 'social'\)/);
     expect(statements).toMatch(/deal_price_records_lock_snapshot/);
+    expect(statements).toMatch(/on delete restrict/i);
+    expect(statements).not.toMatch(/deals\(id\) on delete cascade/i);
     expect(statements).not.toMatch(/grant select, insert, update, delete on table public\.deal_price_records to authenticated/i);
   });
 });
@@ -237,5 +239,37 @@ describe("migration 099 on PGlite", () => {
       agreed_total_gross: "1500.00",
       rebooked: true,
     });
+  });
+
+  it("lets a null signed IO url become a value and then locks it", async () => {
+    await db.exec(
+      `update public.deal_price_records
+          set signed_io_pdf_url = 'deals/x/signed-io.pdf'
+        where deal_id = '${DEAL}'`
+    );
+    const filled = await db.query<{ signed_io_pdf_url: string }>(
+      `select signed_io_pdf_url from public.deal_price_records where deal_id = '${DEAL}'`
+    );
+    expect(filled.rows[0]?.signed_io_pdf_url).toBe("deals/x/signed-io.pdf");
+    await expect(
+      db.exec(
+        `update public.deal_price_records
+            set signed_io_pdf_url = 'deals/x/other.pdf'
+          where deal_id = '${DEAL}'`
+      )
+    ).rejects.toThrow(/deal_price_record_snapshot_locked|42501/i);
+    await expect(
+      db.exec(
+        `update public.deal_price_records
+            set signed_io_pdf_url = null
+          where deal_id = '${DEAL}'`
+      )
+    ).rejects.toThrow(/deal_price_record_snapshot_locked|42501/i);
+  });
+
+  it("refuses to delete a deal that has a price record", async () => {
+    await expect(db.exec(`delete from public.deals where id = '${DEAL}'`)).rejects.toThrow(
+      /foreign key|restrict|23503/i
+    );
   });
 });

@@ -105,6 +105,59 @@ function isSigned(deal: Record<string, unknown>): boolean {
   return brandSigned || showSigned;
 }
 
+function hasEnvelope(deal: Record<string, unknown>): boolean {
+  return (
+    typeof deal.docusign_envelope_id === "string" && deal.docusign_envelope_id.trim().length > 0
+  );
+}
+
+function isLocked(deal: Record<string, unknown>): boolean {
+  return isSigned(deal) || hasEnvelope(deal);
+}
+
+// The legacy deal screen always resends these. An equal value is dropped.
+// A different value is refused. They are never written.
+const ECHO_MONEY_KEYS = [
+  "price_type",
+  "cpm_rate",
+  "guaranteed_downloads",
+  "num_episodes",
+  "net_per_episode",
+  "total_net",
+] as const;
+
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function sameStoredMoney(key: string, incoming: unknown, stored: unknown): boolean {
+  if (key === "price_type") return typeof incoming === "string" && incoming === stored;
+  const left = finiteNumber(incoming);
+  const right = finiteNumber(stored);
+  if (left === null || right === null) return false;
+  return Math.round(left * 100) === Math.round(right * 100);
+}
+
+async function priceRecordExists(dealId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("deal_price_records")
+    .select("id")
+    .eq("deal_id", dealId)
+    .maybeSingle();
+  if (error) {
+    const code = typeof error.code === "string" ? error.code : "";
+    if (code === "42P01" || code === "PGRST205" || code === "PGRST204") return false;
+    console.error("[deal delete] price record lookup failed", code.slice(0, 32));
+    throw new Error("lookup_failed");
+  }
+  return data != null;
+}
+
 async function callerParties(
   userId: string,
   deal: Record<string, unknown>
@@ -250,9 +303,8 @@ export async function GET(
 
     console.error(`[GET /api/deals/${id}] Deal not found for user ${user.id}`);
     return NextResponse.json({ error: "Deal not found" }, { status: 404 });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: `Failed to fetch deal: ${message}` }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to fetch deal" }, { status: 500 });
   }
 }
 
@@ -287,8 +339,7 @@ export async function PATCH(
     }
 
     const raw = body as Record<string, unknown>;
-    const keys = Object.keys(raw);
-    if (keys.length === 0) return refusal(400);
+    if (Object.keys(raw).length === 0) return refusal(400);
 
     const parties = await callerParties(
       user.id,
@@ -299,14 +350,23 @@ export async function PATCH(
     }
 
     const row = existing as unknown as Record<string, unknown>;
-    if (isSigned(row)) return refusal(403);
+    if (isLocked(row)) return refusal(403);
+
+    const pending: Record<string, unknown> = { ...raw };
+    for (const key of ECHO_MONEY_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(pending, key)) continue;
+      if (!sameStoredMoney(key, pending[key], row[key])) return refusal(400);
+      delete pending[key];
+    }
+    const keys = Object.keys(pending);
+    if (keys.length === 0) return refusal(400);
 
     const allowed = allowedFields(parties);
     if (keys.some((key) => !allowed.has(key))) return refusal(400);
 
     const updates: Record<string, unknown> = {};
     for (const key of keys) {
-      const value = raw[key];
+      const value = pending[key];
       if (key === "notes") {
         const notes = cleanNotes(value);
         if (notes === undefined) return refusal(400);
@@ -399,14 +459,18 @@ export async function DELETE(
       );
     }
 
+    const row = existing as unknown as Record<string, unknown>;
+    if (isLocked(row) || (await priceRecordExists(id))) {
+      return NextResponse.json({ error: "That delete is not allowed." }, { status: 403 });
+    }
+
     const success = await deleteDeal(id);
     if (!success) {
       return NextResponse.json({ error: "Failed to delete deal" }, { status: 500 });
     }
 
     return NextResponse.json({ message: "Deal deleted" });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: `Failed to delete deal: ${message}` }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to delete deal" }, { status: 500 });
   }
 }

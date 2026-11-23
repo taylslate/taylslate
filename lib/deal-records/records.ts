@@ -84,6 +84,7 @@ const RECORD_SELECT = [
   "outcome_status",
   "unit_count",
   "agreed_total_gross",
+  "signed_io_pdf_url",
 ].join(",");
 
 export type OutcomeStatus =
@@ -118,6 +119,7 @@ interface PriceRow {
   outcome_status: string | null;
   unit_count: number | null;
   agreed_total_gross: number | string | null;
+  signed_io_pdf_url?: string | null;
 }
 
 class QueryError extends Error {
@@ -301,10 +303,26 @@ export async function updateOutcome(dealId: string, patch: OutcomePatch): Promis
   return true;
 }
 
+async function fillSignedIoUrl(dealId: string): Promise<void> {
+  const deal = await loadDeal(dealId);
+  const url = typeof deal?.signed_io_pdf_url === "string" ? deal.signed_io_pdf_url.trim() : "";
+  if (!url) return;
+  const row = await loadRecord(dealId);
+  if (!row) return;
+  if (typeof row.signed_io_pdf_url === "string" && row.signed_io_pdf_url.trim()) return;
+  const { error } = await supabaseAdmin
+    .from("deal_price_records")
+    .update({ signed_io_pdf_url: url })
+    .eq("deal_id", dealId)
+    .is("signed_io_pdf_url", null);
+  raise(error);
+}
+
 export async function recordBookedDeal(dealId: string): Promise<void> {
   try {
     await createDealPriceRecord(dealId);
     await linkRebook(dealId);
+    await fillSignedIoUrl(dealId);
   } catch (err) {
     fail("book", err);
   }
@@ -346,14 +364,14 @@ export async function recordDeliveryOutcome(dealId: string): Promise<void> {
     }
     const unitCount = asCount(current.unit_count);
     let outcomeStatus: OutcomeStatus | undefined;
-    if (current.outcome_status !== "make_good" && current.outcome_status !== "cancelled") {
+    if (current.outcome_status !== "cancelled") {
       if (unitCount > 0 && units >= unitCount) outcomeStatus = "delivered";
-      else if (units > 0) outcomeStatus = "delivering";
+      else if (units > 0 && current.outcome_status !== "make_good") outcomeStatus = "delivering";
     }
     await updateOutcome(dealId, {
       delivered_units: units,
       actual_downloads: downloads,
-      ...(current.delivered_at ? {} : { delivered_at: new Date().toISOString() }),
+      delivered_at: new Date().toISOString(),
       ...(outcomeStatus ? { outcome_status: outcomeStatus } : {}),
     });
   } catch (err) {

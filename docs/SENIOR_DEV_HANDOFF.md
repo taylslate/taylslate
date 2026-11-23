@@ -3887,19 +3887,21 @@ Covers true excluded, false kept (including a children's-music topic on a false 
 
 `PATCH /api/deals/[id]` no longer writes the request body through the service role. Each party has an allowlist. The check uses the auth user id, not an email.
 
-A buyer (`brand_id`, `agency_id`, or the user on the brand profile) may set notes, the legacy status moves, placement, ad format, flight dates, the content flags, competitor names, exclusivity days, and ROFR days. A show (`agent_id`, or the user on the show profile) may set notes and those same status moves. Money, identity, payment, and signature columns are refused. `planning` to `io_sent` and `io_sent` to `live` still work. Setting `completed` is 403. After `brand_signed_at` or `show_signed_at` is set, every edit is 403. There is no post-signing field on this route. A disallowed key rejects the whole body. The JSON error is a fixed sentence with no database text and no ids.
+A buyer (`brand_id`, `agency_id`, or the user on the brand profile) may set notes, the legacy status moves, placement, ad format, flight dates, the content flags, competitor names, exclusivity days, and ROFR days. A show (`agent_id`, or the user on the show profile) may set notes and those same status moves. Money, identity, payment, and signature columns are refused. The legacy screen always resends `price_type`, `cpm_rate`, `guaranteed_downloads`, `num_episodes`, and on a flat deal `net_per_episode` and `total_net`. Those keys are dropped when the value equals the stored value, and they are not written. A different value is 400. `planning` to `io_sent` and `io_sent` to `live` still work. Setting `completed` is 403. After `brand_signed_at`, `show_signed_at`, or `docusign_envelope_id` is set, every edit is 403. There is no post-signing field on this route. A disallowed key rejects the whole body. The JSON error is a fixed sentence with no database text and no ids. GET and DELETE errors are fixed sentences too.
 
 `updateDeal` refuses the write if any key is outside that buyer list, so a body cannot ride through the admin client. The IO send route still sets status to `io_sent`.
 
-Migration 099 adds `public.deal_price_records`, one row per deal. The header says NOT APPLIED LIVE, CHRIS MUST NAME IT. It is not applied. Price, terms, unit, flight, and the signed IO url are inserted once. A trigger blocks later updates to those columns. Outcome and rebook columns stay writable by `service_role`.
+Migration 099 adds `public.deal_price_records`, one row per deal. The header says NOT APPLIED LIVE, CHRIS MUST NAME IT. It is not applied. `deal_id` references `deals` on delete restrict. Price, terms, unit, and flight are inserted once. A trigger blocks later updates to those columns. `signed_io_pdf_url` may change only from null to a value. Outcome and rebook columns stay writable by `service_role`.
 
 RLS is on. `service_role` has select, insert, update, and delete. `authenticated` has select only. `anon` has nothing. The select policy mirrors the deals select policies: `auth.uid()` is the legacy brand, agent, or agency, or the user on the brand profile, or the user on the show profile. There is no authenticated write policy.
 
 The snapshot is taken from the deal, the insertion order whose number is `IO-` plus the first 8 characters of the deal id, and that order's lines. A legacy yearly IO number on the same deal is left out. `flat_rate` is stored as `flat`.
 
-The DocuSign `show_signed` / `completed` branch creates the row and the rebook link after the IO is marked signed. The first pass runs after the signed PDF path is stored. A retry runs on the idempotent path. `linkRebook` points the new row at the latest earlier row for the same show and the same brand, and sets `rebooked` on that earlier row.
+The DocuSign `show_signed` / `completed` branch creates the row and the rebook link after the IO is marked signed. The first pass runs after the signed PDF path is stored. A retry runs on the idempotent path. If the row's `signed_io_pdf_url` is still null and the deal now has a path, that retry writes the path. `linkRebook` points the new row at the latest earlier row for the same show and the same brand, and sets `rebooked` on that earlier row.
 
-After a successful `deliverAndChargeLine` charge, `delivered_units` is the count of verified lines and `actual_downloads` is their sum. The charge and the rollback are unchanged. After a make-good approval, the approved count, the credit total, and `outcome_status` `make_good` are stored. A decline does not change the row. Saving or clearing a conversion report writes `reported_conversions`.
+After a successful `deliverAndChargeLine` charge, `delivered_units` is the count of verified lines, `actual_downloads` is their sum, and `delivered_at` is the time of this delivery. `make_good` stays until every line is delivered, then it becomes `delivered`. `cancelled` stays. The charge and the rollback are unchanged. After a make-good approval, the approved count, the credit total, and `outcome_status` `make_good` are stored. A decline does not change the row. Saving or clearing a conversion report writes `reported_conversions`.
+
+`DELETE /api/deals/[id]` returns 403 once either party has signed, once `docusign_envelope_id` is set, or once a price record exists.
 
 A record failure is logged as a fixed scope and a short code. The log does not include the database message. The parent flow still returns success.
 
@@ -3925,7 +3927,7 @@ No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/bil
 
 `npx tsc --noEmit` is clean.
 
-`npx vitest run`: 462 files, 3790 passed, 41 skipped.
+`npx vitest run`: 463 files, 3814 passed, 41 skipped.
 
 `npx eslint` on the changed TypeScript files: 0 errors.
 
@@ -3937,8 +3939,8 @@ Covers an allowed note, a refused money field, a refused edit after `brand_signe
 
 - Migration 099 is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and only when Chris names 099.
 - Until 099 is applied, the hooks log a failure code and the booking, delivery, make-good, and conversion flows continue.
-- The legacy deal screen still sends CPM and episode fields. That save now returns 400. The screen was not changed.
+- The legacy deal screen was not changed. An unchanged price echo is ignored. A changed CPM, download count, or episode count on that screen still returns 400.
 - A party cannot mark a deal `completed` on this route. The IO screen that sent that status was not changed.
 - v1 and MCP do not return the price record yet.
-- Two bookings signed at the same timestamp for the same brand and show link by `created_at`, then by id. Concurrent first links can share a sequence number. `prior_record_id` still points at the earlier row.
+- Rebook races are a follow-up. Two bookings for the same brand and show can both take the same `prior_record_id` if they link at the same time. The next change should add a partial unique index on `prior_record_id` where it is not null, so only one later row can point at a given earlier row.
 - This PR does not merge. Paul reviews.

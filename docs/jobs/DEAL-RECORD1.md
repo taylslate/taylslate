@@ -20,6 +20,10 @@ Show (legacy `agent_id`, or the user on `show_profiles`):
 
 Refused on every party: CPM and totals, episode counts, downloads, `price_type`, `agreed_cpm`, ids (`brand_id`, `show_id`, profile ids, `campaign_id`, `outreach_id`), payment method and SetupIntent columns, `card_on_file_at`, `promo_code`, DocuSign and signature columns, cancellation columns.
 
+The legacy screen resends `price_type`, `cpm_rate`, `guaranteed_downloads`, `num_episodes`, and on a flat deal `net_per_episode` and `total_net`. Those are dropped when they equal the stored value. A different value is 400. They are never written.
+
+Edits are also refused once `docusign_envelope_id` is set. `DELETE /api/deals/[id]` is 403 once either signature timestamp is set, once that envelope id is set, or once a price record exists. `deal_id` is `ON DELETE RESTRICT`. GET and DELETE failures use a fixed sentence.
+
 Legacy status moves that already worked still work: `planning` to `io_sent`, `io_sent` to `live`. A party cannot set `completed` (403). Once `brand_signed_at` or `show_signed_at` is set, every edit is 403. There is no post-signing field on this route.
 
 A disallowed field is 400 for the whole body. Nothing in that body is written. Error JSON is a fixed sentence. It does not include database text or ids.
@@ -50,7 +54,7 @@ The signed IO is the row whose `io_number` is `IO-` plus the first 8 characters 
 
 RLS is on. `service_role` can select, insert, update, and delete. `authenticated` can select. `anon` has no grant. The select policy mirrors the three deals select policies: `auth.uid()` is `deals.brand_id`, `agent_id`, or `agency_id`, or `brand_profiles.user_id`, or `show_profiles.user_id`. There is no authenticated insert, update, or delete policy.
 
-Trigger `deal_price_records_lock_snapshot` rejects an update that changes a snapshot column, including price, terms, unit, flight, and the signed IO url. Outcome and rebook columns stay writable by `service_role`.
+Trigger `deal_price_records_lock_snapshot` rejects an update that changes a snapshot column, including price, terms, unit, and flight. `signed_io_pdf_url` may move from null to a value, and not from a value to another value or back to null. A booking retry fills that column when the row is still null and the deal now has a path. Outcome and rebook columns stay writable by `service_role`. `delivered_at` is the latest delivery. `make_good` becomes `delivered` when every line is delivered.
 
 ## Where the row is written
 
