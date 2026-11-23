@@ -3880,3 +3880,65 @@ Covers true excluded, false kept (including a children's-music topic on a false 
 - Until a row is refreshed, only the narrow topic fallback drops it. A kids channel whose topics are Toy, Hobby, or Entertainment (Vlad and Niki, Kids Diana Show, and similar) stays in brand results until `made_for_kids` is stored true and the market filter fails it.
 - A store process that probed before 095 was applied keeps omitting the column until that process restarts.
 - This PR does not merge. Paul reviews.
+
+## DEAL-RECORD1: Booked deal price record
+
+### What was built
+
+`PATCH /api/deals/[id]` no longer writes the request body through the service role. Each party has an allowlist. The check uses the auth user id, not an email.
+
+A buyer (`brand_id`, `agency_id`, or the user on the brand profile) may set notes, the legacy status moves, placement, ad format, flight dates, the content flags, competitor names, exclusivity days, and ROFR days. A show (`agent_id`, or the user on the show profile) may set notes and those same status moves. Money, identity, payment, and signature columns are refused. `planning` to `io_sent` and `io_sent` to `live` still work. Setting `completed` is 403. After `brand_signed_at` or `show_signed_at` is set, every edit is 403. There is no post-signing field on this route. A disallowed key rejects the whole body. The JSON error is a fixed sentence with no database text and no ids.
+
+`updateDeal` refuses the write if any key is outside that buyer list, so a body cannot ride through the admin client. The IO send route still sets status to `io_sent`.
+
+Migration 099 adds `public.deal_price_records`, one row per deal. The header says NOT APPLIED LIVE, CHRIS MUST NAME IT. It is not applied. Price, terms, unit, flight, and the signed IO url are inserted once. A trigger blocks later updates to those columns. Outcome and rebook columns stay writable by `service_role`.
+
+RLS is on. `service_role` has select, insert, update, and delete. `authenticated` has select only. `anon` has nothing. The select policy mirrors the deals select policies: `auth.uid()` is the legacy brand, agent, or agency, or the user on the brand profile, or the user on the show profile. There is no authenticated write policy.
+
+The snapshot is taken from the deal, the insertion order whose number is `IO-` plus the first 8 characters of the deal id, and that order's lines. A legacy yearly IO number on the same deal is left out. `flat_rate` is stored as `flat`.
+
+The DocuSign `show_signed` / `completed` branch creates the row and the rebook link after the IO is marked signed. The first pass runs after the signed PDF path is stored. A retry runs on the idempotent path. `linkRebook` points the new row at the latest earlier row for the same show and the same brand, and sets `rebooked` on that earlier row.
+
+After a successful `deliverAndChargeLine` charge, `delivered_units` is the count of verified lines and `actual_downloads` is their sum. The charge and the rollback are unchanged. After a make-good approval, the approved count, the credit total, and `outcome_status` `make_good` are stored. A decline does not change the row. Saving or clearing a conversion report writes `reported_conversions`.
+
+A record failure is logged as a fixed scope and a short code. The log does not include the database message. The parent flow still returns success.
+
+`GET /api/v1` and MCP `get_deal` were not extended. Those reads are a fixed brand-key allowlist, and the show party is not a caller there. A party-scoped price-record read is a follow-up.
+
+### Where
+
+- `app/api/deals/[id]/route.ts` and `route.test.ts`
+- `lib/data/queries.ts` (`updateDeal` only) and `lib/data/update-deal.test.ts`
+- `lib/deal-records/**`
+- `app/api/webhooks/docusign/route.ts` and `route.test.ts`
+- `lib/delivery/mark-delivered.ts` and `mark-delivered.test.ts`
+- `lib/make-goods/decide.ts` and `decide.test.ts`
+- `lib/learning/store.ts` and `store.test.ts`
+- `supabase/migrations/099_deal_price_records.sql` and its test
+- `docs/jobs/DEAL-RECORD1.md`
+- `docs/WAVE_HISTORY.md` (one schema bullet)
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+No screen, style, or animation was edited. `lib/stripe`, `lib/payouts`, `lib/billing`, `plans.ts`, `lib/airchecks`, and the invoice mark-paid path were not edited. `payment_off_platform` is copied into the terms snapshot and otherwise unchanged. No Vercel env change. Nothing was applied on `ldtmhafewfifdizgfrnn`.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 462 files, 3790 passed, 41 skipped.
+
+`npx eslint` on the changed TypeScript files: 0 errors.
+
+`npx next build` compiled successfully and generated 149 pages.
+
+Covers an allowed note, a refused money field, a refused edit after `brand_signed_at`, a non-party 404, a generic error body, `updateDeal` refusing `agreed_cpm` before a query, snapshot choice of the signed IO, a second insert that does not rewrite the total, rebook linking, outcome updates, a thrown record write that leaves the charge, the approval, the conversion save, and the DocuSign 200 in place, and the migration grants plus a non-party select. No UI change, so there are no screenshots.
+
+### Known gaps
+
+- Migration 099 is not applied. Apply on `ldtmhafewfifdizgfrnn` only after merge and only when Chris names 099.
+- Until 099 is applied, the hooks log a failure code and the booking, delivery, make-good, and conversion flows continue.
+- The legacy deal screen still sends CPM and episode fields. That save now returns 400. The screen was not changed.
+- A party cannot mark a deal `completed` on this route. The IO screen that sent that status was not changed.
+- v1 and MCP do not return the price record yet.
+- Two bookings signed at the same timestamp for the same brand and show link by `created_at`, then by id. Concurrent first links can share a sequence number. `prior_record_id` still points at the earlier row.
+- This PR does not merge. Paul reviews.

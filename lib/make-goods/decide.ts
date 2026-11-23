@@ -4,6 +4,7 @@
 
 import { logEvent } from "@/lib/data/events";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { recordMakeGoodOutcome } from "@/lib/deal-records";
 import { creditAmount, draftAmendedTerms, replacementPostDate } from "./terms";
 import {
   asMakeGoodRecord,
@@ -304,6 +305,12 @@ export async function approveMakeGood(input: {
       deal_status: dealStatus,
     },
   });
+
+  try {
+    await recordMakeGoodOutcome(input.dealId);
+  } catch {
+    console.error("[deal-price-record] make-good outcome failed");
+  }
 
   return { ok: true, makeGood: saved, dealStatus };
 }

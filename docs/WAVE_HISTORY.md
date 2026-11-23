@@ -263,6 +263,7 @@ Complete type system in `lib/data/types.ts`. Key entities:
 - **DomainEvent** — Append-only audit log. Fat payloads, schema_version field, service-role only. Powers state-transition tracking.
 - **EventLog** — Fine-grained operation log (Wave 13). Every campaign generation, discovery run, IO generation, outreach sent, API call. Foundation for API metering and reasoning persistence.
 - **CampaignPattern, RingHypothesis, ConvictionScore, AnalogMatch, FounderAnnotation** — Wave 14 Phase 1. Pattern library tables capturing AI reasoning at every discovery decision point.
+- **DealPriceRecord** (`deal_price_records`, migration 099, not applied). One row per booked deal. Snapshot columns (agreed totals, pricing basis, unit, terms, flight, signed IO) are written once. Outcome and rebook columns are filled later. Parties read it. They cannot write it. See `docs/jobs/DEAL-RECORD1.md`.
 
 ## Project Structure
 

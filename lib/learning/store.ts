@@ -5,6 +5,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { logEvent } from "@/lib/data/events";
+import { recordReportedConversions } from "@/lib/deal-records";
 import type { OverrideAuthorRole, OverrideStance, OverrideTargetKind } from "./review";
 
 export interface SaveOverrideInput {
@@ -71,6 +72,11 @@ export async function saveConversionReport(input: {
       reported_conversions: input.conversions,
     },
   });
+  try {
+    await recordReportedConversions(input.dealId, input.conversions);
+  } catch {
+    console.error("[deal-price-record] conversion outcome failed");
+  }
 }
 
 export async function clearConversionReport(input: {
@@ -91,4 +97,9 @@ export async function clearConversionReport(input: {
     actorId: input.actorId,
     payload: { campaign_id: input.campaignId },
   });
+  try {
+    await recordReportedConversions(input.dealId, null);
+  } catch {
+    console.error("[deal-price-record] conversion outcome failed");
+  }
 }

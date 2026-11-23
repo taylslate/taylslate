@@ -31,9 +31,18 @@ import { brandNameFromProfile } from "@/lib/brand/display-name";
 import { sendEmail } from "@/lib/email/send";
 import { createSetupIntentForBrand } from "@/lib/stripe/setup-intent";
 import { saveDealSetupSecret } from "@/lib/deals/payment-secrets";
+import { recordBookedDeal } from "@/lib/deal-records";
 import type { BrandProfile, ShowProfile } from "@/lib/data/types";
 
 const STORAGE_BUCKET = "signed-ios";
+
+async function recordBookedDealSafely(dealId: string): Promise<void> {
+  try {
+    await recordBookedDeal(dealId);
+  } catch {
+    console.error("[deal-price-record] book failed");
+  }
+}
 
 function getSignatureHeader(req: NextRequest): string | null {
   // DocuSign Connect sends X-DocuSign-Signature-1 (and -2, -3 if multiple
@@ -364,6 +373,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (deal.show_signed_at && deal.signed_io_pdf_url) {
+      await recordBookedDealSafely(deal.id);
       return NextResponse.json({ ok: true, idempotent: true });
     }
 
@@ -446,6 +456,7 @@ export async function POST(request: NextRequest) {
       entityId: deal.id,
       payload: { envelope_id: evt.envelopeId },
     });
+    await recordBookedDealSafely(deal.id);
     return NextResponse.json({ ok: true });
   }
 

@@ -30,8 +30,12 @@ const downloadCertificate = vi.fn();
 const sendEmail = vi.fn().mockResolvedValue({ ok: true });
 const createSetupIntentForBrand = vi.fn();
 const saveDealSetupSecret = vi.fn();
+const recordBookedDeal = vi.fn();
 
 vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin }));
+vi.mock("@/lib/deal-records", () => ({
+  recordBookedDeal: (...a: unknown[]) => recordBookedDeal(...a),
+}));
 vi.mock("@/lib/data/queries", () => ({
   getOutreachById: (...a: unknown[]) => getOutreachById(...a),
   getWave12DealByEnvelopeId: (...a: unknown[]) => getWave12DealByEnvelopeId(...a),
@@ -111,6 +115,7 @@ describe("POST /api/webhooks/docusign", () => {
       stripeCustomerId: "cus_test",
     });
     saveDealSetupSecret.mockResolvedValue(true);
+    recordBookedDeal.mockResolvedValue(undefined);
   });
 
   it("rejects requests with a bad signature", async () => {
@@ -164,6 +169,7 @@ describe("POST /api/webhooks/docusign", () => {
     expect(logEvent).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: "io.brand_signed" })
     );
+    expect(recordBookedDeal).not.toHaveBeenCalled();
   });
 
   it("records io.webhook_ignored when a delivered event carries no usable recipient data", async () => {
@@ -208,6 +214,7 @@ describe("POST /api/webhooks/docusign", () => {
     const types = logEvent.mock.calls.map((c) => c[0].eventType);
     expect(types).toContain("io.show_signed");
     expect(types).toContain("io.completed");
+    expect(recordBookedDeal).toHaveBeenCalledWith("deal-1");
   });
 
   it("marks the persisted IO record signed on show signature", async () => {
@@ -266,6 +273,7 @@ describe("POST /api/webhooks/docusign", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.idempotent).toBe(true);
+    expect(recordBookedDeal).toHaveBeenCalledWith("deal-1");
     // The IO-status update sits BEFORE the early-return, so replays heal it.
     expect(adminBuilder.update).toHaveBeenCalledWith(
       expect.objectContaining({ status: "signed" })
@@ -479,5 +487,36 @@ describe("POST /api/webhooks/docusign", () => {
     const body = await res.json();
     expect(body.idempotent).toBe(true);
     expect(updateWave12Deal).not.toHaveBeenCalled();
+    expect(recordBookedDeal).not.toHaveBeenCalled();
+  });
+
+  it("still returns 200 when the price record write fails", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    recordBookedDeal.mockRejectedValueOnce(new Error("secret@example.com duplicate key"));
+    const res = await POST(
+      signedRequest({
+        event: "envelope-completed",
+        data: {
+          envelopeId: "env-1",
+          envelopeSummary: {
+            status: "completed",
+            recipients: {
+              signers: [
+                { recipientId: "1", signedDateTime: "2026-04-23T12:00:00Z" },
+                { recipientId: "2", signedDateTime: "2026-04-24T08:00:00Z" },
+              ],
+            },
+          },
+        },
+      }) as never
+    );
+    expect(res.status).toBe(200);
+    expect(updateWave12Deal).toHaveBeenCalledWith(
+      "deal-1",
+      expect.objectContaining({ status: "show_signed" })
+    );
+    const text = logged.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+    expect(text).not.toMatch(/secret@example.com|duplicate key/);
+    logged.mockRestore();
   });
 });
