@@ -1292,8 +1292,8 @@ describe("runImport", () => {
     const text = logs.join("\n");
     expect(text).toContain("Podscan calls for these flags: 2");
     expect(text).toContain("Write run at 1000: calls 2, days 1");
-    expect(text).toContain("Backfill scoring calls: 7");
-    expect(text).toContain("Backfill scoring days: 1");
+    expect(text).toContain("Backfill scoring calls: 7 to 14");
+    expect(text).toContain("Backfill scoring days: 1 to 1");
     assertNoSecrets(text);
   });
 
@@ -1505,9 +1505,74 @@ describe("runImport", () => {
     assertNoSecrets(logs.join("\n"));
   });
 
+  it("keeps the reach score when the limit stops on the brand safety fallback", async () => {
+    const dir = await tempDir();
+    const logs = spyLogs();
+    const rows = [scoredRow("held", 8000, "sponsored", 20)];
+    const enrich = {
+      held: {
+        demographics: { ok: true },
+        listener: rows[0].listenerEngagement,
+        sponsorHistory: { sponsors: [], episode_counts: {} },
+      },
+    };
+    await writeFile(join(dir, "checkpoint.json"), JSON.stringify(finishedCheckpoint(rows, { enrich })), "utf8");
+    const firstCalls: string[] = [];
+    const stoppedCaller: PodscanCaller = {
+      async get<T>(path: string): Promise<T> {
+        firstCalls.push(path);
+        if (path === "/podcasts/held") return { podcast_reach_score: 77 } as T;
+        throw Object.assign(new Error("daily quota"), {
+          status: 429,
+          retryAfter: 7200,
+          rateLimitRemaining: 0,
+        });
+      },
+      async post() {
+        throw new Error("probe continued");
+      },
+      rateLimit: () => ({ limit: 120, remaining: 100 }),
+    };
+    const store = memoryDb([]);
+    const args = ["--commit", "--floor", "1000", "--confirm", "1", "--backfill-scoring-fields"];
+    const stopped = await runImport(parseArgs(args), deps(dir, stoppedCaller, store.db));
+    expect(stopped.exitCode).toBe(0);
+    expect(firstCalls).toEqual(["/podcasts/held", "/podcasts/held/brand-safety"]);
+    expect(store.tables.podscan_catalog[0]).not.toHaveProperty("podcast_reach_score");
+    const saved = await readCheckpoint(join(dir, "checkpoint.json"));
+    expect(saved.scoring?.held).toEqual({ reachScore: 77, brandSafety: null, safetyPending: true });
+    const againCalls: string[] = [];
+    const againCaller: PodscanCaller = {
+      async get<T>(path: string): Promise<T> {
+        againCalls.push(path);
+        if (path === "/podcasts/held") throw new Error("detail repeated");
+        if (path === "/podcasts/held/brand-safety") {
+          return { aggregation: { max_risk_level: "low", most_common_recommendation: "safe" } } as T;
+        }
+        throw new Error("unexpected path");
+      },
+      async post() {
+        throw new Error("probe continued");
+      },
+      rateLimit: () => ({ limit: 120, remaining: 100 }),
+    };
+    const finished = await runImport(parseArgs(args), deps(dir, againCaller, store.db));
+    expect(finished.exitCode).toBe(0);
+    expect(againCalls).toEqual(["/podcasts/held/brand-safety"]);
+    const row = store.tables.podscan_catalog.find((item) => item.podscan_id === "held");
+    expect(row?.podcast_reach_score).toBe(77);
+    expect(row?.brand_safety).toEqual({ max_risk_level: "low", most_common_recommendation: "safe" });
+    const after = await readCheckpoint(join(dir, "checkpoint.json"));
+    expect(after.scoring?.held).toEqual({
+      reachScore: 77,
+      brandSafety: { max_risk_level: "low", most_common_recommendation: "safe" },
+    });
+    assertNoSecrets(logs.join("\n"));
+  });
+
   it("does not mark a show done when the brand safety call fails", async () => {
     const dir = await tempDir();
-    spyLogs();
+    const logs = spyLogs();
     const rows = [scoredRow("boom", 9000, "sponsored", 20)];
     const enrich = {
       boom: {
@@ -1539,6 +1604,7 @@ describe("runImport", () => {
     expect(store.tables.podscan_catalog[0]).not.toHaveProperty("podcast_reach_score");
     const saved = await readCheckpoint(join(dir, "checkpoint.json"));
     expect(saved.scoring?.boom).toBeUndefined();
+    assertNoSecrets(logs.join("\n"));
   });
 
   it("does not null stored scores when a batch mixes rows with and without them", async () => {

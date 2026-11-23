@@ -31,6 +31,8 @@ export interface EnrichProgress {
 export interface ScoringProgress {
   reachScore: number | null;
   brandSafety: unknown | null;
+  // The detail call finished and the brand-safety call has not.
+  safetyPending?: boolean;
 }
 
 export interface ProbeCheckProgress {
@@ -167,7 +169,11 @@ function scoringMapFrom(value: unknown): Record<string, ScoringProgress> {
       skipped += 1;
       continue;
     }
-    out[id] = { reachScore: entry.reachScore, brandSafety: entry.brandSafety };
+    out[id] = {
+      reachScore: entry.reachScore,
+      brandSafety: entry.brandSafety,
+      ...(entry.safetyPending ? { safetyPending: true } : {}),
+    };
   }
   if (skipped > 0) console.warn(`Skipped ${skipped} scoring checkpoint entries.`);
   return out;
@@ -180,6 +186,7 @@ function isScoringEntry(value: unknown): value is ScoringProgress {
   if (score !== null && (typeof score !== "number" || !Number.isFinite(score))) return false;
   const safety = value.brandSafety;
   if (safety !== null && (typeof safety !== "object" || Array.isArray(safety))) return false;
+  if ("safetyPending" in value && typeof value.safetyPending !== "boolean") return false;
   return true;
 }
 

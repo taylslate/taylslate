@@ -377,8 +377,8 @@ function readyToWrite(show: WorkingShow, checkpoint: Checkpoint, args: ImportArg
 }
 
 function needsScoringBackfill(show: WorkingShow, scoring: Checkpoint["scoring"]): boolean {
-  const id = show.candidate.podcastId;
-  if (scoring && Object.prototype.hasOwnProperty.call(scoring, id)) return false;
+  const saved = scoring?.[show.candidate.podcastId];
+  if (saved && !saved.safetyPending) return false;
   const candidate = show.candidate;
   return (
     !Object.prototype.hasOwnProperty.call(candidate, "reachScore") ||
@@ -392,6 +392,7 @@ function applySavedScoring(shows: WorkingShow[], scoring: Checkpoint["scoring"])
     const saved = scoring[show.candidate.podcastId];
     if (!saved) continue;
     show.candidate.reachScore = saved.reachScore;
+    if (saved.safetyPending) continue;
     show.candidate.brandSafety = saved.brandSafety;
   }
 }
@@ -1047,11 +1048,7 @@ function assembleReport(
             keptFloorSponsored: shows.filter((show) => keepOf(show, args.floor ?? 0, true).kept).length,
           },
     podscanCallsForFlags: callsForFlags(args, shows, checkpoint),
-    backfillScoring: args.backfillScoringFields,
-    backfillCalls: args.backfillScoringFields ? backfillTargets(shows, args, checkpoint).length : 0,
-    backfillDays: args.backfillScoringFields
-      ? daysAtBudget(backfillTargets(shows, args, checkpoint).length, args.maxPodscanCalls)
-      : 0,
+    ...backfillEstimate(args, shows, checkpoint),
     probeFloor: args.floorSponsored ? (args.floor ?? LOWEST_FLOOR) : null,
     keptNoAudience: {
       1000: withoutAudience(kept[1000]),
@@ -1108,6 +1105,53 @@ function activeKept(shows: WorkingShow[], floor: number, args: ImportArgs): Work
   return shows.filter((show) => keepOf(show, floor, args.floorSponsored).kept);
 }
 
+function backfillEstimate(
+  args: ImportArgs,
+  shows: WorkingShow[],
+  checkpoint: Checkpoint
+): {
+  backfillScoring: boolean;
+  backfillCalls: number;
+  backfillCallsMax: number;
+  backfillDays: number;
+  backfillDaysMax: number;
+} {
+  if (!args.backfillScoringFields) {
+    return {
+      backfillScoring: false,
+      backfillCalls: 0,
+      backfillCallsMax: 0,
+      backfillDays: 0,
+      backfillDaysMax: 0,
+    };
+  }
+  const showsToFill = backfillTargets(shows, args, checkpoint).length;
+  const callsMax = showsToFill * 2;
+  return {
+    backfillScoring: true,
+    backfillCalls: showsToFill,
+    backfillCallsMax: callsMax,
+    backfillDays: daysAtBudget(showsToFill, args.maxPodscanCalls),
+    backfillDaysMax: daysAtBudget(callsMax, args.maxPodscanCalls),
+  };
+}
+
+async function savePartialScore(
+  deps: RunDeps,
+  checkpoint: Checkpoint,
+  scoring: Record<string, ScoringProgress>,
+  show: WorkingShow,
+  reachScore: number | null,
+  nowFn: () => Date
+): Promise<void> {
+  const id = show.candidate.podcastId;
+  scoring[id] = { reachScore, brandSafety: null, safetyPending: true };
+  checkpoint.scoring = scoring;
+  checkpoint.scoringSavedAt = nowFn().toISOString();
+  show.candidate.reachScore = reachScore;
+  await writeScoringFile(deps.checkpointDir, scoring);
+}
+
 function planFloor(
   shows: WorkingShow[],
   enrich: Record<string, EnrichProgress>,
@@ -1140,26 +1184,36 @@ async function runBackfill(
   let dirty = false;
   for (const show of targets) {
     const id = show.candidate.podcastId;
-    let scored: ScoringProgress = { reachScore: null, brandSafety: null };
-    if (PODCAST_ID.test(id)) {
-      let needSafety = true;
+    const prior = scoring[id];
+    let scored: ScoringProgress = {
+      reachScore: prior?.safetyPending ? prior.reachScore : null,
+      brandSafety: null,
+    };
+    let detailSettled = prior?.safetyPending === true;
+    if (!detailSettled && PODCAST_ID.test(id)) {
       try {
         const body = await inStep("backfill", () => guarded(() => deps.caller.get<unknown>(`/podcasts/${id}`)));
         scored = scoringFromPodcastBody(body);
-        needSafety = scored.brandSafety == null;
+        detailSettled = true;
       } catch (err) {
+        if (err instanceof PodscanStop) throw err;
         if (!isNotFound(err)) throw err;
+        detailSettled = true;
       }
-      if (needSafety) {
-        try {
-          const body = await inStep("backfill", () =>
-            guarded(() => deps.caller.get<unknown>(`/podcasts/${id}/brand-safety`))
-          );
-          const safety = brandSafetyFromEndpoint(body);
-          if (safety != null) scored = { reachScore: scored.reachScore, brandSafety: safety };
-        } catch (err) {
-          if (!isNotFound(err)) throw err;
+    }
+    if (detailSettled && PODCAST_ID.test(id) && scored.brandSafety == null) {
+      try {
+        const body = await inStep("backfill", () =>
+          guarded(() => deps.caller.get<unknown>(`/podcasts/${id}/brand-safety`))
+        );
+        const safety = brandSafetyFromEndpoint(body);
+        if (safety != null) scored = { reachScore: scored.reachScore, brandSafety: safety };
+      } catch (err) {
+        if (err instanceof PodscanStop) {
+          await savePartialScore(deps, checkpoint, scoring, show, scored.reachScore, nowFn);
+          throw err;
         }
+        if (!isNotFound(err)) throw err;
       }
     }
     const updatedAt = nowFn().toISOString();

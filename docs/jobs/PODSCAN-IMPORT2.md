@@ -42,7 +42,7 @@ Each show starts with `GET /podcasts/{id}`. That response is the podcast object,
 
 Each finished show is upserted before the next call. A small `scoring-backfill.json` file records the show. The main checkpoint is saved on the same 30 second cadence as enrich, and again when the run stops. A daily limit or the call budget stops the backfill the same way enrich stops. Already upserted shows stay. A later run continues with the rest.
 
-A commit without the flag does not run this phase. The dry run prints `Backfill scoring calls` and `Backfill scoring days` on their own lines when the flag is on, and `Backfill scoring: off` when it is not. Those numbers are not added to `Podscan calls for these flags`.
+A commit without the flag does not run this phase. The dry run prints `Backfill scoring calls: N to 2N` and days for the best and worst case when the flag is on, and `Backfill scoring: off` when it is not. Those numbers are not added to `Podscan calls for these flags`. If the daily limit or the call budget stops on the brand-safety call after the detail call has finished, the reach score is kept and the show stays unfinished. The next run makes only the brand-safety call.
 
 ## Commands
 
