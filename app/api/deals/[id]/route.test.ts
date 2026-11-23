@@ -16,11 +16,13 @@ const {
   getBrandProfileByUserId,
   getShowProfileByUserId,
   supabaseAdmin,
+  adminBuilder,
 } = vi.hoisted(() => {
   const builder = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
   };
   return {
     getAuthenticatedUser: vi.fn(),
@@ -139,5 +141,314 @@ describe("deals/[id] authorization gate", () => {
     getShowProfileByUserId.mockResolvedValue(null);
     const res = await GET({} as never, params as never);
     expect(res.status).toBe(200);
+  });
+});
+
+function asBuyer() {
+  getAuthenticatedUser.mockResolvedValue({ id: "u-buyer", email: "buyer@example.com" });
+  getBrandProfileByUserId.mockResolvedValue({ id: "bp-owner" });
+  getShowProfileByUserId.mockResolvedValue(null);
+  getDealById.mockResolvedValue({
+    ...wave12Row,
+    status: "planning",
+    brand_signed_at: null,
+    show_signed_at: null,
+  });
+  updateDeal.mockResolvedValue({ id: "deal-1", notes: "saved" });
+}
+
+describe("PATCH /api/deals/[id] field allowlist", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    adminBuilder.maybeSingle.mockResolvedValue({ data: null, error: null });
+    asBuyer();
+  });
+
+  it("writes an allowed note for the brand party", async () => {
+    const res = await PATCH(patchReq({ notes: "Host keeps the read." }) as never, params as never);
+    expect(res.status).toBe(200);
+    expect(updateDeal).toHaveBeenCalledWith("deal-1", { notes: "Host keeps the read." });
+    expect(getBrandProfileByUserId).toHaveBeenCalledWith("u-buyer");
+  });
+
+  it("keeps the legacy planning to io_sent transition", async () => {
+    const res = await PATCH(patchReq({ status: "io_sent" }) as never, params as never);
+    expect(res.status).toBe(200);
+    expect(updateDeal).toHaveBeenCalledWith("deal-1", { status: "io_sent" });
+  });
+
+  it("refuses a money field and does not write", async () => {
+    const res = await PATCH(
+      patchReq({ notes: "ok", agreed_cpm: 10, total_gross: 99, payment_method_id: "pm_1" }) as never,
+      params as never
+    );
+    expect(res.status).toBe(400);
+    expect(updateDeal).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body).toEqual({ error: "That update is not allowed." });
+    expect(JSON.stringify(body)).not.toMatch(/agreed_cpm|total_gross|payment_method_id|pm_1|violat|duplicate|relation/i);
+  });
+
+  it("refuses a signature field", async () => {
+    const res = await PATCH(
+      patchReq({ brand_signed_at: "2026-05-01T00:00:00Z" }) as never,
+      params as never
+    );
+    expect(res.status).toBe(400);
+    expect(updateDeal).not.toHaveBeenCalled();
+  });
+
+  it("refuses every edit after a signature timestamp", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "show_signed",
+      brand_signed_at: "2026-05-01T00:00:00Z",
+      show_signed_at: null,
+    });
+    const res = await PATCH(patchReq({ notes: "too late" }) as never, params as never);
+    expect(res.status).toBe(403);
+    expect(updateDeal).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body).toEqual({ error: "That update is not allowed." });
+    expect(JSON.stringify(body)).not.toContain("2026-05-01");
+  });
+
+  it("refuses a transition to completed", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "live",
+      brand_signed_at: null,
+      show_signed_at: null,
+    });
+    const res = await PATCH(patchReq({ status: "completed" }) as never, params as never);
+    expect(res.status).toBe(403);
+    expect(updateDeal).not.toHaveBeenCalled();
+  });
+
+  it("refuses a show party editing placement", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u-show", email: "show@example.com" });
+    getBrandProfileByUserId.mockResolvedValue(null);
+    getShowProfileByUserId.mockResolvedValue({ id: "sp-owner" });
+    const res = await PATCH(patchReq({ placement: "pre-roll" }) as never, params as never);
+    expect(res.status).toBe(400);
+    expect(updateDeal).not.toHaveBeenCalled();
+  });
+
+  it("lets the show party save a note", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u-show", email: "show@example.com" });
+    getBrandProfileByUserId.mockResolvedValue(null);
+    getShowProfileByUserId.mockResolvedValue({ id: "sp-owner" });
+    const res = await PATCH(patchReq({ notes: "We can air Friday." }) as never, params as never);
+    expect(res.status).toBe(200);
+    expect(updateDeal).toHaveBeenCalledWith("deal-1", { notes: "We can air Friday." });
+    expect(getShowProfileByUserId).toHaveBeenCalledWith("u-show");
+  });
+
+  it("returns a generic body when the write fails", async () => {
+    updateDeal.mockRejectedValue(
+      new Error('duplicate key value violates unique constraint "deals_pkey" detail=deal-1')
+    );
+    const res = await PATCH(patchReq({ notes: "x" }) as never, params as never);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Failed to update deal" });
+    expect(JSON.stringify(body)).not.toMatch(/duplicate|deals_pkey|deal-1|violat/i);
+  });
+
+  it("drops unchanged money keys and saves the note", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "planning",
+      brand_signed_at: null,
+      show_signed_at: null,
+      price_type: "cpm",
+      cpm_rate: "25.00",
+      guaranteed_downloads: 10000,
+      num_episodes: 3,
+      net_per_episode: 250,
+      total_net: 750,
+    });
+    const res = await PATCH(
+      patchReq({
+        notes: "Keep the host read.",
+        price_type: "cpm",
+        cpm_rate: 25,
+        guaranteed_downloads: 10000,
+        num_episodes: 3,
+        net_per_episode: 250,
+        total_net: 750,
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expect(updateDeal).toHaveBeenCalledWith("deal-1", { notes: "Keep the host read." });
+  });
+
+  it("saves notes on a flat-rate deal when the form sends cpm_rate 0", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "planning",
+      brand_signed_at: null,
+      show_signed_at: null,
+      price_type: "flat_rate",
+      cpm_rate: 25,
+      guaranteed_downloads: 10000,
+      num_episodes: 3,
+      net_per_episode: 250,
+      total_net: 750,
+    });
+    const res = await PATCH(
+      patchReq({
+        notes: "Keep the host read.",
+        price_type: "flat_rate",
+        cpm_rate: 0,
+        net_per_episode: 250,
+        total_net: 750,
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expect(updateDeal).toHaveBeenCalledWith("deal-1", { notes: "Keep the host read." });
+  });
+
+  it("keeps a resent completed status and saves the note", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "completed",
+      brand_signed_at: null,
+      show_signed_at: null,
+    });
+    const res = await PATCH(
+      patchReq({ notes: "Still wrapped.", status: "completed" }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expect(updateDeal).toHaveBeenCalledWith("deal-1", { notes: "Still wrapped." });
+  });
+
+  it("refuses a changed cpm_rate", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "planning",
+      brand_signed_at: null,
+      show_signed_at: null,
+      price_type: "cpm",
+      cpm_rate: 25,
+      guaranteed_downloads: 10000,
+      num_episodes: 3,
+    });
+    const res = await PATCH(
+      patchReq({ notes: "Keep the host read.", cpm_rate: 40 }) as never,
+      params as never
+    );
+    expect(res.status).toBe(400);
+    expect(updateDeal).not.toHaveBeenCalled();
+  });
+
+  it("still refuses cpm_rate 0 on a cpm deal", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "planning",
+      brand_signed_at: null,
+      show_signed_at: null,
+      price_type: "cpm",
+      cpm_rate: 25,
+    });
+    const res = await PATCH(patchReq({ notes: "No.", cpm_rate: 0 }) as never, params as never);
+    expect(res.status).toBe(400);
+    expect(updateDeal).not.toHaveBeenCalled();
+  });
+
+  it("refuses brand_id and payment_method_id", async () => {
+    const brand = await PATCH(patchReq({ brand_id: "other-brand" }) as never, params as never);
+    const payment = await PATCH(patchReq({ payment_method_id: "pm_123" }) as never, params as never);
+    expect(brand.status).toBe(400);
+    expect(payment.status).toBe(400);
+    expect(updateDeal).not.toHaveBeenCalled();
+    expect(JSON.stringify(await brand.json())).not.toMatch(/other-brand|brand_id/);
+    expect(JSON.stringify(await payment.json())).not.toMatch(/pm_123|payment_method_id/);
+  });
+
+  it("refuses edits once a DocuSign envelope exists", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "io_sent",
+      brand_signed_at: null,
+      show_signed_at: null,
+      docusign_envelope_id: "env-1",
+    });
+    const res = await PATCH(patchReq({ notes: "too late" }) as never, params as never);
+    expect(res.status).toBe(403);
+    expect(updateDeal).not.toHaveBeenCalled();
+  });
+
+  it("does not treat an email as a party", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u-intruder", email: "legacy-brand" });
+    getBrandProfileByUserId.mockResolvedValue({ id: "bp-intruder" });
+    getShowProfileByUserId.mockResolvedValue({ id: "sp-intruder" });
+    const res = await PATCH(patchReq({ notes: "nope" }) as never, params as never);
+    expect(res.status).toBe(404);
+    expect(updateDeal).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body).toEqual({ error: "Deal not found" });
+    expect(JSON.stringify(body)).not.toContain("deal-1");
+  });
+
+  it("returns a generic GET error", async () => {
+    getDealById.mockRejectedValue(new Error('relation "deals" does not exist'));
+    const res = await GET({} as never, params as never);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Failed to fetch deal" });
+    expect(JSON.stringify(body)).not.toMatch(/relation|deals/);
+  });
+
+  it("deletes an unsigned deal with no price record", async () => {
+    deleteDeal.mockResolvedValue(true);
+    const res = await DELETE({} as never, params as never);
+    expect(res.status).toBe(200);
+    expect(deleteDeal).toHaveBeenCalledWith("deal-1");
+  });
+
+  it("refuses delete after a signature, an envelope, or a price record", async () => {
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "planning",
+      brand_signed_at: "2026-05-01T00:00:00Z",
+    });
+    const signed = await DELETE({} as never, params as never);
+    expect(signed.status).toBe(403);
+    expect(deleteDeal).not.toHaveBeenCalled();
+
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "io_sent",
+      docusign_envelope_id: "env-1",
+    });
+    const envelope = await DELETE({} as never, params as never);
+    expect(envelope.status).toBe(403);
+
+    getDealById.mockResolvedValue({
+      ...wave12Row,
+      status: "planning",
+      brand_signed_at: null,
+      show_signed_at: null,
+    });
+    adminBuilder.maybeSingle.mockResolvedValueOnce({ data: { id: "rec-1" }, error: null });
+    const booked = await DELETE({} as never, params as never);
+    expect(booked.status).toBe(403);
+    expect(deleteDeal).not.toHaveBeenCalled();
+    const body = await booked.json();
+    expect(body).toEqual({ error: "That delete is not allowed." });
+    expect(JSON.stringify(body)).not.toMatch(/rec-1|deal-1/);
+  });
+
+  it("returns a generic DELETE error", async () => {
+    deleteDeal.mockRejectedValue(new Error("secret@example.com duplicate key"));
+    const res = await DELETE({} as never, params as never);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Failed to delete deal" });
+    expect(JSON.stringify(body)).not.toMatch(/secret@example.com|duplicate/);
   });
 });

@@ -277,15 +277,48 @@ export async function createDeal(deal: Omit<Deal, "id" | "created_at" | "updated
   return data as Deal;
 }
 
+// Columns a trusted server caller may pass to updateDeal. Money, identity,
+// payment, and signature columns are refused so a request body cannot ride
+// through this admin write. PATCH /api/deals/[id] applies a tighter
+// per-party allowlist before it calls this. Keep the two lists in step.
+const DEAL_UPDATE_KEYS = new Set([
+  "status",
+  "notes",
+  "placement",
+  "ad_format",
+  "flight_start",
+  "flight_end",
+  "is_scripted",
+  "is_personal_experience",
+  "reader_type",
+  "content_type",
+  "pixel_required",
+  "competitor_exclusion",
+  "exclusivity_days",
+  "rofr_days",
+]);
+
 export async function updateDeal(id: string, updates: Partial<Deal>): Promise<Deal | null> {
+  const entries = Object.entries(updates ?? {});
+  if (entries.length === 0) return null;
+  const clean: Record<string, unknown> = {};
+  for (const [key, value] of entries) {
+    if (!DEAL_UPDATE_KEYS.has(key)) {
+      console.error("[updateDeal] refused a field outside the write set");
+      return null;
+    }
+    if (value !== undefined) clean[key] = value;
+  }
+  if (Object.keys(clean).length === 0) return null;
+
   const { data, error } = await supabaseAdmin
     .from("deals")
-    .update(updates)
+    .update(clean)
     .eq("id", id)
     .select()
     .single();
   if (error) {
-    console.error("[updateDeal] Supabase error for deal", id, ":", error.message, error.code);
+    console.error("[updateDeal] Supabase error:", error.code);
     return null;
   }
   if (!data) return null;

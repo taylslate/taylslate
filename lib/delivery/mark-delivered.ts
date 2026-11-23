@@ -11,6 +11,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { chargeForEpisode, type ChargeForEpisodeResult } from "@/lib/stripe/payment-intent";
 import { logEvent } from "@/lib/data/events";
+import { recordDeliveryOutcome } from "@/lib/deal-records";
 
 export interface DeliverAndChargeInput {
   ioLineItemId: string;
@@ -113,6 +114,11 @@ export async function deliverAndChargeLine(
       dealId: io.deal_id,
       ioLineItemId: lineItem.id,
     });
+    try {
+      await recordDeliveryOutcome(io.deal_id);
+    } catch {
+      console.error("[deal-price-record] delivery outcome failed");
+    }
     return { ok: true, charge };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Charge failed";
