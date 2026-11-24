@@ -28,6 +28,12 @@ function ShowAvatar({ name, imageUrl }: { name: string; imageUrl?: string }) {
 
 type Tab = "plan" | "outreach" | "adcopy";
 
+function draftWithoutContact(draft: OutreachDraft): Omit<OutreachDraft, "contact_email"> {
+  const { contact_email, ...rest } = draft;
+  void contact_email;
+  return rest;
+}
+
 export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
   const router = useRouter();
   const recommendations = campaign.recommendations;
@@ -152,7 +158,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
       const res = await fetch("/api/campaigns/outreach/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaign_id: campaign.id, drafts: [draft] }),
+        body: JSON.stringify({ campaign_id: campaign.id, drafts: [draftWithoutContact(draft)] }),
       });
       const data = await res.json();
       if (!res.ok || !data.results?.[0]?.success) {
@@ -179,7 +185,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
       const res = await fetch("/api/campaigns/outreach/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaign_id: campaign.id, drafts: unsent }),
+        body: JSON.stringify({ campaign_id: campaign.id, drafts: unsent.map(draftWithoutContact) }),
       });
       const data = await res.json();
       if (data.results) {
@@ -573,7 +579,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-[var(--ts-ink-on-paper)]">{draft.show_name}</h3>
                           <span className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--ts-ink-muted-on-paper)]">{draft.platform}</span>
-                          <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">{draft.contact_email}</span>
+                          <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">Sent through Taylslate</span>
                         </div>
                         <div className="flex items-center gap-2">
                           {isSent && (
@@ -633,7 +639,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-[var(--ts-ink-on-paper)]">{show.show_name}</h3>
-                      <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">{show.contact_email}</span>
+                      <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">Sent through Taylslate</span>
                     </div>
                     <button className="text-xs font-medium text-[var(--ts-accent-text)] hover:underline">Copy email</button>
                   </div>
@@ -657,7 +663,7 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-[var(--ts-ink-on-paper)]">{show.show_name}</h3>
                       <span className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--ts-ink-muted-on-paper)]">YouTube</span>
-                      <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">{show.contact_email}</span>
+                      <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">Sent through Taylslate</span>
                     </div>
                     <button className="text-xs font-medium text-[var(--ts-accent-text)] hover:underline">Copy email</button>
                   </div>

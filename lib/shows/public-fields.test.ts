@@ -22,6 +22,7 @@ import {
   fullShowIdsForCaller,
   ownershipVisibleIds,
   projectShows,
+  projectShowsForViewer,
   PUBLIC_SHOW_FIELDS,
   toPublicShowFields,
 } from "./public-fields";
@@ -149,6 +150,13 @@ describe("projectShows", () => {
       audience_size: 12000,
       categories: ["News"],
     });
+  });
+
+  it("keeps a full show and blanks contact email until the id is visible", () => {
+    const projected = projectShowsForViewer([secretShow], new Set([SHOW]), new Set());
+    expect(projected[0]).toMatchObject({ id: SHOW, contact: { email: "" } });
+    const opened = projectShowsForViewer([secretShow], new Set([SHOW]), new Set([SHOW]));
+    expect(opened[0]).toBe(secretShow);
   });
 });
 

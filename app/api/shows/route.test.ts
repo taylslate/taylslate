@@ -112,7 +112,15 @@ function chain(result: { data: unknown; error: { code: string } | null }) {
 
 function admin(opts: {
   profile?: { id: string } | null;
-  deals?: Array<{ show_id: string; brand_id?: string; agency_id?: string }>;
+  deals?: Array<{
+    show_id: string;
+    brand_id?: string;
+    agency_id?: string;
+    brand_profile_id?: string;
+    show_signed_at?: string | null;
+    brand_signed_at?: string | null;
+    status?: string;
+  }>;
   ownership?: Array<{ id: string; ownership_status: string }>;
   proofs?: Array<{ show_id: string; status: string }>;
   showsError?: { code: string } | null;
@@ -214,6 +222,35 @@ describe("GET /api/shows", () => {
     expect(body[1]).not.toHaveProperty("contact");
     expect(body[1]).not.toHaveProperty("rate_card");
     expect(JSON.stringify(body[1])).not.toContain("other@show.test");
+  });
+
+  it("returns the full show for a deal and hides the email until unlock", async () => {
+    getUser.mockResolvedValue({ data: { user: { id: "brand-1" } } });
+    getUserProfile.mockResolvedValue({ role: "brand" });
+    getAllShows.mockResolvedValue([catalogShow(SHOW, "host@show.test")]);
+    grantIds.mockResolvedValue(new Set());
+    admin({ deals: [{ show_id: SHOW, brand_id: "brand-1", status: "planning" }] });
+
+    const locked = await GET(new NextRequest("http://x/api/shows"));
+    const lockedBody = await locked.json();
+    expect(lockedBody[0].rate_card).toEqual({ midroll_cpm: 25 });
+    expect(lockedBody[0].contact.email).toBe("");
+    expect(JSON.stringify(lockedBody)).not.toContain("host@show.test");
+
+    admin({
+      deals: [
+        {
+          show_id: SHOW,
+          brand_id: "brand-1",
+          status: "show_signed",
+          brand_signed_at: "2026-11-01T00:00:00.000Z",
+          show_signed_at: "2026-11-02T00:00:00.000Z",
+        },
+      ],
+    });
+    const opened = await GET(new NextRequest("http://x/api/shows"));
+    const openedBody = await opened.json();
+    expect(openedBody[0].contact.email).toBe("host@show.test");
   });
 
   it("reads ownership_status from the raw row for the owner only", async () => {

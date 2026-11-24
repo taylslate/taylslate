@@ -23,6 +23,27 @@ import DiscoveryList from "./discovery-list";
 import ConvictionDiscoveryView from "./conviction-discovery-view";
 import { listPublishedSurfacesForShows } from "@/lib/data/show-surfaces";
 import { verifiedShowIds } from "@/lib/shows/verified-flag";
+import {
+  contactVisibleShowIds,
+  redactCampaignContacts,
+  redactConvictionUniverse,
+  redactTieredUniverse,
+} from "@/lib/relay/contact-visibility";
+
+function discoveryShowIds(universe: ConvictionUniverse, tiered: TieredUniverse | undefined): string[] {
+  const ids: string[] = [];
+  for (const group of universe.groups) {
+    for (const entry of group.shows) {
+      if (entry.show?.id) ids.push(entry.show.id);
+    }
+  }
+  if (!tiered) return ids;
+  for (const row of [...tiered.test, ...tiered.scale, ...tiered.bench]) {
+    if (row.showId) ids.push(row.showId);
+    if (row.show?.id) ids.push(row.show.id);
+  }
+  return ids;
+}
 
 function stampVerified(tiered: TieredUniverse, verified: ReadonlySet<string>): TieredUniverse {
   const stamp = (rows: TieredUniverse["test"]) =>
@@ -110,13 +131,19 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       : [];
     const surfacesByShowId = await listPublishedSurfacesForShows(surfaceIds);
 
+    const visibleIds = isAdmin
+      ? null
+      : await contactVisibleShowIds(user?.id ?? "", discoveryShowIds(universe, tiered));
+    const universeForClient = visibleIds ? redactConvictionUniverse(universe, visibleIds) : universe;
+    const tieredForClient = tiered && visibleIds ? redactTieredUniverse(tiered, visibleIds) : tiered;
+
     return (
       <ConvictionDiscoveryView
         campaignId={id}
         campaignName={campaign.name}
         budgetTotal={campaign.budget_total ?? null}
-        universe={universe}
-        tiered={tiered}
+        universe={universeForClient}
+        tiered={tieredForClient}
         discoveryRan={discoveryRan}
         selectedShowIds={campaign.selected_show_ids ?? []}
         testSpotCount={campaign.test_spot_count ?? null}
@@ -141,9 +168,22 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     const surfacesByShowId = await listPublishedSurfacesForShows(
       (campaign.scored_shows ?? []).map((show) => show.podcastId)
     );
-    return <DiscoveryList campaign={campaign} surfacesByShowId={surfacesByShowId} />;
+    return (
+      <DiscoveryList
+        campaign={
+          isInternalAdmin((await userPromise)?.email) ? campaign : redactCampaignContacts(campaign)
+        }
+        surfacesByShowId={surfacesByShowId}
+      />
+    );
   }
 
   // Legacy: campaigns generated via Claude still use the old detail view
-  return <CampaignDetail campaign={campaign} />;
+  return (
+    <CampaignDetail
+      campaign={
+        isInternalAdmin((await userPromise)?.email) ? campaign : redactCampaignContacts(campaign)
+      }
+    />
+  );
 }

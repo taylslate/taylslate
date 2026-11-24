@@ -13,9 +13,10 @@ import {
   fullShowIdsForCaller,
   hasOwnershipStatus,
   ownershipVisibleIds,
-  projectShows,
+  projectShowsForViewer,
   stripOwnershipStatus,
 } from "@/lib/shows/public-fields";
+import { contactVisibleShowIds } from "@/lib/relay/contact-visibility";
 import { verifiedShowIds } from "@/lib/shows/verified-flag";
 
 export async function GET(request: NextRequest) {
@@ -85,7 +86,8 @@ export async function GET(request: NextRequest) {
         : await getAllShows()
     );
     const fullIds = await fullShowIdsForCaller(user.id, shows);
-    const projected = projectShows(shows, fullIds);
+    const contactIds = await contactVisibleShowIds(user.id, [...fullIds]);
+    const projected = projectShowsForViewer(shows, fullIds, contactIds);
     if (!projected.some((show) => hasOwnershipStatus(show))) {
       return NextResponse.json(await withVerified(projected));
     }

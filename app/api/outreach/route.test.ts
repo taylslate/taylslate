@@ -26,8 +26,36 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 const sendEmail = vi.fn().mockResolvedValue({ ok: true, id: "msg_test" });
+const resolveOutreachRecipient = vi.fn(async (...args: unknown[]) => {
+  void args;
+  return {
+  ok: true as const,
+  email: "host@daily.fm",
+  catalogShowId: null as string | null,
+  };
+});
+const createRelayThread = vi.fn(async (...args: unknown[]) => {
+  void args;
+  return null as { id?: string; address_token: string } | null;
+});
+const addShowToBrandCrmOnOutreach = vi.fn(async (...args: unknown[]) => {
+  void args;
+  return {
+    added: false,
+    reason: "no_crm_access" as const,
+  };
+});
 vi.mock("@/lib/email/send", () => ({
   sendEmail: (...args: unknown[]) => sendEmail(...args),
+}));
+vi.mock("@/lib/relay/recipient", () => ({
+  resolveOutreachRecipient: (...args: unknown[]) => resolveOutreachRecipient(...args),
+}));
+vi.mock("@/lib/relay/threads", () => ({
+  createRelayThread: (...args: unknown[]) => createRelayThread(...args),
+}));
+vi.mock("@/lib/relay/crm", () => ({
+  addShowToBrandCrmOnOutreach: (...args: unknown[]) => addShowToBrandCrmOnOutreach(...args),
 }));
 
 import { verifyOutreachToken } from "@/lib/io/tokens";
@@ -146,8 +174,13 @@ describe("POST /api/outreach", () => {
     // brand-identity paragraph (the original GTM-blocking bug).
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(sendEmail.mock.calls[0][0].from).toBe(
-      "Aurora Sleep <outreach@taylslate.com>"
+      "Aurora Sleep via Taylslate <outreach@taylslate.com>"
     );
+    expect(sendEmail.mock.calls[0][0].reply_to).toBe("outreach@taylslate.com");
+    expect(sendEmail.mock.calls[0][0].to).toBe("host@daily.fm");
+    expect(sendEmail.mock.calls[0][0]).not.toHaveProperty("attachments");
+    expect(body.outreach.sent_to_email).toBe("");
+    expect(body.contact_details_removed).toBe(false);
   });
 
   it("surfaces unique-constraint failures as 409", async () => {
@@ -157,5 +190,84 @@ describe("POST /api/outreach", () => {
     createOutreach.mockResolvedValue(null);
     const res = await POST(jsonReq(validBody) as never);
     expect(res.status).toBe(409);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(addShowToBrandCrmOnOutreach).not.toHaveBeenCalled();
+  });
+
+  it("stores and sends a stripped pitch and ignores a supplied address", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u1" });
+    getBrandProfileByUserId.mockResolvedValue({
+      id: "bp1",
+      user_id: "u1",
+      brand_identity: "Aurora",
+    });
+    getCampaignById.mockResolvedValue({ id: "c1", user_id: "u1", name: "C" });
+    createOutreach.mockResolvedValue({ id: "o1" });
+    resolveOutreachRecipient.mockResolvedValueOnce({
+      ok: true,
+      email: "show@example.test",
+      catalogShowId: "33333333-3333-4333-8333-333333333333",
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await POST(
+      jsonReq({
+        ...validBody,
+        show: {
+          ...validBody.show,
+          show_id: null,
+          contact_email: "attacker@example.test",
+        },
+        pitch_body:
+          "Please write the host at ada@example.test or call (555) 555-0199 about the March test flight.",
+      }) as never
+    );
+    expect(res.status).toBe(200);
+    const stored = createOutreach.mock.calls.at(-1)?.[0] as { pitch_body: string; sent_to_email: string };
+    expect(stored.pitch_body).not.toContain("ada@example.test");
+    expect(stored.pitch_body).not.toContain("555");
+    expect(stored.pitch_body).toContain("[contact removed]");
+    expect(stored.sent_to_email).toBe("show@example.test");
+    expect(sendEmail.mock.calls.at(-1)?.[0].to).toBe("show@example.test");
+    expect(sendEmail.mock.calls.at(-1)?.[0].html).not.toContain("ada@example.test");
+    expect(sendEmail.mock.calls.at(-1)?.[0]).not.toHaveProperty("attachments");
+    const body = await res.json();
+    expect(body.contact_details_removed).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("show@example.test");
+    expect(JSON.stringify(body)).not.toContain("ada@example.test");
+    expect(warn.mock.calls.flat().join(" ")).not.toContain("@");
+    warn.mockRestore();
+  });
+
+  it("still sends when the relay thread cannot be created", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u1" });
+    getBrandProfileByUserId.mockResolvedValue({ id: "bp1", user_id: "u1", brand_identity: "Aurora" });
+    getCampaignById.mockResolvedValue({ id: "c1", user_id: "u1", name: "C" });
+    createOutreach.mockResolvedValue({ id: "o1" });
+    createRelayThread.mockResolvedValueOnce(null);
+    const res = await POST(jsonReq(validBody) as never);
+    expect(res.status).toBe(200);
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(sendEmail.mock.calls[0][0].reply_to).toBe("outreach@taylslate.com");
+  });
+
+  it("uses the relay address only when inbound replies are enabled", async () => {
+    const previous = process.env.RELAY_INBOUND_ENABLED;
+    process.env.RELAY_INBOUND_ENABLED = "true";
+    getAuthenticatedUser.mockResolvedValue({ id: "u1" });
+    getBrandProfileByUserId.mockResolvedValue({ id: "bp1", user_id: "u1", brand_identity: "Aurora" });
+    getCampaignById.mockResolvedValue({ id: "c1", user_id: "u1", name: "C" });
+    createOutreach.mockResolvedValue({ id: "o1" });
+    createRelayThread.mockResolvedValueOnce({
+      id: "thread-1",
+      address_token: "abcdefghijklmnopqrstuvwxyz",
+    });
+    const res = await POST(jsonReq(validBody) as never);
+    expect(res.status).toBe(200);
+    expect(sendEmail.mock.calls[0][0].reply_to).toBe(
+      "r-abcdefghijklmnopqrstuvwxyz@reply.taylslate.com"
+    );
+    expect(JSON.stringify(await res.json())).not.toContain("abcdefghijklmnopqrstuvwxyz");
+    if (previous === undefined) delete process.env.RELAY_INBOUND_ENABLED;
+    else process.env.RELAY_INBOUND_ENABLED = previous;
   });
 });

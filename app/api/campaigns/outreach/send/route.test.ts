@@ -4,12 +4,13 @@ import { NextRequest } from "next/server";
 const USER_ID = "22222222-2222-4222-8222-222222222222";
 const CAMPAIGN_ID = "11111111-1111-4111-8111-111111111111";
 
-const { resendSend, resolveManagedDelivery, getAuthenticatedUser, maybeSingle, rpc } = vi.hoisted(() => ({
+const { resendSend, resolveManagedDelivery, getAuthenticatedUser, maybeSingle, rpc, showsById } = vi.hoisted(() => ({
   resendSend: vi.fn(),
   resolveManagedDelivery: vi.fn(),
   getAuthenticatedUser: vi.fn(),
   maybeSingle: vi.fn(),
   rpc: vi.fn(async () => ({ data: true, error: null })),
+  showsById: new Map<string, { id: string; contact_email: string | null }>(),
 }));
 
 vi.mock("@/lib/email/send", () => ({
@@ -26,11 +27,43 @@ vi.mock("@/lib/data/queries", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: {
     rpc,
-    from: () => ({
-      select: () => ({
-        eq: () => ({ maybeSingle }),
-      }),
-    }),
+    from: (table: string) => {
+      const filters: Array<{ op: "eq" | "in"; value: unknown }> = [];
+      const builder = {
+        select() {
+          return builder;
+        },
+        eq(_column: string, value: unknown) {
+          filters.push({ op: "eq", value });
+          return builder;
+        },
+        in(_column: string, value: unknown) {
+          filters.push({ op: "in", value });
+          return builder;
+        },
+        maybeSingle: async () => {
+          if (table === "shows") {
+            const id = filters.find((filter) => filter.op === "eq")?.value;
+            return { data: typeof id === "string" ? showsById.get(id) ?? null : null, error: null };
+          }
+          return maybeSingle();
+        },
+        then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
+          if (table === "shows") {
+            const ids = filters.find((filter) => filter.op === "in")?.value;
+            const data = Array.isArray(ids)
+              ? ids.flatMap((id) => {
+                  const row = typeof id === "string" ? showsById.get(id) : undefined;
+                  return row ? [row] : [];
+                })
+              : [];
+            return Promise.resolve({ data, error: null }).then(resolve, reject);
+          }
+          return Promise.resolve({ data: [], error: null }).then(resolve, reject);
+        },
+      };
+      return builder;
+    },
   },
 }));
 
@@ -70,6 +103,7 @@ beforeEach(() => {
   process.env.RESEND_API_KEY = "re_test";
   resendSend.mockResolvedValue({ data: { id: "msg" }, error: null });
   getAuthenticatedUser.mockResolvedValue({ id: USER_ID, email: "owner@example.com" });
+  showsById.clear();
   maybeSingle.mockResolvedValue(ownedCampaign());
   resolveManagedDelivery.mockImplementation(
     async (input: { to: string; subject: string }) => ({
@@ -85,9 +119,8 @@ describe("POST /api/campaigns/outreach/send", () => {
     const res = await POST(post());
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.results).toEqual([
-      { show_id: "show-1", success: true, to: "brand@x.com" },
-    ]);
+    expect(body.results).toEqual([{ show_id: "show-1", success: true }]);
+    expect(body.results[0]).not.toHaveProperty("to");
     expect(resolveManagedDelivery).toHaveBeenCalledWith({
       to: "brand@x.com",
       subject: "A March test",
@@ -114,8 +147,8 @@ describe("POST /api/campaigns/outreach/send", () => {
     expect(body.results[0]).toEqual({
       show_id: "show-1",
       success: true,
-      to: "ops@taylslate.com",
     });
+    expect(body.results[0]).not.toHaveProperty("to");
 
     const sent = resendSend.mock.calls[0][0];
     expect(sent.to).toBe("ops@taylslate.com");
@@ -189,12 +222,53 @@ describe("POST /api/campaigns/outreach/send", () => {
     );
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.results[0]).toEqual({ show_id: "show-1", success: true, to: "brand@x.com" });
+    expect(body.results[0]).toEqual({ show_id: "show-1", success: true });
+    expect(body.results[0]).not.toHaveProperty("to");
     expect(body.results[1]).toMatchObject({
       show_id: "show-2",
       success: false,
     });
     expect(resendSend).toHaveBeenCalledTimes(1);
     expect(resendSend.mock.calls[0][0].to).toBe("brand@x.com");
+  });
+
+  it("does not send to a catalog show that is not on the campaign", async () => {
+    const hidden = "66666666-6666-4666-8666-666666666666";
+    showsById.set(hidden, { id: hidden, contact_email: "hidden@example.test" });
+    const res = await POST(
+      post([{ ...draft, show_id: hidden, contact_email: "attacker@example.test", show_name: "Hidden" }])
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.results).toEqual([
+      { show_id: hidden, success: false, error: "Recipient is not a contact on this campaign." },
+    ]);
+    expect(JSON.stringify(body)).not.toContain("hidden@example.test");
+    expect(JSON.stringify(body)).not.toContain("attacker@example.test");
+    expect(resendSend).not.toHaveBeenCalled();
+  });
+
+  it("sends to a catalog show that is on the campaign", async () => {
+    const listed = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    showsById.set(listed, { id: listed, contact_email: "host@example.test" });
+    maybeSingle.mockResolvedValue({
+      data: {
+        id: CAMPAIGN_ID,
+        user_id: USER_ID,
+        selected_show_ids: [listed],
+        recommendations: [],
+        youtube_recommendations: [],
+        expansion_opportunities: [],
+      },
+      error: null,
+    });
+    const res = await POST(
+      post([{ ...draft, show_id: listed, contact_email: "attacker@example.test", show_name: "Daily" }])
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.results).toEqual([{ show_id: listed, success: true }]);
+    expect(JSON.stringify(body)).not.toContain("host@example.test");
+    expect(resendSend.mock.calls[0][0].to).toBe("host@example.test");
   });
 });

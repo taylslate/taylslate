@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import type { Campaign, ShowRecommendation, YouTubeRecommendation, Platform } from "@/lib/data/types";
+import type { Campaign, Platform } from "@/lib/data/types";
 import {
   OUTREACH_EMAIL_SYSTEM_PROMPT,
   buildOutreachUserPrompt,
@@ -80,19 +80,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Build lookup from all recommendations
-    const recLookup = new Map<string, { show_name: string; platform: Platform; contact_email: string }>();
+    const recLookup = new Map<string, { show_name: string; platform: Platform }>();
     for (const rec of recommendations) {
       recLookup.set(rec.show_id, {
         show_name: rec.show_name,
         platform: rec.platform,
-        contact_email: rec.contact_email,
       });
     }
     for (const rec of youtubeRecs) {
       recLookup.set(rec.show_id, {
         show_name: rec.show_name,
         platform: rec.platform,
-        contact_email: rec.contact_email,
       });
     }
 
@@ -105,7 +103,6 @@ export async function POST(request: NextRequest) {
           show_id: draft.show_id,
           show_name: show.show_name,
           platform: show.platform,
-          contact_email: show.contact_email,
           subject: draft.subject,
           body: draft.body,
         };

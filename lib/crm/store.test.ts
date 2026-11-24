@@ -528,6 +528,27 @@ describe("crm store", () => {
     expect(calls("deals").every((entry) => entry.op === "select")).toBe(true);
   });
 
+  it("includes brand_crm_shows for the signed-in brand and tolerates a failed read", async () => {
+    resetDb({
+      brand_crm_shows: [
+        { show_id: SHOW, brand_id: BRAND },
+        { show_id: SHOW_B, brand_id: OTHER },
+      ],
+      shows: [
+        { id: SHOW, name: "Alpha" },
+        { id: SHOW_B, name: "Other brand" },
+      ],
+    });
+    expect(await listCrmShows(BRAND)).toEqual([{ id: SHOW, name: "Alpha" }]);
+
+    resetDb({
+      brand_show_contacts: [{ show_id: SHOW, brand_id: BRAND }],
+      shows: [{ id: SHOW, name: "Alpha" }],
+    });
+    failures.brand_crm_shows = "42P01";
+    expect(await listCrmShows(BRAND)).toEqual([{ id: SHOW, name: "Alpha" }]);
+  });
+
   it("throws the database error and ignores a profile id that is not a uuid", async () => {
     failures.brand_show_contacts = "permission denied";
     await expect(listContacts(BRAND, SHOW)).rejects.toThrow(/permission denied/);

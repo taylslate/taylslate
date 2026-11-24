@@ -11,7 +11,9 @@ import {
   getShowProfileByUserId,
 } from "@/lib/data/queries";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { redactOutreach } from "@/lib/outreach/public";
+import { redactOutreachForViewer } from "@/lib/outreach/public";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
+import { isRelayUnlocked } from "@/lib/relay/unlock";
 import type { DealStatus, BrandProfile, ShowProfile } from "@/lib/data/types";
 
 const VALID_STATUSES: DealStatus[] = ["planning", "io_sent", "live", "completed"];
@@ -231,6 +233,23 @@ function refusal(status: 400 | 403): NextResponse {
   return NextResponse.json({ error: REFUSAL }, { status });
 }
 
+async function dealContactVisible(
+  userId: string,
+  deal: { show_signed_at?: string | null; brand_signed_at?: string | null; status?: string | null }
+): Promise<boolean> {
+  const unlocked = isRelayUnlocked({
+    show_signed_at: deal.show_signed_at ?? null,
+    brand_signed_at: deal.brand_signed_at ?? null,
+    status: deal.status ?? "",
+  });
+  if (unlocked) return true;
+  try {
+    return await isShowsAdmin(userId);
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -296,7 +315,11 @@ export async function GET(
           brand_is_managed: await brandIsManaged(
             (wave12 as { brand_id?: unknown }).brand_id
           ),
-          outreach: outreach ? redactOutreach(outreach) : outreach,
+          outreach: outreach
+            ? redactOutreachForViewer(outreach, {
+                contactVisible: await dealContactVisible(user.id, wave12),
+              })
+            : outreach,
         },
       });
     }

@@ -10,12 +10,15 @@
 // is verified and a show_ownership_proofs row for that show is verified.
 // A deal profile id and a contact email are not enough. ownership_status
 // is read and is not copied onto the payload. The shows.is_verified
-// column is not copied. Contact, the rate card,
-// sponsors, slots, and income demographics stay on this response.
+// column is not copied. Contact email is null until this brand may
+// see it. The rate card, sponsors, slots, and income demographics
+// stay on this response.
 // Callers reach it only with a key tied to a profiles row.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { verifiedShowIds } from "@/lib/shows/verified-flag";
+import { fullShowIdsForCaller } from "@/lib/shows/public-fields";
+import { contactVisibleShowIds } from "@/lib/relay/contact-visibility";
 import { ApiReadError } from "@/lib/api/v1/handler";
 import {
   cursorFilter,
@@ -173,7 +176,7 @@ export async function listShows(
   query = visible ? query.or(visible) : query.eq("is_discoverable", true);
   const rows = await asList(applyPage(query, page.cursor, page.limit));
   const sliced = pageOf(rows, page.limit);
-  return { data: await serializeShows(sliced.rows), nextCursor: sliced.nextCursor };
+  return { data: await serializeShows(brandId, sliced.rows), nextCursor: sliced.nextCursor };
 }
 
 export async function getShow(brandId: string, showId: string): Promise<SerializedShow> {
@@ -188,7 +191,7 @@ export async function getShow(brandId: string, showId: string): Promise<Serializ
   if (row.is_discoverable !== true && !(await brandOwnsShow(brandId, showId))) {
     throw new ApiReadError(404, "Not found.");
   }
-  const shows = await serializeShows([row]);
+  const shows = await serializeShows(brandId, [row]);
   return shows[0];
 }
 
@@ -406,16 +409,29 @@ async function ownedCampaign(
   return row;
 }
 
-async function serializeShows(rows: Record<string, unknown>[]): Promise<SerializedShow[]> {
+async function serializeShows(
+  brandId: string,
+  rows: Record<string, unknown>[]
+): Promise<SerializedShow[]> {
   const ids: string[] = [];
   for (const row of rows) {
     if (typeof row.id === "string") ids.push(row.id);
   }
   const verified = await verifiedShowIds(ids);
+  let visible = new Set<string>();
+  try {
+    const fullIds = await fullShowIdsForCaller(
+      brandId,
+      rows.filter((row): row is { id: string } => typeof row.id === "string")
+    );
+    visible = await contactVisibleShowIds(brandId, [...fullIds]);
+  } catch {
+    visible = new Set();
+  }
   const out: SerializedShow[] = [];
   for (const row of rows) {
     const id = typeof row.id === "string" ? row.id : "";
-    out.push(serializeShow(row, verified.has(id)));
+    out.push(serializeShow(row, { verified: verified.has(id), contactVisible: visible.has(id) }));
   }
   return out;
 }

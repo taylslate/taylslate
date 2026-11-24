@@ -315,8 +315,13 @@ export interface SerializedDeal {
 
 export function serializeShow(
   row: Record<string, unknown>,
-  verified: boolean
+  verifiedOrOptions: boolean | { verified?: boolean; contactVisible?: boolean } = false
 ): SerializedShow {
+  const verified = typeof verifiedOrOptions === "boolean" ? verifiedOrOptions : verifiedOrOptions.verified === true;
+  const contactVisible =
+    typeof verifiedOrOptions === "object" &&
+    verifiedOrOptions !== null &&
+    verifiedOrOptions.contactVisible === true;
   const body: SerializedShow = {
     id: requiredText(row.id),
     name: requiredText(row.name),
@@ -347,7 +352,7 @@ export function serializeShow(
     next_available_date: textOrNull(row.next_available_date),
     contact: {
       name: textOrNull(row.contact_name),
-      email: textOrNull(row.contact_email),
+      email: contactVisible ? textOrNull(row.contact_email) : null,
       method: textOrNull(row.contact_method),
     },
     verified,

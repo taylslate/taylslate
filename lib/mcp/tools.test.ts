@@ -420,10 +420,13 @@ describe("callTool", () => {
     expect(Object.keys(pub as object)).not.toContain("contact");
     expect(Object.keys(pub as object)).not.toContain("rates");
     expect(JSON.stringify(pub)).not.toContain("hidden-contact@example.com");
+    expect(JSON.stringify(shows.content[0].text)).not.toContain("ada@owned.example");
+    expect(JSON.stringify(shows.content[0].text)).not.toContain("hidden-contact@example.com");
     expect(JSON.stringify(pub)).not.toContain("4242");
 
     const show = await callTool(ctx, "get_show", { id: SHOW_OWNED });
     expectKeys((show.structuredContent as { data: unknown }).data, SHOW_FIELDS);
+    expect(JSON.stringify(show.content[0].text)).not.toContain("ada@owned.example");
 
     const campaigns = await callTool(ctx, "list_campaigns", {});
     const campaignPage = campaigns.structuredContent as { data: Record<string, unknown>[] };
