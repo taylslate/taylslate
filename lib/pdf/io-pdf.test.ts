@@ -55,8 +55,11 @@ function order(overrides: Partial<InsertionOrder> = {}, items?: IOLineItem[]): I
   };
 }
 
-function textOf(io: InsertionOrder): string {
-  return generateIOPdf(io).toString("latin1");
+function textOf(
+  io: InsertionOrder,
+  opts?: { showContactVisible?: boolean; brandContactVisible?: boolean }
+): string {
+  return generateIOPdf(io, opts).toString("latin1");
 }
 
 describe("negotiated IO terms on the editor PDF", () => {
@@ -84,7 +87,8 @@ describe("negotiated IO terms on the editor PDF", () => {
     expect(text).toContain("Net 30 via ACH");
     expect(text).not.toContain("platform fee");
     expect(text).not.toContain("Pay-as-delivers");
-    expect(text).not.toContain("Taylslate");
+    expect(text).toContain("Sent through Taylslate");
+    expect(text.split("Sent through Taylslate").join("")).not.toContain("Taylslate");
   });
 
   it("prices a flat line per spot and leaves CPM and downloads blank", () => {
@@ -156,7 +160,8 @@ describe("negotiated IO terms on the editor PDF", () => {
     );
     expect(text).toContain("AGENCY OF RECORD");
     expect(text).toContain("Left Field");
-    expect(text).toContain("Alex Rivera, alex@leftfield.example");
+    expect(text).toContain("Alex Rivera, Sent through Taylslate");
+    expect(text).not.toContain("alex@leftfield.example");
     expect(text).toContain("Agency of record");
     expect(text).toContain("PUBLISHER / TALENT REPRESENTATIVE");
     expect(text).toContain("ADVERTISER");
@@ -177,5 +182,46 @@ describe("negotiated IO terms on the editor PDF", () => {
     expect(makeGoodOff).not.toContain("make-good episode");
     expect(makeGoodOff).toContain("tracking window");
     expect(makeGoodOff).toContain("right of first refusal");
+  });
+});
+
+describe("legacy IO contact masking", () => {
+  const full = () =>
+    order({
+      agency_name: "Left Field",
+      agency_contact_name: "Alex Rivera",
+      agency_contact_email: "alex@leftfield.example",
+      agency_billing_contact: "billing@leftfield.example",
+      send_invoices_to: "invoices@leftfield.example",
+    });
+
+  it("masks both sides by default", () => {
+    const text = textOf(full());
+    expect(text).toContain("Sent through Taylslate");
+    expect(text).not.toContain("brand@aurora.example");
+    expect(text).not.toContain("host@daily.fm");
+    expect(text).not.toContain("alex@leftfield.example");
+    expect(text).not.toContain("billing@leftfield.example");
+    expect(text).not.toContain("invoices@leftfield.example");
+    expect(text).toContain("Alex Rivera, Sent through Taylslate");
+    expect(text).toContain("LINE ITEMS");
+  });
+
+  it("reveals only the publisher when that option is set", () => {
+    const text = textOf(full(), { showContactVisible: true });
+    expect(text).toContain("host@daily.fm");
+    expect(text).not.toContain("brand@aurora.example");
+    expect(text).not.toContain("alex@leftfield.example");
+    expect(text).toContain("Sent through Taylslate");
+  });
+
+  it("reveals only the brand side when that option is set", () => {
+    const text = textOf(full(), { brandContactVisible: true });
+    expect(text).toContain("brand@aurora.example");
+    expect(text).toContain("Alex Rivera, alex@leftfield.example");
+    expect(text).toContain("billing@leftfield.example");
+    expect(text).toContain("invoices@leftfield.example");
+    expect(text).not.toContain("host@daily.fm");
+    expect(text).toContain("Sent through Taylslate");
   });
 });

@@ -11,6 +11,8 @@ const {
   updateDeal,
   markInsertionOrderSent,
   isShowsAdmin,
+  getAuthEmail,
+  enforceIoSend,
 } = vi.hoisted(() => ({
   getAuthenticatedUser: vi.fn(),
   getDealById: vi.fn(),
@@ -22,6 +24,8 @@ const {
   updateDeal: vi.fn(),
   markInsertionOrderSent: vi.fn(),
   isShowsAdmin: vi.fn(),
+  getAuthEmail: vi.fn(),
+  enforceIoSend: vi.fn(),
 }));
 
 vi.mock("@/lib/data/queries", () => ({
@@ -47,6 +51,12 @@ vi.mock("resend", () => ({
 }));
 vi.mock("@/lib/shows/can-edit-show", () => ({
   isShowsAdmin: (...a: unknown[]) => isShowsAdmin(...a),
+}));
+vi.mock("@/lib/auth/auth-email", () => ({
+  getAuthEmail: (...a: unknown[]) => getAuthEmail(...a),
+}));
+vi.mock("@/lib/security/rate-limit", () => ({
+  enforceIoSend: (...a: unknown[]) => enforceIoSend(...a),
 }));
 
 import { POST } from "./route";
@@ -107,12 +117,15 @@ function post(): Request {
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.RESEND_API_KEY = "re_test";
-  getAuthenticatedUser.mockResolvedValue({ id: "brand-1", email: "brand@example.test" });
+  getAuthenticatedUser.mockResolvedValue({ id: "agent-1", email: "host@example.test" });
   isShowsAdmin.mockResolvedValue(false);
+  enforceIoSend.mockResolvedValue(null);
+  getAuthEmail.mockImplementation(async (id: string) => (id === "brand-1" ? "brand@x.com" : null));
   getDealById.mockResolvedValue({
     id: "deal-1",
     show_id: "show-1",
     brand_id: "brand-1",
+    agent_id: "agent-1",
     status: "planning",
   });
   updateDeal.mockResolvedValue({ id: "deal-1", status: "io_sent" });
@@ -136,7 +149,7 @@ describe("POST /api/deals/[id]/io/send", () => {
     const res = await POST(post() as never, { params });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.to).toBe("brand@x.com");
+    expect(body).not.toHaveProperty("to");
     expect(body.subject).toBe(
       "Insertion order IO-1001 for SaunaBox and Daily Briefing",
     );
@@ -226,5 +239,104 @@ describe("POST /api/deals/[id]/io/send", () => {
     expect(res.status).toBe(500);
     expect(updateDeal).not.toHaveBeenCalled();
     expect(markInsertionOrderSent).not.toHaveBeenCalled();
+  });
+
+  it("sends to the account on file and ignores an edited IO address", async () => {
+    getIOByDealId.mockResolvedValue({
+      ...io,
+      advertiser_contact_email: "planted@example.test",
+      agency_contact_email: "also-planted@example.test",
+    });
+    getAuthEmail.mockResolvedValue("brand@example.test");
+    resolveManagedDelivery.mockImplementation(async (input: { to: string; subject: string }) => ({
+      ok: true,
+      to: input.to,
+      subject: input.subject,
+    }));
+    const res = await POST(post() as never, { params });
+    expect(res.status).toBe(200);
+    expect(resolveManagedDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "brand@example.test", recipientProfileId: "brand-1" })
+    );
+    expect(JSON.stringify(resolveManagedDelivery.mock.calls)).not.toContain("planted@example.test");
+  });
+
+  it("prefers the agency account", async () => {
+    getDealById.mockResolvedValue({
+      id: "deal-1",
+      show_id: "show-1",
+      brand_id: "brand-1",
+      agent_id: "agent-1",
+      agency_id: "agency-1",
+      status: "planning",
+    });
+    getAuthEmail.mockImplementation(async (id: string) =>
+      id === "agency-1" ? "desk@example.test" : "brand@example.test"
+    );
+    resolveManagedDelivery.mockImplementation(async (input: { to: string; subject: string }) => ({
+      ok: true,
+      to: input.to,
+      subject: input.subject,
+    }));
+    const res = await POST(post() as never, { params });
+    expect(res.status).toBe(200);
+    expect(getAuthEmail).toHaveBeenCalledWith("agency-1");
+    expect(resolveManagedDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "desk@example.test", recipientProfileId: "agency-1" })
+    );
+  });
+
+  it("returns 409 when the account address is missing or the caller is the recipient", async () => {
+    getAuthEmail.mockResolvedValue(null);
+    resolveManagedDelivery.mockResolvedValue({ ok: true, to: "x", subject: "x" });
+    const missing = await POST(post() as never, { params });
+    expect(missing.status).toBe(409);
+    expect(await missing.json()).toEqual({ error: "No recipient on file for this IO" });
+    expect(resendSend).not.toHaveBeenCalled();
+
+    getAuthenticatedUser.mockResolvedValue({ id: "brand-1" });
+    getDealById.mockResolvedValue({
+      id: "deal-1",
+      show_id: "show-1",
+      brand_id: "brand-1",
+      agent_id: "brand-1",
+      status: "planning",
+    });
+    getAuthEmail.mockResolvedValue("brand@example.test");
+    const self = await POST(post() as never, { params });
+    expect(self.status).toBe(409);
+    expect(resendSend).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 when limited and 503 when the limiter fails", async () => {
+    const { NextResponse } = await import("next/server");
+    enforceIoSend.mockResolvedValueOnce(NextResponse.json({ error: "Too many requests. Try again later." }, { status: 429 }));
+    const limited = await POST(post() as never, { params });
+    expect(limited.status).toBe(429);
+    expect(getAuthEmail).not.toHaveBeenCalled();
+
+    enforceIoSend.mockResolvedValueOnce(NextResponse.json({ error: "unavailable" }, { status: 503 }));
+    const down = await POST(post() as never, { params });
+    expect(down.status).toBe(503);
+    expect(resendSend).not.toHaveBeenCalled();
+  });
+
+  it("omits to for a show-side caller and masks the show address on the PDF", async () => {
+    const actual = await vi.importActual<typeof import("@/lib/pdf/io-pdf")>("@/lib/pdf/io-pdf");
+    generateIOPdf.mockImplementation((row: never, opts: never) => actual.generateIOPdf(row, opts));
+    resolveManagedDelivery.mockImplementation(async (input: { to: string; subject: string }) => ({
+      ok: true,
+      to: input.to,
+      subject: input.subject,
+    }));
+    const res = await POST(post() as never, { params });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).not.toHaveProperty("to");
+    const sent = resendSend.mock.calls[0][0];
+    const text = Buffer.from(sent.attachments[0].content, "base64").toString("latin1");
+    expect(text).not.toContain("host@example.test");
+    expect(text).toContain("Sent through Taylslate");
+    expect(text).toContain("brand@x.com");
   });
 });

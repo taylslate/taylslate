@@ -8,6 +8,10 @@ import {
   MAGIC_START_OUTREACH_MAX,
   LOGIN_CODE_VERIFY_MAX,
   LOGIN_CODE_VERIFY_WINDOW_SEC,
+  IO_SEND_USER_DAY_MAX,
+  IO_SEND_USER_DAY_WINDOW_SEC,
+  IO_SEND_USER_HOUR_MAX,
+  IO_SEND_USER_HOUR_WINDOW_SEC,
   OUTREACH_SEND_USER_DAY_MAX,
   OUTREACH_SEND_USER_DAY_WINDOW_SEC,
   OUTREACH_SEND_USER_HOUR_MAX,
@@ -21,6 +25,7 @@ import {
   UPLOAD_USER_HOUR_WINDOW_SEC,
   enforceAuthMagic,
   enforceMagicStart,
+  enforceIoSend,
   enforceLoginCodeSend,
   enforceLoginCodeVerify,
   enforceOutreachSend,
@@ -459,6 +464,42 @@ describe("each limit trips and resets", () => {
     hits = [];
     rpcError = { message: "database unavailable" };
     const closed = await enforceRosterDispute("owner-1");
+    expect(closed?.status).toBe(503);
+    expect(await closed?.json()).toEqual({ error: "unavailable" });
+  });
+
+  it("limits io sends per hour and per day and fails closed", async () => {
+    rpc.mockClear();
+    await enforceIoSend("io-user");
+    expect(rpc).toHaveBeenCalledWith(
+      "rate_limit_hit",
+      expect.objectContaining({
+        p_bucket: "io_send_user_hour",
+        p_key: "io-user",
+        p_max: IO_SEND_USER_HOUR_MAX,
+        p_window_seconds: IO_SEND_USER_HOUR_WINDOW_SEC,
+      })
+    );
+    expect(rpc).toHaveBeenCalledWith(
+      "rate_limit_hit",
+      expect.objectContaining({
+        p_bucket: "io_send_user_day",
+        p_key: "io-user",
+        p_max: IO_SEND_USER_DAY_MAX,
+        p_window_seconds: IO_SEND_USER_DAY_WINDOW_SEC,
+      })
+    );
+    hits = [];
+    nowMs = Date.UTC(2026, 0, 1);
+    await trip(
+      () => enforceIoSend("io-hour"),
+      IO_SEND_USER_HOUR_MAX,
+      IO_SEND_USER_HOUR_WINDOW_SEC
+    );
+    hits = [];
+    nowMs = Date.UTC(2026, 0, 1);
+    rpcError = { message: "database unavailable" };
+    const closed = await enforceIoSend("io-closed");
     expect(closed?.status).toBe(503);
     expect(await closed?.json()).toEqual({ error: "unavailable" });
   });

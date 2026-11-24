@@ -3,6 +3,21 @@ import { getAuthenticatedUser, getDealById, getShowById, getIOByDealId, getProfi
 import { generateIOPdf } from "@/lib/pdf/io-pdf";
 import type { InsertionOrder, IOLineItem } from "@/lib/data";
 import { recordEvent } from "@/lib/data/event-log";
+import { revealAdvertiserContact, revealPublisherContact } from "@/lib/relay/io-contact";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
+
+async function contactFlags(deal: Parameters<typeof revealPublisherContact>[0], userId: string) {
+  let admin = false;
+  try {
+    admin = await isShowsAdmin(userId);
+  } catch {
+    admin = false;
+  }
+  return {
+    showContactVisible: revealPublisherContact(deal, userId, admin),
+    brandContactVisible: revealAdvertiserContact(deal, userId, admin),
+  };
+}
 
 // Brand, agent, or agency on the deal. Same rule as io/generate.
 function isDealParty(
@@ -45,7 +60,7 @@ export async function POST(
       return NextResponse.json({ error: "Invalid IO data" }, { status: 400 });
     }
 
-    const pdfBuffer = generateIOPdf(io);
+    const pdfBuffer = generateIOPdf(io, await contactFlags(deal, user.id));
     const filename = `${io.io_number.replace(/\s+/g, "_")}.pdf`;
 
     await recordEvent({
@@ -172,7 +187,7 @@ export async function GET(
       };
     }
 
-    const pdfBuffer = generateIOPdf(io);
+    const pdfBuffer = generateIOPdf(io, await contactFlags(deal, user.id));
     const filename = `${io.io_number.replace(/\s+/g, "_")}.pdf`;
 
     await recordEvent({
@@ -188,7 +203,11 @@ export async function GET(
       },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: `PDF generation failed: ${message}` }, { status: 500 });
+    const code =
+      err && typeof err === "object" && "code" in err && typeof err.code === "string"
+        ? err.code
+        : "unknown";
+    console.warn("[io/pdf]", code);
+    return NextResponse.json({ error: "PDF generation failed" }, { status: 500 });
   }
 }

@@ -14,6 +14,8 @@ import {
 } from "@/lib/data/queries";
 import { generateIoPdfFromDeal } from "@/lib/pdf/io-generator";
 import { ioToSaved } from "@/lib/pdf/io-terms";
+import { revealAdvertiserContact, revealPublisherContact, withProfileParties } from "@/lib/relay/io-contact";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { BrandProfile, ShowProfile } from "@/lib/data/types";
 
@@ -82,6 +84,16 @@ export async function GET(
   ]);
   const brandUser = brandUserRes.data;
   const showUser = showUserRes.data;
+  let admin = false;
+  try {
+    admin = await isShowsAdmin(user.id);
+  } catch {
+    admin = false;
+  }
+  const viewDeal = withProfileParties(deal, user.id, {
+    brand: ownsAsBrand,
+    show: ownsAsShow,
+  });
   const rendered = generateIoPdfFromDeal({
     deal,
     brandProfile: bp as BrandProfile,
@@ -90,6 +102,8 @@ export async function GET(
     brandSigningEmail: (brandUser?.email as string) ?? "",
     showSigningEmail: (showUser?.email as string) ?? "",
     saved: savedIo ? ioToSaved(savedIo) : undefined,
+    showContactVisible: revealPublisherContact(viewDeal, user.id, admin),
+    brandContactVisible: revealAdvertiserContact(viewDeal, user.id, admin),
   });
 
   return new NextResponse(new Uint8Array(rendered.pdfBuffer), {

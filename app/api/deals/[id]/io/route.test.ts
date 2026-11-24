@@ -752,6 +752,93 @@ describe("negotiated IO fields", () => {
     expect(supabaseAdmin.from).not.toHaveBeenCalled();
   });
 
+  it("hides brand addresses from a show-side agent and ignores them on write", async () => {
+    const stored = {
+      id: "io-1",
+      io_number: "IO-2026-0004",
+      advertiser_contact_email: "brand@example.test",
+      agency_contact_email: "desk@example.test",
+      agency_billing_contact: "billing@example.test",
+      send_invoices_to: "invoices@example.test",
+      publisher_contact_email: "host@example.test",
+      line_items: [lineItem],
+    };
+    getDealById.mockResolvedValue({
+      ...dealOwnedBy("brand-other"),
+      agent_id: USER_ID,
+      outreach_id: null,
+      status: "planning",
+    });
+    getIOByDealId.mockResolvedValue(stored);
+    const read = await (await GET(jsonReq("GET", {}) as never, params as never)).json();
+    expect(read.advertiser_contact_hidden).toBe(true);
+    expect(read.publisher_contact_hidden).toBe(false);
+    expect(read.io.advertiser_contact_email).toBe("");
+    expect(read.io.agency_contact_email).toBe("");
+    expect(read.io.publisher_contact_email).toBe("host@example.test");
+    expect(JSON.stringify(read)).not.toContain("brand@example.test");
+
+    const headerWrites: unknown[] = [];
+    supabaseAdmin.from.mockImplementation(() => {
+      const builder: Record<string, unknown> = {};
+      const self = () => builder;
+      builder.update = vi.fn((payload: unknown) => {
+        headerWrites.push(payload);
+        return builder;
+      });
+      builder.eq = vi.fn(self);
+      builder.select = vi.fn(self);
+      builder.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({ data: null, error: null }).then(resolve);
+      return builder;
+    });
+    getIOByDealId.mockResolvedValueOnce(null).mockResolvedValue(stored);
+    persistIoForDeal.mockResolvedValue({ ioId: "io-1", created: true, lineItemCount: 1 });
+    const posted = await POST(
+      jsonReq("POST", {
+        advertiser_name: "SaunaBox",
+        publisher_name: "Oddvice",
+        advertiser_contact_email: "planted@example.test",
+        agency_contact_email: "planted-desk@example.test",
+        agency_billing_contact: "planted-bill@example.test",
+        send_invoices_to: "planted-inv@example.test",
+        publisher_contact_email: "host@example.test",
+        line_items: [lineItem],
+      }) as never,
+      params as never
+    );
+    expect(posted.status).toBe(201);
+    const saved = persistIoForDeal.mock.calls.at(-1)?.[0] as {
+      contacts: { advertiserContactEmail: string | null; publisherContactEmail: string };
+    };
+    expect(saved.contacts.advertiserContactEmail).toBeNull();
+    expect(saved.contacts.publisherContactEmail).toBe("host@example.test");
+    const header = headerWrites[0] as Record<string, unknown>;
+    expect(header).not.toHaveProperty("advertiser_contact_email");
+    expect(header).not.toHaveProperty("agency_contact_email");
+    expect(header).not.toHaveProperty("agency_billing_contact");
+    expect(header).not.toHaveProperty("send_invoices_to");
+
+    const updates = captureUpdates();
+    const patched = await PATCH(
+      jsonReq("PATCH", {
+        advertiser_contact_email: "planted@example.test",
+        agency_contact_email: "planted-desk@example.test",
+        agency_billing_contact: "planted-bill@example.test",
+        send_invoices_to: "planted-inv@example.test",
+        payment_terms: "Net 15",
+      }) as never,
+      params as never
+    );
+    expect(patched.status).toBe(200);
+    expect(updates[0]).toMatchObject({ payment_terms: "Net 15" });
+    expect(updates[0]).not.toHaveProperty("advertiser_contact_email");
+    expect(updates[0]).not.toHaveProperty("agency_contact_email");
+    const patchedBody = await patched.json();
+    expect(patchedBody.advertiser_contact_hidden).toBe(true);
+    expect(patchedBody.io.advertiser_contact_email).toBe("");
+  });
+
   it("PATCH stores a blank spot format as null", async () => {
     const updates = captureUpdates();
     const res = await PATCH(

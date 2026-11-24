@@ -8,7 +8,12 @@ import type { Deal } from "@/lib/data/types";
 import { fetchSurfaceAttachment } from "@/lib/data/show-surfaces";
 import { parseShowSurfaceId, surfacesEligibleForDeal } from "@/lib/shows/surfaces";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
-import { isRelayUnlocked } from "@/lib/relay/unlock";
+import {
+  advertiserFieldsForWrite,
+  maskIoForViewer,
+  revealAdvertiserContact,
+  revealPublisherContact,
+} from "@/lib/relay/io-contact";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -84,24 +89,6 @@ const IO_BOOLS = [
 
 function isParty(deal: Deal, userId: string): boolean {
   return deal.agent_id === userId || deal.brand_id === userId || deal.agency_id === userId;
-}
-
-function revealPublisherContact(deal: Deal, userId: string, admin: boolean): boolean {
-  if (deal.agent_id === userId || admin) return true;
-  const outreachId = (deal as { outreach_id?: unknown }).outreach_id;
-  const wave12 = typeof outreachId === "string" && outreachId.length > 0;
-  return wave12 && isRelayUnlocked(deal);
-}
-
-function blankPublisherContact<T extends { publisher_contact_email?: string | null }>(
-  io: T,
-  reveal: boolean
-): { io: T; publisher_contact_hidden: boolean } {
-  if (reveal) return { io, publisher_contact_hidden: false };
-  return {
-    io: { ...io, publisher_contact_email: "" },
-    publisher_contact_hidden: true,
-  };
 }
 
 function withoutPublisherEmail(fields: Record<string, unknown>): Record<string, unknown> {
@@ -272,7 +259,7 @@ export async function GET(
       return NextResponse.json({ error: "No IO found for this deal" }, { status: 404 });
     }
 
-    return NextResponse.json(blankPublisherContact(io, revealPublisherContact(deal, user.id, admin)));
+    return NextResponse.json(maskIoForViewer(io, deal, user.id, admin));
   } catch {
     console.warn("[io] fetch", "unknown");
     return NextResponse.json({ error: "Failed to fetch IO" }, { status: 500 });
@@ -298,10 +285,7 @@ export async function POST(
 
     const existing = await getIOByDealId(dealId);
     if (existing) {
-      const view = blankPublisherContact(
-        existing,
-        revealPublisherContact(loaded.deal, user.id, admin)
-      );
+      const view = maskIoForViewer(existing, loaded.deal, user.id, admin);
       return NextResponse.json(
         { error: "An IO already exists for this deal", ...view },
         { status: 409 }
@@ -389,8 +373,11 @@ export async function POST(
       rendered: { ioNumber, totalGross, totalNet, totalDownloads, lineItems: drafts },
       contacts: {
         advertiserName,
-        advertiserContactEmail:
-          typeof body.advertiser_contact_email === "string" ? body.advertiser_contact_email : null,
+        advertiserContactEmail: revealAdvertiserContact(loaded.deal, user.id, admin)
+          ? typeof body.advertiser_contact_email === "string"
+            ? body.advertiser_contact_email
+            : null
+          : null,
         publisherName,
         publisherContactName:
           typeof body.publisher_contact_name === "string" ? body.publisher_contact_name : "",
@@ -402,7 +389,12 @@ export async function POST(
     });
 
     if (result.created) {
-      const headerUpdate = publisherEmailForWrite(loaded.deal, user.id, admin, header.fields);
+      const headerUpdate = advertiserFieldsForWrite(
+        loaded.deal,
+        user.id,
+        admin,
+        publisherEmailForWrite(loaded.deal, user.id, admin, header.fields)
+      );
       const { error: headerError } = await supabaseAdmin
         .from("insertion_orders")
         .update({
@@ -422,12 +414,12 @@ export async function POST(
 
     const io = await getIOByDealId(dealId);
     if (!io) {
-      return NextResponse.json({ io: null, publisher_contact_hidden: true }, { status: 201 });
+      return NextResponse.json(
+        { io: null, publisher_contact_hidden: true, advertiser_contact_hidden: true },
+        { status: 201 }
+      );
     }
-    return NextResponse.json(
-      blankPublisherContact(io, revealPublisherContact(loaded.deal, user.id, admin)),
-      { status: 201 }
-    );
+    return NextResponse.json(maskIoForViewer(io, loaded.deal, user.id, admin), { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
     if (message.startsWith("Refusing to persist")) {
@@ -477,7 +469,12 @@ export async function PATCH(
     const supabase = await createClient();
     const syncLineItems = body.sync_line_items === true;
     const admin = await isShowsAdmin(user.id);
-    const ioUpdates = publisherEmailForWrite(loaded.deal, user.id, admin, header.fields);
+    const ioUpdates = advertiserFieldsForWrite(
+      loaded.deal,
+      user.id,
+      admin,
+      publisherEmailForWrite(loaded.deal, user.id, admin, header.fields)
+    );
 
     if (Object.keys(ioUpdates).length > 0) {
       const { error: ioError } = await supabase
@@ -581,11 +578,13 @@ export async function PATCH(
 
     const updatedIO = await getIOByDealId(dealId);
     if (!updatedIO) {
-      return NextResponse.json({ io: null, publisher_contact_hidden: true });
+      return NextResponse.json({
+        io: null,
+        publisher_contact_hidden: true,
+        advertiser_contact_hidden: true,
+      });
     }
-    return NextResponse.json(
-      blankPublisherContact(updatedIO, revealPublisherContact(loaded.deal, user.id, admin))
-    );
+    return NextResponse.json(maskIoForViewer(updatedIO, loaded.deal, user.id, admin));
   } catch {
     console.warn("[io] update", "unknown");
     return NextResponse.json({ error: "Failed to update IO" }, { status: 500 });
