@@ -4158,7 +4158,9 @@ Migration 102 is a file only. It is not applied. `authenticated` loses table SEL
 
 User-scoped reads of those tables name `lib/shows/read-columns.ts`. The address is added back only after `contactVisibleShowIds` or `contactVisibleOutreachIds`, through `attachVisibleShowContacts` and `attachVisibleOutreachEmails`. Campaign writers no longer store a show contact. Recipient resolution reads the catalog with the service role. A hidden show needs an approved roster row or a deal from an accepted outreach. A planted address in campaign JSON is never used.
 
-GET `/api/deals/[id]/io` and POST `/api/deals/[id]/io/send` require deal party membership. A locked brand gets an empty publisher email and `publisher_contact_hidden: true`. A brand save with an empty publisher email does not wipe the stored value. The send response drops `senderEmail`. Legacy create-deals and generate-ios cannot plant a discoverable show or a contact from the request or from campaign JSON.
+GET `/api/deals/[id]/io` and POST `/api/deals/[id]/io/send` require deal party membership. A locked brand gets an empty publisher email and `publisher_contact_hidden: true`. A brand save with an empty publisher email does not wipe the stored value. The send response drops `senderEmail`. The send recipient is the agency or advertiser address. Legacy create-deals and generate-ios cannot plant a discoverable show or a contact from the request or from campaign JSON.
+
+POST and PATCH `/api/deals/[id]/io` use that same blanking, including the 409 returned when an IO already exists. A locked brand cannot write `publisher_contact_email` on PATCH or on a new POST. generate-ios runs `pitchableShowIds` on a slug match and does not reuse the show or store its address when the gate fails. A shared Podscan id prefers the discoverable row, then a tied row, ordered by id. The contact-read guard rejects `shows(*)`, `outreaches(*)`, `insertion_orders(*)`, and embeds that name a withheld column, on any non-admin select. IO route errors return a generic message and log `error.code` only.
 
 102 does not revoke UPDATE on `campaigns.selected_show_ids`. One column would not close a path the brand can also write through the JSON arrays. RELAY1d validates selections. io/generate still returns the IO row without `publisher_contact_email` until RELAY1d.
 
@@ -4184,7 +4186,7 @@ Tests outside the original Owns list that had to move with the new boundary: `ap
 
 `npx tsc --noEmit` is clean.
 
-`npx vitest run`: 491 files, 3985 passed, 41 skipped.
+`npx vitest run`: 491 files, 3992 passed, 41 skipped.
 
 `npx eslint` on the changed TypeScript files: 0 errors. Pre-existing warnings remain on `lib/discovery/scored-show-adapter.test.ts` (`w7` unused) and `lib/security/rate-limit.test.ts` (`enforceAuthMagic` unused).
 

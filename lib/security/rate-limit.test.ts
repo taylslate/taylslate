@@ -245,7 +245,7 @@ beforeEach(() => {
               ? [
                   {
                     id: "33333333-3333-4333-8333-333333333333",
-                    contact_email: "host@show.example",
+                    contact_email: "host@example.test",
                     is_discoverable: true,
                     podscan_id: "show-1",
                   },

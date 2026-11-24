@@ -15,7 +15,7 @@ function show(over: Partial<Show> = {}): Show {
     audience_size: 40_000,
     current_sponsors: ["AG1", "Eight Sleep"],
     rss_url: "https://feed/recovery.xml",
-    contact: { name: "Host", email: "host@recovery.fm", method: "email" },
+    contact: { name: "Host", email: "host@example.test", method: "email" },
     ...over,
   } as unknown as Show;
 }
@@ -57,7 +57,7 @@ describe("tieredShowToScoredShowRecord", () => {
     expect(rec!.compositeScore).toBe(67);
     expect(rec!.publisherName).toBe("Wellness Network");
     expect(rec).not.toHaveProperty("contactEmail");
-    expect(JSON.stringify(rec)).not.toContain("host@recovery.fm");
+    expect(JSON.stringify(rec)).not.toContain("host@example.test");
     expect(rec!.sponsorCount).toBe(2);
     expect(rec!.source).toBe("discover");
   });

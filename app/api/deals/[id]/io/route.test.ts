@@ -363,6 +363,57 @@ describe("IO route party check", () => {
     return updates;
   }
 
+  it("blanks the publisher email when a locked brand posts against an existing IO", async () => {
+    getIOByDealId.mockResolvedValue(revealedIo());
+    getDealById.mockResolvedValue({
+      ...dealOwnedBy(USER_ID),
+      outreach_id: "outreach-1",
+      status: "planning",
+      show_signed_at: null,
+      brand_signed_at: null,
+    });
+    const res = await POST(
+      jsonReq("POST", {
+        advertiser_name: "SaunaBox",
+        publisher_name: "Oddvice",
+        line_items: [lineItem],
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.io.publisher_contact_email).toBe("");
+    expect(body.publisher_contact_hidden).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("host@example.test");
+    expect(persistIoForDeal).not.toHaveBeenCalled();
+  });
+
+  it("does not persist a locked brand publisher email on a new IO", async () => {
+    getIOByDealId.mockResolvedValueOnce(null).mockResolvedValue(revealedIo());
+    getDealById.mockResolvedValue({
+      ...dealOwnedBy(USER_ID),
+      outreach_id: "outreach-1",
+      status: "planning",
+      show_signed_at: null,
+      brand_signed_at: null,
+    });
+    const res = await POST(
+      jsonReq("POST", {
+        advertiser_name: "SaunaBox",
+        publisher_name: "Oddvice",
+        publisher_contact_email: "planted@example.test",
+        line_items: [lineItem],
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(201);
+    const saved = persistIoForDeal.mock.calls[0][0] as {
+      contacts: { publisherContactEmail: string };
+    };
+    expect(saved.contacts.publisherContactEmail).toBe("");
+    expect(JSON.stringify(persistIoForDeal.mock.calls)).not.toContain("planted@example.test");
+  });
+
   it("blanks publisher email on POST and PATCH for a locked brand", async () => {
     getIOByDealId.mockResolvedValueOnce(null).mockResolvedValue(revealedIo());
     getDealById.mockResolvedValue({

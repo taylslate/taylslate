@@ -36,7 +36,7 @@ const resolveOutreachRecipient = vi.fn(
     void args;
     return {
       ok: true,
-      email: "host@daily.fm",
+      email: "host@example.test",
       catalogShowId: null,
     };
   }
@@ -81,7 +81,7 @@ const validBody = {
   show: {
     podscan_id: "p1",
     show_name: "Daily Briefing",
-    contact_email: "host@daily.fm",
+    contact_email: "host@example.test",
     audience_size: 12000,
     categories: ["business"],
   },
@@ -161,7 +161,7 @@ describe("POST /api/outreach", () => {
     expect(createOutreach).toHaveBeenCalledOnce();
     const draft = createOutreach.mock.calls[0][0];
     expect(draft.brand_profile_id).toBe("bp1");
-    expect(draft.sent_to_email).toBe("host@daily.fm");
+    expect(draft.sent_to_email).toBe("host@example.test");
     expect(draft.proposed_cpm).toBe(28);
     expect(draft.token).toMatch(/^retired:/);
     for (const call of adminFromBuilder.update.mock.calls) {
@@ -185,7 +185,7 @@ describe("POST /api/outreach", () => {
       "Aurora Sleep via Taylslate <outreach@taylslate.com>"
     );
     expect(sendEmail.mock.calls[0][0].reply_to).toBe("outreach@taylslate.com");
-    expect(sendEmail.mock.calls[0][0].to).toBe("host@daily.fm");
+    expect(sendEmail.mock.calls[0][0].to).toBe("host@example.test");
     expect(sendEmail.mock.calls[0][0]).not.toHaveProperty("attachments");
     expect(body.outreach.sent_to_email).toBe("");
     expect(body.contact_details_removed).toBe(false);

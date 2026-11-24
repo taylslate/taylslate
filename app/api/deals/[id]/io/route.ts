@@ -130,6 +130,18 @@ function logIoError(scope: string, error: { code?: string } | null | undefined) 
   console.warn(scope, error?.code ?? "unknown");
 }
 
+function publisherContactForCreate(
+  deal: Deal,
+  userId: string,
+  admin: boolean,
+  body: Record<string, unknown>
+): string {
+  const kept = publisherEmailForWrite(deal, userId, admin, {
+    publisher_contact_email: body.publisher_contact_email,
+  });
+  return typeof kept.publisher_contact_email === "string" ? kept.publisher_contact_email : "";
+}
+
 function docusignLocked(deal: Deal): boolean {
   return Boolean((deal as { docusign_envelope_id?: string | null }).docusign_envelope_id);
 }
@@ -382,13 +394,7 @@ export async function POST(
         publisherName,
         publisherContactName:
           typeof body.publisher_contact_name === "string" ? body.publisher_contact_name : "",
-        publisherContactEmail:
-          loaded.deal.agent_id === user.id ||
-          (typeof body.publisher_contact_email === "string" && body.publisher_contact_email.trim() !== "")
-            ? typeof body.publisher_contact_email === "string"
-              ? body.publisher_contact_email
-              : ""
-            : (await getIOByDealId(dealId))?.publisher_contact_email ?? "",
+        publisherContactEmail: publisherContactForCreate(loaded.deal, user.id, admin, body),
       },
       actorId: user.id,
       source: "io_editor",

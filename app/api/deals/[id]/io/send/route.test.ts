@@ -63,7 +63,7 @@ const io = {
   advertiser_contact_email: "brand@x.com",
   publisher_name: "Show",
   publisher_contact_name: "Host",
-  publisher_contact_email: "host@show.test",
+  publisher_contact_email: "host@example.test",
   line_items: [
     {
       id: "li-1",
@@ -107,7 +107,7 @@ function post(): Request {
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.RESEND_API_KEY = "re_test";
-  getAuthenticatedUser.mockResolvedValue({ id: "brand-1", email: "brand@x.com" });
+  getAuthenticatedUser.mockResolvedValue({ id: "brand-1", email: "brand@example.test" });
   isShowsAdmin.mockResolvedValue(false);
   getDealById.mockResolvedValue({
     id: "deal-1",
@@ -164,7 +164,7 @@ describe("POST /api/deals/[id]/io/send", () => {
     expect(markInsertionOrderSent).toHaveBeenCalledWith("io-1");
     expect(updateDeal).toHaveBeenCalledWith("deal-1", { status: "io_sent" });
     expect(body).not.toHaveProperty("senderEmail");
-    expect(JSON.stringify(body)).not.toContain("host@show.test");
+    expect(JSON.stringify(body)).not.toContain("host@example.test");
   });
 
   it("returns 403 for a non-party and does not send", async () => {
