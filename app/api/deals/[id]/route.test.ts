@@ -160,6 +160,42 @@ describe("deals/[id] authorization gate", () => {
     expect(openedBody.deal.outreach.sent_to_email).toBe("host@example.test");
   });
 
+  it("masks insertion_order for each side and returns both flags", async () => {
+    const insertion_order = {
+      publisher_contact_email: "host@example.test",
+      advertiser_contact_email: "brand@example.test",
+      agency_contact_email: "desk@example.test",
+      agency_billing_contact: "billing@example.test",
+      send_invoices_to: "invoices@example.test",
+      advertiser_name: "Northwind",
+    };
+    getDealById.mockResolvedValue({ ...wave12Row, agent_id: "agent-1" });
+    getDealWithRelations.mockImplementation(async () => ({
+      ...wave12Row,
+      agent_id: "agent-1",
+      show_name: "Harbor",
+      insertion_order: { ...insertion_order },
+    }));
+
+    getAuthenticatedUser.mockResolvedValue({ id: "legacy-brand" });
+    const brand = await (await GET({} as never, params as never)).json();
+    expect(brand.deal.publisher_contact_hidden).toBe(true);
+    expect(brand.deal.advertiser_contact_hidden).toBe(false);
+    expect(brand.deal.insertion_order.publisher_contact_email).toBe("");
+    expect(brand.deal.insertion_order.advertiser_contact_email).toBe("brand@example.test");
+    expect(JSON.stringify(brand)).not.toContain("host@example.test");
+
+    getAuthenticatedUser.mockResolvedValue({ id: "agent-1" });
+    const show = await (await GET({} as never, params as never)).json();
+    expect(show.deal.publisher_contact_hidden).toBe(false);
+    expect(show.deal.advertiser_contact_hidden).toBe(true);
+    expect(show.deal.insertion_order.publisher_contact_email).toBe("host@example.test");
+    expect(show.deal.insertion_order.advertiser_contact_email).toBe("");
+    expect(show.deal.insertion_order.agency_contact_email).toBe("");
+    expect(JSON.stringify(show.deal.insertion_order)).not.toContain("brand@example.test");
+    expect(JSON.stringify(show.deal.insertion_order)).not.toContain("desk@example.test");
+  });
+
   it("GET allows the owning show (legacy-column owner too)", async () => {
     // Legacy ownership path: caller is the legacy brand_id on the row.
     getAuthenticatedUser.mockResolvedValue({ id: "legacy-brand", email: "b@x.com" });

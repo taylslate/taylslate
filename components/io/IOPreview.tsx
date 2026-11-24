@@ -3,12 +3,15 @@
 import type { InsertionOrder } from "@/lib/data";
 import { formatDateOnly } from "@/lib/format/date-only";
 import { tokens } from "@/lib/brand/tokens";
+import { MASKED_CONTACT } from "@/lib/relay/io-contact";
 
 interface IOPreviewProps {
   io: Partial<InsertionOrder>;
   onEdit: () => void;
   onConfirm: () => void;
   isConfirming?: boolean;
+  publisherContactHidden?: boolean;
+  advertiserContactHidden?: boolean;
 }
 
 const radiusStyle = { borderRadius: tokens.radius };
@@ -34,7 +37,14 @@ function money(amount: number): string {
   });
 }
 
-export default function IOPreview({ io, onEdit, onConfirm, isConfirming }: IOPreviewProps) {
+export default function IOPreview({
+  io,
+  onEdit,
+  onConfirm,
+  isConfirming,
+  publisherContactHidden,
+  advertiserContactHidden,
+}: IOPreviewProps) {
   const lineItems = io.line_items ?? [];
   const totalDownloads = io.total_downloads ?? 0;
   const totalGross = io.total_gross ?? 0;
@@ -74,7 +84,7 @@ export default function IOPreview({ io, onEdit, onConfirm, isConfirming }: IOPre
           </div>
           <div className="sm:col-span-2">
             <label className={labelClass}>Email</label>
-            <div className={valueClass} style={radiusStyle}>{io.advertiser_contact_email || "—"}</div>
+            <div className={valueClass} style={radiusStyle}>{advertiserContactHidden ? MASKED_CONTACT : io.advertiser_contact_email || "\u2014"}</div>
           </div>
         </div>
       </section>
@@ -92,7 +102,7 @@ export default function IOPreview({ io, onEdit, onConfirm, isConfirming }: IOPre
           </div>
           <div>
             <label className={labelClass}>Email</label>
-            <div className={valueClass} style={radiusStyle}>{io.publisher_contact_email || "—"}</div>
+            <div className={valueClass} style={radiusStyle}>{publisherContactHidden ? MASKED_CONTACT : io.publisher_contact_email || "\u2014"}</div>
           </div>
           {io.publisher_address && (
             <div>
@@ -117,12 +127,12 @@ export default function IOPreview({ io, onEdit, onConfirm, isConfirming }: IOPre
             </div>
             <div>
               <label className={labelClass}>Email</label>
-              <div className={valueClass} style={radiusStyle}>{io.agency_contact_email || "—"}</div>
+              <div className={valueClass} style={radiusStyle}>{advertiserContactHidden ? MASKED_CONTACT : io.agency_contact_email || "\u2014"}</div>
             </div>
-            {io.send_invoices_to && (
+            {(advertiserContactHidden ? true : Boolean(io.send_invoices_to)) && (
               <div>
                 <label className={labelClass}>Send Invoices To</label>
-                <div className={valueClass} style={radiusStyle}>{io.send_invoices_to}</div>
+                <div className={valueClass} style={radiusStyle}>{advertiserContactHidden ? MASKED_CONTACT : io.send_invoices_to}</div>
               </div>
             )}
           </div>

@@ -33,6 +33,7 @@ import {
   visibleDownloadTotal,
   type IoPdfSaved,
 } from "@/lib/pdf/io-terms";
+import { MASKED_CONTACT } from "@/lib/relay/io-contact";
 import { ioLineSurfaceCaption } from "@/lib/shows/surfaces";
 
 // ---- Visual constants (mirror lib/pdf/io-pdf.ts) ----
@@ -126,6 +127,11 @@ export function derivePostDates(
   return dates;
 }
 
+function maskedEmailPart(email: string | null | undefined): string | null | undefined {
+  if (typeof email === "string" && email.trim()) return MASKED_CONTACT;
+  return email;
+}
+
 function readerTypeLabel(types: ShowAdReadType[] | undefined): string {
   if (!types || types.length === 0) return "Host-read";
   if (types.includes("scripted")) return "Scripted";
@@ -150,6 +156,10 @@ export interface IoPdfInput {
    * deal-derived document. Signature anchors are not read from here.
    */
   saved?: IoPdfSaved;
+  /** Publisher contact lines. Omitted or false prints the masked label. */
+  showContactVisible?: boolean;
+  /** Advertiser and agency contact lines. Omitted or false prints the masked label. */
+  brandContactVisible?: boolean;
 }
 
 /**
@@ -306,16 +316,29 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
 
   const colWidth = CONTENT_WIDTH / 2 - 10;
 
+  const showContactVisible = input.showContactVisible === true;
+  const brandContactVisible = input.brandContactVisible === true;
+  const brandContact = brandContactVisible ? input.brandSigningEmail : MASKED_CONTACT;
   const advFields: [string, string][] = [
     ["Company", advertiserName],
     ["Brand URL", brandProfile.brand_website ?? ""],
-    ["Media Contact", input.brandSigningEmail],
-    ["Billing Contact", input.brandSigningEmail], // brand profile has no separate billing field yet
+    ["Media Contact", brandContact],
+    ["Billing Contact", brandContact], // brand profile has no separate billing field yet
   ];
   const pubFields: [string, string][] = [
     ["Show", publisherName],
-    ["Activation Contact", showProfile.ad_copy_email ?? input.showSigningEmail],
-    ["Billing Contact", showProfile.billing_email ?? input.showSigningEmail],
+    [
+      "Activation Contact",
+      showContactVisible
+        ? (showProfile.ad_copy_email ?? input.showSigningEmail)
+        : MASKED_CONTACT,
+    ],
+    [
+      "Billing Contact",
+      showContactVisible
+        ? (showProfile.billing_email ?? input.showSigningEmail)
+        : MASKED_CONTACT,
+    ],
   ];
 
   const advBottom = drawPartyBlock("Advertiser", advFields, MARGIN, colWidth);
@@ -328,7 +351,13 @@ export function generateIoPdfFromDeal(input: IoPdfInput): RenderedIo {
     y += 14;
     const agencyFields: [string, string][] = [
       ["Company", agencyName],
-      ["Contact", agencyContactLine(saved?.agency_contact_name, saved?.agency_contact_email)],
+      [
+        "Contact",
+        agencyContactLine(
+          saved?.agency_contact_name,
+          brandContactVisible ? saved?.agency_contact_email : maskedEmailPart(saved?.agency_contact_email)
+        ),
+      ],
       ["Payer", payerLabel(saved?.payer)],
     ];
     const agencyBottom = drawPartyBlock("Agency of Record", agencyFields, MARGIN, CONTENT_WIDTH);

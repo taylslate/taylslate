@@ -9,6 +9,7 @@ import {
   storedTermRows,
   visibleDownloadTotal,
 } from "@/lib/pdf/io-terms";
+import { MASKED_CONTACT } from "@/lib/relay/io-contact";
 import { ioLineSurfaceCaption } from "@/lib/shows/surfaces";
 
 // VeritoneOne-style IO PDF generator
@@ -47,7 +48,21 @@ function capitalize(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function generateIOPdf(io: InsertionOrder): Buffer {
+function heldContact(value: string | null | undefined, visible: boolean): string {
+  const text = typeof value === "string" ? value : "";
+  if (visible) return text;
+  return text.trim() ? MASKED_CONTACT : text;
+}
+
+function maskedEmailPart(email: string | null | undefined): string | null | undefined {
+  if (typeof email === "string" && email.trim()) return MASKED_CONTACT;
+  return email;
+}
+
+export function generateIOPdf(
+  io: InsertionOrder,
+  opts?: { showContactVisible?: boolean; brandContactVisible?: boolean }
+): Buffer {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   let y = MARGIN;
 
@@ -123,17 +138,19 @@ export function generateIOPdf(io: InsertionOrder): Buffer {
   }
 
   const colWidth = CONTENT_WIDTH / 2 - 10;
+  const showContactVisible = opts?.showContactVisible === true;
+  const brandContactVisible = opts?.brandContactVisible === true;
 
   // Advertiser + Publisher side by side
   const advFields: [string, string][] = [
     ["Company", io.advertiser_name],
     ["Contact", io.advertiser_contact_name ?? ""],
-    ["Email", io.advertiser_contact_email ?? ""],
+    ["Email", heldContact(io.advertiser_contact_email, brandContactVisible)],
   ];
   const pubFields: [string, string][] = [
     ["Company", io.publisher_name],
     ["Contact", io.publisher_contact_name],
-    ["Email", io.publisher_contact_email],
+    ["Email", showContactVisible ? io.publisher_contact_email : MASKED_CONTACT],
     ["Address", io.publisher_address ?? ""],
   ];
 
@@ -148,10 +165,16 @@ export function generateIOPdf(io: InsertionOrder): Buffer {
     y += 14;
     const agencyFields: [string, string][] = [
       ["Company", io.agency_name],
-      ["Contact", agencyContactLine(io.agency_contact_name, io.agency_contact_email)],
-      ["Billing", io.agency_billing_contact ?? ""],
+      [
+        "Contact",
+        agencyContactLine(
+          io.agency_contact_name,
+          brandContactVisible ? io.agency_contact_email : maskedEmailPart(io.agency_contact_email)
+        ),
+      ],
+      ["Billing", heldContact(io.agency_billing_contact, brandContactVisible)],
       ["Address", io.agency_address ?? ""],
-      ["Invoices To", io.send_invoices_to ?? ""],
+      ["Invoices To", heldContact(io.send_invoices_to, brandContactVisible)],
       ["Payer", payerLabel(io.payer)],
     ];
     const agencyBottom = drawPartyBlock("Agency of Record", agencyFields, MARGIN, CONTENT_WIDTH);

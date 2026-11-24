@@ -641,7 +641,6 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                       <h3 className="font-semibold text-[var(--ts-ink-on-paper)]">{show.show_name}</h3>
                       <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">Sent through Taylslate</span>
                     </div>
-                    <button className="text-xs font-medium text-[var(--ts-accent-text)] hover:underline">Copy email</button>
                   </div>
                   <div className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
                     <p className="font-medium text-[var(--ts-ink-on-paper)] mb-2">Subject: Partnership Opportunity — [Your Brand] x {show.show_name}</p>
@@ -665,7 +664,6 @@ export default function CampaignDetail({ campaign }: { campaign: Campaign }) {
                       <span className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--ts-ink-muted-on-paper)]">YouTube</span>
                       <span className="text-xs text-[var(--ts-ink-muted-on-paper)]">Sent through Taylslate</span>
                     </div>
-                    <button className="text-xs font-medium text-[var(--ts-accent-text)] hover:underline">Copy email</button>
                   </div>
                   <div className="rounded-[var(--ts-radius)] border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-paper)] p-4 text-sm leading-relaxed text-[var(--ts-ink-muted-on-paper)]">
                     <p className="font-medium text-[var(--ts-ink-on-paper)] mb-2">Subject: Sponsorship Opportunity — [Your Brand] x {show.show_name}</p>

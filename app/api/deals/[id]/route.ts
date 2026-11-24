@@ -14,6 +14,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { redactOutreachForViewer } from "@/lib/outreach/public";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 import { isRelayUnlocked } from "@/lib/relay/unlock";
+import { maskIoForViewer, withProfileParties } from "@/lib/relay/io-contact";
 import type { DealStatus, BrandProfile, ShowProfile } from "@/lib/data/types";
 
 const VALID_STATUSES: DealStatus[] = ["planning", "io_sent", "live", "completed"];
@@ -275,6 +276,44 @@ export async function GET(
     }
 
     const deal = await getDealWithRelations(id);
+
+    if (deal?.insertion_order) {
+      const io = deal.insertion_order;
+      const row = deal as typeof deal & {
+        brand_profile_id?: string | null;
+        show_profile_id?: string | null;
+        publisher_contact_hidden?: boolean;
+        advertiser_contact_hidden?: boolean;
+      };
+      let admin = false;
+      let ownsBrand = false;
+      let ownsShow = false;
+      try {
+        admin = await isShowsAdmin(user.id);
+      } catch {
+        admin = false;
+      }
+      try {
+        const [brandProfile, showProfile] = await Promise.all([
+          getBrandProfileByUserId(user.id),
+          getShowProfileByUserId(user.id),
+        ]);
+        ownsBrand = !!row.brand_profile_id && brandProfile?.id === row.brand_profile_id;
+        ownsShow = !!row.show_profile_id && showProfile?.id === row.show_profile_id;
+      } catch {
+        ownsBrand = false;
+        ownsShow = false;
+      }
+      const view = maskIoForViewer(
+        io,
+        withProfileParties(row, user.id, { brand: ownsBrand, show: ownsShow }),
+        user.id,
+        admin
+      );
+      deal.insertion_order = view.io;
+      row.publisher_contact_hidden = view.publisher_contact_hidden;
+      row.advertiser_contact_hidden = view.advertiser_contact_hidden;
+    }
 
     if (deal && deal.show_name) {
       console.log(

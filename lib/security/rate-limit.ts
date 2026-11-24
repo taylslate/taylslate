@@ -21,6 +21,10 @@ export const OUTREACH_SEND_USER_HOUR_MAX = 20;
 export const OUTREACH_SEND_USER_HOUR_WINDOW_SEC = 60 * 60;
 export const OUTREACH_SEND_USER_DAY_MAX = 100;
 export const OUTREACH_SEND_USER_DAY_WINDOW_SEC = 24 * 60 * 60;
+export const IO_SEND_USER_HOUR_MAX = 10;
+export const IO_SEND_USER_HOUR_WINDOW_SEC = 60 * 60;
+export const IO_SEND_USER_DAY_MAX = 30;
+export const IO_SEND_USER_DAY_WINDOW_SEC = 24 * 60 * 60;
 export const UPLOAD_USER_HOUR_MAX = 20;
 export const UPLOAD_USER_HOUR_WINDOW_SEC = 60 * 60;
 // B1 roster import keeps its 500-row and 1 MB caps. 10 requests
@@ -39,6 +43,8 @@ const LOGIN_CODE_VERIFY_BUCKET = "login_code_verify_email";
 const AUTH_MAGIC_IP_BUCKET = "auth_magic_ip";
 const OUTREACH_SEND_HOUR_BUCKET = "outreach_send_user_hour";
 const OUTREACH_SEND_DAY_BUCKET = "outreach_send_user_day";
+const IO_SEND_HOUR_BUCKET = "io_send_user_hour";
+const IO_SEND_DAY_BUCKET = "io_send_user_day";
 const UPLOAD_USER_HOUR_BUCKET = "upload_user_hour";
 const ROSTER_IMPORT_HOUR_BUCKET = "roster_import_user_hour";
 const ROSTER_DISPUTE_HOUR_BUCKET = "roster_dispute_user_hour";
@@ -228,6 +234,27 @@ export function enforceOutreachSend(userId: string): Promise<NextResponse | null
         key,
         max: OUTREACH_SEND_USER_DAY_MAX,
         windowSeconds: OUTREACH_SEND_USER_DAY_WINDOW_SEC,
+      },
+    ],
+  });
+}
+
+export function enforceIoSend(userId: string): Promise<NextResponse | null> {
+  const key = userId.trim();
+  return enforceRules({
+    failureMode: "closed",
+    rules: [
+      {
+        bucket: IO_SEND_HOUR_BUCKET,
+        key,
+        max: IO_SEND_USER_HOUR_MAX,
+        windowSeconds: IO_SEND_USER_HOUR_WINDOW_SEC,
+      },
+      {
+        bucket: IO_SEND_DAY_BUCKET,
+        key,
+        max: IO_SEND_USER_DAY_MAX,
+        windowSeconds: IO_SEND_USER_DAY_WINDOW_SEC,
       },
     ],
   });

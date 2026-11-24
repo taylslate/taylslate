@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { tokens } from "@/lib/brand/tokens";
+import { MASKED_CONTACT } from "@/lib/relay/io-contact";
 import type { Deal, Show, InsertionOrder, Profile, IOLineItem, Placement, IoPayer } from "@/lib/data/types";
 
 const radiusStyle = { borderRadius: tokens.radius };
@@ -32,6 +33,8 @@ interface IOGeneratorFormProps {
   agent?: Profile;
   /** Used only when this deal has no saved IO yet. A saved false stays off. */
   brandIsManaged?: boolean;
+  publisherContactHidden?: boolean;
+  advertiserContactHidden?: boolean;
 }
 
 const PAYMENT_TERMS_OPTIONS = [
@@ -97,8 +100,12 @@ const labelClass = "mb-1.5 block text-sm font-medium text-[var(--ts-ink-on-paper
 const readOnlyClass =
   "w-full cursor-default break-words border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] px-3 py-2 text-sm text-[var(--ts-ink-muted-on-paper)]";
 
-function editorPayload(io: InsertionOrder, sync: boolean) {
-  return {
+function editorPayload(
+  io: InsertionOrder,
+  sync: boolean,
+  hidden: { publisher?: boolean; advertiser?: boolean } = {}
+) {
+  const payload: Record<string, unknown> = {
     advertiser_name: io.advertiser_name,
     advertiser_contact_name: io.advertiser_contact_name ?? null,
     advertiser_contact_email: io.advertiser_contact_email ?? null,
@@ -143,9 +150,27 @@ function editorPayload(io: InsertionOrder, sync: boolean) {
       make_good_triggered: li.make_good_triggered,
     })),
   };
+  if (hidden.publisher) delete payload.publisher_contact_email;
+  if (hidden.advertiser) {
+    delete payload.advertiser_contact_email;
+    delete payload.agency_contact_email;
+    delete payload.agency_billing_contact;
+    delete payload.send_invoices_to;
+  }
+  return payload;
 }
 
-export default function IOGeneratorForm({ deal, show, existingIO, brand, agency, agent, brandIsManaged }: IOGeneratorFormProps) {
+export default function IOGeneratorForm({
+  deal,
+  show,
+  existingIO,
+  brand,
+  agency,
+  agent,
+  brandIsManaged,
+  publisherContactHidden,
+  advertiserContactHidden,
+}: IOGeneratorFormProps) {
   const router = useRouter();
   const [savedIO, setSavedIO] = useState(existingIO);
   const hasExistingIO = !!savedIO;
@@ -294,7 +319,12 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
       const res = await fetch(`/api/deals/${deal.id}/io`, {
         method: hasExistingIO ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editorPayload(io, hasExistingIO)),
+        body: JSON.stringify(
+          editorPayload(io, hasExistingIO, {
+            publisher: publisherContactHidden,
+            advertiser: advertiserContactHidden,
+          })
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -316,10 +346,22 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
     }
   };
 
+  function withoutHiddenContacts(io: InsertionOrder): InsertionOrder {
+    const next: InsertionOrder = { ...io };
+    if (publisherContactHidden) delete (next as Partial<InsertionOrder>).publisher_contact_email;
+    if (advertiserContactHidden) {
+      delete (next as Partial<InsertionOrder>).advertiser_contact_email;
+      delete (next as Partial<InsertionOrder>).agency_contact_email;
+      delete (next as Partial<InsertionOrder>).agency_billing_contact;
+      delete (next as Partial<InsertionOrder>).send_invoices_to;
+    }
+    return next;
+  }
+
   const handleDownloadPdf = async () => {
     setIsDownloading(true);
     try {
-      const io = buildIO();
+      const io = withoutHiddenContacts(buildIO());
       const res = await fetch(`/api/deals/${deal.id}/io/pdf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -576,7 +618,9 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
           </div>
           <div className="sm:col-span-2">
             <label className={labelClass}>Email</label>
-            {isEditing ? (
+            {advertiserContactHidden ? (
+              <div className={readOnlyClass} style={radiusStyle}>{MASKED_CONTACT}</div>
+            ) : isEditing ? (
               <input type="email" value={advEmail} onChange={(e) => setAdvEmail(e.target.value)} className={inputClass} style={radiusStyle} />
             ) : (
               <div className={readOnlyClass} style={radiusStyle}>{advEmail}</div>
@@ -607,7 +651,9 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
           </div>
           <div className="sm:col-span-2">
             <label className={labelClass}>Email</label>
-            {isEditing ? (
+            {publisherContactHidden ? (
+              <div className={readOnlyClass} style={radiusStyle}>{MASKED_CONTACT}</div>
+            ) : isEditing ? (
               <input type="email" value={pubEmail} onChange={(e) => setPubEmail(e.target.value)} className={inputClass} style={radiusStyle} />
             ) : (
               <div className={readOnlyClass} style={radiusStyle}>{pubEmail || "\u2014"}</div>
@@ -639,7 +685,9 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
             </div>
             <div>
               <label className={labelClass}>Email</label>
-              {isEditing ? (
+              {advertiserContactHidden ? (
+                <div className={readOnlyClass} style={radiusStyle}>{MASKED_CONTACT}</div>
+              ) : isEditing ? (
                 <input type="email" value={agencyEmail} onChange={(e) => setAgencyEmail(e.target.value)} className={inputClass} style={radiusStyle} />
               ) : (
                 <div className={readOnlyClass} style={radiusStyle}>{agencyEmail}</div>
@@ -1290,7 +1338,7 @@ export default function IOGeneratorForm({ deal, show, existingIO, brand, agency,
             </p>
             <div className="mb-5 border border-[var(--ts-hairline-on-paper)] bg-[var(--ts-band-shows)] p-3" style={radiusStyle}>
               <div className={`text-sm font-medium ${inkText}`}>{recipientName}</div>
-              <div className={`text-sm ${mutedText}`}>{recipientEmail}</div>
+              <div className={`text-sm ${mutedText}`}>{advertiserContactHidden ? MASKED_CONTACT : recipientEmail}</div>
             </div>
             <div className="flex items-center gap-3 justify-end">
               <button

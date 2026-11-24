@@ -9,6 +9,27 @@ import {
   getIOByDealId,
 } from "@/lib/data/queries";
 import { cadenceDays } from "@/lib/io/cadence-days";
+import { maskIoForViewer, revealPublisherContact } from "@/lib/relay/io-contact";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+
+async function publisherEmailForShow(showId: string): Promise<string> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("shows")
+      .select("contact_email")
+      .eq("id", showId)
+      .maybeSingle();
+    if (error) {
+      console.warn("[io/generate]", error.code ?? "unknown");
+      return "";
+    }
+    return typeof data?.contact_email === "string" ? data.contact_email : "";
+  } catch {
+    console.warn("[io/generate]", "unknown");
+    return "";
+  }
+}
 
 export async function POST(
   _request: NextRequest,
@@ -22,25 +43,29 @@ export async function POST(
 
     const { id: dealId } = await params;
 
-    // Check if IO already exists for this deal
-    const existingIO = await getIOByDealId(dealId);
-    if (existingIO) {
-      return NextResponse.json(
-        { error: "An IO already exists for this deal", io: existingIO },
-        { status: 409 }
-      );
-    }
-
-    // Get the deal
     const deal = await getDealById(dealId);
     if (!deal) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
-    // Verify user has access to this deal
     const userId = user.id;
     if (deal.agent_id !== userId && deal.brand_id !== userId && deal.agency_id !== userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    let admin = false;
+    try {
+      admin = await isShowsAdmin(userId);
+    } catch {
+      admin = false;
+    }
+
+    const existingIO = await getIOByDealId(dealId);
+    if (existingIO) {
+      return NextResponse.json(
+        { error: "An IO already exists for this deal", ...maskIoForViewer(existingIO, deal, userId, admin) },
+        { status: 409 }
+      );
     }
 
     // Deal must be in planning status to generate an IO
@@ -109,7 +134,7 @@ export async function POST(
       advertiser_contact_email: brand?.email ?? "",
       publisher_name: show.name,
       publisher_contact_name: show.contact?.name ?? "",
-      publisher_contact_email: show.contact?.email ?? "",
+      publisher_contact_email: await publisherEmailForShow(deal.show_id),
       publisher_address: undefined,
       agency_name: agency?.company_name ?? undefined,
       agency_contact_name: agency?.full_name ?? undefined,
@@ -142,12 +167,17 @@ export async function POST(
       );
     }
 
-    return NextResponse.json({ io }, { status: 201 });
+    const view = maskIoForViewer(io, deal, userId, admin);
+    if (revealPublisherContact(deal, userId, admin)) {
+      view.io = { ...view.io, publisher_contact_email: ioData.publisher_contact_email };
+    }
+    return NextResponse.json(view, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json(
-      { error: `Failed to generate IO: ${message}` },
-      { status: 500 }
-    );
+    const code =
+      err && typeof err === "object" && "code" in err && typeof err.code === "string"
+        ? err.code
+        : "unknown";
+    console.warn("[io/generate]", code);
+    return NextResponse.json({ error: "Failed to generate IO" }, { status: 500 });
   }
 }

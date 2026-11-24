@@ -6,6 +6,15 @@ import Link from "next/link";
 import { tokens } from "@/lib/brand/tokens";
 import type { Deal, Show, InsertionOrder, Profile } from "@/lib/data/types";
 
+function rememberContactFlags(
+  source: { publisher_contact_hidden?: boolean; advertiser_contact_hidden?: boolean },
+  setPublisher: (value: boolean) => void,
+  setAdvertiser: (value: boolean) => void
+) {
+  if (typeof source.publisher_contact_hidden === "boolean") setPublisher(source.publisher_contact_hidden);
+  if (typeof source.advertiser_contact_hidden === "boolean") setAdvertiser(source.advertiser_contact_hidden);
+}
+
 const radiusStyle = { borderRadius: tokens.radius };
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
 const pulseClass = "animate-pulse bg-[var(--ts-ink-on-paper)]/10";
@@ -16,11 +25,15 @@ interface DealApiResponse {
     brand_name?: string;
     brand_is_managed?: boolean;
     insertion_order?: InsertionOrder & { line_items: InsertionOrder["line_items"] };
+    publisher_contact_hidden?: boolean;
+    advertiser_contact_hidden?: boolean;
   };
 }
 
 interface IOApiResponse {
   io: InsertionOrder;
+  publisher_contact_hidden?: boolean;
+  advertiser_contact_hidden?: boolean;
 }
 
 export default function IOPage({ params }: { params: Promise<{ id: string }> }) {
@@ -34,6 +47,8 @@ export default function IOPage({ params }: { params: Promise<{ id: string }> }) 
   const [agent, setAgent] = useState<Profile | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [publisherContactHidden, setPublisherContactHidden] = useState<boolean | undefined>();
+  const [advertiserContactHidden, setAdvertiserContactHidden] = useState<boolean | undefined>();
 
   useEffect(() => {
     async function loadData() {
@@ -49,24 +64,28 @@ export default function IOPage({ params }: { params: Promise<{ id: string }> }) 
 
         // 2. Try to fetch existing IO
         let io: InsertionOrder | undefined = dealData.insertion_order ?? undefined;
+        if (io) rememberContactFlags(dealData, setPublisherContactHidden, setAdvertiserContactHidden);
 
         if (!io) {
           const ioRes = await fetch(`/api/deals/${id}/io`);
           if (ioRes.ok) {
             const ioData = (await ioRes.json()) as IOApiResponse;
             io = ioData.io;
+            rememberContactFlags(ioData, setPublisherContactHidden, setAdvertiserContactHidden);
           } else if (ioRes.status === 404) {
             // No IO exists — generate one
             const genRes = await fetch(`/api/deals/${id}/io/generate`, { method: "POST" });
             if (genRes.ok) {
               const genData = (await genRes.json()) as IOApiResponse;
               io = genData.io;
+              rememberContactFlags(genData, setPublisherContactHidden, setAdvertiserContactHidden);
             } else if (genRes.status === 409) {
               // IO already exists (race condition) — fetch it
               const retryRes = await fetch(`/api/deals/${id}/io`);
               if (retryRes.ok) {
                 const retryData = (await retryRes.json()) as IOApiResponse;
                 io = retryData.io;
+                rememberContactFlags(retryData, setPublisherContactHidden, setAdvertiserContactHidden);
               }
             } else {
               const genErr = await genRes.json();
@@ -193,6 +212,8 @@ export default function IOPage({ params }: { params: Promise<{ id: string }> }) 
       agency={agency}
       agent={agent}
       brandIsManaged={deal.brand_is_managed === true}
+      {...(publisherContactHidden === undefined ? {} : { publisherContactHidden })}
+      {...(advertiserContactHidden === undefined ? {} : { advertiserContactHidden })}
     />
   );
 }

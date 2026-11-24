@@ -4201,3 +4201,58 @@ PGlite proves the column revoke, the owner policy, the scrub, and a second run t
 - IO document text, legacy IO screens, campaign selections validation, and the dead "Copy email" buttons are RELAY1d. RELAY1d has no migration.
 - io/generate's JSON for the agent side does not include the publisher address until RELAY1d. The stored IO still has it, read with the service role at generate-ios time.
 - This PR does not merge.
+
+## RELAY1d: hide contacts both ways until signing
+
+### What was built
+
+Decision 8: the brand's contact is hidden from the show until the IO is signed, symmetric to decision 7. Same unlock rule, same masked text, admins exempt. Chris confirmed it on 2026-11-23 at 11:24 PM MT.
+
+Every IO document, IO screen, and IO JSON a brand or agency sees shows the show address as "Sent through Taylslate" (PDF and screen) or an empty string (JSON) until unlock. The show owner, show agent, and a roster party on the deal see the brand and agency addresses the same way. Each side still sees its own address. An admin sees both. After both sides have signed and the deal is not cancelled, both see both. A read error or missing deal stays masked.
+
+Wave 12 deals leave `agent_id` empty and authorize the show by `show_profile_id`. Preview and GET deal copy that owner onto the party column the shared rule already reads. The copy is not stored. Legacy deals still decide visibility from `brand_id`, `agency_id`, and `agent_id` only. On an agent-created deal the agent is `brand_id`, so they keep the advertiser address they typed. A show-side caller on a deal with a different `brand_id` cannot read or overwrite it.
+
+DocuSign files are unchanged. `send-to-docusign` still calls the generator with no visibility flags, so both contact blocks on the document read "Sent through Taylslate". `createEnvelope` still receives the real brand and show account emails. The show still gets the DocuSign email. The signed copy stays masked because it is fixed at envelope creation.
+
+POST `/api/deals/[id]/io/send` emails only `getAuthEmail` of `deal.agency_id` or, if that is empty, `deal.brand_id`. It does not read an IO column or the request body for the recipient. It is rate limited fail-closed at 10 an hour and 30 a day. The response includes `to` only when the caller may see the brand side. A caller who is the recipient account gets 409 "No recipient on file for this IO". That includes agent-created legacy deals.
+
+PUT `/api/campaigns/selections` accepts only shows the brand may put on its own campaign. The two dead "Copy email" buttons are gone from the legacy campaign draft cards. The "Sent through Taylslate" spans stay.
+
+No migration. No new env var. No Vercel change. No real email. `lib/docusign`, `lib/stripe`, `lib/payouts`, `lib/billing`, and `lib/airchecks` are untouched.
+
+### Where
+
+- `lib/relay/io-contact.ts` (shared reveal, blank, write filter, and mask)
+- `lib/pdf/io-generator.ts` and `lib/pdf/io-pdf.ts` (contact options, default masked)
+- `lib/pdf/__fixtures__/io-anchor-baseline.json` (four contact strings only; x, y, and page unchanged)
+- `app/api/deals/[id]/preview/route.ts`
+- `app/api/deals/[id]/io/route.ts`, `pdf/route.ts`, `generate/route.ts`, `send/route.ts`
+- `app/api/deals/[id]/route.ts` (GET `insertion_order` masking only)
+- `lib/security/rate-limit.ts` (`enforceIoSend` only)
+- `components/io/IOPreview.tsx`, `components/io/IOGeneratorForm.tsx`
+- `app/(dashboard)/deals/[id]/io/page.tsx` (flags through only)
+- `app/api/campaigns/selections/route.ts`
+- `app/(dashboard)/campaigns/[id]/campaign-detail.tsx` (the two Copy email buttons only)
+- `docs/jobs/RELAY1.md` (decision 8) and `docs/jobs/RELAY1d.md`
+
+The anchor snapshot was not on the original Owns list. It had to move because the default PDF text changed. The four contact values are now "Sent through Taylslate". Every other drawn call, including the anchor coordinates, is the same.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 499 files, 4043 passed, 41 skipped.
+
+`npx eslint` on the changed and new TypeScript files: 0 errors. Pre-existing warnings remain on `campaign-detail.tsx` (an `<img>` and two unused indexes), `app/api/deals/[id]/io/generate/route.ts` (`agent` unused, already unused on main), and `lib/security/rate-limit.test.ts` (`enforceAuthMagic` unused).
+
+`npx next build` compiled successfully and generated 149 pages.
+
+New tests: `lib/relay/io-contact.test.ts` (12), `app/api/deals/[id]/preview/route.test.ts` (4), `app/api/deals/[id]/io/generate/route.test.ts` (5), `app/api/campaigns/selections/route.test.ts` (6), `lib/pdf/io-signing-routing.test.ts` (1), `components/io/IOPreview.test.tsx` (3), `components/io/IOGeneratorForm.test.tsx` (2), `app/(dashboard)/campaigns/[id]/campaign-detail.test.tsx` (1). Existing IO, PDF, send, deal, and rate-limit tests cover the other side, the lock states, the account recipient, and `enforceIoSend`. No test sends real mail. No DocuSign file was edited. The signing test imports the unchanged route with mocks.
+
+### Known gaps
+
+- The signed IO permanently reads "Sent through Taylslate" in both contact blocks. The document is fixed at envelope creation. After signing, the app shows each side the other's address.
+- DocuSign's Certificate of Completion and envelope history list every signer's name and email. A signer can open them from the signing session. DocuSign itself can show each side the other's signing email. That is not changed here.
+- Agent-created legacy deals can no longer use "Send via Email" (409). Download PDF still works. A caller who is the recipient account gets the same 409, so a brand does not email the IO to their own login. The show agent still can.
+- No migration in this job. 094 and 102 stay unapplied until Chris names them.
+- This PR does not merge.

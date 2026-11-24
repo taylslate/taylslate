@@ -4,6 +4,9 @@ import { EMAIL_ADDRESS_IO, viaTaylslateFrom } from "@/lib/email/addresses";
 import { renderIoAttachmentEmail } from "@/lib/email/templates/io-attachment";
 import { resolveManagedDelivery } from "@/lib/email/send";
 import { getAuthenticatedUser, getDealById, getShowById, getIOByDealId, getProfileById, getNextIONumber, updateDeal, markInsertionOrderSent } from "@/lib/data/queries";
+import { getAuthEmail } from "@/lib/auth/auth-email";
+import { revealAdvertiserContact, revealPublisherContact } from "@/lib/relay/io-contact";
+import { enforceIoSend } from "@/lib/security/rate-limit";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 import { generateIOPdf } from "@/lib/pdf/io-pdf";
 import type { InsertionOrder, IOLineItem, Show, Deal, Profile } from "@/lib/data";
@@ -103,11 +106,20 @@ export async function POST(
     if (!deal) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
+    let admin = false;
+    try {
+      admin = await isShowsAdmin(user.id);
+    } catch {
+      admin = false;
+    }
     const party =
       deal.agent_id === user.id || deal.brand_id === user.id || deal.agency_id === user.id;
-    if (!party && !(await isShowsAdmin(user.id))) {
+    if (!party && !admin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    const limited = await enforceIoSend(user.id);
+    if (limited) return limited;
 
     const show = await getShowById(deal.show_id);
     if (!show) {
@@ -132,19 +144,27 @@ export async function POST(
       senderName = built.agent?.full_name ?? "Taylslate";
     }
 
-    // Determine recipient: agency if present, otherwise advertiser/brand
-    const recipientEmail = io.agency_contact_email ?? io.advertiser_contact_email;
     const recipientName = io.agency_contact_name ?? io.advertiser_contact_name;
-
-    if (!recipientEmail) {
+    const recipientProfileId = deal.agency_id || deal.brand_id;
+    let recipientEmail: string | null = null;
+    if (recipientProfileId && recipientProfileId !== user.id) {
+      try {
+        recipientEmail = await getAuthEmail(recipientProfileId);
+      } catch {
+        recipientEmail = null;
+      }
+    }
+    if (!recipientProfileId || !recipientEmail || recipientProfileId === user.id) {
       return NextResponse.json(
-        { error: "No recipient email found on the IO. Add an agency or advertiser email." },
-        { status: 400 }
+        { error: "No recipient on file for this IO" },
+        { status: 409 }
       );
     }
 
-    // Generate PDF
-    const pdfBuffer = generateIOPdf(io);
+    const pdfBuffer = generateIOPdf(io, {
+      showContactVisible: revealPublisherContact(deal, recipientProfileId, false),
+      brandContactVisible: true,
+    });
     const filename = `${io.io_number.replace(/\s+/g, "_")}.pdf`;
 
     // Build email
@@ -155,9 +175,7 @@ export async function POST(
     const delivery = await resolveManagedDelivery({
       to: recipientEmail,
       subject,
-      recipientProfileId: io.agency_contact_email
-        ? (deal.agency_id ?? undefined)
-        : (deal.brand_id ?? undefined),
+      recipientProfileId,
     });
     if (!delivery.ok) {
       return NextResponse.json(
@@ -202,14 +220,22 @@ export async function POST(
       await updateDeal(deal.id, { status: "io_sent" });
     }
 
-    return NextResponse.json({
+    const body: {
+      success: true;
+      to?: string;
+      toName: typeof recipientName;
+      subject: string;
+      ioNumber: string;
+      senderName: string;
+    } = {
       success: true,
-      to: delivery.to,
       toName: recipientName,
       subject: delivery.subject,
       ioNumber: io.io_number,
       senderName,
-    });
+    };
+    if (revealAdvertiserContact(deal, user.id, admin)) body.to = delivery.to;
+    return NextResponse.json(body);
   } catch {
     console.warn("[io/send]", "unknown");
     return NextResponse.json({ error: "Email send failed" }, { status: 500 });

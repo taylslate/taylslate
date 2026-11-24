@@ -342,7 +342,10 @@ describe("generateIoPdfFromDeal lineItems (persistence source of truth)", () => 
   });
 });
 
-function dealPdf(saved?: IoPdfSaved): string {
+function dealPdf(
+  saved?: IoPdfSaved,
+  opts?: { showContactVisible?: boolean; brandContactVisible?: boolean }
+): string {
   return generateIoPdfFromDeal({
     deal: baseDeal,
     brandProfile: baseBrand,
@@ -351,6 +354,7 @@ function dealPdf(saved?: IoPdfSaved): string {
     brandSigningEmail: "x",
     showSigningEmail: "y",
     saved,
+    ...opts,
   }).pdfBuffer.toString("latin1");
 }
 
@@ -405,7 +409,8 @@ describe("negotiated IO terms on the DocuSign PDF", () => {
     expect(text).not.toContain("platform fee");
     expect(text).not.toContain("Pay-as-delivers");
     expect(text).not.toContain("billing@taylslate.com");
-    expect(text).not.toContain("Taylslate");
+    expect(text).toContain("Sent through Taylslate");
+    expect(text.split("Sent through Taylslate").join("")).not.toContain("Taylslate");
   });
 
   it("prices a flat line per spot and leaves CPM and downloads blank", () => {
@@ -500,7 +505,8 @@ describe("negotiated IO terms on the DocuSign PDF", () => {
     });
     expect(text).toContain("AGENCY OF RECORD");
     expect(text).toContain("Left Field");
-    expect(text).toContain("Alex Rivera, alex@leftfield.example");
+    expect(text).toContain("Alex Rivera, Sent through Taylslate");
+    expect(text).not.toContain("alex@leftfield.example");
     expect(text).toContain("Agency of record");
     expect(text).toContain(SIGNATURE_ANCHORS.advertiser);
     expect(text).toContain(SIGNATURE_ANCHORS.advertiserDate);
@@ -523,5 +529,65 @@ describe("negotiated IO terms on the DocuSign PDF", () => {
     expect(makeGoodOff).not.toContain("Make-Good:");
     expect(makeGoodOff).toContain("tracking window");
     expect(makeGoodOff).toContain("right of first refusal");
+  });
+});
+
+describe("IO contact masking on the Wave 12 PDF", () => {
+  const brandEmail = "brand@aurora.example";
+  const showCopy = "ads@daily.fm";
+  const showBill = "money@daily.fm";
+
+  function render(opts?: { showContactVisible?: boolean; brandContactVisible?: boolean }) {
+    return generateIoPdfFromDeal({
+      deal: baseDeal,
+      brandProfile: baseBrand,
+      showProfile: baseShow,
+      outreach: baseOutreach,
+      brandSigningEmail: brandEmail,
+      showSigningEmail: "host@daily.fm",
+      saved: {
+        agency_name: "Left Field",
+        agency_contact_name: "Alex Rivera",
+        agency_contact_email: "alex@leftfield.example",
+        payer: "brand",
+      },
+      ...opts,
+    }).pdfBuffer.toString("latin1");
+  }
+
+  it("masks both sides by default and keeps the anchors", () => {
+    const text = render();
+    expect(text).toContain("Sent through Taylslate");
+    expect(text).not.toContain(brandEmail);
+    expect(text).not.toContain(showCopy);
+    expect(text).not.toContain(showBill);
+    expect(text).not.toContain("host@daily.fm");
+    expect(text).not.toContain("alex@leftfield.example");
+    expect(text).toContain("Alex Rivera, Sent through Taylslate");
+    expect(text).toContain(SIGNATURE_ANCHORS.advertiser);
+    expect(text).toContain(SIGNATURE_ANCHORS.publisher);
+    expect(text).toContain(SIGNATURE_ANCHORS.advertiserDate);
+    expect(text).toContain(SIGNATURE_ANCHORS.publisherDate);
+    expect(text).toContain("LINE ITEMS");
+    expect(text).toContain("INSERTION ORDER");
+  });
+
+  it("reveals only the show when that option is set", () => {
+    const text = render({ showContactVisible: true });
+    expect(text).toContain(showCopy);
+    expect(text).toContain(showBill);
+    expect(text).not.toContain(brandEmail);
+    expect(text).not.toContain("alex@leftfield.example");
+    expect(text).toContain("Sent through Taylslate");
+  });
+
+  it("reveals only the brand when that option is set", () => {
+    const text = render({ brandContactVisible: true });
+    expect(text).toContain(brandEmail);
+    expect(text).toContain("Alex Rivera, alex@leftfield.example");
+    expect(text).not.toContain(showCopy);
+    expect(text).not.toContain(showBill);
+    expect(text).not.toContain("host@daily.fm");
+    expect(text).toContain("Sent through Taylslate");
   });
 });

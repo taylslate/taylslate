@@ -11,6 +11,7 @@ Chris locked this on 2026-11-23. Brand and show talk through Taylslate. Real con
 5. The show responds with in-app buttons (accept, counter, decline) as the primary path. Email replies are relayed text, and that forwarding is RELAY1b.
 6. CRM: the show is added to the brand's CRM when outreach is sent, if the brand has CRM access. The brand is added to the show's CRM at the show's first response, only if that side has CRM access. Name and details only, never the real email, until signing.
 7. Brands do not see a show's contact email or phone anywhere until the IO is signed, so outreach goes through Taylslate. The address stays visible to the show owner for their own show, to admins, and to either party after unlock (both sides signed, deal not cancelled).
+8. The brand's contact is hidden from the show until the IO is signed, symmetric to decision 7. Same unlock rule, same masked text ("Sent through Taylslate"), admins exempt. Chris confirmed this in Taylslate Dev Chat on 2026-11-23 at 11:24 PM MT: hidden both ways.
 
 ## What 1a ships
 
