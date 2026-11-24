@@ -122,6 +122,9 @@ alter table public.relay_messages
   add constraint relay_messages_body_text_check
   check (char_length(body_text) between 1 and 20000);
 
+create index if not exists idx_relay_messages_thread_id
+  on public.relay_messages (thread_id);
+
 create table if not exists public.relay_inbound_events (
   provider_event_id text primary key,
   received_at timestamptz not null default now()

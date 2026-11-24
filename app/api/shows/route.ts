@@ -86,10 +86,7 @@ export async function GET(request: NextRequest) {
         : await getAllShows()
     );
     const fullIds = await fullShowIdsForCaller(user.id, shows);
-    const contactIds = await contactVisibleShowIds(
-      user.id,
-      shows.map((show) => show.id)
-    );
+    const contactIds = await contactVisibleShowIds(user.id, [...fullIds]);
     const projected = projectShowsForViewer(shows, fullIds, contactIds);
     if (!projected.some((show) => hasOwnershipStatus(show))) {
       return NextResponse.json(await withVerified(projected));

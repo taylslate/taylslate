@@ -71,7 +71,7 @@ describe("exposure", () => {
     expect(json).not.toContain("podscan_audience_estimate");
     expect(json).not.toContain("424242");
     expect(json).not.toContain("secret-import@sponsor.example");
-    expect(json).toContain("public@taylslate.com");
+    expect(json).not.toContain("public@taylslate.com");
   });
 
   it("keeps the new table names inside the import lane", async () => {

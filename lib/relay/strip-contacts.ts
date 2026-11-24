@@ -9,7 +9,8 @@ const MAILTO = /(?:mailto:|tel:|sms:)[^\s<>"']+/gi;
 const CONTACT_HOST =
   /(?:https?:\/\/)?(?:www\.)?(?:wa\.me|api\.whatsapp\.com|t\.me|telegram\.me|signal\.me|calendly\.com|cal\.com|linktr\.ee)(?:\/[^\s<>"']*)?/gi;
 
-const LINKEDIN = /(?:https?:\/\/)?(?:[\w.-]+\.)?linkedin\.com\/in\/[^\s<>"']*/gi;
+const LINKEDIN =
+  /(?:https?:\/\/)?(?:[a-z0-9-]{1,63}\.){0,3}linkedin\.com\/in\/[^\s<>"']*/gi;
 
 const URL = /https?:\/\/[^\s<>"']+/gi;
 
@@ -87,7 +88,8 @@ function stripPhones(input: string): string {
         }
         break;
       }
-      while (j > i && /[\s.\-()]/.test(input[j - 1])) {
+      const scanEnd = j;
+      while (j > i && isPhoneSep(input[j - 1])) {
         j -= 1;
         seps -= 1;
       }
@@ -97,6 +99,10 @@ function stripPhones(input: string): string {
         i = j;
         continue;
       }
+      // A shorter slice of a run that did not qualify cannot qualify.
+      out += input.slice(i, scanEnd);
+      i = scanEnd;
+      continue;
     }
     out += input[i];
     i += 1;
@@ -106,6 +112,10 @@ function stripPhones(input: string): string {
 
 function isDigit(char: string): boolean {
   return char >= "0" && char <= "9";
+}
+
+function isPhoneSep(char: string): boolean {
+  return char === " " || char === "." || char === "-" || char === "(" || char === ")";
 }
 
 function isDateLike(value: string): boolean {
@@ -142,7 +152,7 @@ export function stripContactDetails(
   next = replaceHosts(next);
   next = replaceAll(next, LINKEDIN, REMOVED);
   next = replaceContactUrls(next);
-  next = replaceAll(next, EMAIL, REMOVED);
+  if (/@|\[at\]|\(at\)|\bat\b/i.test(next)) next = replaceAll(next, EMAIL, REMOVED);
   next = stripPhones(next);
   next = restore(next, saved.tokens);
   return { text: next, removed: next !== capped };

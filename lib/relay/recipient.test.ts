@@ -6,24 +6,35 @@ const SHOW = "33333333-3333-4333-8333-333333333333";
 const CAMPAIGN = "44444444-4444-4444-8444-444444444444";
 
 const tables: Record<string, Array<Record<string, unknown>>> = {};
+const reads: string[] = [];
+
+function matches(row: Record<string, unknown>, filters: Array<{ op: "eq" | "in"; column: string; value: unknown }>) {
+  return filters.every((filter) => {
+    if (filter.op === "eq") return row[filter.column] === filter.value;
+    return (filter.value as unknown[]).includes(row[filter.column]);
+  });
+}
 
 function from(table: string) {
-  const filters: Array<[string, unknown]> = [];
-  const run = () => {
-    const rows = (tables[table] ?? []).filter((row) =>
-      filters.every(([column, value]) => row[column] === value)
-    );
-    return { data: rows[0] ?? null, error: null };
-  };
+  reads.push(table);
+  const filters: Array<{ op: "eq" | "in"; column: string; value: unknown }> = [];
+  const rows = () => (tables[table] ?? []).filter((row) => matches(row, filters));
   const api = {
     select() {
       return api;
     },
     eq(column: string, value: unknown) {
-      filters.push([column, value]);
+      filters.push({ op: "eq", column, value });
       return api;
     },
-    maybeSingle: async () => run(),
+    in(column: string, value: unknown[]) {
+      filters.push({ op: "in", column, value });
+      return api;
+    },
+    maybeSingle: async () => ({ data: rows()[0] ?? null, error: null }),
+    then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
+      return Promise.resolve({ data: rows(), error: null }).then(resolve, reject);
+    },
   };
   return api;
 }
@@ -32,15 +43,24 @@ vi.mock("@/lib/supabase/admin", () => ({
   supabaseAdmin: { from: (table: string) => from(table) },
 }));
 
-import { canReachOut, resolveOutreachRecipient } from "./recipient";
+import { canReachOut, canReachOutMany, resolveOutreachRecipient } from "./recipient";
 
 describe("resolveOutreachRecipient", () => {
   beforeEach(() => {
-    tables.shows = [{ id: SHOW, contact_email: "host@example.test" }];
+    reads.length = 0;
+    tables.shows = [
+      { id: SHOW, contact_email: "host@example.test", is_discoverable: true },
+      {
+        id: "66666666-6666-4666-8666-666666666666",
+        contact_email: "hidden@example.test",
+        is_discoverable: false,
+      },
+    ];
     tables.campaigns = [
       {
         id: CAMPAIGN,
         user_id: USER,
+        selected_show_ids: [SHOW],
         scored_shows: [{ podcastId: "pod-1", contactEmail: "scored@example.test" }],
         recommendations: [{ show_id: "rec-1", contact_email: "rec@example.test" }],
         youtube_recommendations: [],
@@ -76,5 +96,29 @@ describe("resolveOutreachRecipient", () => {
     ).toEqual({ ok: false, reason: "no_contact" });
     expect(await canReachOut({ userId: USER, campaignId: CAMPAIGN, showId: "missing" })).toBe(false);
     expect(await canReachOut({ userId: USER, campaignId: CAMPAIGN, showId: SHOW })).toBe(true);
+  });
+
+  it("does not resolve a catalog show that is not on the campaign", async () => {
+    const hidden = "66666666-6666-4666-8666-666666666666";
+    reads.length = 0;
+    const resolved = await resolveOutreachRecipient({
+      userId: USER,
+      campaignId: CAMPAIGN,
+      showId: hidden,
+    });
+    expect(resolved).toEqual({ ok: false, reason: "not_found" });
+    expect(reads.filter((table) => table === "shows")).toHaveLength(0);
+    expect(JSON.stringify(resolved)).not.toContain("hidden@example.test");
+  });
+
+  it("loads the campaign once for many shows", async () => {
+    reads.length = 0;
+    const flags = await canReachOutMany({
+      userId: USER,
+      campaignId: CAMPAIGN,
+      shows: [{ showId: SHOW }, { showId: "rec-1" }, { podscanId: "pod-1" }],
+    });
+    expect(flags).toEqual([true, true, true]);
+    expect(reads.filter((table) => table === "campaigns")).toHaveLength(1);
   });
 });

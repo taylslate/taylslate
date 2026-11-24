@@ -73,10 +73,9 @@ describe("brand payloads", () => {
     const visible = new Set([SHOW]);
     const owner = projectShowsForViewer([show], new Set([SHOW]), visible);
     expect(JSON.stringify(owner)).toContain(EMAIL);
-    const admin = redactCampaignContacts(campaign);
-    const adminPayload = campaign;
-    expect(JSON.stringify(adminPayload)).toContain(EMAIL);
-    expect(JSON.stringify(admin)).not.toContain(EMAIL);
+    const redacted = redactCampaignContacts(campaign);
+    expect(JSON.stringify(redacted)).not.toContain(EMAIL);
+    expect(redacted.name).toBe("Spring");
     const unlocked = redactOutreachForViewer(
       { id: "o1", token: "secret", sent_to_email: EMAIL },
       { contactVisible: true }

@@ -134,6 +134,32 @@ describe("deals/[id] authorization gate", () => {
     expect(body.deal.outreach.show_name).toBe("Show");
   });
 
+  it("GET hides the show email before unlock and shows it after both sides sign", async () => {
+    getBrandProfileByUserId.mockResolvedValue({ id: "bp-owner" });
+    getShowProfileByUserId.mockResolvedValue(null);
+    getOutreachById.mockResolvedValue({
+      show_name: "Show",
+      token: "eyJhbGciOiJIUzI1NiJ9.payload.signature",
+      sent_to_email: "host@example.test",
+    });
+    const locked = await GET({} as never, params as never);
+    expect(locked.status).toBe(200);
+    const lockedBody = await locked.json();
+    expect(lockedBody.deal.outreach.sent_to_email).toBe("");
+    expect(JSON.stringify(lockedBody)).not.toContain("host@example.test");
+
+    getWave12DealById.mockResolvedValue({
+      ...wave12Row,
+      status: "show_signed",
+      brand_signed_at: "2026-11-01T00:00:00.000Z",
+      show_signed_at: "2026-11-02T00:00:00.000Z",
+    });
+    const opened = await GET({} as never, params as never);
+    expect(opened.status).toBe(200);
+    const openedBody = await opened.json();
+    expect(openedBody.deal.outreach.sent_to_email).toBe("host@example.test");
+  });
+
   it("GET allows the owning show (legacy-column owner too)", async () => {
     // Legacy ownership path: caller is the legacy brand_id on the row.
     getAuthenticatedUser.mockResolvedValue({ id: "legacy-brand", email: "b@x.com" });

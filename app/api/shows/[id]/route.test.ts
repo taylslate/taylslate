@@ -281,6 +281,7 @@ describe("GET /api/shows/[id]", () => {
     });
     expect(JSON.stringify(body)).not.toContain("hidden@show.test");
     expect(JSON.stringify(body)).not.toContain("midroll_cpm");
+    expect(isShowsAdmin).toHaveBeenCalledTimes(1);
   });
 
   it("returns a hidden show to an admin who did not create it as public fields", async () => {

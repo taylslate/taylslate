@@ -8,6 +8,8 @@ import { isRelayUnlocked } from "@/lib/relay/unlock";
 
 export const CONTACT_FIELDS_HIDDEN = ["contact_email", "contactEmail", "contact.email"] as const;
 
+const CHUNK = 80;
+
 type DealRow = {
   show_id?: unknown;
   outreach_id?: unknown;
@@ -75,18 +77,20 @@ export async function contactVisibleOutreachIds(
   }
   try {
     const profiles = await brandProfileIds(userId);
-    const { data, error } = await supabaseAdmin
-      .from("deals")
-      .select("outreach_id, brand_id, agency_id, brand_profile_id, show_signed_at, brand_signed_at, status")
-      .in("outreach_id", ids);
-    if (error) {
-      console.warn("[relay] contact visibility", error.code ?? "unknown");
-      return visible;
-    }
-    for (const row of (data ?? []) as DealRow[]) {
-      const outreachId = text(row.outreach_id);
-      if (!outreachId || !ownsDeal(row, userId, profiles)) continue;
-      if (isRelayUnlocked(row)) visible.add(outreachId);
+    for (const chunk of chunks(ids)) {
+      const { data, error } = await supabaseAdmin
+        .from("deals")
+        .select("outreach_id, brand_id, agency_id, brand_profile_id, show_signed_at, brand_signed_at, status")
+        .in("outreach_id", chunk);
+      if (error) {
+        console.warn("[relay] contact visibility", error.code ?? "unknown");
+        continue;
+      }
+      for (const row of (data ?? []) as DealRow[]) {
+        const outreachId = text(row.outreach_id);
+        if (!outreachId || !ownsDeal(row, userId, profiles)) continue;
+        if (isRelayUnlocked(row)) visible.add(outreachId);
+      }
     }
   } catch {
     console.warn("[relay] contact visibility", "unknown");
@@ -166,39 +170,43 @@ function blankContactEmail(row: unknown): unknown {
 }
 
 async function rosterShowIds(userId: string, showIds: string[]): Promise<string[]> {
-  const { data, error } = await supabaseAdmin
-    .from("agent_show_relationships")
-    .select("show_id, status")
-    .eq("agent_id", userId)
-    .in("show_id", showIds);
-  if (error) {
-    console.warn("[relay] contact visibility", error.code ?? "unknown");
-    return [];
-  }
   const out: string[] = [];
-  for (const row of (data ?? []) as Array<{ show_id?: unknown; status?: unknown }>) {
-    const showId = text(row.show_id);
-    if (!showId || row.status !== "approved") continue;
-    out.push(showId);
+  for (const chunk of chunks(showIds)) {
+    const { data, error } = await supabaseAdmin
+      .from("agent_show_relationships")
+      .select("show_id, status")
+      .eq("agent_id", userId)
+      .in("show_id", chunk);
+    if (error) {
+      console.warn("[relay] contact visibility", error.code ?? "unknown");
+      continue;
+    }
+    for (const row of (data ?? []) as Array<{ show_id?: unknown; status?: unknown }>) {
+      const showId = text(row.show_id);
+      if (!showId || row.status !== "approved") continue;
+      out.push(showId);
+    }
   }
   return out;
 }
 
 async function unlockedDealShowIds(userId: string, showIds: string[]): Promise<string[]> {
   const profiles = await brandProfileIds(userId);
-  const { data, error } = await supabaseAdmin
-    .from("deals")
-    .select("show_id, brand_id, agency_id, brand_profile_id, show_signed_at, brand_signed_at, status")
-    .in("show_id", showIds);
-  if (error) {
-    console.warn("[relay] contact visibility", error.code ?? "unknown");
-    return [];
-  }
   const out: string[] = [];
-  for (const row of (data ?? []) as DealRow[]) {
-    const showId = text(row.show_id);
-    if (!showId || !ownsDeal(row, userId, profiles)) continue;
-    if (isRelayUnlocked(row)) out.push(showId);
+  for (const chunk of chunks(showIds)) {
+    const { data, error } = await supabaseAdmin
+      .from("deals")
+      .select("show_id, brand_id, agency_id, brand_profile_id, show_signed_at, brand_signed_at, status")
+      .in("show_id", chunk);
+    if (error) {
+      console.warn("[relay] contact visibility", error.code ?? "unknown");
+      continue;
+    }
+    for (const row of (data ?? []) as DealRow[]) {
+      const showId = text(row.show_id);
+      if (!showId || !ownsDeal(row, userId, profiles)) continue;
+      if (isRelayUnlocked(row)) out.push(showId);
+    }
   }
   return out;
 }
@@ -223,6 +231,14 @@ async function brandProfileIds(userId: string): Promise<Set<string>> {
 function ownsDeal(row: DealRow, userId: string, profiles: ReadonlySet<string>): boolean {
   const profileId = text(row.brand_profile_id);
   return row.brand_id === userId || row.agency_id === userId || (profileId != null && profiles.has(profileId));
+}
+
+function chunks(ids: string[]): string[][] {
+  const out: string[][] = [];
+  for (let index = 0; index < ids.length; index += CHUNK) {
+    out.push(ids.slice(index, index + CHUNK));
+  }
+  return out;
 }
 
 function uniqueIds(values: string[]): string[] {

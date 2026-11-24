@@ -38,6 +38,9 @@ describe("migration 094 outreach relay", () => {
     expect(statements).toMatch(/direction in \('brand_to_show', 'show_to_brand'\)/);
     expect(statements).toMatch(/source in \('outreach'\)/);
     expect(statements).toMatch(/unique \(brand_id, show_id\)/);
+    expect(statements).toMatch(
+      /create index if not exists idx_relay_messages_thread_id\s+on public\.relay_messages \(thread_id\);/i
+    );
     expect(statements).not.toMatch(/brand_crm_shows[\s\S]{0,400}\bemail\b/i);
     const crm = statements.slice(statements.indexOf("create table if not exists public.brand_crm_shows"));
     const crmTable = crm.slice(0, crm.indexOf("alter table public.brand_crm_shows"));

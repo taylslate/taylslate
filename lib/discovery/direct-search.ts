@@ -161,10 +161,7 @@ export async function searchShowsByName(
   );
   let contactIds = new Set<string>();
   try {
-    contactIds = await contactVisibleShowIds(
-      userId,
-      catalog.map((show) => show.id)
-    );
+    contactIds = await contactVisibleShowIds(userId, [...fullIds]);
   } catch {
     contactIds = new Set();
   }

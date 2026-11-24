@@ -71,8 +71,13 @@ describe("stripContactDetails", () => {
     expect(stripContactDetails(text, { unlocked: true })).toEqual({ text, removed: false });
   });
 
-  it("finishes a long adversarial string quickly", () => {
-    const nasty = `${"a@".repeat(10000)}${"(".repeat(5000)}`;
+  it.each([
+    ["20,000 open parens", "(".repeat(20000)],
+    ["20,000 digits", "1".repeat(20000)],
+    ["20,000 a", "a".repeat(20000)],
+    ["20,000 dashes", "-".repeat(20000)],
+    ["5,000 open parens", "(".repeat(5000)],
+  ])("finishes %s in under 200 ms", (_label, nasty) => {
     const start = performance.now();
     stripContactDetails(nasty, locked);
     expect(performance.now() - start).toBeLessThan(200);

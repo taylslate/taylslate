@@ -79,7 +79,7 @@ describe("api v1 serializers", () => {
         stripe_account_id: "acct_secret",
         payment_method_id: "pm_secret",
       },
-      false
+      { verified: false, contactVisible: true }
     );
 
     expectAllowlist(show, SHOW_FIELDS);
@@ -117,6 +117,13 @@ describe("api v1 serializers", () => {
     );
     expect(opened.contact.email).toBe("host@example.test");
     expect(opened.verified).toBe(true);
+
+    const lockedByFlag = serializeShow(
+      { id: "s", name: "S", contact_email: "host@example.com" },
+      false
+    );
+    expect(lockedByFlag.contact.email).toBeNull();
+    expect(lockedByFlag.verified).toBe(false);
 
     const tied = serializeShow({ id: "s", name: "S", ownership_status: "claimed" }, true);
     expect(tied.verified).toBe(true);

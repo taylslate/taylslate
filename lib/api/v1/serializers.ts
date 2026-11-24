@@ -319,7 +319,9 @@ export function serializeShow(
 ): SerializedShow {
   const verified = typeof verifiedOrOptions === "boolean" ? verifiedOrOptions : verifiedOrOptions.verified === true;
   const contactVisible =
-    typeof verifiedOrOptions === "boolean" ? true : verifiedOrOptions.contactVisible === true;
+    typeof verifiedOrOptions === "object" &&
+    verifiedOrOptions !== null &&
+    verifiedOrOptions.contactVisible === true;
   const body: SerializedShow = {
     id: requiredText(row.id),
     name: requiredText(row.name),

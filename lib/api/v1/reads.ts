@@ -17,6 +17,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { verifiedShowIds } from "@/lib/shows/verified-flag";
+import { fullShowIdsForCaller } from "@/lib/shows/public-fields";
 import { contactVisibleShowIds } from "@/lib/relay/contact-visibility";
 import { ApiReadError } from "@/lib/api/v1/handler";
 import {
@@ -419,7 +420,11 @@ async function serializeShows(
   const verified = await verifiedShowIds(ids);
   let visible = new Set<string>();
   try {
-    visible = await contactVisibleShowIds(brandId, ids);
+    const fullIds = await fullShowIdsForCaller(
+      brandId,
+      rows.filter((row): row is { id: string } => typeof row.id === "string")
+    );
+    visible = await contactVisibleShowIds(brandId, [...fullIds]);
   } catch {
     visible = new Set();
   }

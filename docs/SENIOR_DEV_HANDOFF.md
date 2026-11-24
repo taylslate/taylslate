@@ -4145,3 +4145,7 @@ New tests cover strip patterns and a long-string timing guard, unlock states, to
 - The legacy bulk send has no thread and no "via Taylslate" From. Its body is stripped and its recipient is resolved on the server.
 - Direct PostgREST reads of `shows.contact_email`, campaign JSON contact fields, and `outreaches.sent_to_email` are still possible with the brand's own session. IO documents before signing still include the show email. Those are RELAY1c and need a migration number from Chris. See `docs/jobs/RELAY1.md`.
 - This PR does not merge.
+
+### Review fixes
+
+The contact stripper no longer rescans a phone run one character at a time, and the LinkedIn pattern uses a bounded host. A catalog show id is resolved only when that id is already on the campaign. `serializeShow(row, false)` hides the email. Contact visibility reads are chunked at 80, and list routes only ask about shows that receive the full object. The outreach page loads reach flags in one batch. Migration 094 adds `idx_relay_messages_thread_id`. `lib/podscan-import/exposure.test.ts` now expects the boolean `serializeShow` call to hide `contact_email`. That file was not on the original Owns list, and the new default made its old assertion false.

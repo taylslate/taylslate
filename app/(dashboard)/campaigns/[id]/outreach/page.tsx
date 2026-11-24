@@ -12,7 +12,7 @@ import {
   contactVisibleOutreachIds,
   redactScoredShowRecord,
 } from "@/lib/relay/contact-visibility";
-import { canReachOut } from "@/lib/relay/recipient";
+import { canReachOutMany } from "@/lib/relay/recipient";
 import { tokens } from "@/lib/brand/tokens";
 import Link from "next/link";
 
@@ -48,18 +48,16 @@ export default async function CampaignOutreachPage({
   } catch {
     visibleOutreach = new Set();
   }
-  const reachFlags = await Promise.all(
-    selectedShows.map(async (show) =>
-      user
-        ? canReachOut({
-            userId: user.id,
-            campaignId: id,
-            showId: show.podcastId,
-            podscanId: show.podcastId,
-          })
-        : false
-    )
-  );
+  const reachFlags = user
+    ? await canReachOutMany({
+        userId: user.id,
+        campaignId: id,
+        shows: selectedShows.map((show) => ({
+          showId: show.podcastId,
+          podscanId: show.podcastId,
+        })),
+      })
+    : selectedShows.map(() => false);
 
   return (
     <div className="min-h-screen bg-[var(--ts-canvas)] text-[var(--ts-ink-on-paper)]">
