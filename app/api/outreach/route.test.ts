@@ -26,14 +26,21 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 const sendEmail = vi.fn().mockResolvedValue({ ok: true, id: "msg_test" });
-const resolveOutreachRecipient = vi.fn(async (...args: unknown[]) => {
-  void args;
-  return {
-  ok: true as const,
-  email: "host@daily.fm",
-  catalogShowId: null as string | null,
-  };
-});
+const resolveOutreachRecipient = vi.fn(
+  async (
+    ...args: unknown[]
+  ): Promise<
+    | { ok: true; email: string; catalogShowId: string | null }
+    | { ok: false; reason: "not_found" | "no_contact" }
+  > => {
+    void args;
+    return {
+      ok: true,
+      email: "host@daily.fm",
+      catalogShowId: null,
+    };
+  }
+);
 const createRelayThread = vi.fn(async (...args: unknown[]) => {
   void args;
   return null as { id?: string; address_token: string } | null;
@@ -117,6 +124,7 @@ describe("POST /api/outreach", () => {
     getCampaignById.mockResolvedValue({ id: "c1", user_id: "u_OTHER", name: "X" });
     const res = await POST(jsonReq(validBody) as never);
     expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Campaign not found" });
   });
 
   it("rejects pitch body that is too short", async () => {
@@ -269,5 +277,16 @@ describe("POST /api/outreach", () => {
     expect(JSON.stringify(await res.json())).not.toContain("abcdefghijklmnopqrstuvwxyz");
     if (previous === undefined) delete process.env.RELAY_INBOUND_ENABLED;
     else process.env.RELAY_INBOUND_ENABLED = previous;
+  });
+
+  it("returns show not found when the recipient gate refuses the show", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u1" });
+    getBrandProfileByUserId.mockResolvedValue({ id: "bp1", user_id: "u1" });
+    getCampaignById.mockResolvedValue({ id: "c1", user_id: "u1", name: "C" });
+    resolveOutreachRecipient.mockResolvedValueOnce({ ok: false, reason: "not_found" });
+    const res = await POST(jsonReq(validBody) as never);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Show not found on this campaign" });
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 });

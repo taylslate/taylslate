@@ -338,7 +338,7 @@ describe("toSearchedScoredShowRecord", () => {
       sponsorRetention: null,
       reach: 0,
     });
-    expect(record.contactEmail).toBeNull();
+    expect(record).not.toHaveProperty("contactEmail");
     expect(record.description).toBe("");
   });
 
@@ -363,7 +363,7 @@ describe("toSearchedScoredShowRecord", () => {
     expect(record.estimatedCpm).toBe(28);
     expect(record.costIsEstimate).toBe(true);
     expect(record.audienceIsEstimate).toBe(true);
-    expect(record.contactEmail).toBeNull();
+    expect(record).not.toHaveProperty("contactEmail");
     expect(JSON.stringify(record)).not.toContain("secret-db-text");
   });
 

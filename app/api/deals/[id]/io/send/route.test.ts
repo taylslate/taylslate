@@ -10,6 +10,7 @@ const {
   resolveManagedDelivery,
   updateDeal,
   markInsertionOrderSent,
+  isShowsAdmin,
 } = vi.hoisted(() => ({
   getAuthenticatedUser: vi.fn(),
   getDealById: vi.fn(),
@@ -20,6 +21,7 @@ const {
   resolveManagedDelivery: vi.fn(),
   updateDeal: vi.fn(),
   markInsertionOrderSent: vi.fn(),
+  isShowsAdmin: vi.fn(),
 }));
 
 vi.mock("@/lib/data/queries", () => ({
@@ -42,6 +44,9 @@ vi.mock("resend", () => ({
   Resend: class {
     emails = { send: resendSend };
   },
+}));
+vi.mock("@/lib/shows/can-edit-show", () => ({
+  isShowsAdmin: (...a: unknown[]) => isShowsAdmin(...a),
 }));
 
 import { POST } from "./route";
@@ -102,7 +107,8 @@ function post(): Request {
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.RESEND_API_KEY = "re_test";
-  getAuthenticatedUser.mockResolvedValue({ id: "u1", email: "brand@x.com" });
+  getAuthenticatedUser.mockResolvedValue({ id: "brand-1", email: "brand@x.com" });
+  isShowsAdmin.mockResolvedValue(false);
   getDealById.mockResolvedValue({
     id: "deal-1",
     show_id: "show-1",
@@ -157,6 +163,15 @@ describe("POST /api/deals/[id]/io/send", () => {
     ]);
     expect(markInsertionOrderSent).toHaveBeenCalledWith("io-1");
     expect(updateDeal).toHaveBeenCalledWith("deal-1", { status: "io_sent" });
+    expect(body).not.toHaveProperty("senderEmail");
+    expect(JSON.stringify(body)).not.toContain("host@show.test");
+  });
+
+  it("returns 403 for a non-party and does not send", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "stranger", email: "nope@example.test" });
+    const res = await POST(post() as never, { params });
+    expect(res.status).toBe(403);
+    expect(resendSend).not.toHaveBeenCalled();
   });
 
   it("reroutes a managed brand and leaves the html and attachment alone", async () => {

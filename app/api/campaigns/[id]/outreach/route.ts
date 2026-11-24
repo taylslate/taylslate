@@ -6,7 +6,10 @@ import {
 } from "@/lib/data/queries";
 import { redactOutreachForViewer } from "@/lib/outreach/public";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
-import { contactVisibleOutreachIds } from "@/lib/relay/contact-visibility";
+import {
+  attachVisibleOutreachEmails,
+  contactVisibleOutreachIds,
+} from "@/lib/relay/contact-visibility";
 
 export async function GET(
   _req: NextRequest,
@@ -35,8 +38,9 @@ export async function GET(
   } catch {
     visible = new Set();
   }
+  const withEmails = await attachVisibleOutreachEmails(outreaches, visible);
   return NextResponse.json({
-    outreaches: outreaches.map((row) =>
+    outreaches: withEmails.map((row) =>
       redactOutreachForViewer(row, { contactVisible: visible.has(row.id) })
     ),
   });

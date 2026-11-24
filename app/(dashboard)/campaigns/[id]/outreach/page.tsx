@@ -9,6 +9,7 @@ import ShowListWithOutreach from "@/components/outreach/ShowListWithOutreach";
 import { redactOutreachForViewer } from "@/lib/outreach/public";
 import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 import {
+  attachVisibleOutreachEmails,
   contactVisibleOutreachIds,
   redactScoredShowRecord,
 } from "@/lib/relay/contact-visibility";
@@ -48,6 +49,7 @@ export default async function CampaignOutreachPage({
   } catch {
     visibleOutreach = new Set();
   }
+  const outreachRows = await attachVisibleOutreachEmails(outreaches, visibleOutreach);
   const reachFlags = user
     ? await canReachOutMany({
         userId: user.id,
@@ -104,9 +106,12 @@ export default async function CampaignOutreachPage({
         ) : (
           <ShowListWithOutreach
             campaignId={id}
-            initialOutreaches={outreaches.map((row) =>
-              redactOutreachForViewer(row, { contactVisible: visibleOutreach.has(row.id) })
-            )}
+            initialOutreaches={outreachRows.map((row) => {
+              const redacted = redactOutreachForViewer(row, {
+                contactVisible: visibleOutreach.has(row.id),
+              });
+              return { ...redacted, sent_to_email: redacted.sent_to_email ?? "" };
+            })}
             selectedShows={selectedShows.map((s, index) => ({
               show: redactScoredShowRecord(s),
               line_item: lineItemByShow.get(s.podcastId),

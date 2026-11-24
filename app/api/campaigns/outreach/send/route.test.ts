@@ -10,7 +10,10 @@ const { resendSend, resolveManagedDelivery, getAuthenticatedUser, maybeSingle, r
   getAuthenticatedUser: vi.fn(),
   maybeSingle: vi.fn(),
   rpc: vi.fn(async () => ({ data: true, error: null })),
-  showsById: new Map<string, { id: string; contact_email: string | null }>(),
+  showsById: new Map<
+    string,
+    { id: string; contact_email: string | null; is_discoverable?: boolean; podscan_id?: string }
+  >(),
 }));
 
 vi.mock("@/lib/email/send", () => ({
@@ -39,6 +42,9 @@ vi.mock("@/lib/supabase/admin", () => ({
         },
         in(_column: string, value: unknown) {
           filters.push({ op: "in", value });
+          return builder;
+        },
+        not() {
           return builder;
         },
         maybeSingle: async () => {
@@ -104,6 +110,15 @@ beforeEach(() => {
   resendSend.mockResolvedValue({ data: { id: "msg" }, error: null });
   getAuthenticatedUser.mockResolvedValue({ id: USER_ID, email: "owner@example.com" });
   showsById.clear();
+  const catalogId = "33333333-3333-4333-8333-333333333333";
+  const catalog = {
+    id: catalogId,
+    contact_email: "brand@x.com",
+    is_discoverable: true,
+    podscan_id: "show-1",
+  };
+  showsById.set("show-1", catalog);
+  showsById.set(catalogId, catalog);
   maybeSingle.mockResolvedValue(ownedCampaign());
   resolveManagedDelivery.mockImplementation(
     async (input: { to: string; subject: string }) => ({
@@ -250,7 +265,7 @@ describe("POST /api/campaigns/outreach/send", () => {
 
   it("sends to a catalog show that is on the campaign", async () => {
     const listed = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    showsById.set(listed, { id: listed, contact_email: "host@example.test" });
+    showsById.set(listed, { id: listed, contact_email: "host@example.test", is_discoverable: true });
     maybeSingle.mockResolvedValue({
       data: {
         id: CAMPAIGN_ID,

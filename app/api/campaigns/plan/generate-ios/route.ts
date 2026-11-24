@@ -7,8 +7,11 @@ import {
   createDeal,
   createIO,
   getNextIONumber,
+  getShowById,
   getShowBySlug,
 } from "@/lib/data/queries";
+import { pitchableShowIds } from "@/lib/relay/recipient";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import type {
   MediaPlanLineItem,
   ScoredShowRecord,
@@ -33,6 +36,9 @@ const SPACING_DAYS: Record<PlanSpacing, number> = {
   monthly: 30,
 };
 
+const SHOW_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function slugifyName(name: string): string {
   return name
     .toLowerCase()
@@ -41,7 +47,18 @@ function slugifyName(name: string): string {
 }
 
 /** Persist a discovered show into the shows table (or fetch existing by slug). */
-async function persistScoredShow(record: ScoredShowRecord): Promise<Show | null> {
+async function persistScoredShow(
+  record: ScoredShowRecord,
+  userId: string
+): Promise<Show | null> {
+  if (SHOW_UUID.test(record.podcastId)) {
+    const byId = await getShowById(record.podcastId);
+    if (byId) {
+      const allowed = await pitchableShowIds(userId, [byId.id]);
+      if (allowed.has(byId.id)) return byId;
+    }
+  }
+
   const existing = await getShowBySlug(slugifyName(record.name));
   if (existing) return existing;
 
@@ -61,13 +78,32 @@ async function persistScoredShow(record: ScoredShowRecord): Promise<Show | null>
     rss_url: record.rssUrl ?? undefined,
     contact: {
       name: record.publisherName ?? "",
-      email: record.contactEmail ?? "",
+      email: "",
       method: "email",
     },
     data_sources: ["discovery"],
     is_claimed: false,
     is_verified: false,
+    is_discoverable: false,
   });
+}
+
+async function publisherContactEmail(showId: string): Promise<string> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("shows")
+      .select("contact_email")
+      .eq("id", showId)
+      .maybeSingle();
+    if (error) {
+      console.warn("[plan/generate-ios] contact", error.code ?? "unknown");
+      return "";
+    }
+    return typeof data?.contact_email === "string" ? data.contact_email : "";
+  } catch {
+    console.warn("[plan/generate-ios] contact", "unknown");
+    return "";
+  }
 }
 
 interface LineItemContext {
@@ -148,7 +184,7 @@ export async function POST(request: NextRequest) {
   for (const { scoredShow, lineItem } of items) {
     let show: Show | null = null;
     try {
-      show = await persistScoredShow(scoredShow);
+      show = await persistScoredShow(scoredShow, profile.id);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       errors.push(`"${scoredShow.name}": ${msg}`);
@@ -280,7 +316,7 @@ export async function POST(request: NextRequest) {
           advertiser_contact_email: profile.email ?? "",
           publisher_name: show.name,
           publisher_contact_name: show.contact?.name ?? "",
-          publisher_contact_email: show.contact?.email ?? "",
+          publisher_contact_email: await publisherContactEmail(show.id),
           total_downloads: scoredShow.audienceSize * numEpisodes,
           total_gross: totalGross,
           total_net: totalNet,

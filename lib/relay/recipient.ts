@@ -1,5 +1,6 @@
-// Resolve an outreach recipient from a show on a campaign the caller
-// owns. Never read an address from the request. Server only.
+// Resolve an outreach recipient from the server-side catalog.
+// Campaign JSON is only an ownership and membership check.
+// Never read an address from the request or from campaign JSON.
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
@@ -18,6 +19,13 @@ type CampaignRow = {
 };
 
 type ShowRef = { showId?: string | null; podscanId?: string | null };
+
+type CatalogShow = {
+  id: string;
+  email: string | null;
+  discoverable: boolean;
+  podscanId: string | null;
+};
 
 export type ResolvedRecipient =
   | { ok: true; email: string; catalogShowId: string | null }
@@ -45,7 +53,7 @@ export async function canReachOut(input: {
   return resolved.ok;
 }
 
-/** One campaign read, then one batched catalog read, for every show. */
+/** One campaign read, then batched catalog reads, for every show. */
 export async function canReachOutMany(input: {
   userId: string;
   campaignId: string;
@@ -53,6 +61,96 @@ export async function canReachOutMany(input: {
 }): Promise<boolean[]> {
   const resolved = await resolveMany(input.userId, input.campaignId, input.shows);
   return resolved.map((row) => row.ok);
+}
+
+/**
+ * Shows this caller may pitch. Discoverable catalog rows, an approved
+ * roster row, or a deal that came from an accepted outreach. A legacy
+ * deal with a null outreach_id does not count. Fail closed.
+ */
+export async function pitchableShowIds(userId: string, showIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  const ids = uniqueUuids(showIds);
+  if (!userId || ids.length === 0) return out;
+
+  for (const chunk of chunks(ids)) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("shows")
+        .select("id, is_discoverable")
+        .in("id", chunk);
+      if (error) {
+        console.warn("[relay] recipient", error.code ?? "unknown");
+        continue;
+      }
+      for (const row of (data ?? []) as Array<{ id?: unknown; is_discoverable?: unknown }>) {
+        if (typeof row.id === "string" && row.is_discoverable === true) out.add(row.id);
+      }
+    } catch {
+      console.warn("[relay] recipient", "unknown");
+    }
+  }
+
+  for (const chunk of chunks(ids)) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("agent_show_relationships")
+        .select("show_id, status")
+        .eq("agent_id", userId)
+        .in("show_id", chunk);
+      if (error) {
+        console.warn("[relay] recipient", error.code ?? "unknown");
+        continue;
+      }
+      for (const row of (data ?? []) as Array<{ show_id?: unknown; status?: unknown }>) {
+        if (typeof row.show_id === "string" && row.status === "approved") out.add(row.show_id);
+      }
+    } catch {
+      console.warn("[relay] recipient", "unknown");
+    }
+  }
+
+  let profiles = new Set<string>();
+  try {
+    profiles = await brandProfileIds(userId);
+  } catch {
+    console.warn("[relay] recipient", "unknown");
+  }
+  for (const chunk of chunks(ids)) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("deals")
+        .select("show_id, outreach_id, brand_id, agency_id, brand_profile_id")
+        .in("show_id", chunk)
+        .not("outreach_id", "is", null);
+      if (error) {
+        console.warn("[relay] recipient", error.code ?? "unknown");
+        continue;
+      }
+      for (const row of (data ?? []) as Array<{
+        show_id?: unknown;
+        outreach_id?: unknown;
+        brand_id?: unknown;
+        agency_id?: unknown;
+        brand_profile_id?: unknown;
+      }>) {
+        if (typeof row.show_id !== "string" || row.outreach_id == null || row.outreach_id === "") {
+          continue;
+        }
+        const profileId = typeof row.brand_profile_id === "string" ? row.brand_profile_id : null;
+        if (
+          row.brand_id === userId ||
+          row.agency_id === userId ||
+          (profileId != null && profiles.has(profileId))
+        ) {
+          out.add(row.show_id);
+        }
+      }
+    } catch {
+      console.warn("[relay] recipient", "unknown");
+    }
+  }
+  return out;
 }
 
 async function resolveMany(
@@ -66,14 +164,26 @@ async function resolveMany(
       return shows.map(() => ({ ok: false, reason: "not_found" as const }));
     }
     const onCampaign = campaignShowKeys(campaign);
-    const catalogIds: string[] = [];
+    const uuidIds: string[] = [];
+    const podscanIds: string[] = [];
     for (const show of shows) {
-      for (const id of uuidRefs(show)) {
-        if (onCampaign.has(id) && !catalogIds.includes(id)) catalogIds.push(id);
+      for (const id of stringRefs(show)) {
+        if (!onCampaign.has(id)) continue;
+        if (UUID.test(id)) {
+          if (!uuidIds.includes(id)) uuidIds.push(id);
+        } else if (!podscanIds.includes(id)) {
+          podscanIds.push(id);
+        }
       }
     }
-    const emails = await catalogEmails(catalogIds);
-    return shows.map((show) => resolveOne(campaign, onCampaign, emails, show));
+    const byId = await catalogById(uuidIds);
+    const byPodscan = await catalogByPodscan(podscanIds);
+    const matched = [
+      ...byId.values(),
+      ...byPodscan.values(),
+    ].map((row) => row.id);
+    const pitchable = await pitchableShowIds(userId, matched);
+    return shows.map((show) => resolveOne(onCampaign, byId, byPodscan, pitchable, show));
   } catch {
     console.warn("[relay] recipient", "unknown");
     return shows.map(() => ({ ok: false, reason: "not_found" as const }));
@@ -81,24 +191,34 @@ async function resolveMany(
 }
 
 function resolveOne(
-  campaign: CampaignRow,
   onCampaign: Set<string>,
-  emails: Map<string, string | null>,
+  byId: Map<string, CatalogShow>,
+  byPodscan: Map<string, CatalogShow>,
+  pitchable: Set<string>,
   show: ShowRef
 ): ResolvedRecipient {
-  const uuids = uuidRefs(show);
+  const refs = stringRefs(show);
+  const uuids = refs.filter((id) => UUID.test(id));
   if (uuids.some((id) => !onCampaign.has(id))) {
     return { ok: false, reason: "not_found" };
   }
   for (const id of uuids) {
-    if (!emails.has(id)) continue;
-    const email = emails.get(id);
-    return email
-      ? { ok: true, email, catalogShowId: id }
+    const row = byId.get(id);
+    if (!row) continue;
+    if (!pitchable.has(row.id)) return { ok: false, reason: "not_found" };
+    return row.email
+      ? { ok: true, email: row.email, catalogShowId: row.id }
       : { ok: false, reason: "no_contact" };
   }
-  const fromCampaign = emailFromCampaign(campaign, show.showId, show.podscanId);
-  if (fromCampaign) return { ok: true, email: fromCampaign, catalogShowId: null };
+  for (const id of refs) {
+    if (UUID.test(id) || !onCampaign.has(id)) continue;
+    const row = byPodscan.get(id);
+    if (!row) continue;
+    if (!pitchable.has(row.id)) return { ok: false, reason: "not_found" };
+    return row.email
+      ? { ok: true, email: row.email, catalogShowId: row.id }
+      : { ok: false, reason: "no_contact" };
+  }
   return { ok: false, reason: "no_contact" };
 }
 
@@ -117,24 +237,69 @@ async function loadCampaign(campaignId: string): Promise<CampaignRow | null> {
   return (data as CampaignRow | null) ?? null;
 }
 
-async function catalogEmails(ids: string[]): Promise<Map<string, string | null>> {
-  const emails = new Map<string, string | null>();
-  for (let index = 0; index < ids.length; index += CHUNK) {
-    const chunk = ids.slice(index, index + CHUNK);
+async function catalogById(ids: string[]): Promise<Map<string, CatalogShow>> {
+  const found = new Map<string, CatalogShow>();
+  for (const chunk of chunks(ids)) {
     const { data, error } = await supabaseAdmin
       .from("shows")
-      .select("id, contact_email")
+      .select("id, contact_email, is_discoverable, podscan_id")
       .in("id", chunk);
     if (error) {
       console.warn("[relay] recipient", error.code ?? "unknown");
       continue;
     }
-    for (const row of (data ?? []) as Array<{ id?: unknown; contact_email?: unknown }>) {
-      if (typeof row.id !== "string") continue;
-      emails.set(row.id, validEmail(row.contact_email));
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const show = catalogShow(row);
+      if (show) found.set(show.id, show);
     }
   }
-  return emails;
+  return found;
+}
+
+async function catalogByPodscan(ids: string[]): Promise<Map<string, CatalogShow>> {
+  const found = new Map<string, CatalogShow>();
+  for (const chunk of chunks(ids)) {
+    const { data, error } = await supabaseAdmin
+      .from("shows")
+      .select("id, contact_email, is_discoverable, podscan_id")
+      .in("podscan_id", chunk);
+    if (error) {
+      console.warn("[relay] recipient", error.code ?? "unknown");
+      continue;
+    }
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const show = catalogShow(row);
+      if (!show?.podscanId || found.has(show.podscanId)) continue;
+      found.set(show.podscanId, show);
+    }
+  }
+  return found;
+}
+
+function catalogShow(row: Record<string, unknown>): CatalogShow | null {
+  if (typeof row.id !== "string") return null;
+  return {
+    id: row.id,
+    email: validEmail(row.contact_email),
+    discoverable: row.is_discoverable === true,
+    podscanId: typeof row.podscan_id === "string" && row.podscan_id.length > 0 ? row.podscan_id : null,
+  };
+}
+
+async function brandProfileIds(userId: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const { data, error } = await supabaseAdmin
+    .from("brand_profiles")
+    .select("id")
+    .eq("user_id", userId);
+  if (error) {
+    console.warn("[relay] recipient", error.code ?? "unknown");
+    return ids;
+  }
+  for (const row of (data ?? []) as Array<{ id?: unknown }>) {
+    if (typeof row.id === "string" && row.id.length > 0) ids.add(row.id);
+  }
+  return ids;
 }
 
 function campaignShowKeys(campaign: CampaignRow): Set<string> {
@@ -158,37 +323,6 @@ function campaignShowKeys(campaign: CampaignRow): Set<string> {
   return keys;
 }
 
-function emailFromCampaign(campaign: CampaignRow, showId?: string | null, podscanId?: string | null): string | null {
-  const keys = new Set(stringRefs({ showId, podscanId }));
-  if (keys.size === 0) return null;
-  if (Array.isArray(campaign.scored_shows)) {
-    for (const row of campaign.scored_shows) {
-      if (!row || typeof row !== "object") continue;
-      const record = row as { podcastId?: unknown; contactEmail?: unknown };
-      if (typeof record.podcastId === "string" && keys.has(record.podcastId)) {
-        const email = validEmail(record.contactEmail);
-        if (email) return email;
-      }
-    }
-  }
-  for (const list of [campaign.recommendations, campaign.youtube_recommendations, campaign.expansion_opportunities]) {
-    if (!Array.isArray(list)) continue;
-    for (const row of list) {
-      if (!row || typeof row !== "object") continue;
-      const record = row as { show_id?: unknown; contact_email?: unknown };
-      if (typeof record.show_id === "string" && keys.has(record.show_id)) {
-        const email = validEmail(record.contact_email);
-        if (email) return email;
-      }
-    }
-  }
-  return null;
-}
-
-function uuidRefs(show: ShowRef): string[] {
-  return stringRefs(show).filter((id) => UUID.test(id));
-}
-
 function stringRefs(show: ShowRef): string[] {
   const out: string[] = [];
   if (typeof show.showId === "string" && show.showId.length > 0) out.push(show.showId);
@@ -207,4 +341,23 @@ function validEmail(value: unknown): string | null {
   const email = value.trim().toLowerCase();
   if (!email || email.length > 320 || !EMAIL.test(email)) return null;
   return email;
+}
+
+function uniqueUuids(values: string[]): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (!UUID.test(value) || seen.has(value)) continue;
+    seen.add(value);
+    ids.push(value);
+  }
+  return ids;
+}
+
+function chunks(ids: string[]): string[][] {
+  const out: string[][] = [];
+  for (let index = 0; index < ids.length; index += CHUNK) {
+    out.push(ids.slice(index, index + CHUNK));
+  }
+  return out;
 }

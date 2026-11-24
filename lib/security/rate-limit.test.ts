@@ -235,7 +235,24 @@ beforeEach(() => {
     const chain = {
       select: vi.fn(() => chain),
       eq: vi.fn(() => chain),
+      in: vi.fn(() => chain),
+      not: vi.fn(() => chain),
       update: vi.fn(() => chain),
+      then: (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({
+          data:
+            table === "shows"
+              ? [
+                  {
+                    id: "33333333-3333-4333-8333-333333333333",
+                    contact_email: "host@show.example",
+                    is_discoverable: true,
+                    podscan_id: "show-1",
+                  },
+                ]
+              : [],
+          error: null,
+        }).then(resolve),
       maybeSingle: vi.fn(async () => {
         if (table === "campaigns") {
           return {

@@ -7,6 +7,8 @@ import type { IoLineItemDraft } from "@/lib/pdf/io-generator";
 import type { Deal } from "@/lib/data/types";
 import { fetchSurfaceAttachment } from "@/lib/data/show-surfaces";
 import { parseShowSurfaceId, surfacesEligibleForDeal } from "@/lib/shows/surfaces";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
+import { isRelayUnlocked } from "@/lib/relay/unlock";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -82,6 +84,39 @@ const IO_BOOLS = [
 
 function isParty(deal: Deal, userId: string): boolean {
   return deal.agent_id === userId || deal.brand_id === userId || deal.agency_id === userId;
+}
+
+function revealPublisherContact(deal: Deal, userId: string, admin: boolean): boolean {
+  if (deal.agent_id === userId || admin) return true;
+  const outreachId = (deal as { outreach_id?: unknown }).outreach_id;
+  const wave12 = typeof outreachId === "string" && outreachId.length > 0;
+  return wave12 && isRelayUnlocked(deal);
+}
+
+function blankPublisherContact<T extends { publisher_contact_email?: string | null }>(
+  io: T,
+  reveal: boolean
+): { io: T; publisher_contact_hidden: boolean } {
+  if (reveal) return { io, publisher_contact_hidden: false };
+  return {
+    io: { ...io, publisher_contact_email: "" },
+    publisher_contact_hidden: true,
+  };
+}
+
+function dropEmptyPublisherEmail(
+  deal: Deal,
+  userId: string,
+  fields: Record<string, unknown>
+): Record<string, unknown> {
+  if (deal.agent_id === userId) return fields;
+  const value = fields.publisher_contact_email;
+  if (value == null || (typeof value === "string" && value.trim() === "")) {
+    const next = { ...fields };
+    delete next.publisher_contact_email;
+    return next;
+  }
+  return fields;
 }
 
 function docusignLocked(deal: Deal): boolean {
@@ -199,13 +234,22 @@ export async function GET(
     }
 
     const { id: dealId } = await params;
+    const deal = await getDealById(dealId);
+    if (!deal) {
+      return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
+    const admin = await isShowsAdmin(user.id);
+    if (!isParty(deal, user.id) && !admin) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const io = await getIOByDealId(dealId);
 
     if (!io) {
       return NextResponse.json({ error: "No IO found for this deal" }, { status: 404 });
     }
 
-    return NextResponse.json({ io });
+    return NextResponse.json(blankPublisherContact(io, revealPublisherContact(deal, user.id, admin)));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: `Failed to fetch IO: ${message}` }, { status: 500 });
@@ -323,7 +367,12 @@ export async function POST(
         publisherContactName:
           typeof body.publisher_contact_name === "string" ? body.publisher_contact_name : "",
         publisherContactEmail:
-          typeof body.publisher_contact_email === "string" ? body.publisher_contact_email : "",
+          loaded.deal.agent_id === user.id ||
+          (typeof body.publisher_contact_email === "string" && body.publisher_contact_email.trim() !== "")
+            ? typeof body.publisher_contact_email === "string"
+              ? body.publisher_contact_email
+              : ""
+            : (await getIOByDealId(dealId))?.publisher_contact_email ?? "",
       },
       actorId: user.id,
       source: "io_editor",
@@ -331,10 +380,11 @@ export async function POST(
     });
 
     if (result.created) {
+      const headerUpdate = dropEmptyPublisherEmail(loaded.deal, user.id, header.fields);
       const { error: headerError } = await supabaseAdmin
         .from("insertion_orders")
         .update({
-          ...header.fields,
+          ...headerUpdate,
           advertiser_name: advertiserName,
           publisher_name: publisherName,
           status: "draft",
@@ -397,7 +447,7 @@ export async function PATCH(
 
     const supabase = await createClient();
     const syncLineItems = body.sync_line_items === true;
-    const ioUpdates = header.fields;
+    const ioUpdates = dropEmptyPublisherEmail(loaded.deal, user.id, header.fields);
 
     if (Object.keys(ioUpdates).length > 0) {
       const { error: ioError } = await supabase

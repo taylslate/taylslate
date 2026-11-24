@@ -56,7 +56,8 @@ describe("tieredShowToScoredShowRecord", () => {
     expect(rec!.audienceSize).toBe(40_000);
     expect(rec!.compositeScore).toBe(67);
     expect(rec!.publisherName).toBe("Wellness Network");
-    expect(rec!.contactEmail).toBe("host@recovery.fm");
+    expect(rec).not.toHaveProperty("contactEmail");
+    expect(JSON.stringify(rec)).not.toContain("host@recovery.fm");
     expect(rec!.sponsorCount).toBe(2);
     expect(rec!.source).toBe("discover");
   });

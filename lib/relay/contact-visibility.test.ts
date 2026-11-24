@@ -5,6 +5,7 @@ const showEditGrantIds = vi.fn();
 
 const tables: Record<string, Array<Record<string, unknown>>> = {};
 let failTable: string | null = null;
+const inSizes: number[] = [];
 
 vi.mock("@/lib/shows/can-edit-show", () => ({
   isShowsAdmin: (...args: unknown[]) => isShowsAdmin(...args),
@@ -36,6 +37,7 @@ function from(table: string) {
     },
     in(column: string, value: unknown[]) {
       filters.push({ op: "in", column, value });
+      inSizes.push(value.length);
       return api;
     },
     then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
@@ -50,6 +52,8 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 import {
+  attachVisibleOutreachEmails,
+  attachVisibleShowContacts,
   contactVisibleShowIds,
   redactCampaignContacts,
   redactConvictionUniverse,
@@ -162,5 +166,74 @@ describe("redaction helpers", () => {
       new Set()
     );
     expect(universe.groups[0].shows[0].show?.contact?.email).toBe("");
+  });
+});
+
+describe("attachVisibleShowContacts", () => {
+  beforeEach(() => {
+    failTable = null;
+    inSizes.length = 0;
+    tables.shows = [];
+    tables.outreaches = [];
+  });
+
+  function show(id: string, email = "") {
+    return { id, contact: { name: "Ada", email, method: "email" as const } };
+  }
+
+  it("fills only visible ids and ignores non-uuids", async () => {
+    tables.shows = [
+      { id: SHOW, contact_email: "host@example.test" },
+      { id: OTHER, contact_email: "other@example.test" },
+    ];
+    const input = [show(SHOW), show(OTHER, ""), show("not-a-uuid", "")];
+    const out = await attachVisibleShowContacts(input, new Set([SHOW, "not-a-uuid"]));
+    expect(out[0].contact.email).toBe("host@example.test");
+    expect(out[1].contact.email).toBe("");
+    expect(out[2].contact.email).toBe("");
+    expect(input[0].contact.email).toBe("");
+    expect(inSizes).toEqual([1]);
+  });
+
+  it("returns the input unchanged and logs only the code when the read fails", async () => {
+    failTable = "shows";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const input = [show(SHOW, "")];
+    const out = await attachVisibleShowContacts(input, new Set([SHOW]));
+    expect(out).toBe(input);
+    expect(out[0].contact.email).toBe("");
+    const logged = warn.mock.calls.flat().join(" ");
+    expect(logged).toContain("[relay] attach contact");
+    expect(logged).toContain("XX000");
+    expect(logged).not.toContain("host@example.test");
+    warn.mockRestore();
+  });
+
+  it("chunks ids past 80", async () => {
+    const ids = Array.from({ length: 81 }, (_, index) => {
+      const tail = index.toString(16).padStart(12, "0");
+      return `11111111-1111-4111-8111-${tail}`;
+    });
+    tables.shows = ids.map((id) => ({ id, contact_email: "host@example.test" }));
+    const out = await attachVisibleShowContacts(
+      ids.map((id) => show(id)),
+      new Set(ids)
+    );
+    expect(inSizes).toEqual([80, 1]);
+    expect(out[0].contact.email).toBe("host@example.test");
+    expect(out[80].contact.email).toBe("host@example.test");
+  });
+
+  it("fills sent_to_email only for visible outreach rows", async () => {
+    tables.outreaches = [
+      { id: SHOW, sent_to_email: "host@example.test" },
+      { id: OTHER, sent_to_email: "other@example.test" },
+    ];
+    const out = await attachVisibleOutreachEmails(
+      [{ id: SHOW }, { id: OTHER }],
+      new Set([SHOW])
+    );
+    expect(out[0]).toMatchObject({ id: SHOW, sent_to_email: "host@example.test" });
+    expect(out[1]).toEqual({ id: OTHER });
   });
 });

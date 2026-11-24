@@ -11,7 +11,7 @@ import {
   projectShowsForViewer,
   stripOwnershipStatus,
 } from "@/lib/shows/public-fields";
-import { contactVisibleShowIds } from "@/lib/relay/contact-visibility";
+import { attachVisibleShowContacts, contactVisibleShowIds } from "@/lib/relay/contact-visibility";
 
 export async function GET(
   _request: NextRequest,
@@ -44,7 +44,8 @@ export async function GET(
     }
     const fullIds = await fullShowIdsForCaller(user.id, [show]);
     const contactIds = await contactVisibleShowIds(user.id, [show.id]);
-    const [projected] = projectShowsForViewer([show], fullIds, contactIds);
+    const [withContact] = await attachVisibleShowContacts([show], contactIds);
+    const [projected] = projectShowsForViewer([withContact], fullIds, contactIds);
     if (!hasOwnershipStatus(projected)) {
       return NextResponse.json({ show: projected });
     }

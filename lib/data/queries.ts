@@ -22,6 +22,12 @@ import { findCatalogDuplicates } from "@/lib/shows/import-catalog-match";
 import { showNameContainsPattern } from "@/lib/shows/search-pattern";
 import { normalizeRosterShowName } from "@/lib/reps/roster-import";
 import { redactCampaignContacts } from "@/lib/relay/contact-visibility";
+import { stripCampaignContactKeys } from "@/lib/relay/campaign-contacts";
+import {
+  IO_READ_COLUMNS,
+  OUTREACH_READ_COLUMNS,
+  SHOW_READ_COLUMNS,
+} from "@/lib/shows/read-columns";
 import type {
   Profile,
   Show,
@@ -113,13 +119,13 @@ export async function getAllShows(): Promise<Show[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("shows")
-    .select("*")
+    .select(SHOW_READ_COLUMNS)
     // Exclude non-discoverable shows (accept-materialized non-catalog shows,
     // seeds) from shared brand-facing discovery/catalog reads (migration 031).
     .eq("is_discoverable", true)
     .order("audience_size", { ascending: false });
   if (error || !data) return [];
-  return data.map(transformShow);
+  return (data as unknown as Record<string, unknown>[]).map(transformShow);
 }
 
 function countPlatforms(rows: { platform: string | null }[]): {
@@ -172,11 +178,11 @@ export async function getShowById(id: string): Promise<Show | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("shows")
-    .select("*")
+    .select(SHOW_READ_COLUMNS)
     .eq("id", id)
     .single();
   if (error || !data) return null;
-  return transformShow(data);
+  return transformShow(data as unknown as Record<string, unknown>);
 }
 
 export async function getShowsByAgent(agentId: string): Promise<Show[]> {
@@ -192,11 +198,11 @@ export async function getShowsByAgent(agentId: string): Promise<Show[]> {
   const showIds = rels.map((r) => r.show_id);
   const { data, error } = await supabase
     .from("shows")
-    .select("*")
+    .select(SHOW_READ_COLUMNS)
     .in("id", showIds)
     .order("audience_size", { ascending: false });
   if (error || !data) return [];
-  return data.map(transformShow);
+  return (data as unknown as Record<string, unknown>[]).map(transformShow);
 }
 
 /**
@@ -211,11 +217,11 @@ export async function getShowsByIds(ids: string[]): Promise<Show[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("shows")
-    .select("*")
+    .select(SHOW_READ_COLUMNS)
     .in("id", ids)
     .eq("is_discoverable", true);
   if (error || !data) return [];
-  return data.map(transformShow);
+  return (data as unknown as Record<string, unknown>[]).map(transformShow);
 }
 
 /**
@@ -376,19 +382,20 @@ export async function getIOById(id: string): Promise<(InsertionOrder & { line_it
   const supabase = await createClient();
   const { data: ioData, error: ioError } = await supabase
     .from("insertion_orders")
-    .select("*")
+    .select(IO_READ_COLUMNS)
     .eq("id", id)
     .single();
   if (ioError || !ioData) return null;
+  const ioRow = ioData as unknown as InsertionOrder;
 
   const { data: lineItems, error: liError } = await supabase
     .from("io_line_items")
     .select("*")
-    .eq("io_id", ioData.id)
+    .eq("io_id", ioRow.id)
     .order("post_date", { ascending: true });
 
   return {
-    ...ioData,
+    ...ioRow,
     line_items: (liError || !lineItems ? [] : lineItems) as IOLineItem[],
   } as InsertionOrder & { line_items: IOLineItem[] };
 }
@@ -408,15 +415,16 @@ export async function createIO(
   const { data: ioData, error: ioError } = await supabase
     .from("insertion_orders")
     .insert(io)
-    .select()
+    .select(IO_READ_COLUMNS)
     .single();
   if (ioError || !ioData) {
     console.error("[createIO] IO insert failed:", ioError?.code, ioError?.message, ioError?.details, ioError?.hint);
     return null;
   }
+  const ioRow = ioData as unknown as InsertionOrder;
 
   // Insert line items with io_id
-  const itemsWithIoId = lineItems.map((li) => ({ ...li, io_id: ioData.id }));
+  const itemsWithIoId = lineItems.map((li) => ({ ...li, io_id: ioRow.id }));
   const { data: liData, error: liError } = await supabase
     .from("io_line_items")
     .insert(itemsWithIoId)
@@ -426,7 +434,7 @@ export async function createIO(
   }
 
   return {
-    ...ioData,
+    ...ioRow,
     line_items: (liError || !liData ? [] : liData) as IOLineItem[],
   } as InsertionOrder & { line_items: IOLineItem[] };
 }
@@ -717,6 +725,21 @@ export async function getAgentStats(agentId: string): Promise<AgentDashboardStat
 
 // ---- Invoice Engine Queries ----
 
+/** Publisher address for an invoice from-line. The user-client IO read is the access check. */
+async function invoiceFromEmail(agentEmail: string | null | undefined, ioId: string): Promise<string> {
+  if (agentEmail) return agentEmail;
+  const { data, error } = await supabaseAdmin
+    .from("insertion_orders")
+    .select("publisher_contact_email")
+    .eq("id", ioId)
+    .maybeSingle();
+  if (error) {
+    console.warn("[createInvoiceFromIO] publisher contact", error.code ?? "unknown");
+    return "";
+  }
+  return typeof data?.publisher_contact_email === "string" ? data.publisher_contact_email : "";
+}
+
 /** Create an invoice from an IO, persisting both invoice and line items in Supabase */
 export async function createInvoiceFromIO(
   ioId: string,
@@ -814,7 +837,7 @@ export async function createInvoiceFromIO(
     bill_to_name: billToName,
     bill_to_email: billToEmail,
     from_name: agent?.company_name ?? io.publisher_name,
-    from_email: agent?.email ?? io.publisher_contact_email,
+    from_email: await invoiceFromEmail(agent?.email, io.id),
     from_address: io.publisher_address,
     advertiser_name: io.advertiser_name,
     campaign_period: campaignPeriod,
@@ -1166,11 +1189,11 @@ export async function getShowBySlug(slug: string): Promise<Show | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("shows")
-    .select("*")
+    .select(SHOW_READ_COLUMNS)
     .eq("slug", slug)
     .single();
   if (error || !data) return null;
-  return transformShow(data);
+  return transformShow(data as unknown as Record<string, unknown>);
 }
 
 /**
@@ -1264,7 +1287,7 @@ export async function getShowsFiltered(filters: {
 
   let query = supabase
     .from("shows")
-    .select("*")
+    .select(SHOW_READ_COLUMNS)
     // Exclude non-discoverable shows from the catalog/discovery browse
     // (migration 031). Agent-scoped inventory is still narrowed by showIds below.
     .eq("is_discoverable", true)
@@ -1294,7 +1317,7 @@ export async function getShowsFiltered(filters: {
 
   const { data, error } = await query;
   if (error || !data) return [];
-  return data.map(transformShow);
+  return (data as unknown as Record<string, unknown>[]).map(transformShow);
 }
 
 export async function getAgentShowRelationship(
@@ -1734,13 +1757,13 @@ export async function getShowsNeedingEnrichment(agentId: string): Promise<Show[]
 
   const { data, error } = await supabase
     .from("shows")
-    .select("*")
+    .select(SHOW_READ_COLUMNS)
     .in("id", showIds)
     .or(`last_api_refresh.is.null,last_api_refresh.lt.${sevenDaysAgo.toISOString()}`)
     .order("name", { ascending: true });
 
   if (error || !data) return [];
-  return data.map(transformShow);
+  return (data as unknown as Record<string, unknown>[]).map(transformShow);
 }
 
 // ---- Campaign Queries ----
@@ -1757,6 +1780,11 @@ export async function createCampaign(campaign: {
   expansion_opportunities?: unknown[];
 }): Promise<Campaign | null> {
   const supabase = await createClient();
+  const clean = stripCampaignContactKeys({
+    recommendations: campaign.recommendations,
+    youtube_recommendations: campaign.youtube_recommendations ?? [],
+    expansion_opportunities: campaign.expansion_opportunities ?? [],
+  });
   const { data, error } = await supabase
     .from("campaigns")
     .insert({
@@ -1766,9 +1794,9 @@ export async function createCampaign(campaign: {
       budget_total: campaign.budget_total,
       platforms: campaign.platforms,
       status: campaign.status ?? "planned",
-      recommendations: campaign.recommendations,
-      youtube_recommendations: campaign.youtube_recommendations ?? [],
-      expansion_opportunities: campaign.expansion_opportunities ?? [],
+      recommendations: clean.recommendations,
+      youtube_recommendations: clean.youtube_recommendations,
+      expansion_opportunities: clean.expansion_opportunities,
     })
     .select()
     .single();
@@ -1857,10 +1885,11 @@ export async function updateCampaignScoredShows(
   scoringMeta: Record<string, unknown>
 ): Promise<boolean> {
   const supabase = await createClient();
+  const clean = stripCampaignContactKeys({ scored_shows: scoredShows });
   const { error } = await supabase
     .from("campaigns")
     .update({
-      scored_shows: scoredShows,
+      scored_shows: clean.scored_shows,
       scoring_meta: scoringMeta,
       status: "planned",
       updated_at: new Date().toISOString(),
@@ -1908,10 +1937,11 @@ export async function updateCampaignPlanHandoff(
   selectedShowIds: string[]
 ): Promise<boolean> {
   const supabase = await createClient();
+  const clean = stripCampaignContactKeys({ scored_shows: scoredShows });
   const { error } = await supabase
     .from("campaigns")
     .update({
-      scored_shows: scoredShows,
+      scored_shows: clean.scored_shows,
       scoring_meta: scoringMeta,
       selected_show_ids: selectedShowIds,
       status: "planned",
@@ -2223,15 +2253,15 @@ export async function getOutreachById(id: string): Promise<Outreach | null> {
 
 export async function getOutreachesForCampaign(
   campaignId: string
-): Promise<Outreach[]> {
+): Promise<Array<Omit<Outreach, "sent_to_email"> & { sent_to_email?: string }>> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("outreaches")
-    .select("*")
+    .select(OUTREACH_READ_COLUMNS)
     .eq("campaign_id", campaignId)
     .order("created_at", { ascending: false });
   if (error || !data) return [];
-  return data as Outreach[];
+  return data as unknown as Array<Omit<Outreach, "sent_to_email"> & { sent_to_email?: string }>;
 }
 
 export async function updateOutreachResponse(

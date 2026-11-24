@@ -9,6 +9,7 @@ const {
   createClient,
   supabaseAdmin,
   fetchSurfaceAttachment,
+  isShowsAdmin,
 } = vi.hoisted(() => {
   const chain = () => {
     const builder: Record<string, unknown> = {};
@@ -32,6 +33,7 @@ const {
     createClient: vi.fn(async () => ({ from: () => chain() })),
     supabaseAdmin: { from: vi.fn(() => chain()) },
     fetchSurfaceAttachment: vi.fn(),
+    isShowsAdmin: vi.fn(),
   };
 });
 
@@ -51,8 +53,11 @@ vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin }));
 vi.mock("@/lib/data/show-surfaces", () => ({
   fetchSurfaceAttachment: (...a: unknown[]) => fetchSurfaceAttachment(...a),
 }));
+vi.mock("@/lib/shows/can-edit-show", () => ({
+  isShowsAdmin: (...a: unknown[]) => isShowsAdmin(...a),
+}));
 
-import { PATCH, POST } from "./route";
+import { GET, PATCH, POST } from "./route";
 
 const SURFACE_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -102,11 +107,11 @@ function dealOwnedBy(userId: string) {
   };
 }
 
-function jsonReq(method: string, body: object): Request {
+function jsonReq(method: string, body?: object): Request {
   return new Request("http://x/api/deals/deal-1/io", {
     method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers: body && method !== "GET" ? { "Content-Type": "application/json" } : undefined,
+    body: body && method !== "GET" ? JSON.stringify(body) : undefined,
   });
 }
 
@@ -134,6 +139,7 @@ beforeEach(() => {
   getDealById.mockResolvedValue(dealOwnedBy(USER_ID));
   getIOByDealId.mockResolvedValue({ id: "io-1", io_number: "IO-2026-0004", line_items: [lineItem] });
   getNextIONumber.mockResolvedValue("IO-2026-0008");
+  isShowsAdmin.mockResolvedValue(false);
   persistIoForDeal.mockResolvedValue({
     ioId: "io-new",
     ioNumber: "IO-2026-0008",
@@ -238,6 +244,94 @@ describe("IO route party check", () => {
     const res = await POST(jsonReq("POST", {}) as never, params as never);
     expect(res.status).toBe(401);
     expect(getDealById).not.toHaveBeenCalled();
+  });
+
+  it("GET returns 403 for a non-party and 404 when the deal is missing", async () => {
+    getDealById.mockResolvedValue(null);
+    const missing = await GET(jsonReq("GET", {}) as never, params as never);
+    expect(missing.status).toBe(404);
+
+    getDealById.mockResolvedValue(dealOwnedBy("someone-else"));
+    const denied = await GET(jsonReq("GET", {}) as never, params as never);
+    expect(denied.status).toBe(403);
+    expect(getIOByDealId).not.toHaveBeenCalled();
+  });
+
+  it("GET hides the publisher email until unlock and shows it to the agent, admin, and unlocked brand", async () => {
+    const stored = {
+      id: "io-1",
+      publisher_contact_email: "host@example.test",
+      line_items: [],
+    };
+    getIOByDealId.mockResolvedValue(stored);
+    getDealById.mockResolvedValue({
+      ...dealOwnedBy(USER_ID),
+      outreach_id: "outreach-1",
+      status: "planning",
+      show_signed_at: null,
+      brand_signed_at: null,
+    });
+    const locked = await GET(jsonReq("GET", {}) as never, params as never);
+    const lockedBody = await locked.json();
+    expect(lockedBody.io.publisher_contact_email).toBe("");
+    expect(lockedBody.publisher_contact_hidden).toBe(true);
+    expect(JSON.stringify(lockedBody)).not.toContain("host@example.test");
+
+    getDealById.mockResolvedValue({
+      ...dealOwnedBy("brand-other"),
+      agent_id: USER_ID,
+      outreach_id: "outreach-1",
+      status: "planning",
+    });
+    const agent = await (await GET(jsonReq("GET", {}) as never, params as never)).json();
+    expect(agent.io.publisher_contact_email).toBe("host@example.test");
+    expect(agent.publisher_contact_hidden).toBe(false);
+
+    isShowsAdmin.mockResolvedValue(true);
+    getDealById.mockResolvedValue(dealOwnedBy("someone-else"));
+    const admin = await (await GET(jsonReq("GET", {}) as never, params as never)).json();
+    expect(admin.io.publisher_contact_email).toBe("host@example.test");
+    isShowsAdmin.mockResolvedValue(false);
+
+    getDealById.mockResolvedValue({
+      ...dealOwnedBy(USER_ID),
+      outreach_id: "outreach-1",
+      status: "show_signed",
+      show_signed_at: "2026-11-02",
+      brand_signed_at: "2026-11-01",
+    });
+    const unlocked = await (await GET(jsonReq("GET", {}) as never, params as never)).json();
+    expect(unlocked.io.publisher_contact_email).toBe("host@example.test");
+    expect(unlocked.publisher_contact_hidden).toBe(false);
+  });
+
+  it("PATCH from a brand with an empty publisher email does not change the stored value", async () => {
+    const updates: unknown[] = [];
+    createClient.mockResolvedValueOnce({
+      from: () => {
+        const builder: Record<string, unknown> = {};
+        const self = () => builder;
+        builder.update = vi.fn((payload: unknown) => {
+          updates.push(payload);
+          return builder;
+        });
+        builder.eq = vi.fn(self);
+        builder.select = vi.fn(self);
+        builder.insert = vi.fn(self);
+        builder.delete = vi.fn(self);
+        builder.not = vi.fn(self);
+        builder.then = (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({ data: [], error: null }).then(resolve);
+        return builder;
+      },
+    });
+    const res = await PATCH(
+      jsonReq("PATCH", { payment_terms: "Net 15", publisher_contact_email: "" }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expect(updates[0]).toMatchObject({ payment_terms: "Net 15" });
+    expect(updates[0]).not.toHaveProperty("publisher_contact_email");
   });
 });
 
