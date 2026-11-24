@@ -10,7 +10,10 @@ const { resendSend, resolveManagedDelivery, getAuthenticatedUser, maybeSingle, r
   getAuthenticatedUser: vi.fn(),
   maybeSingle: vi.fn(),
   rpc: vi.fn(async () => ({ data: true, error: null })),
-  showsById: new Map<string, { id: string; contact_email: string | null }>(),
+  showsById: new Map<
+    string,
+    { id: string; contact_email: string | null; is_discoverable?: boolean; podscan_id?: string }
+  >(),
 }));
 
 vi.mock("@/lib/email/send", () => ({
@@ -39,6 +42,9 @@ vi.mock("@/lib/supabase/admin", () => ({
         },
         in(_column: string, value: unknown) {
           filters.push({ op: "in", value });
+          return builder;
+        },
+        not() {
           return builder;
         },
         maybeSingle: async () => {
@@ -72,7 +78,7 @@ import { POST } from "./route";
 const draft = {
   show_id: "show-1",
   show_name: "The Daily Briefing",
-  contact_email: "brand@x.com",
+  contact_email: "brand@example.test",
   subject: "A March test",
   body: "We would like to run a three-episode test in March.",
 };
@@ -82,7 +88,7 @@ function ownedCampaign(userId = USER_ID) {
     data: {
       id: CAMPAIGN_ID,
       user_id: userId,
-      recommendations: [{ show_id: "show-1", contact_email: "brand@x.com" }],
+      recommendations: [{ show_id: "show-1", contact_email: "brand@example.test" }],
       youtube_recommendations: [],
       expansion_opportunities: [],
     },
@@ -104,6 +110,15 @@ beforeEach(() => {
   resendSend.mockResolvedValue({ data: { id: "msg" }, error: null });
   getAuthenticatedUser.mockResolvedValue({ id: USER_ID, email: "owner@example.com" });
   showsById.clear();
+  const catalogId = "33333333-3333-4333-8333-333333333333";
+  const catalog = {
+    id: catalogId,
+    contact_email: "brand@example.test",
+    is_discoverable: true,
+    podscan_id: "show-1",
+  };
+  showsById.set("show-1", catalog);
+  showsById.set(catalogId, catalog);
   maybeSingle.mockResolvedValue(ownedCampaign());
   resolveManagedDelivery.mockImplementation(
     async (input: { to: string; subject: string }) => ({
@@ -122,13 +137,13 @@ describe("POST /api/campaigns/outreach/send", () => {
     expect(body.results).toEqual([{ show_id: "show-1", success: true }]);
     expect(body.results[0]).not.toHaveProperty("to");
     expect(resolveManagedDelivery).toHaveBeenCalledWith({
-      to: "brand@x.com",
+      to: "brand@example.test",
       subject: "A March test",
     });
 
     const sent = resendSend.mock.calls[0][0];
     expect(sent.from).toBe("Taylslate <outreach@taylslate.com>");
-    expect(sent.to).toBe("brand@x.com");
+    expect(sent.to).toBe("brand@example.test");
     expect(sent.subject).toBe("A March test");
     expect(sent.html).toContain("A brand asked us to pass this along for The Daily Briefing");
     expect(sent.html).toContain("three-episode test");
@@ -138,7 +153,7 @@ describe("POST /api/campaigns/outreach/send", () => {
     resolveManagedDelivery.mockResolvedValue({
       ok: true,
       to: "ops@taylslate.com",
-      subject: "[managed: brand@x.com] A March test",
+      subject: "[managed: brand@example.test] A March test",
     });
 
     const res = await POST(post());
@@ -152,7 +167,7 @@ describe("POST /api/campaigns/outreach/send", () => {
 
     const sent = resendSend.mock.calls[0][0];
     expect(sent.to).toBe("ops@taylslate.com");
-    expect(sent.subject).toBe("[managed: brand@x.com] A March test");
+    expect(sent.subject).toBe("[managed: brand@example.test] A March test");
     expect(sent.from).toBe("Taylslate <outreach@taylslate.com>");
     expect(sent.html).toContain("three-episode test");
   });
@@ -229,7 +244,7 @@ describe("POST /api/campaigns/outreach/send", () => {
       success: false,
     });
     expect(resendSend).toHaveBeenCalledTimes(1);
-    expect(resendSend.mock.calls[0][0].to).toBe("brand@x.com");
+    expect(resendSend.mock.calls[0][0].to).toBe("brand@example.test");
   });
 
   it("does not send to a catalog show that is not on the campaign", async () => {
@@ -250,7 +265,7 @@ describe("POST /api/campaigns/outreach/send", () => {
 
   it("sends to a catalog show that is on the campaign", async () => {
     const listed = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    showsById.set(listed, { id: listed, contact_email: "host@example.test" });
+    showsById.set(listed, { id: listed, contact_email: "host@example.test", is_discoverable: true });
     maybeSingle.mockResolvedValue({
       data: {
         id: CAMPAIGN_ID,

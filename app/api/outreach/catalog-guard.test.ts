@@ -41,6 +41,9 @@ function from(table: string) {
       filters.push({ op: "in", column, value });
       return api;
     },
+    not() {
+      return api;
+    },
     update() {
       return api;
     },
@@ -137,7 +140,7 @@ describe("POST /api/outreach catalog guard", () => {
     const res = await POST(post(HIDDEN) as never);
     expect(res.status).toBe(404);
     const body = await res.json();
-    expect(body.error).toBe("Campaign not found");
+    expect(body.error).toBe("Show not found on this campaign");
     expect(JSON.stringify(body)).not.toContain("hidden@example.test");
     expect(sendEmail).not.toHaveBeenCalled();
     expect(createOutreach).not.toHaveBeenCalled();

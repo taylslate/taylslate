@@ -9,6 +9,8 @@ const {
   createIO,
   getNextIONumber,
   getShowBySlug,
+  getShowById,
+  pitchableShowIds,
   updateDeal,
   fetchSurfaceAttachment,
 } = vi.hoisted(() => ({
@@ -20,6 +22,8 @@ const {
   createIO: vi.fn(),
   getNextIONumber: vi.fn(),
   getShowBySlug: vi.fn(),
+  getShowById: vi.fn(),
+  pitchableShowIds: vi.fn(),
   updateDeal: vi.fn(),
   fetchSurfaceAttachment: vi.fn(),
 }));
@@ -37,7 +41,24 @@ vi.mock("@/lib/data/queries", () => ({
   createIO: (...a: unknown[]) => createIO(...a),
   getNextIONumber: (...a: unknown[]) => getNextIONumber(...a),
   getShowBySlug: (...a: unknown[]) => getShowBySlug(...a),
+  getShowById: (...a: unknown[]) => getShowById(...a),
   updateDeal: (...a: unknown[]) => updateDeal(...a),
+}));
+
+vi.mock("@/lib/relay/recipient", () => ({
+  pitchableShowIds: (...a: unknown[]) => pitchableShowIds(...a),
+}));
+
+vi.mock("@/lib/supabase/admin", () => ({
+  supabaseAdmin: {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: { contact_email: "host@example.test" }, error: null }),
+        }),
+      }),
+    }),
+  },
 }));
 
 import { POST } from "./route";
@@ -93,8 +114,10 @@ beforeEach(() => {
   getShowBySlug.mockResolvedValue({
     id: "show-1",
     name: "Daily Briefing",
-    contact: { name: "Host", email: "host@show.test" },
+    contact: { name: "Host", email: "" },
   });
+  getShowById.mockResolvedValue(null);
+  pitchableShowIds.mockImplementation(async (_user: unknown, ids: string[]) => new Set(ids));
   createDeal.mockImplementation(async (row: { id?: string }) => ({ id: "deal-1", ...row }));
   getNextIONumber.mockResolvedValue("IO-2026-0009");
   createIO.mockResolvedValue({ id: "io-1" });
@@ -265,5 +288,71 @@ describe("POST /api/campaigns/plan/generate-ios", () => {
     expect(await res.json()).toEqual({ error: "invalid_surface" });
     expect(createDeal).not.toHaveBeenCalled();
     expect(createIO).not.toHaveBeenCalled();
+  });
+
+  it("does not plant a contact or a discoverable show from campaign JSON", async () => {
+    const hidden = "33333333-3333-4333-8333-333333333333";
+    getShowBySlug.mockResolvedValue(null);
+    getShowById.mockResolvedValue({ id: hidden, name: "Hidden", is_discoverable: false });
+    pitchableShowIds.mockResolvedValue(new Set());
+    createShow.mockResolvedValue({
+      id: "made-1",
+      name: "Daily Briefing",
+      is_discoverable: false,
+      contact: { name: "Daily", email: "", method: "email" },
+    });
+    const row = campaign({ version: 2, flight: { mode: "dates", start_date: "2026-09-01", end_date: "2026-10-15" } });
+    row.scored_shows[0].podcastId = hidden;
+    row.scored_shows[0].contactEmail = "planted@example.test";
+    row.media_plan.line_items[0].podcast_id = hidden;
+    getCampaignById.mockResolvedValue(row);
+
+    const res = await POST(post() as never);
+    expect(res.status).toBe(200);
+    expect(getShowById).toHaveBeenCalledWith(hidden);
+    expect(createShow).toHaveBeenCalledTimes(1);
+    const saved = createShow.mock.calls[0][0] as {
+      is_discoverable?: boolean;
+      agent_id?: string;
+      contact: { email: string };
+    };
+    expect(saved.is_discoverable).toBe(false);
+    expect(saved.agent_id).toBeUndefined();
+    expect(saved.contact.email).toBe("");
+    expect(JSON.stringify(saved)).not.toContain("planted@example.test");
+    expect(createDeal.mock.calls[0][0].show_id).toBe("made-1");
+    expect(createIO.mock.calls[0][0].publisher_contact_email).toBe("host@example.test");
+    expect(JSON.stringify(await res.json())).not.toContain("host@example.test");
+    expect(JSON.stringify(createShow.mock.calls)).not.toContain("planted@example.test");
+  });
+
+  it("does not reuse a slug match the caller cannot pitch", async () => {
+    const hidden = "44444444-4444-4444-8444-444444444444";
+    getShowBySlug.mockResolvedValue({
+      id: hidden,
+      name: "Daily Briefing",
+      is_discoverable: false,
+      contact: { name: "Hidden", email: "hidden@example.test" },
+    });
+    pitchableShowIds.mockResolvedValue(new Set());
+    createShow.mockResolvedValue({
+      id: "made-1",
+      name: "Daily Briefing",
+      is_discoverable: false,
+      contact: { name: "Daily", email: "", method: "email" },
+    });
+    getCampaignById.mockResolvedValue(
+      campaign({ version: 2, flight: { mode: "dates", start_date: "2026-09-01", end_date: "2026-10-15" } })
+    );
+
+    const res = await POST(post() as never);
+    expect(res.status).toBe(200);
+    expect(pitchableShowIds).toHaveBeenCalledWith("user-1", [hidden]);
+    expect(createDeal.mock.calls[0][0].show_id).toBe("made-1");
+    expect(createShow).toHaveBeenCalled();
+    const saved = createShow.mock.calls[0][0] as { contact: { email: string } };
+    expect(saved.contact.email).toBe("");
+    expect(createIO.mock.calls[0][0].publisher_contact_email).toBe("host@example.test");
+    expect(JSON.stringify(await res.json())).not.toContain("hidden@example.test");
   });
 });

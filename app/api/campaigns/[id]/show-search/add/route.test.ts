@@ -389,7 +389,6 @@ describe("POST /api/campaigns/[id]/show-search/add", () => {
       source: "search",
       estimatedCpm: 40,
       description: "",
-      contactEmail: null,
       costIsEstimate: false,
       audienceIsEstimate: false,
     });
@@ -454,7 +453,7 @@ describe("POST /api/campaigns/[id]/show-search/add", () => {
     expect(scored[0].estimatedCpm).toBe(28);
     expect(scored[0].costIsEstimate).toBe(true);
     expect(scored[0].audienceIsEstimate).toBe(true);
-    expect(scored[0].contactEmail).toBeNull();
+    expect(scored[0]).not.toHaveProperty("contactEmail");
     expect(scored[0].description).toBe("");
     expect(JSON.stringify(lastUpdate?.payload)).not.toContain("discovered-podscan");
     expect(JSON.stringify(lastUpdate?.payload)).not.toContain("secret-db-text");

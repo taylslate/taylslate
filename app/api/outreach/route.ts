@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
         { status: 422 }
       );
     }
-    return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+    return NextResponse.json({ error: "Show not found on this campaign" }, { status: 404 });
   }
 
   const stripped = stripContactDetails(body.pitch_body.trim(), { unlocked: false });

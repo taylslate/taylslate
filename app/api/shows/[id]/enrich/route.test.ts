@@ -42,11 +42,17 @@ vi.mock("@/lib/enrichment/rephonic", () => ({
   getRephonicClientSafe: () => null,
 }));
 
+import { SHOW_READ_COLUMNS } from "@/lib/shows/read-columns";
 import { POST } from "./route";
+
+let selected = "";
 
 function showQuery(row: Record<string, unknown> | null) {
   const builder = {
-    select: () => builder,
+    select: (cols?: string) => {
+      selected = cols ?? "";
+      return builder;
+    },
     eq: () => builder,
     single: async () => ({ data: row, error: row ? null : { message: "missing" } }),
   };
@@ -77,6 +83,8 @@ describe("POST /api/shows/[id]/enrich", () => {
     expect(res.status).toBe(403);
     expect(updateShowEnrichment).not.toHaveBeenCalled();
     expect(canEditShow).toHaveBeenCalledWith("user-1", "show-1");
+    expect(selected).toBe(SHOW_READ_COLUMNS);
+    expect(selected).not.toContain("contact_email");
   });
 
   it("continues for the owner", async () => {

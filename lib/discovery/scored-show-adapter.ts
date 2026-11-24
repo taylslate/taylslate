@@ -118,7 +118,6 @@ export function tieredShowToScoredShowRecord(
     language: null,
     episodeCount: 0,
     lastPostedAt: null,
-    contactEmail: show.contact?.email ?? null,
     audienceSize: Number.isFinite(show.audience_size) ? show.audience_size : 0,
     prsScore: null,
     compositeScore: entry.composite ?? 0,

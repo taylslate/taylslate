@@ -1,14 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const getAuthenticatedUser = vi.fn();
-const getCampaignById = vi.fn();
-const getOutreachesForCampaign = vi.fn();
+const { getAuthenticatedUser, getCampaignById, getOutreachesForCampaign, contactVisibleOutreachIds } =
+  vi.hoisted(() => ({
+    getAuthenticatedUser: vi.fn(),
+    getCampaignById: vi.fn(),
+    getOutreachesForCampaign: vi.fn(),
+    contactVisibleOutreachIds: vi.fn(),
+  }));
 
 vi.mock("@/lib/data/queries", () => ({
   getAuthenticatedUser: (...args: unknown[]) => getAuthenticatedUser(...args),
   getCampaignById: (...args: unknown[]) => getCampaignById(...args),
   getOutreachesForCampaign: (...args: unknown[]) => getOutreachesForCampaign(...args),
 }));
+
+vi.mock("@/lib/shows/can-edit-show", () => ({
+  isShowsAdmin: async () => false,
+}));
+
+vi.mock("@/lib/relay/contact-visibility", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/relay/contact-visibility")>(
+    "@/lib/relay/contact-visibility"
+  );
+  return {
+    ...actual,
+    contactVisibleOutreachIds: (...args: unknown[]) => contactVisibleOutreachIds(...args),
+  };
+});
 
 import { GET } from "./route";
 
@@ -18,7 +36,7 @@ const stored = {
   id: "o1",
   campaign_id: "c1",
   show_name: "Daily Briefing",
-  sent_to_email: "host@daily.fm",
+  sent_to_email: "host@example.test",
   token: "eyJhbGciOiJIUzI1NiJ9.payload.signature",
 };
 
@@ -31,6 +49,7 @@ describe("GET /api/campaigns/[id]/outreach", () => {
       stored,
       { ...stored, id: "o2", token: "aaa.bbb.ccc" },
     ]);
+    contactVisibleOutreachIds.mockResolvedValue(new Set());
   });
 
   it("returns the owner's rows with an empty token", async () => {
@@ -44,6 +63,14 @@ describe("GET /api/campaigns/[id]/outreach", () => {
       show_name: "Daily Briefing",
       sent_to_email: "",
     });
+  });
+
+  it("keeps sent_to_email on an unlocked row and blanks a locked row", async () => {
+    contactVisibleOutreachIds.mockResolvedValue(new Set(["o1"]));
+    const res = await GET({} as never, params as never);
+    const body = await res.json();
+    expect(body.outreaches[0].sent_to_email).toBe("host@example.test");
+    expect(body.outreaches[1].sent_to_email).toBe("");
   });
 
   it("returns 404 when the caller does not own the campaign", async () => {

@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getAuthenticatedUser, ensureProfile, addDeals, createShow, createCampaign } = vi.hoisted(() => ({
+const { getAuthenticatedUser, ensureProfile, addDeals, createShow, createCampaign, from } = vi.hoisted(() => ({
   getAuthenticatedUser: vi.fn(),
   ensureProfile: vi.fn(),
   addDeals: vi.fn(),
   createShow: vi.fn(),
   createCampaign: vi.fn(),
+  from: vi.fn(),
 }));
 
 vi.mock("@/lib/data/queries", () => ({
@@ -16,7 +17,25 @@ vi.mock("@/lib/data/queries", () => ({
   createCampaign: (...a: unknown[]) => createCampaign(...a),
 }));
 
+vi.mock("@/lib/supabase/admin", () => ({
+  supabaseAdmin: { from: (...a: unknown[]) => from(...a) },
+}));
+
 import { POST } from "./route";
+
+const HIDDEN = "33333333-3333-4333-8333-333333333333";
+
+function chain(data: unknown) {
+  const builder: Record<string, unknown> = {};
+  const self = () => builder;
+  builder.select = self;
+  builder.eq = self;
+  builder.not = self;
+  builder.maybeSingle = async () => ({ data, error: null });
+  builder.then = (resolve: (value: unknown) => unknown) =>
+    Promise.resolve({ data: Array.isArray(data) ? data : [], error: null }).then(resolve);
+  return builder;
+}
 
 function podcast(overrides: Record<string, unknown> = {}) {
   return {
@@ -55,6 +74,11 @@ beforeEach(() => {
   ensureProfile.mockResolvedValue({ id: "user-1" });
   createCampaign.mockResolvedValue({ id: "camp-1" });
   addDeals.mockImplementation(async (rows: unknown[]) => rows);
+  createShow.mockResolvedValue({ id: "made-1", name: "Discovered" });
+  from.mockImplementation((table: string) => {
+    if (table === "shows") return chain({ id: HIDDEN, is_discoverable: false });
+    return chain([]);
+  });
 });
 
 afterEach(() => {
@@ -119,5 +143,40 @@ describe("POST /api/campaigns/deals flight dates", () => {
     expect(row.flight_start).toBe("2026-07-01");
     expect(row.flight_end).toBe("2026-07-15");
     expect(row.status).toBe("planning");
+  });
+
+  it("does not plant a contact or a discoverable show, and skips a hidden uuid", async () => {
+    const res = await POST(
+      post({
+        campaign_name: "Fall",
+        brief: { version: 2 },
+        recommendations: [
+          podcast({ show_id: "discovered-1", contact_email: "planted@example.test" }),
+          podcast({ show_id: HIDDEN, contact_email: "hidden@example.test" }),
+        ],
+        youtube_recommendations: [],
+      }) as never
+    );
+    expect(res.status).toBe(200);
+    expect(createShow).toHaveBeenCalledTimes(1);
+    const saved = createShow.mock.calls[0][0] as {
+      is_discoverable?: boolean;
+      agent_id?: string;
+      contact: { email: string };
+    };
+    expect(saved.is_discoverable).toBe(false);
+    expect(saved.agent_id).toBeUndefined();
+    expect(saved.contact.email).toBe("");
+    expect(JSON.stringify(createShow.mock.calls)).not.toContain("planted@example.test");
+    expect(createShow.mock.calls[0]).toHaveLength(1);
+    const body = await res.json();
+    expect(body.skipped).toBe(1);
+    expect(addDeals).toHaveBeenCalledTimes(1);
+    expect(addDeals.mock.calls[0][0][0].show_id).toBe("made-1");
+    const savedCampaign = createCampaign.mock.calls[0][0] as {
+      recommendations: Array<{ contact_email?: string }>;
+    };
+    expect(savedCampaign.recommendations[0]).not.toHaveProperty("contact_email");
+    expect(JSON.stringify(savedCampaign)).not.toContain("planted@example.test");
   });
 });

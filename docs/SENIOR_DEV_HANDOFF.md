@@ -4149,3 +4149,55 @@ New tests cover strip patterns and a long-string timing guard, unlock states, to
 ### Review fixes
 
 The contact stripper no longer rescans a phone run one character at a time, and the LinkedIn pattern uses a bounded host. A catalog show id is resolved only when that id is already on the campaign. `serializeShow(row, false)` hides the email. Contact visibility reads are chunked at 80, and list routes only ask about shows that receive the full object. The outreach page loads reach flags in one batch. Migration 094 adds `idx_relay_messages_thread_id`. `lib/podscan-import/exposure.test.ts` now expects the boolean `serializeShow` call to hide `contact_email`. That file was not on the original Owns list, and the new default made its old assertion false.
+
+## RELAY1c: hide show contact from the data API
+
+### What was built
+
+Migration 102 is a file only. It is not applied. `authenticated` loses table SELECT on `shows`, `outreaches`, and `insertion_orders`, then receives column SELECT without `contact_email`, `sent_to_email`, or `publisher_contact_email`. `anon` keeps nothing. Policies and `service_role` stay. The same statement strips `contactEmail` and `contact_email` from saved campaign JSON. On 2026-11-23 that is 2 campaigns and 39 scored show elements.
+
+User-scoped reads of those tables name `lib/shows/read-columns.ts`. The address is added back only after `contactVisibleShowIds` or `contactVisibleOutreachIds`, through `attachVisibleShowContacts` and `attachVisibleOutreachEmails`. Campaign writers no longer store a show contact. Recipient resolution reads the catalog with the service role. A hidden show needs an approved roster row or a deal from an accepted outreach. A planted address in campaign JSON is never used.
+
+GET `/api/deals/[id]/io` and POST `/api/deals/[id]/io/send` require deal party membership. A locked brand gets an empty publisher email and `publisher_contact_hidden: true`. A brand save with an empty publisher email does not wipe the stored value. The send response drops `senderEmail`. The send recipient is the agency or advertiser address. Legacy create-deals and generate-ios cannot plant a discoverable show or a contact from the request or from campaign JSON.
+
+POST and PATCH `/api/deals/[id]/io` use that same blanking, including the 409 returned when an IO already exists. A locked brand cannot write `publisher_contact_email` on PATCH or on a new POST. generate-ios runs `pitchableShowIds` on a slug match and does not reuse the show or store its address when the gate fails. A shared Podscan id prefers the discoverable row, then a tied row, ordered by id. The contact-read guard rejects `shows(*)`, `outreaches(*)`, `insertion_orders(*)`, and embeds that name a withheld column, on any non-admin select. IO route errors return a generic message and log `error.code` only.
+
+102 does not revoke UPDATE on `campaigns.selected_show_ids`. One column would not close a path the brand can also write through the JSON arrays. RELAY1d validates selections. io/generate still returns the IO row without `publisher_contact_email` until RELAY1d.
+
+### Where
+
+- `supabase/migrations/102_hide_show_contact_columns.sql` and its test
+- `lib/shows/read-columns.ts`
+- `lib/relay/campaign-contacts.ts`, `lib/relay/contact-visibility.ts`, `lib/relay/recipient.ts`
+- `lib/data/queries.ts` (the 12 reads, the invoice fallback, and the three campaign writers)
+- `lib/discovery/direct-search.ts`, `lib/discovery/scored-show-adapter.ts`
+- `app/api/shows/route.ts`, `app/api/shows/[id]/route.ts`, `app/api/shows/[id]/enrich/route.ts`
+- `app/(dashboard)/shows/page.tsx`
+- `app/api/campaigns/[id]/outreach/route.ts`, `app/(dashboard)/campaigns/[id]/outreach/page.tsx`
+- `app/api/outreach/route.ts` (not-found copy only)
+- `app/api/campaigns/deals/route.ts`, `app/api/campaigns/plan/generate-ios/route.ts`
+- `app/api/deals/[id]/io/route.ts`, `app/api/deals/[id]/io/send/route.ts`
+- `lib/relay/contact-reads.test.ts`
+- `docs/jobs/RELAY1c.md`
+
+Tests outside the original Owns list that had to move with the new boundary: `app/api/campaigns/[id]/show-search/add/route.test.ts`, `app/api/outreach/catalog-guard.test.ts`, `app/api/campaigns/outreach/send/route.test.ts`, `lib/security/rate-limit.test.ts`.
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 491 files, 3992 passed, 41 skipped.
+
+`npx eslint` on the changed TypeScript files: 0 errors. Pre-existing warnings remain on `lib/discovery/scored-show-adapter.test.ts` (`w7` unused) and `lib/security/rate-limit.test.ts` (`enforceAuthMagic` unused).
+
+`npx next build` compiled successfully and generated 149 pages.
+
+PGlite proves the column revoke, the owner policy, the scrub, and a second run that updates 0 rows. No test sends real mail. 102 was not applied.
+
+### Known gaps
+
+- Migration 102 is not applied. Apply it on `ldtmhafewfifdizgfrnn` only when Chris names 102. It scrubs 2 live campaigns and 39 saved contact entries. 28 Podscan-only saved shows in one April campaign will show "No contact on file yet".
+- After it is applied, run the introspection block in the migration header.
+- IO document text, legacy IO screens, campaign selections validation, and the dead "Copy email" buttons are RELAY1d. RELAY1d has no migration.
+- io/generate's JSON for the agent side does not include the publisher address until RELAY1d. The stored IO still has it, read with the service role at generate-ios time.
+- This PR does not merge.

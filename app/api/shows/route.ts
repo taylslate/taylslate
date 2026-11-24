@@ -16,7 +16,7 @@ import {
   projectShowsForViewer,
   stripOwnershipStatus,
 } from "@/lib/shows/public-fields";
-import { contactVisibleShowIds } from "@/lib/relay/contact-visibility";
+import { attachVisibleShowContacts, contactVisibleShowIds } from "@/lib/relay/contact-visibility";
 import { verifiedShowIds } from "@/lib/shows/verified-flag";
 
 export async function GET(request: NextRequest) {
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
     const profile = await getUserProfile(user.id);
 
     if (profile?.role === "agent") {
-      const shows = await attachOwnershipStatus(
+      const loaded = await attachOwnershipStatus(
         await getShowsFiltered({
           search,
           platform,
@@ -64,6 +64,11 @@ export async function GET(request: NextRequest) {
           limit,
         })
       );
+      const contactIds = await contactVisibleShowIds(
+        user.id,
+        loaded.map((show) => show.id)
+      );
+      const shows = await attachVisibleShowContacts(loaded, contactIds);
       if (!shows.some((show) => hasOwnershipStatus(show))) return NextResponse.json(shows);
       if (await isShowsAdmin(user.id)) return NextResponse.json(shows);
       return NextResponse.json(stripOwnershipStatus(shows, new Set()));
@@ -73,7 +78,7 @@ export async function GET(request: NextRequest) {
     // profile tie, or already has a deal on it. Agents returned their
     // own roster above, in full. Signed-out callers are rejected above.
     // A requested limit is still forwarded and still caps at 100.
-    const shows = await attachOwnershipStatus(
+    const loaded = await attachOwnershipStatus(
       hasFilters
         ? await getShowsFiltered({
             search,
@@ -85,8 +90,9 @@ export async function GET(request: NextRequest) {
           })
         : await getAllShows()
     );
-    const fullIds = await fullShowIdsForCaller(user.id, shows);
+    const fullIds = await fullShowIdsForCaller(user.id, loaded);
     const contactIds = await contactVisibleShowIds(user.id, [...fullIds]);
+    const shows = await attachVisibleShowContacts(loaded, contactIds);
     const projected = projectShowsForViewer(shows, fullIds, contactIds);
     if (!projected.some((show) => hasOwnershipStatus(show))) {
       return NextResponse.json(await withVerified(projected));

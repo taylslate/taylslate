@@ -599,7 +599,7 @@ export interface ScoredShowRecord {
   language: string | null;
   episodeCount: number;
   lastPostedAt: string | null;
-  contactEmail: string | null;
+  contactEmail?: string | null;
   audienceSize: number;
   prsScore: number | null;
   compositeScore: number;

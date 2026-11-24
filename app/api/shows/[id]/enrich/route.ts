@@ -24,6 +24,7 @@ import { isVerifiedPodcastMatch } from "@/lib/enrichment/podscan-match";
 import { getYouTubeClientSafe } from "@/lib/enrichment/youtube";
 import { getRephonicClientSafe } from "@/lib/enrichment/rephonic";
 import { canEditShow } from "@/lib/shows/can-edit-show";
+import { SHOW_READ_COLUMNS } from "@/lib/shows/read-columns";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -45,13 +46,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // ---- Load existing show ----
     const { data: show, error: showError } = await supabase
       .from("shows")
-      .select("*")
+      .select(SHOW_READ_COLUMNS)
       .eq("id", id)
       .single();
 
     if (showError || !show) {
       return NextResponse.json({ error: "Show not found" }, { status: 404 });
     }
+    const row = show as unknown as Record<string, unknown>;
 
     if (!(await canEditShow(user.id, id))) {
       return NextResponse.json(
@@ -61,10 +63,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     // ---- Route by platform ----
-    if (show.platform === "youtube") {
-      return enrichYouTube(show, id);
+    if (row.platform === "youtube") {
+      return enrichYouTube(row, id);
     } else {
-      return enrichPodcast(show, id);
+      return enrichPodcast(row, id);
     }
   } catch (err) {
     console.error("[enrich] Unexpected error:", err);

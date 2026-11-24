@@ -4,6 +4,7 @@ import { EMAIL_ADDRESS_IO, viaTaylslateFrom } from "@/lib/email/addresses";
 import { renderIoAttachmentEmail } from "@/lib/email/templates/io-attachment";
 import { resolveManagedDelivery } from "@/lib/email/send";
 import { getAuthenticatedUser, getDealById, getShowById, getIOByDealId, getProfileById, getNextIONumber, updateDeal, markInsertionOrderSent } from "@/lib/data/queries";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
 import { generateIOPdf } from "@/lib/pdf/io-pdf";
 import type { InsertionOrder, IOLineItem, Show, Deal, Profile } from "@/lib/data";
 
@@ -102,6 +103,11 @@ export async function POST(
     if (!deal) {
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
+    const party =
+      deal.agent_id === user.id || deal.brand_id === user.id || deal.agency_id === user.id;
+    if (!party && !(await isShowsAdmin(user.id))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const show = await getShowById(deal.show_id);
     if (!show) {
@@ -112,12 +118,10 @@ export async function POST(
     const existingIO = await getIOByDealId(deal.id);
     let io: InsertionOrder;
     let senderName: string;
-    let senderEmail: string;
 
     if (existingIO) {
       io = existingIO;
       senderName = existingIO.publisher_contact_name;
-      senderEmail = existingIO.publisher_contact_email;
     } else {
       const brand = await getProfileById(deal.brand_id);
       const agency = deal.agency_id ? await getProfileById(deal.agency_id) : undefined;
@@ -126,7 +130,6 @@ export async function POST(
       const built = buildIOFromDeal(deal, show, brand, agency, agent, ioNumber);
       io = built.io;
       senderName = built.agent?.full_name ?? "Taylslate";
-      senderEmail = built.agent?.email ?? "";
     }
 
     // Determine recipient: agency if present, otherwise advertiser/brand
@@ -184,10 +187,8 @@ export async function POST(
     });
 
     if (error) {
-      return NextResponse.json(
-        { error: `Failed to send: ${error.message}` },
-        { status: 500 }
-      );
+      console.warn("[io/send]", (error as { code?: string }).code ?? "unknown");
+      return NextResponse.json({ error: "Failed to send" }, { status: 500 });
     }
 
     // A managed reroute or a skipped send is not an IO the brand was sent.
@@ -208,13 +209,9 @@ export async function POST(
       subject: delivery.subject,
       ioNumber: io.io_number,
       senderName,
-      senderEmail,
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json(
-      { error: `Email send failed: ${message}` },
-      { status: 500 }
-    );
+  } catch {
+    console.warn("[io/send]", "unknown");
+    return NextResponse.json({ error: "Email send failed" }, { status: 500 });
   }
 }

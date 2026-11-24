@@ -26,14 +26,21 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 const sendEmail = vi.fn().mockResolvedValue({ ok: true, id: "msg_test" });
-const resolveOutreachRecipient = vi.fn(async (...args: unknown[]) => {
-  void args;
-  return {
-  ok: true as const,
-  email: "host@daily.fm",
-  catalogShowId: null as string | null,
-  };
-});
+const resolveOutreachRecipient = vi.fn(
+  async (
+    ...args: unknown[]
+  ): Promise<
+    | { ok: true; email: string; catalogShowId: string | null }
+    | { ok: false; reason: "not_found" | "no_contact" }
+  > => {
+    void args;
+    return {
+      ok: true,
+      email: "host@example.test",
+      catalogShowId: null,
+    };
+  }
+);
 const createRelayThread = vi.fn(async (...args: unknown[]) => {
   void args;
   return null as { id?: string; address_token: string } | null;
@@ -74,7 +81,7 @@ const validBody = {
   show: {
     podscan_id: "p1",
     show_name: "Daily Briefing",
-    contact_email: "host@daily.fm",
+    contact_email: "host@example.test",
     audience_size: 12000,
     categories: ["business"],
   },
@@ -117,6 +124,7 @@ describe("POST /api/outreach", () => {
     getCampaignById.mockResolvedValue({ id: "c1", user_id: "u_OTHER", name: "X" });
     const res = await POST(jsonReq(validBody) as never);
     expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Campaign not found" });
   });
 
   it("rejects pitch body that is too short", async () => {
@@ -153,7 +161,7 @@ describe("POST /api/outreach", () => {
     expect(createOutreach).toHaveBeenCalledOnce();
     const draft = createOutreach.mock.calls[0][0];
     expect(draft.brand_profile_id).toBe("bp1");
-    expect(draft.sent_to_email).toBe("host@daily.fm");
+    expect(draft.sent_to_email).toBe("host@example.test");
     expect(draft.proposed_cpm).toBe(28);
     expect(draft.token).toMatch(/^retired:/);
     for (const call of adminFromBuilder.update.mock.calls) {
@@ -177,7 +185,7 @@ describe("POST /api/outreach", () => {
       "Aurora Sleep via Taylslate <outreach@taylslate.com>"
     );
     expect(sendEmail.mock.calls[0][0].reply_to).toBe("outreach@taylslate.com");
-    expect(sendEmail.mock.calls[0][0].to).toBe("host@daily.fm");
+    expect(sendEmail.mock.calls[0][0].to).toBe("host@example.test");
     expect(sendEmail.mock.calls[0][0]).not.toHaveProperty("attachments");
     expect(body.outreach.sent_to_email).toBe("");
     expect(body.contact_details_removed).toBe(false);
@@ -269,5 +277,16 @@ describe("POST /api/outreach", () => {
     expect(JSON.stringify(await res.json())).not.toContain("abcdefghijklmnopqrstuvwxyz");
     if (previous === undefined) delete process.env.RELAY_INBOUND_ENABLED;
     else process.env.RELAY_INBOUND_ENABLED = previous;
+  });
+
+  it("returns show not found when the recipient gate refuses the show", async () => {
+    getAuthenticatedUser.mockResolvedValue({ id: "u1" });
+    getBrandProfileByUserId.mockResolvedValue({ id: "bp1", user_id: "u1" });
+    getCampaignById.mockResolvedValue({ id: "c1", user_id: "u1", name: "C" });
+    resolveOutreachRecipient.mockResolvedValueOnce({ ok: false, reason: "not_found" });
+    const res = await POST(jsonReq(validBody) as never);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Show not found on this campaign" });
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 });

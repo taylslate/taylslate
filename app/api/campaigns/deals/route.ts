@@ -2,6 +2,72 @@ import { NextRequest, NextResponse } from "next/server";
 import type { ShowRecommendation, YouTubeRecommendation } from "@/lib/data/types";
 import { getAuthenticatedUser, ensureProfile, addDeals, createShow, createCampaign } from "@/lib/data/queries";
 import { resolveDealFlight } from "@/lib/deals/campaign-flight";
+import { stripCampaignContactKeys } from "@/lib/relay/campaign-contacts";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+
+const SHOW_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const EMPTY_CONTACT = { name: "", email: "", method: "email" as const };
+
+async function existingShowAllowed(userId: string, showId: string): Promise<boolean> {
+  if (!SHOW_UUID.test(showId)) return true;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("shows")
+      .select("id, is_discoverable")
+      .eq("id", showId)
+      .maybeSingle();
+    if (error) {
+      console.warn("[campaigns/deals] skipped show", error.code ?? "unknown");
+      return false;
+    }
+    if (!data || typeof data.id !== "string") return false;
+    if (data.is_discoverable === true) return true;
+
+    const profiles = await callerBrandProfileIds(userId);
+    const deals = await supabaseAdmin
+      .from("deals")
+      .select("outreach_id, brand_id, agency_id, brand_profile_id")
+      .eq("show_id", showId)
+      .not("outreach_id", "is", null);
+    if (deals.error) {
+      console.warn("[campaigns/deals] skipped show", deals.error.code ?? "unknown");
+      return false;
+    }
+    for (const row of deals.data ?? []) {
+      if (row.outreach_id == null || row.outreach_id === "") continue;
+      const profileId = typeof row.brand_profile_id === "string" ? row.brand_profile_id : null;
+      if (
+        row.brand_id === userId ||
+        row.agency_id === userId ||
+        (profileId != null && profiles.has(profileId))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    console.warn("[campaigns/deals] skipped show", "unknown");
+    return false;
+  }
+}
+
+async function callerBrandProfileIds(userId: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const { data, error } = await supabaseAdmin
+    .from("brand_profiles")
+    .select("id")
+    .eq("user_id", userId);
+  if (error) {
+    console.warn("[campaigns/deals] skipped show", error.code ?? "unknown");
+    return ids;
+  }
+  for (const row of data ?? []) {
+    if (typeof row.id === "string" && row.id) ids.add(row.id);
+  }
+  return ids;
+}
 
 export async function POST(request: NextRequest) {
   let body: {
@@ -54,6 +120,11 @@ export async function POST(request: NextRequest) {
       allRecs.reduce((sum, r) => sum + (r.audience_size / 1000) * r.estimated_cpm * r.num_episodes, 0) +
       ytRecs.reduce((sum, r) => sum + r.flat_fee_per_video * r.num_videos, 0);
 
+    const clean = stripCampaignContactKeys({
+      recommendations: allRecs,
+      youtube_recommendations: ytRecs,
+      expansion_opportunities: body.expansion_opportunities ?? [],
+    });
     const saved = await createCampaign({
       user_id: brand_id,
       name: body.campaign_name || "Campaign",
@@ -61,9 +132,9 @@ export async function POST(request: NextRequest) {
       budget_total: totalBudget,
       platforms: body.platforms ?? ["podcast"],
       status: "planned",
-      recommendations: allRecs,
-      youtube_recommendations: ytRecs,
-      expansion_opportunities: body.expansion_opportunities ?? [],
+      recommendations: (clean.recommendations ?? []) as ShowRecommendation[],
+      youtube_recommendations: (clean.youtube_recommendations ?? []) as YouTubeRecommendation[],
+      expansion_opportunities: clean.expansion_opportunities ?? [],
     });
 
     if (saved?.id) {
@@ -77,6 +148,7 @@ export async function POST(request: NextRequest) {
   }
 
   const dealsToInsert: Record<string, unknown>[] = [];
+  let skipped = 0;
 
   // Create deals from podcast recommendations
   for (const rec of recommendations ?? []) {
@@ -92,16 +164,13 @@ export async function POST(request: NextRequest) {
           categories: rec.categories ?? [],
           rate_card: { midroll_cpm: rec.estimated_cpm },
           image_url: rec.image_url,
-          contact: {
-            name: "",
-            email: rec.contact_email ?? "",
-            method: "email",
-          },
+          contact: EMPTY_CONTACT,
           network: rec.network,
           current_sponsors: rec.current_sponsors ?? [],
           data_sources: ["discovery"],
           is_claimed: false,
           is_verified: false,
+          is_discoverable: false,
         });
         if (saved?.id) {
           console.log(`[campaigns/deals] Saved discovered podcast show "${rec.show_name}" → UUID ${saved.id}`);
@@ -114,6 +183,10 @@ export async function POST(request: NextRequest) {
         console.warn(`[campaigns/deals] Error saving discovered show ${rec.show_name}:`, err);
         continue;
       }
+    } else if (!(await existingShowAllowed(user.id, showId))) {
+      console.warn("[campaigns/deals] skipped show");
+      skipped += 1;
+      continue;
     } else {
       console.log(`[campaigns/deals] Using existing show ID for "${rec.show_name}": ${showId}`);
     }
@@ -162,16 +235,13 @@ export async function POST(request: NextRequest) {
           categories: rec.categories ?? [],
           rate_card: { flat_rate: rec.flat_fee_per_video },
           image_url: rec.image_url,
-          contact: {
-            name: "",
-            email: rec.contact_email ?? "",
-            method: "email",
-          },
+          contact: EMPTY_CONTACT,
           network: rec.network,
           current_sponsors: rec.current_sponsors ?? [],
           data_sources: ["discovery"],
           is_claimed: false,
           is_verified: false,
+          is_discoverable: false,
         });
         if (saved?.id) {
           showId = saved.id;
@@ -183,6 +253,10 @@ export async function POST(request: NextRequest) {
         console.warn(`[campaigns/deals] Error saving discovered YT show ${rec.show_name}:`, err);
         continue;
       }
+    } else if (!(await existingShowAllowed(user.id, showId))) {
+      console.warn("[campaigns/deals] skipped show");
+      skipped += 1;
+      continue;
     }
 
     dealsToInsert.push({
@@ -216,7 +290,10 @@ export async function POST(request: NextRequest) {
   console.log(`[campaigns/deals] ${dealsToInsert.length} deals to insert (from ${recommendations?.length ?? 0} podcast + ${youtube_recommendations?.length ?? 0} YouTube recs)`);
 
   if (dealsToInsert.length === 0) {
-    return NextResponse.json({ error: "No valid shows to create deals for." }, { status: 400 });
+    return NextResponse.json(
+      { error: "No valid shows to create deals for.", skipped },
+      { status: 400 }
+    );
   }
 
   let created = 0;
@@ -242,5 +319,6 @@ export async function POST(request: NextRequest) {
     failed,
     errors,
     campaign_id: realCampaignId,
+    skipped,
   });
 }

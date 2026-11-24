@@ -98,6 +98,97 @@ export async function contactVisibleOutreachIds(
   return visible;
 }
 
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Fill contact.email for ids the caller may already see. Other rows stay
+ * as they were (an empty string after a user-client read). A read error
+ * returns the input unchanged. Never throws.
+ */
+export async function attachVisibleShowContacts<
+  T extends { id: string; contact?: { email?: string | null } | null },
+>(shows: T[], visible: ReadonlySet<string>): Promise<T[]> {
+  const ids = uuidIds(visible);
+  if (ids.length === 0) return shows;
+  try {
+    const emails = new Map<string, string>();
+    for (const chunk of chunks(ids)) {
+      const { data, error } = await supabaseAdmin
+        .from("shows")
+        .select("id, contact_email")
+        .in("id", chunk);
+      if (error) {
+        console.warn("[relay] attach contact", error.code ?? "unknown");
+        return shows;
+      }
+      for (const row of (data ?? []) as Array<{ id?: unknown; contact_email?: unknown }>) {
+        if (typeof row.id !== "string" || !rowHas(row, "contact_email")) continue;
+        emails.set(row.id, typeof row.contact_email === "string" ? row.contact_email : "");
+      }
+    }
+    if (emails.size === 0) return shows;
+    return shows.map((show) => {
+      if (!emails.has(show.id)) return show;
+      const contact =
+        show.contact && typeof show.contact === "object" ? show.contact : {};
+      return { ...show, contact: { ...contact, email: emails.get(show.id) ?? "" } };
+    });
+  } catch {
+    console.warn("[relay] attach contact", "unknown");
+    return shows;
+  }
+}
+
+/** Same rule for outreaches.sent_to_email. Never throws. */
+export async function attachVisibleOutreachEmails<T extends { id: string }>(
+  rows: T[],
+  visible: ReadonlySet<string>
+): Promise<T[]> {
+  const ids = uuidIds(visible);
+  if (ids.length === 0) return rows;
+  try {
+    const emails = new Map<string, string>();
+    for (const chunk of chunks(ids)) {
+      const { data, error } = await supabaseAdmin
+        .from("outreaches")
+        .select("id, sent_to_email")
+        .in("id", chunk);
+      if (error) {
+        console.warn("[relay] attach contact", error.code ?? "unknown");
+        return rows;
+      }
+      for (const row of (data ?? []) as Array<{ id?: unknown; sent_to_email?: unknown }>) {
+        if (typeof row.id !== "string" || !rowHas(row, "sent_to_email")) continue;
+        emails.set(row.id, typeof row.sent_to_email === "string" ? row.sent_to_email : "");
+      }
+    }
+    if (emails.size === 0) return rows;
+    return rows.map((row) => {
+      if (!emails.has(row.id)) return row;
+      return { ...row, sent_to_email: emails.get(row.id) ?? "" };
+    });
+  } catch {
+    console.warn("[relay] attach contact", "unknown");
+    return rows;
+  }
+}
+
+function uuidIds(values: ReadonlySet<string>): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (!UUID.test(value) || seen.has(value)) continue;
+    seen.add(value);
+    ids.push(value);
+  }
+  return ids;
+}
+
+function rowHas(row: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(row, key);
+}
+
 export function redactShowContact<T extends { contact?: { email?: string | null } | null }>(show: T): T {
   if (!show || typeof show !== "object") return show;
   const contact = show.contact;

@@ -19,7 +19,9 @@ import { getPodscanClientSafe } from "@/lib/podscan/client";
 import { searchPodcasts } from "@/lib/podscan/search";
 import type { PodscanPodcast } from "@/lib/podscan/types";
 import { fullShowIdsForCaller, projectShowsForViewer } from "@/lib/shows/public-fields";
-import { contactVisibleShowIds } from "@/lib/relay/contact-visibility";
+import { attachVisibleShowContacts, contactVisibleShowIds } from "@/lib/relay/contact-visibility";
+import { stripCampaignContactKeys } from "@/lib/relay/campaign-contacts";
+import { SHOW_READ_COLUMNS } from "@/lib/shows/read-columns";
 import { createClient } from "@/lib/supabase/server";
 
 export const DIRECT_SEARCH_LIMIT = 10;
@@ -165,7 +167,8 @@ export async function searchShowsByName(
   } catch {
     contactIds = new Set();
   }
-  const projected = projectShowsForViewer(catalog, fullIds, contactIds);
+  const withContacts = await attachVisibleShowContacts(catalog, contactIds);
+  const projected = projectShowsForViewer(withContacts, fullIds, contactIds);
   const results: DirectSearchHit[] = [];
   for (const row of projected) {
     const hit = catalogHit(row);
@@ -196,7 +199,6 @@ export function toSearchedScoredShowRecord(show: Show): ScoredShowRecord {
     language: null,
     episodeCount: 0,
     lastPostedAt: null,
-    contactEmail: null,
     audienceSize: audience,
     prsScore: null,
     compositeScore: 0,
@@ -259,10 +261,11 @@ export async function appendShowToPlan(
   const nextIds = [...selected, showId];
   const updatedAt = new Date().toISOString();
 
+  const cleaned = stripCampaignContactKeys({ scored_shows: nextScored });
   const wrote = await supabase
     .from("campaigns")
     .update({
-      scored_shows: nextScored,
+      scored_shows: cleaned.scored_shows,
       selected_show_ids: nextIds,
       updated_at: updatedAt,
     })
@@ -344,7 +347,7 @@ async function findDiscoverableShow(filter: {
   podscanId?: string;
 }): Promise<Show | null> {
   const supabase = await createClient();
-  let query = supabase.from("shows").select("*").eq("is_discoverable", true);
+  let query = supabase.from("shows").select(SHOW_READ_COLUMNS).eq("is_discoverable", true);
   if (filter.id) query = query.eq("id", filter.id);
   if (filter.podscanId) query = query.eq("podscan_id", filter.podscanId);
   const { data, error } = await query.maybeSingle();
