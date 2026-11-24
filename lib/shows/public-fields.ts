@@ -17,6 +17,7 @@
 import type { Show } from "@/lib/data/types";
 import { ownershipStatusFromRow } from "@/lib/data/show-transform";
 import { showEditGrantIds } from "@/lib/ownership/edit-rights";
+import { redactShowContact } from "@/lib/relay/contact-visibility";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export const PUBLIC_SHOW_FIELDS = [
@@ -75,6 +76,18 @@ export function projectShows<T extends { id: string }>(
   return shows.map((show) =>
     fullIds.has(show.id) ? show : toPublicShowFields(show)
   );
+}
+
+export function projectShowsForViewer<T extends { id: string; contact?: { email?: string | null } | null }>(
+  shows: T[],
+  fullIds: ReadonlySet<string>,
+  contactVisible: ReadonlySet<string>
+): Array<T | PublicShowFields> {
+  return shows.map((show) => {
+    if (!fullIds.has(show.id)) return toPublicShowFields(show);
+    if (contactVisible.has(show.id)) return show;
+    return redactShowContact(show);
+  });
 }
 
 export function hasOwnershipStatus(show: object): boolean {

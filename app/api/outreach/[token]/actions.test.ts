@@ -204,6 +204,24 @@ describe("POST /api/outreach/[token]/counter", () => {
     expect(update.counter_cpm).toBe(32);
     expect(update.counter_message).toBe("4-spot minimum");
   });
+
+  it("stores and emails a stripped counter message", async () => {
+    const res = await COUNTER(
+      jsonReq({
+        counter_cpm: 32,
+        counter_message: "Email ada@example.test or call (555) 555-0199. Price stays $25 CPM.",
+      }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    const update = updateOutreachResponse.mock.calls[0][1];
+    expect(update.counter_message).not.toContain("ada@example.test");
+    expect(update.counter_message).not.toContain("555");
+    expect(update.counter_message).toContain("$25 CPM");
+    const sent = sendEmail.mock.calls[0][0];
+    expect(sent.html).not.toContain("ada@example.test");
+    expect(sent).not.toHaveProperty("attachments");
+  });
 });
 
 describe("POST /api/outreach/[token]/decline", () => {
@@ -225,5 +243,16 @@ describe("POST /api/outreach/[token]/decline", () => {
     );
     expect(res.status).toBe(200);
     expect(updateOutreachResponse.mock.calls[0][1].decline_reason).toBe("Not a fit");
+  });
+
+  it("stores and emails a stripped decline reason", async () => {
+    const res = await DECLINE(
+      jsonReq({ decline_reason: "Write ada@example.test instead." }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expect(updateOutreachResponse.mock.calls[0][1].decline_reason).not.toContain("ada@example.test");
+    expect(sendEmail.mock.calls[0][0].html).not.toContain("ada@example.test");
+    expect(sendEmail.mock.calls[0][0]).not.toHaveProperty("attachments");
   });
 });

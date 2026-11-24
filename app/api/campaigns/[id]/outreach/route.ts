@@ -4,7 +4,9 @@ import {
   getCampaignById,
   getOutreachesForCampaign,
 } from "@/lib/data/queries";
-import { redactOutreaches } from "@/lib/outreach/public";
+import { redactOutreachForViewer } from "@/lib/outreach/public";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
+import { contactVisibleOutreachIds } from "@/lib/relay/contact-visibility";
 
 export async function GET(
   _req: NextRequest,
@@ -20,5 +22,22 @@ export async function GET(
   }
 
   const outreaches = await getOutreachesForCampaign(id);
-  return NextResponse.json({ outreaches: redactOutreaches(outreaches) });
+  let visible = new Set<string>();
+  try {
+    if (await isShowsAdmin(user.id)) {
+      visible = new Set(outreaches.map((row) => row.id));
+    } else {
+      visible = await contactVisibleOutreachIds(
+        user.id,
+        outreaches.map((row) => row.id)
+      );
+    }
+  } catch {
+    visible = new Set();
+  }
+  return NextResponse.json({
+    outreaches: outreaches.map((row) =>
+      redactOutreachForViewer(row, { contactVisible: visible.has(row.id) })
+    ),
+  });
 }

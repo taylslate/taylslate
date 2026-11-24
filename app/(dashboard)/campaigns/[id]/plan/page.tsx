@@ -2,6 +2,7 @@ import { getCampaignById } from "@/lib/data/queries";
 import { listPublishedSurfacesForShows } from "@/lib/data/show-surfaces";
 import { notFound, redirect } from "next/navigation";
 import type { ScoredShowRecord } from "@/lib/data/types";
+import { redactScoredShowRecord } from "@/lib/relay/contact-visibility";
 import DirectShowSearch from "./direct-show-search";
 import MediaPlanBuilder from "./media-plan-builder";
 
@@ -17,7 +18,9 @@ export default async function PlanBuilderPage({ params }: PlanPageProps) {
 
   const scoredShows = (campaign.scored_shows ?? []) as ScoredShowRecord[];
   const selectedIds = new Set(campaign.selected_show_ids ?? []);
-  const selectedShows = scoredShows.filter((s) => selectedIds.has(s.podcastId));
+  const selectedShows = scoredShows
+    .filter((s) => selectedIds.has(s.podcastId))
+    .map((show) => redactScoredShowRecord(show));
 
   // If the brand hasn't selected any shows yet, send them back to discovery.
   if (selectedShows.length === 0) {

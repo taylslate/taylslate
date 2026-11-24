@@ -448,7 +448,8 @@ describe("brand isolation", () => {
     expect(Object.keys(ownedShow).sort()).toEqual([...SHOW_FIELDS].sort());
     const body = JSON.stringify(rows);
     expect(body).not.toContain("secret@example.com");
-    expect(body).toContain("owned@example.com");
+    expect(body).not.toContain("owned@example.com");
+    expect(ownedShow.contact?.email ?? null).toBeNull();
     expect(body).not.toContain("host@example.com");
     expect(body).not.toContain("hidden@example.com");
     expect(body).not.toContain("rate@example.com");

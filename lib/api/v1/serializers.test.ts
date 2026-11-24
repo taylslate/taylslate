@@ -104,6 +104,20 @@ describe("api v1 serializers", () => {
     expect(show).not.toHaveProperty("is_verified");
     expect(JSON.stringify(show)).not.toContain("acct_secret");
 
+    const hidden = serializeShow(
+      { id: "s", name: "S", contact_email: "host@example.test", contact_name: "Ada" },
+      { verified: false, contactVisible: false }
+    );
+    expect(hidden.contact.email).toBeNull();
+    expect(hidden.contact.name).toBe("Ada");
+    expect(JSON.stringify(hidden)).not.toContain("host@example.test");
+    const opened = serializeShow(
+      { id: "s", name: "S", contact_email: "host@example.test" },
+      { contactVisible: true, verified: true }
+    );
+    expect(opened.contact.email).toBe("host@example.test");
+    expect(opened.verified).toBe(true);
+
     const tied = serializeShow({ id: "s", name: "S", ownership_status: "claimed" }, true);
     expect(tied.verified).toBe(true);
     expect(tied).not.toHaveProperty("ownership_status");

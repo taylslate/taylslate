@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { redactOutreach, redactOutreaches } from "./public";
+import { redactOutreach, redactOutreachForViewer, redactOutreaches } from "./public";
 
 describe("redactOutreach", () => {
   it("clears token and leaves every other field", () => {
@@ -25,5 +25,13 @@ describe("redactOutreach", () => {
     expect(rows.map((row) => row.token)).toEqual(["", ""]);
     expect(rows.map((row) => row.id)).toEqual(["o1", "o2"]);
     expect(rows.map((row) => row.show_name)).toEqual(["A", "B"]);
+  });
+
+  it("blanks sent_to_email for a viewer who cannot see contact", () => {
+    const row = { id: "o1", token: "a.b.c", sent_to_email: "host@example.test" };
+    expect(redactOutreachForViewer(row, { contactVisible: false }).sent_to_email).toBe("");
+    expect(redactOutreachForViewer(row, { contactVisible: false }).token).toBe("");
+    expect(redactOutreachForViewer(row, { contactVisible: true }).sent_to_email).toBe("host@example.test");
+    expect(row.sent_to_email).toBe("host@example.test");
   });
 });

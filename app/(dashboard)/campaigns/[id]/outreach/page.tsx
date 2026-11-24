@@ -1,11 +1,18 @@
 import { notFound } from "next/navigation";
 import {
+  getAuthenticatedUser,
   getCampaignById,
   getOutreachesForCampaign,
 } from "@/lib/data/queries";
 import type { ScoredShowRecord, MediaPlanLineItem } from "@/lib/data/types";
 import ShowListWithOutreach from "@/components/outreach/ShowListWithOutreach";
-import { redactOutreaches } from "@/lib/outreach/public";
+import { redactOutreachForViewer } from "@/lib/outreach/public";
+import { isShowsAdmin } from "@/lib/shows/can-edit-show";
+import {
+  contactVisibleOutreachIds,
+  redactScoredShowRecord,
+} from "@/lib/relay/contact-visibility";
+import { canReachOut } from "@/lib/relay/recipient";
 import { tokens } from "@/lib/brand/tokens";
 import Link from "next/link";
 
@@ -20,6 +27,7 @@ export default async function CampaignOutreachPage({
   const campaign = await getCampaignById(id);
   if (!campaign) notFound();
 
+  const user = await getAuthenticatedUser();
   const scoredShows = (campaign.scored_shows ?? []) as ScoredShowRecord[];
   const selectedIds = new Set(campaign.selected_show_ids ?? []);
   const selectedShows = scoredShows.filter((s) => selectedIds.has(s.podcastId));
@@ -27,6 +35,31 @@ export default async function CampaignOutreachPage({
     (campaign.media_plan?.line_items ?? []).map((li) => [li.podcast_id, li])
   );
   const outreaches = await getOutreachesForCampaign(id);
+  let visibleOutreach = new Set<string>();
+  try {
+    if (user && (await isShowsAdmin(user.id))) {
+      visibleOutreach = new Set(outreaches.map((row) => row.id));
+    } else if (user) {
+      visibleOutreach = await contactVisibleOutreachIds(
+        user.id,
+        outreaches.map((row) => row.id)
+      );
+    }
+  } catch {
+    visibleOutreach = new Set();
+  }
+  const reachFlags = await Promise.all(
+    selectedShows.map(async (show) =>
+      user
+        ? canReachOut({
+            userId: user.id,
+            campaignId: id,
+            showId: show.podcastId,
+            podscanId: show.podcastId,
+          })
+        : false
+    )
+  );
 
   return (
     <div className="min-h-screen bg-[var(--ts-canvas)] text-[var(--ts-ink-on-paper)]">
@@ -73,10 +106,13 @@ export default async function CampaignOutreachPage({
         ) : (
           <ShowListWithOutreach
             campaignId={id}
-            initialOutreaches={redactOutreaches(outreaches)}
-            selectedShows={selectedShows.map((s) => ({
-              show: s,
+            initialOutreaches={outreaches.map((row) =>
+              redactOutreachForViewer(row, { contactVisible: visibleOutreach.has(row.id) })
+            )}
+            selectedShows={selectedShows.map((s, index) => ({
+              show: redactScoredShowRecord(s),
               line_item: lineItemByShow.get(s.podcastId),
+              can_reach_out: reachFlags[index] === true,
             }))}
             defaultPlacement={campaign.media_plan?.default_placement}
             defaultEpisodes={campaign.media_plan?.default_episodes}

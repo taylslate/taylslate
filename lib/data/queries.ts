@@ -21,6 +21,7 @@ import { ownershipStatusFromRow, transformShow } from "./show-transform";
 import { findCatalogDuplicates } from "@/lib/shows/import-catalog-match";
 import { showNameContainsPattern } from "@/lib/shows/search-pattern";
 import { normalizeRosterShowName } from "@/lib/reps/roster-import";
+import { redactCampaignContacts } from "@/lib/relay/contact-visibility";
 import type {
   Profile,
   Show,
@@ -1786,7 +1787,7 @@ export async function getCampaignsForUser(userId: string): Promise<Campaign[]> {
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   if (error || !data) return [];
-  return data as Campaign[];
+  return (data as Campaign[]).map((row) => redactCampaignContacts(row));
 }
 
 /**

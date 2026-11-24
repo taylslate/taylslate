@@ -42,7 +42,7 @@ describe("GET /api/campaigns/[id]/outreach", () => {
     expect(body.outreaches[0]).toMatchObject({
       id: "o1",
       show_name: "Daily Briefing",
-      sent_to_email: "host@daily.fm",
+      sent_to_email: "",
     });
   });
 

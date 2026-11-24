@@ -604,7 +604,7 @@ describe("wired routes", () => {
     const ok = await send();
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({
-      results: [{ show_id: "show-1", success: true, to: "host@show.example" }],
+      results: [{ show_id: "show-1", success: true }],
     });
 
     for (let i = 1; i < OUTREACH_SEND_USER_HOUR_MAX; i++) {

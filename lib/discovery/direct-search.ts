@@ -18,7 +18,8 @@ import { isBrandSide } from "@/lib/nav/items";
 import { getPodscanClientSafe } from "@/lib/podscan/client";
 import { searchPodcasts } from "@/lib/podscan/search";
 import type { PodscanPodcast } from "@/lib/podscan/types";
-import { fullShowIdsForCaller, projectShows } from "@/lib/shows/public-fields";
+import { fullShowIdsForCaller, projectShowsForViewer } from "@/lib/shows/public-fields";
+import { contactVisibleShowIds } from "@/lib/relay/contact-visibility";
 import { createClient } from "@/lib/supabase/server";
 
 export const DIRECT_SEARCH_LIMIT = 10;
@@ -158,7 +159,16 @@ export async function searchShowsByName(
       data_sources: show.data_sources,
     }))
   );
-  const projected = projectShows(catalog, fullIds);
+  let contactIds = new Set<string>();
+  try {
+    contactIds = await contactVisibleShowIds(
+      userId,
+      catalog.map((show) => show.id)
+    );
+  } catch {
+    contactIds = new Set();
+  }
+  const projected = projectShowsForViewer(catalog, fullIds, contactIds);
   const results: DirectSearchHit[] = [];
   for (const row of projected) {
     const hit = catalogHit(row);

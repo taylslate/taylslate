@@ -2,7 +2,7 @@
 // The send domain stays @taylslate.com so SPF/DKIM stay on our domain.
 
 import type { Outreach } from "@/lib/data/types";
-import { EMAIL_ADDRESS_OUTREACH } from "@/lib/email/addresses";
+import { EMAIL_ADDRESS_OUTREACH, viaTaylslateFrom } from "@/lib/email/addresses";
 import {
   emailColors,
   emailDetailTable,
@@ -34,6 +34,9 @@ export interface OutreachEmailInput {
 
   /** Public pitch URL the show clicks to respond. */
   pitch_url: string;
+
+  /** Reply-To override. Defaults to the outreach mailbox. */
+  reply_to?: string;
 }
 
 export interface RenderedOutreachEmail {
@@ -70,18 +73,17 @@ function placementLabel(placement: string): string {
   return placement;
 }
 
-function buildFromAndReply(brandName: string): { from: string; reply_to: string } {
-  const safeName = brandName.replace(/[<>"\\]/g, "").trim() || "Sponsorship";
+function buildFromAndReply(brandName: string, replyTo?: string): { from: string; reply_to: string } {
   return {
-    from: `${safeName} <${EMAIL_ADDRESS_OUTREACH}>`,
-    reply_to: EMAIL_ADDRESS_OUTREACH,
+    from: viaTaylslateFrom(brandName, EMAIL_ADDRESS_OUTREACH),
+    reply_to: replyTo && replyTo.trim() ? replyTo.trim() : EMAIL_ADDRESS_OUTREACH,
   };
 }
 
 export function renderOutreachEmail(input: OutreachEmailInput): RenderedOutreachEmail {
   const brandName = normalizeBrandName(input.brand_name);
   const subject = `A sponsorship offer from ${brandName} for ${input.show_name}`;
-  const { from, reply_to } = buildFromAndReply(brandName);
+  const { from, reply_to } = buildFromAndReply(brandName, input.reply_to);
   const placement = placementLabel(input.proposed_placement);
   const episodes = `${input.proposed_episode_count} ${input.proposed_episode_count === 1 ? "episode" : "episodes"}`;
   const flight = `${formatDateOnly(input.proposed_flight_start)} to ${formatDateOnly(input.proposed_flight_end)}`;

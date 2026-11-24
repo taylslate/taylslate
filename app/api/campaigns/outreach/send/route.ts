@@ -6,11 +6,13 @@ import { resolveManagedDelivery } from "@/lib/email/send";
 import { renderCampaignOutreachEmail } from "@/lib/email/templates/campaign-outreach";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { enforceOutreachSend } from "@/lib/security/rate-limit";
+import { stripContactDetails } from "@/lib/relay/strip-contacts";
+import { resolveOutreachRecipient } from "@/lib/relay/recipient";
 
 interface OutreachEmailInput {
   show_id: string;
   show_name: string;
-  contact_email: string;
+  contact_email?: string;
   subject: string;
   body: string;
 }
@@ -20,53 +22,9 @@ const MAX_SUBJECT_CHARS = 200;
 const MAX_BODY_BYTES = 10 * 1024;
 const MAX_REQUEST_BYTES = 512 * 1024;
 
-interface CampaignContacts {
+interface CampaignOwner {
   id: string;
   user_id: string;
-  recommendations: unknown;
-  youtube_recommendations: unknown;
-  expansion_opportunities: unknown;
-}
-
-function contactKey(email: string): string {
-  return email.trim().toLowerCase();
-}
-
-function addContact(allowed: Map<string, Set<string>>, showId: unknown, email: unknown) {
-  if (typeof showId !== "string" || typeof email !== "string") return;
-  const id = showId.trim();
-  const key = contactKey(email);
-  if (!id || !key) return;
-  const existing = allowed.get(id);
-  if (existing) {
-    existing.add(key);
-    return;
-  }
-  allowed.set(id, new Set([key]));
-}
-
-function contactsFromList(allowed: Map<string, Set<string>>, value: unknown) {
-  if (!Array.isArray(value)) return;
-  for (const row of value) {
-    if (!row || typeof row !== "object") continue;
-    const show = row as { show_id?: unknown; contact_email?: unknown };
-    addContact(allowed, show.show_id, show.contact_email);
-  }
-}
-
-function allowedContacts(campaign: CampaignContacts): Map<string, Set<string>> {
-  const allowed = new Map<string, Set<string>>();
-  contactsFromList(allowed, campaign.recommendations);
-  contactsFromList(allowed, campaign.youtube_recommendations);
-  contactsFromList(allowed, campaign.expansion_opportunities);
-  return allowed;
-}
-
-function draftIsAllowed(allowed: Map<string, Set<string>>, draft: OutreachEmailInput): boolean {
-  if (typeof draft.show_id !== "string" || typeof draft.contact_email !== "string") return false;
-  const emails = allowed.get(draft.show_id.trim());
-  if (!emails) return false;
-  return emails.has(contactKey(draft.contact_email));
 }
 
 export async function POST(request: NextRequest) {
@@ -124,9 +82,9 @@ export async function POST(request: NextRequest) {
 
   const { data: campaign, error: campaignError } = await supabaseAdmin
     .from("campaigns")
-    .select("id, user_id, recommendations, youtube_recommendations, expansion_opportunities")
+    .select("id, user_id")
     .eq("id", body.campaign_id)
-    .maybeSingle<CampaignContacts>();
+    .maybeSingle<CampaignOwner>();
 
   if (campaignError) {
     return NextResponse.json({ error: "Failed to load campaign" }, { status: 500 });
@@ -135,39 +93,46 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const allowed = allowedContacts(campaign);
   const resend = new Resend(apiKey);
-  const results: Array<{ show_id: string; success: boolean; to?: string; error?: string }> = [];
+  const results: Array<{ show_id: string; success: boolean; error?: string }> = [];
 
   for (const draft of body.drafts) {
-    if (!draft.contact_email || !draft.subject || !draft.body) {
+    if (!draft.show_id || !draft.subject || !draft.body) {
       results.push({ show_id: draft.show_id, success: false, error: "Missing required fields" });
       continue;
     }
 
-    if (!draftIsAllowed(allowed, draft)) {
+    const recipient = await resolveOutreachRecipient({
+      userId: user.id,
+      campaignId: campaign.id,
+      showId: draft.show_id,
+    });
+    if (!recipient.ok) {
       results.push({
         show_id: draft.show_id,
         success: false,
-        error: "Recipient is not a contact on this campaign.",
+        error:
+          recipient.reason === "no_contact"
+            ? "This show has no contact on file yet."
+            : "Recipient is not a contact on this campaign.",
       });
       continue;
     }
 
+    const stripped = stripContactDetails(draft.body, { unlocked: false });
     const rendered = renderCampaignOutreachEmail({
       showName: draft.show_name,
-      body: draft.body,
+      body: stripped.text,
     });
 
     const delivery = await resolveManagedDelivery({
-      to: draft.contact_email,
+      to: recipient.email,
       subject: draft.subject,
     });
     if (!delivery.ok) {
       results.push({
         show_id: draft.show_id,
         success: false,
-        to: draft.contact_email,
         error:
           "This show is managed and MANAGED_ACCOUNT_INBOX is not set, so the email was not sent.",
       });
@@ -184,13 +149,12 @@ export async function POST(request: NextRequest) {
       });
 
       if (error) {
-        results.push({ show_id: draft.show_id, success: false, to: delivery.to, error: error.message });
+        results.push({ show_id: draft.show_id, success: false, error: "Email was not sent." });
       } else {
-        results.push({ show_id: draft.show_id, success: true, to: delivery.to });
+        results.push({ show_id: draft.show_id, success: true });
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      results.push({ show_id: draft.show_id, success: false, to: delivery.to, error: message });
+    } catch {
+      results.push({ show_id: draft.show_id, success: false, error: "Email was not sent." });
     }
   }
 

@@ -20,7 +20,7 @@ const baseInput = {
 describe("renderOutreachEmail", () => {
   it("uses brand name as the from-name and Taylslate as the send domain", () => {
     const out = renderOutreachEmail(baseInput);
-    expect(out.from).toMatch(/^Aurora Sleep <outreach@taylslate\.com>$/);
+    expect(out.from).toMatch(/^Aurora Sleep via Taylslate <outreach@taylslate\.com>$/);
     expect(out.reply_to).toBe("outreach@taylslate.com");
   });
 
@@ -50,14 +50,14 @@ describe("renderOutreachEmail", () => {
 
   it("falls back to 'Sponsorship' when the brand name is empty", () => {
     const out = renderOutreachEmail({ ...baseInput, brand_name: "" });
-    expect(out.from).toBe("Sponsorship <outreach@taylslate.com>");
+    expect(out.from).toBe("Sponsorship via Taylslate <outreach@taylslate.com>");
     expect(out.subject).toBe("A sponsorship offer from Sponsorship for The Daily Briefing");
     expect(out.html).toContain(">Sponsorship</div>");
   });
 
   it("falls back to 'Sponsorship' when the brand name is whitespace only", () => {
     const out = renderOutreachEmail({ ...baseInput, brand_name: "   \n  " });
-    expect(out.from).toBe("Sponsorship <outreach@taylslate.com>");
+    expect(out.from).toBe("Sponsorship via Taylslate <outreach@taylslate.com>");
   });
 
   // Regression: the from-name was once derived from a free-text brand-identity
@@ -70,8 +70,9 @@ describe("renderOutreachEmail", () => {
       "every single day of the week";
     const out = renderOutreachEmail({ ...baseInput, brand_name: paragraph });
 
-    const fromName = out.from.replace(" <outreach@taylslate.com>", "");
+    const fromName = out.from.replace(" via Taylslate <outreach@taylslate.com>", "");
     expect(fromName.length).toBeLessThanOrEqual(60);
+    expect(out.from).toContain("via Taylslate");
     expect(out.from).not.toContain("every single day");
     expect(out.subject).not.toContain("every single day");
     expect(out.html).not.toContain("every single day");
@@ -82,7 +83,7 @@ describe("renderOutreachEmail", () => {
       ...baseInput,
       brand_name: "Aurora Sleep\nWe make mattresses for tired founders.",
     });
-    expect(out.from).toBe("Aurora Sleep <outreach@taylslate.com>");
+    expect(out.from).toBe("Aurora Sleep via Taylslate <outreach@taylslate.com>");
     expect(out.subject).toBe("A sponsorship offer from Aurora Sleep for The Daily Briefing");
   });
 });

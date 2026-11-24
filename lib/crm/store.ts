@@ -391,10 +391,11 @@ export async function listCrmShows(brandId: string): Promise<CrmShow[]> {
   const requested = requireUuid(brandId, "brandId");
   const supabase = await createClient();
   const brand = await requireCaller(supabase, requested);
-  const [contacts, notes, profiles] = await Promise.all([
+  const [contacts, notes, profiles, crmShows] = await Promise.all([
     supabase.from("brand_show_contacts").select("show_id").eq("brand_id", brand),
     supabase.from("brand_show_notes").select("show_id").eq("brand_id", brand),
     supabase.from("brand_profiles").select("id").eq("user_id", brand),
+    supabase.from("brand_crm_shows").select("show_id").eq("brand_id", brand),
   ]);
   throwIfError(contacts.error);
   throwIfError(notes.error);
@@ -419,6 +420,12 @@ export async function listCrmShows(brandId: string): Promise<CrmShow[]> {
   for (const row of deals.data ?? []) {
     const id = row.show_id;
     if (typeof id === "string") showIds.add(id);
+  }
+  if (!crmShows.error) {
+    for (const row of crmShows.data ?? []) {
+      const id = (row as { show_id?: unknown }).show_id;
+      if (typeof id === "string") showIds.add(id);
+    }
   }
   if (showIds.size === 0) return [];
 

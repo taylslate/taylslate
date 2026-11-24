@@ -11,9 +11,15 @@ import {
   getCampaignById,
 } from "@/lib/data/queries";
 import { signOutreachToken } from "@/lib/io/tokens";
-import { redactOutreach } from "@/lib/outreach/public";
+import { redactOutreachForViewer } from "@/lib/outreach/public";
+import { EMAIL_ADDRESS_OUTREACH } from "@/lib/email/addresses";
 import { renderOutreachEmail } from "@/lib/email/templates/outreach";
 import { sendEmail } from "@/lib/email/send";
+import { relayReplyTo } from "@/lib/relay/address";
+import { stripContactDetails } from "@/lib/relay/strip-contacts";
+import { createRelayThread } from "@/lib/relay/threads";
+import { addShowToBrandCrmOnOutreach } from "@/lib/relay/crm";
+import { resolveOutreachRecipient } from "@/lib/relay/recipient";
 import { recordEvent } from "@/lib/data/event-log";
 import type {
   Outreach,
@@ -29,7 +35,7 @@ interface CreateOutreachBody {
     show_id?: string | null;
     podscan_id?: string | null;
     show_name: string;
-    contact_email: string;
+    contact_email?: string;
     categories?: string[];
     audience_size?: number | null;
   };
@@ -51,18 +57,9 @@ function siteOrigin(req: NextRequest): string {
   return new URL(req.url).origin;
 }
 
-function isValidEmail(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.length <= 320 &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-  );
-}
-
 function validate(body: CreateOutreachBody): string | null {
   if (!body.campaign_id) return "campaign_id is required";
   if (!body.show?.show_name) return "show.show_name is required";
-  if (!isValidEmail(body.show?.contact_email)) return "valid show.contact_email is required";
   if (!body.show?.show_id && !body.show?.podscan_id) {
     return "show must include show_id or podscan_id";
   }
@@ -114,6 +111,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
   }
 
+  const recipient = await resolveOutreachRecipient({
+    userId: user.id,
+    campaignId: campaign.id,
+    showId: body.show.show_id,
+    podscanId: body.show.podscan_id,
+  });
+  if (!recipient.ok) {
+    if (recipient.reason === "no_contact") {
+      return NextResponse.json(
+        { error: "This show has no contact on file yet." },
+        { status: 422 }
+      );
+    }
+    return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+  }
+
+  const stripped = stripContactDetails(body.pitch_body.trim(), { unlocked: false });
+
   // The signed token is the email link. It is not stored. The column
   // is still NOT NULL until migration 087, so the insert uses a unique
   // non-secret placeholder.
@@ -122,7 +137,7 @@ export async function POST(request: NextRequest) {
   const draft: Omit<Outreach, "id" | "created_at" | "updated_at"> = {
     brand_profile_id: brandProfile.id,
     campaign_id: campaign.id,
-    show_id: body.show.show_id ?? null,
+    show_id: body.show.show_id ?? recipient.catalogShowId ?? null,
     podscan_id: body.show.podscan_id ?? null,
     show_name: body.show.show_name,
     proposed_cpm: Math.round(body.proposed.cpm * 100) / 100,
@@ -130,9 +145,9 @@ export async function POST(request: NextRequest) {
     proposed_placement: body.proposed.placement,
     proposed_flight_start: body.proposed.flight_start,
     proposed_flight_end: body.proposed.flight_end,
-    pitch_body: body.pitch_body.trim(),
+    pitch_body: stripped.text,
     sent_at: null,
-    sent_to_email: body.show.contact_email.toLowerCase().trim(),
+    sent_to_email: recipient.email,
     response_status: "pending",
     responded_at: null,
     counter_cpm: null,
@@ -164,30 +179,54 @@ export async function POST(request: NextRequest) {
   }
 
   const brandName = resolveBrandName(campaign, brandProfile);
+  const thread = await createRelayThread({
+    outreachId: created.id,
+    brandUserId: user.id,
+    brandProfileId: brandProfile.id,
+    brandDisplayName: brandName,
+    showDisplayName: body.show.show_name,
+  });
+  const replyTo = thread ? relayReplyTo(thread) : EMAIL_ADDRESS_OUTREACH;
 
   const pitchUrl = `${siteOrigin(request)}/outreach/${realToken}`;
   const email = renderOutreachEmail({
     show_name: body.show.show_name,
-    to_email: body.show.contact_email,
+    to_email: recipient.email,
     brand_name: brandName,
     brand_url: brandProfile.brand_website ?? null,
-    pitch_body: body.pitch_body.trim(),
+    pitch_body: stripped.text,
     proposed_cpm: draft.proposed_cpm,
     proposed_episode_count: draft.proposed_episode_count,
     proposed_placement: draft.proposed_placement,
     proposed_flight_start: draft.proposed_flight_start,
     proposed_flight_end: draft.proposed_flight_end,
     pitch_url: pitchUrl,
+    reply_to: replyTo,
   });
 
   const sendResult = await sendEmail({
-    to: body.show.contact_email,
+    to: recipient.email,
     subject: email.subject,
     html: email.html,
     text: email.text,
     from: email.from,
     reply_to: email.reply_to,
   });
+
+  if (sendResult.ok) {
+    try {
+      await addShowToBrandCrmOnOutreach({
+        brandUserId: user.id,
+        outreach: { id: created.id, show_id: draft.show_id ?? null },
+      });
+    } catch (error) {
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? (error as { code?: unknown }).code
+          : "unknown";
+      console.warn("[relay] crm add failed", typeof code === "string" ? code : "unknown");
+    }
+  }
 
   await recordEvent({
     customerId: user.id,
@@ -199,8 +238,9 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json({
-    outreach: redactOutreach(updated),
+    outreach: redactOutreachForViewer(updated, { contactVisible: false }),
     email_sent: sendResult.ok,
     email_reason: sendResult.reason,
+    contact_details_removed: stripped.removed,
   });
 }

@@ -28,6 +28,9 @@ import { sendEmail } from "@/lib/email/send";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { profileByLoginEmail } from "@/lib/auth/auth-email";
+import { stripContactDetails } from "@/lib/relay/strip-contacts";
+import { linkThreadToDeal } from "@/lib/relay/threads";
+import { addBrandToShowCrmOnFirstResponse } from "@/lib/relay/crm";
 import type {
   Outreach,
   OutreachResponseStatus,
@@ -139,6 +142,11 @@ export interface NotifyArgs {
   decline_reason?: string | null;
 }
 
+function stripLocked(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return value ?? null;
+  return stripContactDetails(value, { unlocked: false }).text;
+}
+
 function siteOrigin(request: Request): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
   if (envOrigin) return envOrigin.replace(/\/$/, "");
@@ -207,10 +215,26 @@ export async function applyAndNotify(
     response_status: args.status,
     responded_at: new Date().toISOString(),
     counter_cpm: args.counter_cpm ?? null,
-    counter_message: args.counter_message ?? null,
-    decline_reason: args.decline_reason ?? null,
+    counter_message: stripLocked(args.counter_message),
+    decline_reason: stripLocked(args.decline_reason),
   });
   if (!updated) return { error: "Failed to record response", status: 500 };
+
+  if (args.status === "accepted" && createdDeal) {
+    await linkThreadToDeal(outreach.id, createdDeal.id);
+  }
+  try {
+    await addBrandToShowCrmOnFirstResponse({
+      brandUserId: args.resolved.brandProfile.user_id,
+      outreachId: outreach.id,
+    });
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? (error as { code?: unknown }).code
+        : "unknown";
+    console.warn("[relay] show crm failed", typeof code === "string" ? code : "unknown");
+  }
 
   if (dealJustCreated && createdDeal) {
     await logEvent({

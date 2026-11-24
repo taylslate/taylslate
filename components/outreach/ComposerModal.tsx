@@ -11,7 +11,6 @@ export interface ComposerShow {
   show_id?: string | null;
   podscan_id?: string | null;
   show_name: string;
-  contact_email: string;
   audience_size?: number | null;
   estimated_cpm?: number | null;
   show_standard_cpm?: number | null;
@@ -78,7 +77,6 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
   const [flightEnd, setFlightEnd] = useState<string>(
     show.flight_end ?? initialFlight.end
   );
-  const [contactEmail, setContactEmail] = useState<string>(show.contact_email);
 
   const [pitchBody, setPitchBody] = useState<string>("");
   const [drafting, setDrafting] = useState<boolean>(true);
@@ -140,7 +138,6 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
             show_id: show.show_id,
             podscan_id: show.podscan_id,
             show_name: show.show_name,
-            contact_email: contactEmail,
             categories: show.categories,
             audience_size: show.audience_size,
           },
@@ -172,8 +169,7 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
     cpm > 0 &&
     episodes > 0 &&
     Boolean(flightStart) &&
-    Boolean(flightEnd) &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail);
+    Boolean(flightEnd);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ts-field)]/45 p-4">
@@ -220,14 +216,10 @@ export default function ComposerModal({ show, campaignId, onClose, onSent }: Pro
           </div>
 
           {/* Recipient */}
-          <Field label="Recipient email">
-            <input
-              type="email"
-              value={contactEmail}
-              onChange={(e) => setContactEmail(e.target.value)}
-              className={fieldClass}
-              style={radiusStyle}
-            />
+          <Field label="Recipient">
+            <div className={fieldClass} style={radiusStyle}>
+              Sent through Taylslate
+            </div>
           </Field>
 
           {/* Proposed terms */}

@@ -85,9 +85,8 @@ describe("POST /api/campaigns/outreach/send", () => {
     const res = await POST(post());
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.results).toEqual([
-      { show_id: "show-1", success: true, to: "brand@x.com" },
-    ]);
+    expect(body.results).toEqual([{ show_id: "show-1", success: true }]);
+    expect(body.results[0]).not.toHaveProperty("to");
     expect(resolveManagedDelivery).toHaveBeenCalledWith({
       to: "brand@x.com",
       subject: "A March test",
@@ -114,8 +113,8 @@ describe("POST /api/campaigns/outreach/send", () => {
     expect(body.results[0]).toEqual({
       show_id: "show-1",
       success: true,
-      to: "ops@taylslate.com",
     });
+    expect(body.results[0]).not.toHaveProperty("to");
 
     const sent = resendSend.mock.calls[0][0];
     expect(sent.to).toBe("ops@taylslate.com");
@@ -189,7 +188,8 @@ describe("POST /api/campaigns/outreach/send", () => {
     );
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.results[0]).toEqual({ show_id: "show-1", success: true, to: "brand@x.com" });
+    expect(body.results[0]).toEqual({ show_id: "show-1", success: true });
+    expect(body.results[0]).not.toHaveProperty("to");
     expect(body.results[1]).toMatchObject({
       show_id: "show-2",
       success: false,

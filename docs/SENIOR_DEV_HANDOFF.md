@@ -4088,3 +4088,60 @@ Covers a verified column plus a verified proof, a verified column with no proof,
 - Live `ldtmhafewfifdizgfrnn` has no verified shows today. The screenshots use a mocked verified show.
 - The agent roster response from `GET /api/shows` does not add `verified`. Brand search does not use that branch.
 - This PR does not merge.
+
+## RELAY1a: outreach relay part 1
+
+### What was built
+
+Brand outreach now goes out as "<Brand> via Taylslate" on a private per-outreach relay thread. Pitch text, counter messages, decline reasons, and legacy bulk bodies are stripped of emails, phone numbers, and contact links before they are stored or sent. Reply-To stays `outreach@taylslate.com` until `RELAY_INBOUND_ENABLED` is the string `"true"`. That flag is not set.
+
+A successful send adds the catalog show to `brand_crm_shows` when the brand's plan includes CRM. The row stores the show id and the source. It does not store an email or a phone. The show-side hook runs on the first in-app response and writes nothing, because shows have no CRM.
+
+Show contact email is removed on the server from brand-facing payloads until both sides have signed and the deal is not cancelled. The show owner, an admin, a roster agent, and either party after unlock still receive it. Outreach recipients are resolved from the show id on a campaign the caller owns. A brand-supplied address is ignored. The composer, the outreach list, and the three legacy draft spans say "Sent through Taylslate".
+
+Migration 094 is a file only. It is not applied. If the tables are missing, outreach still sends with today's Reply-To.
+
+No inbound webhook, no reply forwarding, no attachment path, and no DocuSign, Stripe, payout, billing, or aircheck change. `plans.ts` was not edited. No Vercel env change. Tests mock every send.
+
+### Where
+
+- `supabase/migrations/094_outreach_relay.sql` and its test
+- `lib/relay/` (strip, unlock, address, threads, crm, contact visibility, recipient, brand payload test)
+- `app/api/outreach/route.ts` and `lib/email/templates/outreach.ts`
+- `app/api/outreach/[token]/_shared.ts`
+- `app/api/campaigns/outreach/send/route.ts` and `generate/route.ts`
+- `lib/crm/store.ts` (`listCrmShows` also reads `brand_crm_shows`)
+- `lib/shows/public-fields.ts` (`projectShowsForViewer`)
+- `app/api/shows/route.ts`, `app/api/shows/[id]/route.ts`, `lib/discovery/direct-search.ts`
+- campaign page, plan page, and outreach page props
+- `components/outreach/ComposerModal.tsx` and `ShowListWithOutreach.tsx`
+- `app/(dashboard)/campaigns/[id]/campaign-detail.tsx` (the three contact spans and the send body)
+- `lib/data/queries.ts` (`getCampaignsForUser` only)
+- `lib/outreach/public.ts` (`redactOutreachForViewer`)
+- `app/api/campaigns/[id]/outreach/route.ts` and `app/api/deals/[id]/route.ts`
+- `lib/api/v1/reads.ts` and `serializers.ts` (MCP `list_shows` and `get_show` inherit it)
+- `docs/jobs/RELAY1.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+Two existing tests had to move with the new boundary and are not in the original Owns list: `app/api/v1/reads.route.test.ts` (a planning deal no longer returns `owned@example.com`) and `lib/security/rate-limit.test.ts` (bulk send results no longer include `to`).
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 485 files, 3941 passed, 41 skipped.
+
+`npx eslint` on the changed and new TypeScript files: 0 errors. Pre-existing warnings remain on `campaign-detail.tsx` (an `<img>` and two unused indexes), `lib/email/templates/outreach.ts` (unused `emailParagraph`), `app/api/v1/reads.route.test.ts`, and `lib/security/rate-limit.test.ts`. This job did not add those lines.
+
+`npx next build` compiled successfully and generated 149 pages.
+
+New tests cover strip patterns and a long-string timing guard, unlock states, token shape and the env flag, thread create, conflict, and a missing table, CRM plan and no-write cases, contact visibility, server-side recipient resolution, brand payloads without the fixture address, the composer, the outreach row, bulk results without `to`, and migration 094 text. No test sends real mail. No path in Owns passes an `attachments` key to `sendEmail`.
+
+### Known gaps
+
+- Migration 094 is not applied. Apply it on `ldtmhafewfifdizgfrnn` only when Chris names 094. Until then, thread create and the CRM insert fail soft and outreach still sends.
+- Inbound mail is not built. Forged or unknown inbound mail is RELAY1b. Do not set `RELAY_INBOUND_ENABLED` until 1b and the reply domain are live.
+- Shows have no CRM. The first-response hook returns `no_show_crm`.
+- The legacy bulk send has no thread and no "via Taylslate" From. Its body is stripped and its recipient is resolved on the server.
+- Direct PostgREST reads of `shows.contact_email`, campaign JSON contact fields, and `outreaches.sent_to_email` are still possible with the brand's own session. IO documents before signing still include the show email. Those are RELAY1c and need a migration number from Chris. See `docs/jobs/RELAY1.md`.
+- This PR does not merge.

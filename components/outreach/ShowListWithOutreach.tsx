@@ -11,6 +11,7 @@ import ComposerModal, { type ComposerShow } from "./ComposerModal";
 interface SelectedShowEntry {
   show: ScoredShowRecord;
   line_item?: MediaPlanLineItem;
+  can_reach_out: boolean;
 }
 
 interface Props {
@@ -77,14 +78,13 @@ export default function ShowListWithOutreach({
   return (
     <>
       <div className="space-y-2">
-        {selectedShows.map(({ show, line_item }) => {
+        {selectedShows.map(({ show, line_item, can_reach_out }) => {
           const key = show.podcastId;
           const existing = byShowKey.get(key);
           const composerShow: ComposerShow = {
             show_id: null,
             podscan_id: show.podcastId,
             show_name: show.name,
-            contact_email: show.contactEmail ?? "",
             audience_size: show.audienceSize,
             estimated_cpm: show.estimatedCpm,
             categories: show.categories,
@@ -115,7 +115,6 @@ export default function ShowListWithOutreach({
                 <div className={`truncate text-sm font-medium ${inkText}`}>{show.name}</div>
                 <div className={`truncate text-xs ${mutedText}`}>
                   {show.audienceSize.toLocaleString()} downloads · ${show.estimatedCpm.toFixed(2)} CPM
-                  {show.contactEmail ? ` · ${show.contactEmail}` : ""}
                 </div>
               </div>
 
@@ -136,8 +135,8 @@ export default function ShowListWithOutreach({
               ) : (
                 <button
                   onClick={() => setComposerShow(composerShow)}
-                  disabled={!composerShow.contact_email}
-                  title={!composerShow.contact_email ? "No contact email on file" : "Send outreach"}
+                  disabled={!can_reach_out}
+                  title={!can_reach_out ? "No contact on file yet" : "Send outreach"}
                   className={inkBtnClass}
                   style={radiusStyle}
                 >
