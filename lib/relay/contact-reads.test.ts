@@ -13,20 +13,21 @@ const TABLES = ["shows", "outreaches", "insertion_orders"] as const;
 export function unsafeContactReads(source: string): string[] {
   const text = stripComments(source);
   const violations: string[] = [];
-  const fromRe = /\.from\s*\(\s*["'](shows|outreaches|insertion_orders)["']\s*\)/g;
+  const fromRe = /\.from\s*\(\s*["']([^"']+)["']\s*\)/g;
   for (const match of text.matchAll(fromRe)) {
+    const table = match[1];
     const index = match.index ?? 0;
     const before = text.slice(Math.max(0, index - 120), index);
     const receiver = before.match(/([A-Za-z_$][\w$]*)\s*$/)?.[1] ?? "";
     if (receiver === "supabaseAdmin") continue;
     const select = readSelect(text, index + match[0].length);
-    if (!select || !select.bad) continue;
-    violations.push(`${receiver}.from("${match[1]}").select(${select.arg})`);
+    if (!select || !selectIsUnsafe(select.arg, table)) continue;
+    violations.push(`${receiver}.from("${table}").select(${select.arg})`);
   }
   return violations;
 }
 
-function readSelect(source: string, fromEnd: number): { arg: string; bad: boolean } | null {
+function readSelect(source: string, fromEnd: number): { arg: string } | null {
   const window = source.slice(fromEnd, fromEnd + 2000);
   const stop = window.search(/;/);
   const slice = stop === -1 ? window : window.slice(0, stop);
@@ -44,16 +45,27 @@ function readSelect(source: string, fromEnd: number): { arg: string; bad: boolea
     }
   }
   const arg = slice.slice(start, end).trim();
-  return { arg, bad: selectIsUnsafe(arg) };
+  return { arg };
 }
 
-function selectIsUnsafe(arg: string): boolean {
+function selectIsUnsafe(arg: string, table: string): boolean {
+  if (embedIsUnsafe(arg)) return true;
+  if (!TABLES.includes(table as (typeof TABLES)[number])) return false;
   if (arg.length === 0) return true;
   const bare = arg.replace(/^["'`]|["'`]$/g, "");
   if (bare === "*") return true;
   if (arg.includes("*")) return true;
-  if (/(?:shows|outreaches|insertion_orders)\s*\(\s*\*/.test(arg)) return true;
-  return WITHHELD.some((name) => new RegExp(`\\b${name}\\b`).test(arg));
+  return WITHHELD.some((name) => new RegExp(`(^|[^\\w])${name}([^\\w]|$)`).test(arg));
+}
+
+function embedIsUnsafe(arg: string): boolean {
+  const embed = /(?:shows|outreaches|insertion_orders)(?:![A-Za-z0-9_]+)?\(([^)]*)\)/g;
+  for (const match of arg.matchAll(embed)) {
+    const inner = match[1] ?? "";
+    if (inner.includes("*")) return true;
+    if (WITHHELD.some((name) => new RegExp(`(^|[^\\w])${name}([^\\w]|$)`).test(inner))) return true;
+  }
+  return false;
 }
 
 function stripComments(source: string): string {
@@ -85,9 +97,14 @@ describe("user-client contact reads", () => {
     expect(
       unsafeContactReads('supabase.from("outreaches").select("id, sent_to_email")')
     ).toHaveLength(1);
+    expect(unsafeContactReads('supabase.from("deals").select("id, shows(*)")')).toEqual([
+      'supabase.from("deals").select("id, shows(*)")',
+    ]);
     expect(
-      unsafeContactReads('supabase.from("deals").select("id, shows(*)")')
-    ).toEqual([]);
+      unsafeContactReads('supabase.from("deals").select("id, shows!inner(contact_email)")')
+    ).toHaveLength(1);
+    expect(unsafeContactReads('supabase.from("deals").select("id, shows!inner(name)")')).toEqual([]);
+    expect(unsafeContactReads('supabaseAdmin.from("deals").select("id, shows(*)")')).toEqual([]);
     expect(unsafeContactReads('supabaseAdmin.from("shows").select("*")')).toEqual([]);
     expect(
       unsafeContactReads('supabaseAdmin\n  .from("shows")\n  .select("id, contact_email")')

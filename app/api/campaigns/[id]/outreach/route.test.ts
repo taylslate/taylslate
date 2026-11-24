@@ -36,7 +36,7 @@ const stored = {
   id: "o1",
   campaign_id: "c1",
   show_name: "Daily Briefing",
-  sent_to_email: "host@daily.fm",
+  sent_to_email: "host@example.test",
   token: "eyJhbGciOiJIUzI1NiJ9.payload.signature",
 };
 
@@ -69,7 +69,7 @@ describe("GET /api/campaigns/[id]/outreach", () => {
     contactVisibleOutreachIds.mockResolvedValue(new Set(["o1"]));
     const res = await GET({} as never, params as never);
     const body = await res.json();
-    expect(body.outreaches[0].sent_to_email).toBe("host@daily.fm");
+    expect(body.outreaches[0].sent_to_email).toBe("host@example.test");
     expect(body.outreaches[1].sent_to_email).toBe("");
   });
 

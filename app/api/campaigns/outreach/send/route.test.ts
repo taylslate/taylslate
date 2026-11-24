@@ -78,7 +78,7 @@ import { POST } from "./route";
 const draft = {
   show_id: "show-1",
   show_name: "The Daily Briefing",
-  contact_email: "brand@x.com",
+  contact_email: "brand@example.test",
   subject: "A March test",
   body: "We would like to run a three-episode test in March.",
 };
@@ -88,7 +88,7 @@ function ownedCampaign(userId = USER_ID) {
     data: {
       id: CAMPAIGN_ID,
       user_id: userId,
-      recommendations: [{ show_id: "show-1", contact_email: "brand@x.com" }],
+      recommendations: [{ show_id: "show-1", contact_email: "brand@example.test" }],
       youtube_recommendations: [],
       expansion_opportunities: [],
     },
@@ -113,7 +113,7 @@ beforeEach(() => {
   const catalogId = "33333333-3333-4333-8333-333333333333";
   const catalog = {
     id: catalogId,
-    contact_email: "brand@x.com",
+    contact_email: "brand@example.test",
     is_discoverable: true,
     podscan_id: "show-1",
   };
@@ -137,13 +137,13 @@ describe("POST /api/campaigns/outreach/send", () => {
     expect(body.results).toEqual([{ show_id: "show-1", success: true }]);
     expect(body.results[0]).not.toHaveProperty("to");
     expect(resolveManagedDelivery).toHaveBeenCalledWith({
-      to: "brand@x.com",
+      to: "brand@example.test",
       subject: "A March test",
     });
 
     const sent = resendSend.mock.calls[0][0];
     expect(sent.from).toBe("Taylslate <outreach@taylslate.com>");
-    expect(sent.to).toBe("brand@x.com");
+    expect(sent.to).toBe("brand@example.test");
     expect(sent.subject).toBe("A March test");
     expect(sent.html).toContain("A brand asked us to pass this along for The Daily Briefing");
     expect(sent.html).toContain("three-episode test");
@@ -153,7 +153,7 @@ describe("POST /api/campaigns/outreach/send", () => {
     resolveManagedDelivery.mockResolvedValue({
       ok: true,
       to: "ops@taylslate.com",
-      subject: "[managed: brand@x.com] A March test",
+      subject: "[managed: brand@example.test] A March test",
     });
 
     const res = await POST(post());
@@ -167,7 +167,7 @@ describe("POST /api/campaigns/outreach/send", () => {
 
     const sent = resendSend.mock.calls[0][0];
     expect(sent.to).toBe("ops@taylslate.com");
-    expect(sent.subject).toBe("[managed: brand@x.com] A March test");
+    expect(sent.subject).toBe("[managed: brand@example.test] A March test");
     expect(sent.from).toBe("Taylslate <outreach@taylslate.com>");
     expect(sent.html).toContain("three-episode test");
   });
@@ -244,7 +244,7 @@ describe("POST /api/campaigns/outreach/send", () => {
       success: false,
     });
     expect(resendSend).toHaveBeenCalledTimes(1);
-    expect(resendSend.mock.calls[0][0].to).toBe("brand@x.com");
+    expect(resendSend.mock.calls[0][0].to).toBe("brand@example.test");
   });
 
   it("does not send to a catalog show that is not on the campaign", async () => {

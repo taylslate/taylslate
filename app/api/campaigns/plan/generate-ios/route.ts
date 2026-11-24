@@ -60,7 +60,10 @@ async function persistScoredShow(
   }
 
   const existing = await getShowBySlug(slugifyName(record.name));
-  if (existing) return existing;
+  if (existing) {
+    const allowed = await pitchableShowIds(userId, [existing.id]);
+    if (allowed.has(existing.id)) return existing;
+  }
 
   return createShow({
     name: record.name,

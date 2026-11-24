@@ -177,12 +177,13 @@ async function resolveMany(
       }
     }
     const byId = await catalogById(uuidIds);
-    const byPodscan = await catalogByPodscan(podscanIds);
+    const podscanGroups = await catalogByPodscan(podscanIds);
     const matched = [
       ...byId.values(),
-      ...byPodscan.values(),
+      ...[...podscanGroups.values()].flat(),
     ].map((row) => row.id);
     const pitchable = await pitchableShowIds(userId, matched);
+    const byPodscan = choosePodscanShows(podscanGroups, pitchable);
     return shows.map((show) => resolveOne(onCampaign, byId, byPodscan, pitchable, show));
   } catch {
     console.warn("[relay] recipient", "unknown");
@@ -256,8 +257,8 @@ async function catalogById(ids: string[]): Promise<Map<string, CatalogShow>> {
   return found;
 }
 
-async function catalogByPodscan(ids: string[]): Promise<Map<string, CatalogShow>> {
-  const found = new Map<string, CatalogShow>();
+async function catalogByPodscan(ids: string[]): Promise<Map<string, CatalogShow[]>> {
+  const found = new Map<string, CatalogShow[]>();
   for (const chunk of chunks(ids)) {
     const { data, error } = await supabaseAdmin
       .from("shows")
@@ -269,11 +270,34 @@ async function catalogByPodscan(ids: string[]): Promise<Map<string, CatalogShow>
     }
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
       const show = catalogShow(row);
-      if (!show?.podscanId || found.has(show.podscanId)) continue;
-      found.set(show.podscanId, show);
+      if (!show?.podscanId) continue;
+      const list = found.get(show.podscanId) ?? [];
+      list.push(show);
+      found.set(show.podscanId, list);
     }
   }
   return found;
+}
+
+function choosePodscanShows(
+  groups: Map<string, CatalogShow[]>,
+  pitchable: ReadonlySet<string>
+): Map<string, CatalogShow> {
+  const chosen = new Map<string, CatalogShow>();
+  for (const [podscanId, rows] of groups) {
+    const pick = choosePodscanShow(rows, pitchable);
+    if (pick) chosen.set(podscanId, pick);
+  }
+  return chosen;
+}
+
+function choosePodscanShow(rows: CatalogShow[], pitchable: ReadonlySet<string>): CatalogShow | null {
+  const ordered = [...rows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const discoverable = ordered.find((row) => row.discoverable);
+  if (discoverable) return discoverable;
+  const tied = ordered.find((row) => pitchable.has(row.id));
+  if (tied) return tied;
+  return ordered[0] ?? null;
 }
 
 function catalogShow(row: Record<string, unknown>): CatalogShow | null {

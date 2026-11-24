@@ -117,7 +117,7 @@ beforeEach(() => {
     contact: { name: "Host", email: "" },
   });
   getShowById.mockResolvedValue(null);
-  pitchableShowIds.mockResolvedValue(new Set());
+  pitchableShowIds.mockImplementation(async (_user: unknown, ids: string[]) => new Set(ids));
   createDeal.mockImplementation(async (row: { id?: string }) => ({ id: "deal-1", ...row }));
   getNextIONumber.mockResolvedValue("IO-2026-0009");
   createIO.mockResolvedValue({ id: "io-1" });
@@ -324,5 +324,35 @@ describe("POST /api/campaigns/plan/generate-ios", () => {
     expect(createIO.mock.calls[0][0].publisher_contact_email).toBe("host@example.test");
     expect(JSON.stringify(await res.json())).not.toContain("host@example.test");
     expect(JSON.stringify(createShow.mock.calls)).not.toContain("planted@example.test");
+  });
+
+  it("does not reuse a slug match the caller cannot pitch", async () => {
+    const hidden = "44444444-4444-4444-8444-444444444444";
+    getShowBySlug.mockResolvedValue({
+      id: hidden,
+      name: "Daily Briefing",
+      is_discoverable: false,
+      contact: { name: "Hidden", email: "hidden@example.test" },
+    });
+    pitchableShowIds.mockResolvedValue(new Set());
+    createShow.mockResolvedValue({
+      id: "made-1",
+      name: "Daily Briefing",
+      is_discoverable: false,
+      contact: { name: "Daily", email: "", method: "email" },
+    });
+    getCampaignById.mockResolvedValue(
+      campaign({ version: 2, flight: { mode: "dates", start_date: "2026-09-01", end_date: "2026-10-15" } })
+    );
+
+    const res = await POST(post() as never);
+    expect(res.status).toBe(200);
+    expect(pitchableShowIds).toHaveBeenCalledWith("user-1", [hidden]);
+    expect(createDeal.mock.calls[0][0].show_id).toBe("made-1");
+    expect(createShow).toHaveBeenCalled();
+    const saved = createShow.mock.calls[0][0] as { contact: { email: string } };
+    expect(saved.contact.email).toBe("");
+    expect(createIO.mock.calls[0][0].publisher_contact_email).toBe("host@example.test");
+    expect(JSON.stringify(await res.json())).not.toContain("hidden@example.test");
   });
 });

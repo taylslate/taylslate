@@ -333,6 +333,150 @@ describe("IO route party check", () => {
     expect(updates[0]).toMatchObject({ payment_terms: "Net 15" });
     expect(updates[0]).not.toHaveProperty("publisher_contact_email");
   });
+
+  function revealedIo() {
+    return {
+      id: "io-1",
+      io_number: "IO-2026-0004",
+      publisher_contact_email: "host@example.test",
+      line_items: [lineItem],
+    };
+  }
+
+  function capturePatch() {
+    const updates: unknown[] = [];
+    createClient.mockResolvedValueOnce({
+      from: () => {
+        const builder: Record<string, unknown> = {};
+        const self = () => builder;
+        builder.update = vi.fn((payload: unknown) => {
+          updates.push(payload);
+          return builder;
+        });
+        builder.eq = vi.fn(self);
+        builder.select = vi.fn(self);
+        builder.then = (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({ data: [], error: null }).then(resolve);
+        return builder;
+      },
+    });
+    return updates;
+  }
+
+  it("blanks publisher email on POST and PATCH for a locked brand", async () => {
+    getIOByDealId.mockResolvedValueOnce(null).mockResolvedValue(revealedIo());
+    getDealById.mockResolvedValue({
+      ...dealOwnedBy(USER_ID),
+      outreach_id: "outreach-1",
+      status: "planning",
+      show_signed_at: null,
+      brand_signed_at: null,
+    });
+    const posted = await POST(
+      jsonReq("POST", {
+        advertiser_name: "SaunaBox",
+        publisher_name: "Oddvice",
+        publisher_contact_email: "host@example.test",
+        line_items: [lineItem],
+      }) as never,
+      params as never
+    );
+    const postedBody = await posted.json();
+    expect(posted.status).toBe(201);
+    expect(postedBody.io.publisher_contact_email).toBe("");
+    expect(postedBody.publisher_contact_hidden).toBe(true);
+    expect(JSON.stringify(postedBody)).not.toContain("host@example.test");
+
+    const updates = capturePatch();
+    const patched = await PATCH(
+      jsonReq("PATCH", { payment_terms: "Net 15", publisher_contact_email: "planted@example.test" }) as never,
+      params as never
+    );
+    const patchedBody = await patched.json();
+    expect(patched.status).toBe(200);
+    expect(patchedBody.io.publisher_contact_email).toBe("");
+    expect(patchedBody.publisher_contact_hidden).toBe(true);
+    expect(JSON.stringify(patchedBody)).not.toContain("host@example.test");
+    expect(JSON.stringify(patchedBody)).not.toContain("planted@example.test");
+    expect(updates[0]).toMatchObject({ payment_terms: "Net 15" });
+    expect(updates[0]).not.toHaveProperty("publisher_contact_email");
+  });
+
+  it("keeps the publisher email for an agent, an admin, and an unlocked brand", async () => {
+    getIOByDealId.mockResolvedValue(revealedIo());
+    const cases = [
+      {
+        deal: { ...dealOwnedBy("brand-other"), agent_id: USER_ID },
+        admin: false,
+      },
+      {
+        deal: dealOwnedBy(USER_ID),
+        admin: true,
+      },
+      {
+        deal: {
+          ...dealOwnedBy(USER_ID),
+          outreach_id: "outreach-1",
+          status: "show_signed",
+          show_signed_at: "2026-11-02",
+          brand_signed_at: "2026-11-01",
+        },
+        admin: false,
+      },
+    ];
+    for (const item of cases) {
+      isShowsAdmin.mockResolvedValue(item.admin);
+      getDealById.mockResolvedValue(item.deal);
+      const posted = await (
+        await POST(
+          jsonReq("POST", {
+            advertiser_name: "SaunaBox",
+            publisher_name: "Oddvice",
+            line_items: [lineItem],
+          }) as never,
+          params as never
+        )
+      ).json();
+      expect(posted.io.publisher_contact_email).toBe("host@example.test");
+      expect(posted.publisher_contact_hidden).toBe(false);
+
+      capturePatch();
+      const patched = await (
+        await PATCH(jsonReq("PATCH", { payment_terms: "Net 15" }) as never, params as never)
+      ).json();
+      expect(patched.io.publisher_contact_email).toBe("host@example.test");
+      expect(patched.publisher_contact_hidden).toBe(false);
+    }
+    isShowsAdmin.mockResolvedValue(false);
+  });
+
+  it("does not leak a database error from a locked update", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    createClient.mockResolvedValueOnce({
+      from: () => {
+        const builder: Record<string, unknown> = {};
+        const self = () => builder;
+        builder.update = vi.fn(() => builder);
+        builder.eq = vi.fn(self);
+        builder.select = vi.fn(self);
+        builder.then = (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({
+            data: null,
+            error: { code: "42501", message: "permission denied secret host@example.test" },
+          }).then(resolve);
+        return builder;
+      },
+    });
+    const res = await PATCH(jsonReq("PATCH", { payment_terms: "Net 15" }) as never, params as never);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("Failed to update IO");
+    expect(JSON.stringify(body)).not.toContain("permission denied");
+    expect(JSON.stringify(body)).not.toContain("host@example.test");
+    expect(warn.mock.calls.flat().join(" ")).toContain("42501");
+    expect(warn.mock.calls.flat().join(" ")).not.toContain("host@example.test");
+    warn.mockRestore();
+  });
 });
 
 describe("negotiated IO fields", () => {

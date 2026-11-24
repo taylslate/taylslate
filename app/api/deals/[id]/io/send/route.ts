@@ -187,10 +187,8 @@ export async function POST(
     });
 
     if (error) {
-      return NextResponse.json(
-        { error: `Failed to send: ${error.message}` },
-        { status: 500 }
-      );
+      console.warn("[io/send]", (error as { code?: string }).code ?? "unknown");
+      return NextResponse.json({ error: "Failed to send" }, { status: 500 });
     }
 
     // A managed reroute or a skipped send is not an IO the brand was sent.
@@ -212,11 +210,8 @@ export async function POST(
       ioNumber: io.io_number,
       senderName,
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json(
-      { error: `Email send failed: ${message}` },
-      { status: 500 }
-    );
+  } catch {
+    console.warn("[io/send]", "unknown");
+    return NextResponse.json({ error: "Email send failed" }, { status: 500 });
   }
 }

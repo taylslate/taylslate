@@ -104,19 +104,30 @@ function blankPublisherContact<T extends { publisher_contact_email?: string | nu
   };
 }
 
-function dropEmptyPublisherEmail(
+function withoutPublisherEmail(fields: Record<string, unknown>): Record<string, unknown> {
+  if (!("publisher_contact_email" in fields)) return fields;
+  const next = { ...fields };
+  delete next.publisher_contact_email;
+  return next;
+}
+
+function publisherEmailForWrite(
   deal: Deal,
   userId: string,
+  admin: boolean,
   fields: Record<string, unknown>
 ): Record<string, unknown> {
-  if (deal.agent_id === userId) return fields;
+  if (!revealPublisherContact(deal, userId, admin)) return withoutPublisherEmail(fields);
+  if (deal.agent_id === userId || admin) return fields;
   const value = fields.publisher_contact_email;
   if (value == null || (typeof value === "string" && value.trim() === "")) {
-    const next = { ...fields };
-    delete next.publisher_contact_email;
-    return next;
+    return withoutPublisherEmail(fields);
   }
   return fields;
+}
+
+function logIoError(scope: string, error: { code?: string } | null | undefined) {
+  console.warn(scope, error?.code ?? "unknown");
 }
 
 function docusignLocked(deal: Deal): boolean {
@@ -250,9 +261,9 @@ export async function GET(
     }
 
     return NextResponse.json(blankPublisherContact(io, revealPublisherContact(deal, user.id, admin)));
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: `Failed to fetch IO: ${message}` }, { status: 500 });
+  } catch {
+    console.warn("[io] fetch", "unknown");
+    return NextResponse.json({ error: "Failed to fetch IO" }, { status: 500 });
   }
 }
 
@@ -271,11 +282,16 @@ export async function POST(
     const { id: dealId } = await params;
     const loaded = await loadDealForParty(dealId, user.id);
     if (loaded.error) return loaded.error;
+    const admin = await isShowsAdmin(user.id);
 
     const existing = await getIOByDealId(dealId);
     if (existing) {
+      const view = blankPublisherContact(
+        existing,
+        revealPublisherContact(loaded.deal, user.id, admin)
+      );
       return NextResponse.json(
-        { error: "An IO already exists for this deal", io: existing },
+        { error: "An IO already exists for this deal", ...view },
         { status: 409 }
       );
     }
@@ -380,7 +396,7 @@ export async function POST(
     });
 
     if (result.created) {
-      const headerUpdate = dropEmptyPublisherEmail(loaded.deal, user.id, header.fields);
+      const headerUpdate = publisherEmailForWrite(loaded.deal, user.id, admin, header.fields);
       const { error: headerError } = await supabaseAdmin
         .from("insertion_orders")
         .update({
@@ -393,19 +409,26 @@ export async function POST(
         })
         .eq("id", result.ioId);
       if (headerError) {
-        return NextResponse.json(
-          { error: `Failed to save IO details: ${headerError.message}` },
-          { status: 500 }
-        );
+        logIoError("[io] header", headerError);
+        return NextResponse.json({ error: "Failed to save IO details" }, { status: 500 });
       }
     }
 
     const io = await getIOByDealId(dealId);
-    return NextResponse.json({ io }, { status: 201 });
+    if (!io) {
+      return NextResponse.json({ io: null, publisher_contact_hidden: true }, { status: 201 });
+    }
+    return NextResponse.json(
+      blankPublisherContact(io, revealPublisherContact(loaded.deal, user.id, admin)),
+      { status: 201 }
+    );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    const status = message.startsWith("Refusing to persist") ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    const message = err instanceof Error ? err.message : "";
+    if (message.startsWith("Refusing to persist")) {
+      return NextResponse.json({ error: "Could not save this IO" }, { status: 400 });
+    }
+    console.warn("[io] save", "unknown");
+    return NextResponse.json({ error: "Failed to save IO" }, { status: 500 });
   }
 }
 
@@ -447,7 +470,8 @@ export async function PATCH(
 
     const supabase = await createClient();
     const syncLineItems = body.sync_line_items === true;
-    const ioUpdates = dropEmptyPublisherEmail(loaded.deal, user.id, header.fields);
+    const admin = await isShowsAdmin(user.id);
+    const ioUpdates = publisherEmailForWrite(loaded.deal, user.id, admin, header.fields);
 
     if (Object.keys(ioUpdates).length > 0) {
       const { error: ioError } = await supabase
@@ -456,10 +480,8 @@ export async function PATCH(
         .eq("id", io.id);
 
       if (ioError) {
-        return NextResponse.json(
-          { error: `Failed to update IO: ${ioError.message}` },
-          { status: 500 }
-        );
+        logIoError("[io] update", ioError);
+        return NextResponse.json({ error: "Failed to update IO" }, { status: 500 });
       }
     }
 
@@ -484,10 +506,8 @@ export async function PATCH(
             .eq("io_id", io.id);
 
           if (liError) {
-            return NextResponse.json(
-              { error: `Failed to update line item ${liId}: ${liError.message}` },
-              { status: 500 }
-            );
+            logIoError("[io] line", liError);
+            return NextResponse.json({ error: "Failed to update line item" }, { status: 500 });
           }
           keepIds.push(liId);
         } else if (syncLineItems) {
@@ -501,10 +521,8 @@ export async function PATCH(
           .insert(toInsert)
           .select("id");
         if (insertError) {
-          return NextResponse.json(
-            { error: `Failed to add line items: ${insertError.message}` },
-            { status: 500 }
-          );
+          logIoError("[io] line", insertError);
+          return NextResponse.json({ error: "Failed to add line items" }, { status: 500 });
         }
         for (const row of inserted ?? []) keepIds.push(row.id as string);
       }
@@ -525,10 +543,8 @@ export async function PATCH(
           .eq("io_id", io.id)
           .not("id", "in", `(${keepIds.join(",")})`);
         if (deleteError) {
-          return NextResponse.json(
-            { error: `Failed to remove line items: ${deleteError.message}` },
-            { status: 500 }
-          );
+          logIoError("[io] line", deleteError);
+          return NextResponse.json({ error: "Failed to remove line items" }, { status: 500 });
         }
       }
 
@@ -558,9 +574,14 @@ export async function PATCH(
     }
 
     const updatedIO = await getIOByDealId(dealId);
-    return NextResponse.json({ io: updatedIO });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: `Failed to update IO: ${message}` }, { status: 500 });
+    if (!updatedIO) {
+      return NextResponse.json({ io: null, publisher_contact_hidden: true });
+    }
+    return NextResponse.json(
+      blankPublisherContact(updatedIO, revealPublisherContact(loaded.deal, user.id, admin))
+    );
+  } catch {
+    console.warn("[io] update", "unknown");
+    return NextResponse.json({ error: "Failed to update IO" }, { status: 500 });
   }
 }

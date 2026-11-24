@@ -196,6 +196,41 @@ describe("resolveOutreachRecipient", () => {
     warn.mockRestore();
   });
 
+  it("prefers a discoverable duplicate, then a tied hidden row, by id", async () => {
+    const hiddenLow = "77777777-7777-4777-8777-777777777771";
+    const openHigh = "88888888-8888-4888-8888-888888888882";
+    tables.shows = [
+      { id: hiddenLow, contact_email: "hidden-low@example.test", is_discoverable: false, podscan_id: "pd_dup" },
+      { id: openHigh, contact_email: "open-high@example.test", is_discoverable: true, podscan_id: "pd_dup" },
+    ];
+    tables.campaigns[0].youtube_recommendations = [{ show_id: "pd_dup" }];
+    expect(
+      await resolveOutreachRecipient({ userId: USER, campaignId: CAMPAIGN, podscanId: "pd_dup" })
+    ).toEqual({ ok: true, email: "open-high@example.test", catalogShowId: openHigh });
+
+    const hiddenA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+    const hiddenB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2";
+    tables.shows = [
+      { id: hiddenB, contact_email: "tied@example.test", is_discoverable: false, podscan_id: "pd_tie" },
+      { id: hiddenA, contact_email: "untied@example.test", is_discoverable: false, podscan_id: "pd_tie" },
+    ];
+    tables.campaigns[0].youtube_recommendations = [{ show_id: "pd_tie" }];
+    tables.agent_show_relationships = [{ show_id: hiddenB, agent_id: USER, status: "approved" }];
+    expect(
+      await resolveOutreachRecipient({ userId: USER, campaignId: CAMPAIGN, podscanId: "pd_tie" })
+    ).toEqual({ ok: true, email: "tied@example.test", catalogShowId: hiddenB });
+
+    tables.agent_show_relationships = [];
+    tables.shows = [
+      { id: openHigh, contact_email: "later@example.test", is_discoverable: true, podscan_id: "pd_order" },
+      { id: hiddenLow, contact_email: "earlier@example.test", is_discoverable: true, podscan_id: "pd_order" },
+    ];
+    tables.campaigns[0].youtube_recommendations = [{ show_id: "pd_order" }];
+    expect(
+      await resolveOutreachRecipient({ userId: USER, campaignId: CAMPAIGN, podscanId: "pd_order" })
+    ).toEqual({ ok: true, email: "earlier@example.test", catalogShowId: hiddenLow });
+  });
+
   it("loads the campaign once for many shows", async () => {
     reads.length = 0;
     const flags = await canReachOutMany({
