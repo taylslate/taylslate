@@ -50,6 +50,9 @@ export interface Checkpoint {
   search?: SearchState;
   probeSavedAt?: string;
   probe?: Record<string, string | null>;
+  // Single ids that still timed out or returned 5xx. Null in probe means
+  // no recent sponsor, so these ids are not stored there.
+  probeFailed?: string[];
   probeCheckSavedAt?: string;
   probeCheck?: ProbeCheckProgress;
   contactsSavedAt?: string;
@@ -67,6 +70,7 @@ export function hasImportProgress(checkpoint: Checkpoint): boolean {
     checkpoint.searchSavedAt != null ||
     checkpoint.probe != null ||
     checkpoint.probeSavedAt != null ||
+    (checkpoint.probeFailed != null && checkpoint.probeFailed.length > 0) ||
     checkpoint.probeCheck != null ||
     checkpoint.probeCheckSavedAt != null ||
     checkpoint.contacts != null ||
@@ -84,6 +88,7 @@ export function clearImportProgress(checkpoint: Checkpoint): void {
   checkpoint.searchSavedAt = undefined;
   checkpoint.probe = undefined;
   checkpoint.probeSavedAt = undefined;
+  checkpoint.probeFailed = undefined;
   checkpoint.probeCheck = undefined;
   checkpoint.probeCheckSavedAt = undefined;
   checkpoint.contacts = undefined;

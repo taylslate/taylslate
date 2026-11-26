@@ -31,6 +31,16 @@ Apple lookup is 20 calls per minute. A 403 or 429 backs off from 30 seconds, dou
 
 `GET /podcasts/{id}` is skipped when the search hit already has `listener_engagement`.
 
+## Sponsor probe
+
+`POST /podcasts/batch-probe` sends up to 100 podcast ids. The gate retries a timeout or a 5xx first. If that chunk still fails with a timeout that has no HTTP status, or with a 5xx, the chunk is split in half and each half is probed. That repeats down to one id. Each half that succeeds is merged into `checkpoint.probe` and saved before the next call.
+
+A null probe value means no recent sponsor. A single id that still times out or returns 5xx is not stored as null. It is appended to `checkpoint.probeFailed` (duplicates dropped) and the probe continues. The run does not exit on that id.
+
+After the batches, each id still in `probeFailed` gets one `GET /podcasts/{id}/latest/sponsor`, the same call the 20-show check uses. `posted_at` inside 365 days is a recent sponsor, and the episode id is written into `probe`. A 404, or a `posted_at` older than 365 days, is no sponsor (`probe` null). The id is then removed from `probeFailed`. If that GET still fails, the id stays in `probeFailed`. The show does not pass the probe on this run. The next run tries it again.
+
+A 429, including the daily limit, stops the run the same way as before. The chunk is not split. Any other 4xx is not split either. Every extra call uses the same call budget and the 100-per-minute gate. The dry run prints `Probe failed shows: N`. Split calls are included in `Podscan calls used`.
+
 ## How to run
 
 Dry run (default). No database writes:
@@ -51,7 +61,7 @@ npm run podscan:import -- --commit --floor 1000 --confirm=<kept count at 1000>
 
 `--no-enrich` skips the demographics, analysis, and podcast detail calls. Listener data already on the search hit is kept. Demographics stay null unless the checkpoint already has them. See `docs/jobs/PODSCAN-IMPORT2.md` for the enrich gate, sponsor history, scoring fields, and the backfill flag. `--partial` with `--commit` writes the current checkpoint and does not finish the search. It still requires `--floor`, `--confirm`, and migration 093.
 
-Resume: re-run the same command. The checkpoint is `.podscan-import/checkpoint.json` (gitignored, mode 0600). A dry run does not drop a finished search or a stale one. `--fresh` is the only flag that drops the saved search and probe. Search progress is written when a slice finishes, and at most every 60 seconds while a slice is still paging. Contact lookup saves every 500 feeds. Enrichment saves at most every 30 seconds. Enrichment already stored for a podcast id is kept when that id is still in the set.
+Resume: re-run the same command. The checkpoint is `.podscan-import/checkpoint.json` (gitignored, mode 0600). A dry run does not drop a finished search or a stale one. `--fresh` is the only flag that drops the saved search, the probe, and `probeFailed`. Search progress is written when a slice finishes, and at most every 60 seconds while a slice is still paging. A probe batch that succeeds is saved before the next batch, including each half of a split. Ids already in `probe` are not sent again. Ids in `probeFailed` are. Contact lookup saves every 500 feeds. Enrichment saves at most every 30 seconds. Enrichment already stored for a podcast id is kept when that id is still in the set.
 
 ## Tables
 
