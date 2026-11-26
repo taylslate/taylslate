@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunkIds, probeSponsorRecency, scoreProbeChecks } from "./sponsors";
+import { chunkIds, latestSponsorProbeValue, probeSponsorRecency, scoreProbeChecks } from "./sponsors";
 
 describe("sponsor probe", () => {
   it("posts chunks of 100 and maps nulls", async () => {
@@ -40,5 +40,17 @@ describe("sponsor probe", () => {
     const scored = scoreProbeChecks(checks, now);
     expect(scored.pass).toBe(false);
     expect(scored.mismatches).toEqual(["pd_0", "pd_1", "pd_2"]);
+  });
+
+  it("decides fallback recency from posted_at", () => {
+    const now = new Date("2026-11-17T00:00:00.000Z");
+    const recent = "2026-11-01T00:00:00.000Z";
+    const old = "2024-01-01T00:00:00.000Z";
+    expect(latestSponsorProbeValue(recent, "ep_1", now)).toBe("ep_1");
+    expect(latestSponsorProbeValue(recent, "", now)).toBe(recent);
+    expect(latestSponsorProbeValue(recent, null, now)).toBe(recent);
+    expect(latestSponsorProbeValue(old, "ep_old", now)).toBeNull();
+    expect(latestSponsorProbeValue(null, "ep_x", now)).toBeNull();
+    expect(latestSponsorProbeValue("not-a-date", "ep_x", now)).toBeNull();
   });
 });

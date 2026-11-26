@@ -4256,3 +4256,54 @@ New tests: `lib/relay/io-contact.test.ts` (12), `app/api/deals/[id]/preview/rout
 - Agent-created legacy deals can no longer use "Send via Email" (409). Download PDF still works. A caller who is the recipient account gets the same 409, so a brand does not email the IO to their own login. The show agent still can.
 - No migration in this job. 094 and 102 stay unapplied until Chris names them.
 - This PR does not merge.
+
+## PODSCAN-PROBE-SPLIT
+
+### What was built
+
+The sponsor probe was exiting about 90 seconds in with `podscan-import failed step=probe name=PodscanApiError reason=Podscan API timeout`. The same batch-probe chunk was sent again on every resume, so the catalog write never started.
+
+After the existing retries, a batch that still times out with no HTTP status, or returns a 5xx, is split in half and each half is probed. That repeats down to one id. Each half that succeeds is saved into `checkpoint.probe` before the next call. A single id that still fails is not stored as null. Null means no recent sponsor. The id goes in `checkpoint.probeFailed`, and the probe continues.
+
+After the batches, each id in `probeFailed` gets one `GET /podcasts/{id}/latest/sponsor`. `posted_at` inside 365 days is written into `probe` and the id leaves `probeFailed`. A 404 is no sponsor. If that GET still fails, the id stays in `probeFailed`. That show does not pass the probe on this run. The next run tries it again.
+
+A 429 or a daily-limit `PodscanStop` still stops the run. Other 4xx responses are not split. Every extra call uses the same budget and the 100-per-minute gate. The dry run prints `Probe failed shows: N`. Split calls are included in `Podscan calls used`.
+
+### Where
+
+- `lib/podscan-import/run.ts` (split, fallback, checkpoint save)
+- `lib/podscan-import/sponsors.ts` (recency from `posted_at`)
+- `lib/podscan-import/checkpoint.ts` (`probeFailed`)
+- `lib/podscan-import/rate-limit.ts` (`isSplittableProbeError`)
+- `lib/podscan-import/report.ts` (the dry-run line)
+- `lib/podscan-import/probe-split.test.ts` and the nearby importer tests
+- `docs/jobs/PODSCAN-IMPORT1.md` (resume and sponsor probe)
+
+`scripts/podscan-import.ts` was not changed. No migration. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. No Vercel env change. The importer was not run against Podscan or the live database.
+
+### How to run
+
+Re-run the same import command. Do not pass `--fresh`. Shows already in `probe` are skipped. Shows in `probeFailed` are tried again.
+
+```
+npm run podscan:import -- --commit --floor 1000 --confirm=<kept count at 1000> --enrich-min-audience 5000 --enrich-min-panel-listeners 10
+```
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 500 files, 4056 passed, 41 skipped.
+
+`npx eslint` on the changed importer TypeScript files: 0 errors.
+
+`npx next build` compiled successfully and generated 149 pages.
+
+New tests cover a chunk that times out and splits, a 5xx split, a single id kept out of `probe` until `latest/sponsor` resolves it, a 404 stored as no sponsor, a fallback that still fails, a 429, a daily limit, a call-budget stop, a 400, a dropped connection, a per-half checkpoint save, and a resume that skips probed ids and retries `probeFailed`. No test calls Podscan.
+
+### Known gaps
+
+- A show that stays in `probeFailed` does not count as sponsored on this run. If it is under the audience floor, it is not kept. The next run tries it again.
+- The fallback reads `posted_at` on the latest sponsored episode. It does not repeat the 25-episode batch window. Those two answers can differ.
+- A dropped connection that is not a timeout and not a 5xx still stops the run.
+- This PR does not run the importer. The checkpoint on disk is unchanged until the same command is re-run.

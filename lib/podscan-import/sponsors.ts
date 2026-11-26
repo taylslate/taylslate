@@ -16,17 +16,36 @@ export function chunkIds(ids: readonly string[], size = PROBE_CHUNK): string[][]
   return chunks;
 }
 
+export function assignProbeResults(
+  ids: readonly string[],
+  res: ProbeResponse,
+  out: Record<string, string | null>
+): void {
+  for (const id of ids) {
+    const value = res.results?.[id];
+    out[id] = typeof value === "string" && value.length > 0 ? value : null;
+  }
+}
+
+export function latestSponsorProbeValue(
+  postedAt: string | null,
+  episodeId: string | null,
+  now: Date
+): string | null {
+  const posted = postedAt ? Date.parse(postedAt) : Number.NaN;
+  const cutoff = now.getTime() - PROBE_ACTIVE_DAYS * 24 * 60 * 60 * 1000;
+  if (!Number.isFinite(posted) || posted < cutoff) return null;
+  if (typeof episodeId === "string" && episodeId.length > 0) return episodeId;
+  return postedAt;
+}
+
 export async function probeSponsorRecency(
   ids: readonly string[],
   post: (ids: string[]) => Promise<ProbeResponse>
 ): Promise<Record<string, string | null>> {
   const out: Record<string, string | null> = {};
   for (const chunk of chunkIds(ids, PROBE_CHUNK)) {
-    const res = await post(chunk);
-    for (const id of chunk) {
-      const value = res.results?.[id];
-      out[id] = typeof value === "string" && value.length > 0 ? value : null;
-    }
+    assignProbeResults(chunk, await post(chunk), out);
   }
   return out;
 }

@@ -179,6 +179,22 @@ export function isTransientPodscanError(err: unknown): boolean {
   return false;
 }
 
+// True only after the gate has already retried. A timeout with no HTTP
+// status, or a 5xx, can be split. A 429, any other 4xx, and PodscanStop
+// cannot: those stop the run.
+export function isSplittableProbeError(err: unknown): boolean {
+  if (err instanceof PodscanStop) return false;
+  const info = readErr(err);
+  if (info) {
+    if (info.status >= 400 && info.status < 500) return false;
+    return info.status >= 500 && info.status <= 599;
+  }
+  for (const item of [err, ...causeChain(err)]) {
+    if (isTimeoutWithoutStatus(item)) return true;
+  }
+  return false;
+}
+
 export function appleBackoffMs(failureIndex: number, rng: () => number = Math.random): number {
   const base = Math.min(30_000 * 2 ** failureIndex, 5 * 60_000);
   return base + Math.floor(rng() * 1000);

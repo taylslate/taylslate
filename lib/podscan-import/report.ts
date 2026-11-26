@@ -46,6 +46,7 @@ export interface ImportReport {
   sponsorProbe: "PASS" | "FAIL";
   sponsorProbeChecked: number;
   sponsorProbeMismatches: string[];
+  probeFailedShows: number;
   rateLimit: {
     limit: number | null;
     remaining: number | null;
@@ -170,6 +171,7 @@ export function renderReport(report: ImportReport): { json: string; markdown: st
     `SPONSOR PROBE: ${report.sponsorProbe}`,
     `Sponsor probe checked: ${report.sponsorProbeChecked}`,
     `Sponsor probe mismatches: ${report.sponsorProbeMismatches.join(", ") || "none"}`,
+    `Probe failed shows: ${report.probeFailedShows}`,
     "",
     `Rate limit first limit: ${showNum(report.rateLimit.limit)}`,
     `Rate limit first remaining: ${showNum(report.rateLimit.remaining)}`,

@@ -61,6 +61,7 @@ describe("checkpoint", () => {
     };
     checkpoint.searchSavedAt = "2026-11-17T00:00:00.000Z";
     checkpoint.probe = { pd_1: "ep_1" };
+    checkpoint.probeFailed = ["pd_2", "pd_2"];
     checkpoint.contacts = {};
     checkpoint.mx = {};
     checkpoint.enrich = { pd_1: { demographics: null, listener: null } };
@@ -70,6 +71,7 @@ describe("checkpoint", () => {
     expect(checkpoint.sample).toBeNull();
     expect(checkpoint.search).toBeUndefined();
     expect(checkpoint.probe).toBeUndefined();
+    expect(checkpoint.probeFailed).toBeUndefined();
     expect(checkpoint.contacts).toBeUndefined();
     expect(checkpoint.mx).toBeUndefined();
     expect(checkpoint.enrich).toBeUndefined();
@@ -78,6 +80,11 @@ describe("checkpoint", () => {
     expect(alignCheckpointSample(legacy, null)).toBe(true);
     expect(legacy.sample).toBeNull();
     expect(legacy.searchSavedAt).toBeUndefined();
+    const failedOnly = emptyCheckpoint();
+    failedOnly.probeFailed = ["pd_x"];
+    expect(alignCheckpointSample(failedOnly, 25)).toBe(true);
+    expect(failedOnly.probeFailed).toBeUndefined();
+    expect(failedOnly.sample).toBe(25);
   });
 
   it("skips bad scoring entries and warns with a count", async () => {

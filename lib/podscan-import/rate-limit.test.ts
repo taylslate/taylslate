@@ -10,6 +10,7 @@ import {
   TRANSIENT_ATTEMPTS,
   appleBackoffMs,
   isDailyPodscanLimit,
+  isSplittableProbeError,
   isTransientPodscanError,
   podscanBackoffMs,
   sleep,
@@ -331,5 +332,24 @@ describe("rate limits", () => {
     await pending;
     expect(calls).toBe(2);
     expect(waits).toEqual([1_000]);
+  });
+
+  it("splits a probe only on a timeout with no status or a 5xx", () => {
+    const timeout = new Error("Podscan API timeout");
+    timeout.name = "PodscanApiError";
+    expect(isSplittableProbeError(timeout)).toBe(true);
+    const enrichTimeout = new Error("Podscan API timeout");
+    enrichTimeout.name = "PodscanError";
+    expect(isSplittableProbeError(enrichTimeout)).toBe(true);
+    expect(isSplittableProbeError(Object.assign(new Error("down"), { status: 503 }))).toBe(true);
+    expect(isSplittableProbeError(Object.assign(new Error("down"), { status: 500 }))).toBe(true);
+    expect(isSplittableProbeError(Object.assign(new Error("slow"), { status: 429 }))).toBe(false);
+    expect(isSplittableProbeError(Object.assign(new Error("no"), { status: 400 }))).toBe(false);
+    expect(isSplittableProbeError(Object.assign(new Error("missing"), { status: 404 }))).toBe(false);
+    expect(isSplittableProbeError(new PodscanStop("daily"))).toBe(false);
+    expect(isSplittableProbeError(new PodscanStop("budget"))).toBe(false);
+    const timedOutWithStatus = new Error("Podscan API timeout");
+    timedOutWithStatus.name = "PodscanApiError";
+    expect(isSplittableProbeError(Object.assign(timedOutWithStatus, { status: 400 }))).toBe(false);
   });
 });

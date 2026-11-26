@@ -59,19 +59,22 @@ import {
   HostLimiter,
   PODSCAN_CONCURRENCY,
   PODSCAN_PER_MINUTE,
+  isSplittableProbeError,
   PodscanGate,
   PodscanStop,
   sleep,
 } from "./rate-limit";
 import { catalogRow, contactRows } from "./rows";
 import {
+  assignProbeResults,
   chunkIds,
+  latestSponsorProbeValue,
   PROBE_ACTIVE_DAYS,
   PROBE_CHUNK,
   PROBE_EPISODES,
-  probeSponsorRecency,
   scoreProbeChecks,
   type ProbeCheck,
+  type ProbeResponse,
 } from "./sponsors";
 
 export { parseArgs };
@@ -527,6 +530,23 @@ async function ensureSearch(
   return state;
 }
 
+function probeFailedList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const id of value) {
+    if (typeof id !== "string" || id.length === 0 || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+function stopsProbe(err: unknown): boolean {
+  if (err instanceof PodscanStop) return true;
+  return !!err && typeof err === "object" && (err as { status?: unknown }).status === 429;
+}
+
 async function ensureProbe(
   deps: RunDeps,
   search: SearchState,
@@ -537,30 +557,76 @@ async function ensureProbe(
   args: ImportArgs
 ): Promise<Record<string, string | null>> {
   const probe = checkpoint.probe ?? {};
+  const failed = probeFailedList(checkpoint.probeFailed).filter((id) => !(id in probe));
+
+  const persist = async () => {
+    checkpoint.probe = probe;
+    checkpoint.probeFailed = failed;
+    checkpoint.probeSavedAt = now.toISOString();
+    await save();
+  };
+
   const missing = search.rows
     .filter((row) => includeInProbe(row.audienceSize, args) && !(row.podcastId in probe))
     .map((row) => row.podcastId);
-  for (const chunk of chunkIds(missing, PROBE_CHUNK)) {
-    const found = await probeSponsorRecency(chunk, (ids) =>
-      inStep("probe", () =>
+
+  // A timeout or a 5xx, after the gate's retries, splits the chunk.
+  // One id that still fails is listed in probeFailed. Null in probe
+  // means no recent sponsor, so that id is not written there.
+  async function probeBatch(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    if (ids.length > PROBE_CHUNK) {
+      for (const chunk of chunkIds(ids, PROBE_CHUNK)) await probeBatch(chunk);
+      return;
+    }
+    let response: ProbeResponse;
+    try {
+      response = await inStep("probe", () =>
         guarded(() =>
-          deps.caller.post<{ results?: Record<string, string | null> }>("/podcasts/batch-probe", {
+          deps.caller.post<ProbeResponse>("/podcasts/batch-probe", {
             podcast_ids: ids,
             has_sponsors: true,
             active_within_days: PROBE_ACTIVE_DAYS,
             episodes_to_check: PROBE_EPISODES,
           })
         )
-      )
-    );
-    Object.assign(probe, found);
-    checkpoint.probe = probe;
-    checkpoint.probeSavedAt = now.toISOString();
-    await save();
+      );
+    } catch (err) {
+      if (stopsProbe(err) || !isSplittableProbeError(err)) throw err;
+      if (ids.length === 1) {
+        const id = ids[0];
+        if (!failed.includes(id)) failed.push(id);
+        await persist();
+        return;
+      }
+      const mid = Math.ceil(ids.length / 2);
+      await probeBatch(ids.slice(0, mid));
+      await probeBatch(ids.slice(mid));
+      return;
+    }
+    assignProbeResults(ids, response, probe);
+    for (const id of ids) {
+      const index = failed.indexOf(id);
+      if (index >= 0) failed.splice(index, 1);
+    }
+    await persist();
   }
-  checkpoint.probe = probe;
-  checkpoint.probeSavedAt = now.toISOString();
-  await save();
+
+  await probeBatch(missing);
+
+  for (const id of [...failed]) {
+    try {
+      const latest = await fetchLatestSponsor(deps, id, guarded, "probe");
+      probe[id] = latest.missing ? null : latestSponsorProbeValue(latest.postedAt, latest.episodeId, now);
+      const index = failed.indexOf(id);
+      if (index >= 0) failed.splice(index, 1);
+      await persist();
+    } catch (err) {
+      if (stopsProbe(err)) throw err;
+    }
+  }
+
+  await persist();
   return probe;
 }
 
@@ -602,16 +668,17 @@ async function ensureProbeCheck(
 async function fetchLatestSponsor(
   deps: RunDeps,
   podcastId: string,
-  guarded: <T>(work: () => Promise<T>) => Promise<T>
-): Promise<{ postedAt: string | null; missing: boolean }> {
-  if (!PODCAST_ID.test(podcastId)) return { postedAt: null, missing: true };
+  guarded: <T>(work: () => Promise<T>) => Promise<T>,
+  step: ImportStep = "probeCheck"
+): Promise<{ postedAt: string | null; episodeId: string | null; missing: boolean }> {
+  if (!PODCAST_ID.test(podcastId)) return { postedAt: null, episodeId: null, missing: true };
   try {
-    const body = await inStep("probeCheck", () =>
+    const body = await inStep(step, () =>
       guarded(() => deps.caller.get<unknown>(`/podcasts/${podcastId}/latest/sponsor`))
     );
-    return { postedAt: postedAtFrom(body), missing: false };
+    return { postedAt: postedAtFrom(body), episodeId: episodeIdFrom(body), missing: false };
   } catch (err) {
-    if (isNotFound(err)) return { postedAt: null, missing: true };
+    if (isNotFound(err)) return { postedAt: null, episodeId: null, missing: true };
     throw err;
   }
 }
@@ -623,6 +690,14 @@ function postedAtFrom(body: unknown): string | null {
     return body.episode.posted_at;
   }
   return null;
+}
+
+function episodeIdFrom(body: unknown): string | null {
+  if (!isRecord(body)) return null;
+  if (typeof body.episode_id === "string" && body.episode_id) return body.episode_id;
+  if (!isRecord(body.episode)) return null;
+  const nested = body.episode.episode_id ?? body.episode.id;
+  return typeof nested === "string" && nested.length > 0 ? nested : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1066,6 +1141,7 @@ function assembleReport(
     sponsorProbe: checkpoint.probeCheck?.pass ? "PASS" : "FAIL",
     sponsorProbeChecked: checkpoint.probeCheck?.checked ?? 0,
     sponsorProbeMismatches: checkpoint.probeCheck?.mismatches ?? [],
+    probeFailedShows: checkpoint.probeFailed?.length ?? 0,
     rateLimit: {
       limit: gate.firstLimit,
       remaining: gate.firstRemaining,
