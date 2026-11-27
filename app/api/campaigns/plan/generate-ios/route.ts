@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
       show = await persistScoredShow(scoredShow, profile.id);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
-      errors.push(`"${scoredShow.name}": ${msg}`);
+      errors.push(`Could not create the IO for "${scoredShow.name}"`);
       console.error(`[plan/generate-ios] Failed on "${scoredShow.name}":`, msg);
       continue;
     }
@@ -344,7 +344,7 @@ export async function POST(request: NextRequest) {
       created.push({ deal_id: deal.id, io_id: io.id, show_name: show.name });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
-      errors.push(`"${scoredShow.name}": ${msg}`);
+      errors.push(`Could not create the IO for "${scoredShow.name}"`);
       console.error(`[plan/generate-ios] Failed on "${scoredShow.name}":`, msg);
     }
   }
