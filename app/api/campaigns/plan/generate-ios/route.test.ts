@@ -326,6 +326,129 @@ describe("POST /api/campaigns/plan/generate-ios", () => {
     expect(JSON.stringify(createShow.mock.calls)).not.toContain("planted@example.test");
   });
 
+  it("returns a generic per-show error when persisting a show throws", async () => {
+    const leak = 'duplicate key value violates unique constraint "shows_slug_key"';
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    getShowBySlug.mockRejectedValue(new Error(leak));
+    getCampaignById.mockResolvedValue(
+      campaign({ version: 2, flight: { mode: "preset", preset: "asap" } })
+    );
+
+    try {
+      const res = await POST(post() as never);
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body).toEqual({
+        error: "No deals or IOs were created",
+        errors: ['Could not create the IO for "Daily Briefing"'],
+      });
+      expect(JSON.stringify(body)).not.toContain(leak);
+      expect(JSON.stringify(body)).not.toContain("shows_slug_key");
+      expect(createDeal).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[plan/generate-ios] Failed on "Daily Briefing":',
+        leak
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("returns a generic per-show error when creating the IO throws", async () => {
+    const leak = 'insert or update on table "insertion_orders" violates foreign key constraint';
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    createIO.mockRejectedValue(new Error(leak));
+    getCampaignById.mockResolvedValue(
+      campaign({ version: 2, flight: { mode: "preset", preset: "asap" } })
+    );
+
+    try {
+      const res = await POST(post() as never);
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body).toEqual({
+        error: "No deals or IOs were created",
+        errors: ['Could not create the IO for "Daily Briefing"'],
+      });
+      expect(JSON.stringify(body)).not.toContain(leak);
+      expect(JSON.stringify(body)).not.toContain("insertion_orders");
+      expect(JSON.stringify(body)).not.toContain("foreign key");
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[plan/generate-ios] Failed on "Daily Briefing":',
+        leak
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("does not copy a non-Error failure into the response", async () => {
+    const leak = 'relation "deals" does not exist';
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    createDeal.mockRejectedValue({ message: leak, code: "42P01" });
+    getCampaignById.mockResolvedValue(
+      campaign({ version: 2, flight: { mode: "preset", preset: "asap" } })
+    );
+
+    try {
+      const res = await POST(post() as never);
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body.errors).toEqual(['Could not create the IO for "Daily Briefing"']);
+      const raw = JSON.stringify(body);
+      expect(raw).not.toContain(leak);
+      expect(raw).not.toContain("42P01");
+      expect(raw).not.toContain("Unknown error");
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[plan/generate-ios] Failed on "Daily Briefing":',
+        "Unknown error"
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("keeps 200 when one show fails and another IO is created", async () => {
+    const leak = "permission denied for table shows";
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    getShowBySlug.mockImplementation(async (slug: string) => {
+      if (slug === "daily-briefing") throw new Error(leak);
+      return {
+        id: "show-2",
+        name: "Other Hour",
+        contact: { name: "Host", email: "" },
+      };
+    });
+    const row = campaign({ version: 2, flight: { mode: "preset", preset: "asap" } });
+    row.scored_shows.push({
+      ...row.scored_shows[0],
+      podcastId: "pod-2",
+      name: "Other Hour",
+    });
+    row.media_plan.line_items = [
+      { podcast_id: "pod-1", placement: "mid-roll", num_episodes: 1 },
+      { podcast_id: "pod-2", placement: "mid-roll", num_episodes: 1 },
+    ];
+    getCampaignById.mockResolvedValue(row);
+
+    try {
+      const res = await POST(post() as never);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.created_count).toBe(1);
+      expect(body.total_count).toBe(2);
+      expect(body.errors).toEqual(['Could not create the IO for "Daily Briefing"']);
+      expect(JSON.stringify(body)).not.toContain(leak);
+      expect(body.created[0].show_name).toBe("Other Hour");
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[plan/generate-ios] Failed on "Daily Briefing":',
+        leak
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("does not reuse a slug match the caller cannot pitch", async () => {
     const hidden = "44444444-4444-4444-8444-444444444444";
     getShowBySlug.mockResolvedValue({

@@ -4307,3 +4307,33 @@ New tests cover a chunk that times out and splits, a 5xx split, a single id kept
 - The fallback reads `posted_at` on the latest sponsored episode. It does not repeat the 25-episode batch window. Those two answers can differ.
 - A dropped connection that is not a timeout and not a 5xx still stops the run.
 - This PR does not run the importer. The checkpoint on disk is unchanged until the same command is re-run.
+
+## ERR-LEAK1: stop raw error text on plan IO generate (2026-11-27)
+
+### What was built
+
+`POST /api/campaigns/plan/generate-ios` no longer returns `err.message`. Both catch blocks push `Could not create the IO for "<show name>"` and `console.error` still logs the real message. A non-Error throw is logged as `Unknown error`. The `errors` array, the 500 when nothing is created, and the 200 when at least one IO is created are the same shape. Auth and the campaign ownership check are unchanged.
+
+No page, style, or migration. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited.
+
+### Where
+
+- `app/api/campaigns/plan/generate-ios/route.ts`
+- `app/api/campaigns/plan/generate-ios/route.test.ts`
+- `docs/jobs/ERR-LEAK1.md`
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 500 files, 4060 passed, 41 skipped.
+
+`npx eslint` on the two changed TypeScript files: 0 errors, 0 warnings.
+
+`npx next build` compiled successfully and generated 149 pages.
+
+### Known gaps
+
+- Other API routes still put `err.message`, provider text, or Supabase `error.message` in JSON. The list is in `docs/jobs/ERR-LEAK1.md`. This lane did not change them.
+- `app/api/io/generate/**` does not exist. The unused `agent` binding is in `app/api/deals/[id]/io/generate/route.ts`, which is outside Owns. ESLint warns (`@typescript-eslint/no-unused-vars`) and reports 0 errors. It was left in place. Deleting it would skip `getProfileById(deal.agent_id)`. The response does not use that profile.
+- This PR does not merge.
