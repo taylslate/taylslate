@@ -499,6 +499,53 @@ export async function getInvoiceById(id: string): Promise<(Invoice & { line_item
   } as Invoice & { line_items: InvoiceLineItem[] };
 }
 
+/**
+ * Invoice and the deal id on its IO, for send. Service role, because
+ * invoice and IO policies only name agent_id, brand_id, and agency_id.
+ * A show owner is show_profile_id. The route must reject anyone else.
+ * The IO read is deal_id only. Contact columns are not loaded.
+ */
+export async function getInvoiceForDelivery(
+  invoiceId: string
+): Promise<{ invoice: Invoice & { line_items: InvoiceLineItem[] }; dealId: string } | null> {
+  if (!invoiceId) return null;
+  const { data: invData, error: invError } = await supabaseAdmin
+    .from("invoices")
+    .select("*")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  if (invError || !invData?.io_id) {
+    if (invError) console.warn("[getInvoiceForDelivery]", invError.code ?? "unknown");
+    return null;
+  }
+
+  const { data: ioRow, error: ioError } = await supabaseAdmin
+    .from("insertion_orders")
+    .select("deal_id")
+    .eq("id", invData.io_id)
+    .maybeSingle();
+  const dealId = typeof ioRow?.deal_id === "string" ? ioRow.deal_id : "";
+  if (ioError || !dealId) {
+    if (ioError) console.warn("[getInvoiceForDelivery]", ioError.code ?? "unknown");
+    return null;
+  }
+
+  const { data: lineItems, error: liError } = await supabaseAdmin
+    .from("invoice_line_items")
+    .select("*")
+    .eq("invoice_id", invData.id)
+    .order("post_date", { ascending: true });
+  if (liError) console.warn("[getInvoiceForDelivery]", liError.code ?? "unknown");
+
+  return {
+    invoice: {
+      ...invData,
+      line_items: (liError || !lineItems ? [] : lineItems) as InvoiceLineItem[],
+    } as Invoice & { line_items: InvoiceLineItem[] },
+    dealId,
+  };
+}
+
 export async function createInvoice(
   invoice: Omit<Invoice, "id" | "line_items" | "created_at" | "updated_at">,
   lineItems: Omit<InvoiceLineItem, "id">[]

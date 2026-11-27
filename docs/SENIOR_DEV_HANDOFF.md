@@ -4307,3 +4307,40 @@ New tests cover a chunk that times out and splits, a 5xx split, a single id kept
 - The fallback reads `posted_at` on the latest sponsored episode. It does not repeat the 25-episode batch window. Those two answers can differ.
 - A dropped connection that is not a timeout and not a 5xx still stops the run.
 - This PR does not run the importer. The checkpoint on disk is unchanged until the same command is re-run.
+
+## INVOICE-TO1: lock the invoice recipient (2026-11-27)
+
+### What was built
+
+`POST /api/invoices/send` accepts only `invoice_id`. A body with `invoice` is 400. The route loads the invoice and the IO's deal id with the service role, then the deal. The caller must be the publisher side: `deal.agent_id` is the authenticated profile id, or the caller's show profile id is `deal.show_profile_id`. Missing and not-owned are the same 404. The recipient is `getAuthEmail` of the deal's agency, or the brand when there is no agency. The request, the stored `bill_to_email`, and the IO contact columns are not used. `recipientProfileId` is still passed into `resolveManagedDelivery`. The response does not include the address. `enforceIoSend` limits the route, fail-closed, at the IO send caps.
+
+The invoices list sends a generated invoice by the id `POST /api/invoices/generate` already saved. The detail page already sent by id. Both screens show the bill-to address as "Sent through Taylslate". The name stays.
+
+No migration. No live email. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited.
+
+### Where
+
+- `app/api/invoices/send/route.ts` and its test
+- `lib/data/queries.ts` (`getInvoiceForDelivery` only)
+- `app/(dashboard)/invoices/page.tsx` and `app/(dashboard)/invoices/[id]/page.tsx`, plus their new tests
+- `docs/jobs/INVOICE-TO1.md`
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 502 files, 4068 passed, 41 skipped.
+
+`npx eslint` on the changed TypeScript files: 0 errors.
+
+`npx next build` compiled successfully and generated 149 pages.
+
+No test sends real mail.
+
+### Known gaps
+
+- Invoice send shares the IO send rate-limit buckets (10 an hour, 30 a day). A separate bucket would edit `lib/security/rate-limit.ts`, which this job does not own.
+- An admin who is not the publisher gets 404. Brand and agency parties can still open an invoice. Send returns 404 for them.
+- `GET /api/invoices`, `GET /api/invoices/[id]`, and `POST /api/invoices/pdf` are unchanged. The GET payloads still include the stored `bill_to_email`. The PDF download route still accepts a client invoice. The dashboard does not render that address.
+- `createInvoiceFromIO` still copies the editable IO contact columns into `bill_to_email`. Send ignores that column. `docs/EMAILS.md` still describes the old recipient.
+- The from address on the invoice detail screen is unchanged.
