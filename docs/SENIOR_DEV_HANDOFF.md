@@ -4307,3 +4307,45 @@ New tests cover a chunk that times out and splits, a 5xx split, a single id kept
 - The fallback reads `posted_at` on the latest sponsored episode. It does not repeat the 25-episode batch window. Those two answers can differ.
 - A dropped connection that is not a timeout and not a 5xx still stops the run.
 - This PR does not run the importer. The checkpoint on disk is unchanged until the same command is re-run.
+
+## RELAY1b: narrow public outreach profile reads (2026-11-27)
+
+### What was built
+
+The public accept, counter, and decline routes load four `brand_profiles` columns and four `profiles` columns. They no longer call `.select("*")` on those tables. The kept object copies only those keys. The HTTP JSON from all three routes omits the brand email and phone. The brand notification still goes to `profiles.email`.
+
+`brand_profiles`: `user_id` (profile lookup, deal `brand_id` on accept, show CRM hook), `brand_name`, `brand_identity`, and `brand_website` (notification name, including the two fallbacks).
+
+`profiles`: `id` (`recipientProfileId`), `email` (the `to` address, server-side only), `full_name`, and `company_name` (name fallbacks).
+
+`OutreachTokenBrandProfile` and `OutreachTokenBrandUser` are those columns. The select list has to match the type. A missing column, an extra column, or a read of any other field fails `tsc`. A row with an empty `user_id` is "Brand profile missing". A row with an empty `id` or `email` is "Brand user missing".
+
+No inbound forwarder exists under `lib/relay` or `app/api/webhooks` (DocuSign and Stripe only). This job does not add the Resend webhook, a route, or an env var. Outbound Reply-To is still `relayReplyTo`.
+
+No migration. No live database write. No Vercel env change. No real email. `lib/stripe`, `lib/payouts`, `lib/billing`, `lib/airchecks`, and `plans.ts` were not edited. Email copy and templates were not edited. `accept-counter` was not edited.
+
+### Where
+
+- `app/api/outreach/[token]/_shared.ts`
+- `app/api/outreach/[token]/actions.test.ts`
+- `docs/jobs/RELAY1b.md`
+- `docs/SENIOR_DEV_HANDOFF.md` (this section)
+
+### Tests
+
+`npx tsc --noEmit` is clean.
+
+`npx vitest run`: 500 files, 4060 passed, 41 skipped.
+
+`npx eslint` on `app/api/outreach/[token]/_shared.ts` and `app/api/outreach/[token]/actions.test.ts`: 0 errors.
+
+`npx next build` compiled successfully and generated 149 pages.
+
+The action tests assert the two select strings, assert the JSON lacks the fixture brand email, both phone strings, the Stripe customer id, the Connect account id, and the exclusion text, and assert no `email` or `phone` key. A profile row with an empty email returns 500 and does not send. No test sends real mail.
+
+### Known gaps
+
+- Inbound mail is still unbuilt. Forged or unknown inbound mail waits on the Resend webhook. Do not set `RELAY_INBOUND_ENABLED` until that route and `reply.taylslate.com` are live. When forwarding is added, replace `From`, `Reply-To`, `Sender`, and `Return-Path` with the relay address.
+- `app/outreach/[token]/page.tsx` already uses a narrow brand summary. It is outside this job and was not changed.
+- `profiles` has no phone column. These routes do not read `brand_show_contacts`.
+- This PR does not merge.

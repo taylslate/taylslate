@@ -70,6 +70,50 @@ function jsonReq(body: unknown): Request {
 
 const params = { params: Promise.resolve({ token: "tok" }) };
 
+const BRAND_EMAIL = "brand@example.com";
+const BRAND_PROFILE_PHONE = "+14155550100";
+const BRAND_USER_PHONE = "+14155550199";
+const BRAND_STRIPE_CUSTOMER = "cus_brand_secret";
+const BRAND_CONNECT_ACCOUNT = "acct_brand_secret";
+const BRAND_EXCLUSION = "secret-exclusion";
+
+const BRAND_PROFILE_SELECT = "user_id, brand_name, brand_identity, brand_website";
+const BRAND_USER_SELECT = "id, email, full_name, company_name";
+
+function collectKeys(value: unknown, found: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    for (const item of value) collectKeys(item, found);
+    return found;
+  }
+  if (value && typeof value === "object") {
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      found.push(key);
+      collectKeys(child, found);
+    }
+  }
+  return found;
+}
+
+function expectNoBrandContact(body: unknown) {
+  const json = JSON.stringify(body);
+  expect(json).not.toContain(BRAND_EMAIL);
+  expect(json).not.toContain(BRAND_PROFILE_PHONE);
+  expect(json).not.toContain(BRAND_USER_PHONE);
+  expect(json).not.toContain(BRAND_STRIPE_CUSTOMER);
+  expect(json).not.toContain(BRAND_CONNECT_ACCOUNT);
+  expect(json).not.toContain(BRAND_EXCLUSION);
+  const keys = collectKeys(body);
+  expect(keys).not.toContain("email");
+  expect(keys).not.toContain("phone");
+}
+
+function expectNarrowSelects() {
+  expect(adminBuilder.select.mock.calls.map((call) => call[0])).toEqual([
+    BRAND_PROFILE_SELECT,
+    BRAND_USER_SELECT,
+  ]);
+}
+
 const baseOutreach = {
   id: "o1",
   brand_profile_id: "bp1",
@@ -104,11 +148,32 @@ beforeEach(() => {
   // First admin lookup → brand_profile, second → user profile
   adminBuilder.single
     .mockResolvedValueOnce({
-      data: { id: "bp1", user_id: "u1", brand_identity: "Aurora", brand_website: "https://x" },
+      data: {
+        id: "bp1",
+        user_id: "u1",
+        brand_name: "Aurora",
+        brand_identity: "Aurora Sleep, sold direct",
+        brand_website: "https://x",
+        phone: BRAND_PROFILE_PHONE,
+        target_customer: "secret-customer",
+        exclusions: BRAND_EXCLUSION,
+        stripe_customer_id: BRAND_STRIPE_CUSTOMER,
+      },
       error: null,
     })
     .mockResolvedValueOnce({
-      data: { id: "u1", email: "brand@example.com", role: "brand", full_name: "Brand", company_name: "Aurora" },
+      data: {
+        id: "u1",
+        email: BRAND_EMAIL,
+        phone: BRAND_USER_PHONE,
+        role: "brand",
+        full_name: "Brand",
+        company_name: "Aurora",
+        stripe_customer_id: BRAND_STRIPE_CUSTOMER,
+        stripe_connect_account_id: BRAND_CONNECT_ACCOUNT,
+        platform_fee_percentage: 0.1,
+        company_url: "https://billing.example",
+      },
       error: null,
     });
   // Wave 12: show profile lookup is a maybeSingle on profiles table for the
@@ -164,9 +229,38 @@ describe("POST /api/outreach/[token]/accept", () => {
     expect(updateOutreachResponse).toHaveBeenCalled();
     expect(sendEmail).toHaveBeenCalled();
     const sendArgs = sendEmail.mock.calls[0][0];
-    expect(sendArgs.to).toBe("brand@example.com");
+    expect(sendArgs.to).toBe(BRAND_EMAIL);
     expect(sendArgs.recipientProfileId).toBe("u1");
     expect(sendArgs.subject).toMatch(/Accepted/);
+    expectNoBrandContact(body);
+    expectNarrowSelects();
+  });
+
+  it("does not return the brand email or phone", async () => {
+    const res = await ACCEPT(jsonReq({}) as never, params as never);
+    expect(res.status).toBe(200);
+    expectNoBrandContact(await res.json());
+    expectNarrowSelects();
+    expect(sendEmail.mock.calls[0][0].to).toBe(BRAND_EMAIL);
+  });
+
+  it("treats a profile row with no email as missing", async () => {
+    adminBuilder.single.mockReset();
+    adminBuilder.single
+      .mockResolvedValueOnce({
+        data: { user_id: "u1", brand_name: "Aurora" },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { id: "u1", email: "", full_name: "Brand", phone: BRAND_USER_PHONE },
+        error: null,
+      });
+    const res = await ACCEPT(jsonReq({}) as never, params as never);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Brand user missing" });
+    expect(JSON.stringify(body)).not.toContain(BRAND_USER_PHONE);
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 
   it("creates the deal at accept time even when the show hasn't onboarded", async () => {
@@ -203,6 +297,18 @@ describe("POST /api/outreach/[token]/counter", () => {
     expect(update.response_status).toBe("countered");
     expect(update.counter_cpm).toBe(32);
     expect(update.counter_message).toBe("4-spot minimum");
+    expectNoBrandContact(body);
+    expectNarrowSelects();
+  });
+
+  it("does not return the brand email or phone", async () => {
+    const res = await COUNTER(
+      jsonReq({ counter_cpm: 32, counter_message: "4-spot minimum" }) as never,
+      params as never
+    );
+    expect(res.status).toBe(200);
+    expectNoBrandContact(await res.json());
+    expectNarrowSelects();
   });
 
   it("stores and emails a stripped counter message", async () => {
@@ -234,6 +340,15 @@ describe("POST /api/outreach/[token]/decline", () => {
     const update = updateOutreachResponse.mock.calls[0][1];
     expect(update.response_status).toBe("declined");
     expect(update.decline_reason).toBeNull();
+    expectNoBrandContact(body);
+    expectNarrowSelects();
+  });
+
+  it("does not return the brand email or phone", async () => {
+    const res = await DECLINE(jsonReq({}) as never, params as never);
+    expect(res.status).toBe(200);
+    expectNoBrandContact(await res.json());
+    expectNarrowSelects();
   });
 
   it("declines with reason", async () => {
