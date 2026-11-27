@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import type { InvoiceStatus, Invoice, InvoiceLineItem, InsertionOrder } from "@/lib/data/types";
+import { MASKED_CONTACT } from "@/lib/relay/io-contact";
 
 interface InvoiceWithLineItems extends Invoice {
   line_items: InvoiceLineItem[];
@@ -76,7 +77,7 @@ export default function InvoicesPage() {
   const [sendingInvoice, setSendingInvoice] = useState<Invoice | null>(null);
   const [sendingInvoiceId, setSendingInvoiceId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
-  const [sendResult, setSendResult] = useState<{ success: boolean; to?: string; toName?: string; error?: string } | null>(null);
+  const [sendResult, setSendResult] = useState<{ success: boolean; toName?: string; error?: string } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -216,40 +217,37 @@ export default function InvoicesPage() {
     setShowSendConfirm(true);
   };
 
-  // Open send confirmation for a generated invoice (full object)
+  // Open send confirmation for a generated invoice. Generate already saved it.
   const handleSendGenerated = () => {
-    if (!generatedInvoice) return;
+    if (!generatedInvoice?.id) return;
     setSendingInvoice(generatedInvoice);
-    setSendingInvoiceId(null);
+    setSendingInvoiceId(generatedInvoice.id);
     setSendResult(null);
     setShowSendConfirm(true);
   };
 
-  // The invoice being sent — either from list or generated
+  // The invoice being sent. A just-generated row may not be in the list yet.
   const invoiceToSend = sendingInvoiceId
-    ? invoices.find((inv) => inv.id === sendingInvoiceId) ?? null
+    ? invoices.find((inv) => inv.id === sendingInvoiceId) ?? sendingInvoice
     : sendingInvoice;
 
   const handleSendEmail = async () => {
-    if (!invoiceToSend) return;
+    const invoiceId = sendingInvoiceId ?? invoiceToSend?.id;
+    if (!invoiceId) return;
     setIsSending(true);
     setSendResult(null);
 
     try {
-      const body = sendingInvoiceId
-        ? { invoice_id: sendingInvoiceId }
-        : { invoice: sendingInvoice };
-
       const res = await fetch("/api/invoices/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ invoice_id: invoiceId }),
       });
       const data = await res.json();
       if (!res.ok) {
         setSendResult({ success: false, error: data.error });
       } else {
-        setSendResult({ success: true, to: data.to, toName: data.toName });
+        setSendResult({ success: true, toName: data.toName });
         // Refresh after sending (status may change)
         fetchData();
       }
@@ -663,7 +661,7 @@ export default function InvoicesPage() {
             </p>
             <div className={`mb-3 p-3 ${panelClass} ${radiusClass}`}>
               <div className={`text-sm font-medium ${inkText}`}>{invoiceToSend.bill_to_name}</div>
-              <div className={`text-sm ${mutedText}`}>{invoiceToSend.bill_to_email}</div>
+              <div className={`text-sm ${mutedText}`}>{MASKED_CONTACT}</div>
             </div>
             <div className={`mb-5 space-y-1.5 p-3 text-sm ${panelClass} ${radiusClass}`}>
               <div className="flex justify-between">
@@ -734,11 +732,11 @@ export default function InvoicesPage() {
             <div>
               <p className={`text-sm font-medium ${sendResult.success ? inkText : accentText}`}>
                 {sendResult.success
-                  ? `Invoice sent to ${sendResult.toName ?? sendResult.to}`
+                  ? `Invoice sent to ${sendResult.toName || MASKED_CONTACT}`
                   : "Failed to send"}
               </p>
-              {sendResult.success && sendResult.to && (
-                <p className={`mt-0.5 text-xs ${mutedText}`}>{sendResult.to}</p>
+              {sendResult.success && (
+                <p className={`mt-0.5 text-xs ${mutedText}`}>{MASKED_CONTACT}</p>
               )}
               {sendResult.error && (
                 <p className={`mt-0.5 text-xs ${accentText}`}>{sendResult.error}</p>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import type { Invoice, InvoiceStatus } from "@/lib/data/types";
+import { MASKED_CONTACT } from "@/lib/relay/io-contact";
 
 const inkText = "text-[var(--ts-ink-on-paper)]";
 const mutedText = "text-[var(--ts-ink-muted-on-paper)]";
@@ -250,7 +251,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           <div>
             <h2 className={`mb-3 text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Bill To</h2>
             <p className={`text-sm font-medium ${inkText}`}>{invoice.bill_to_name}</p>
-            <p className={`text-sm ${mutedText}`}>{invoice.bill_to_email}</p>
+            <p className={`text-sm ${mutedText}`}>{MASKED_CONTACT}</p>
           </div>
         </div>
       </section>
@@ -367,7 +368,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               This will send <span className={`font-medium ${inkText}`}>{invoice.invoice_number}</span> to:
             </p>
             <p className={`mb-4 text-sm font-medium ${inkText}`}>
-              {invoice.bill_to_name} &lt;{invoice.bill_to_email}&gt;
+              {invoice.bill_to_name} &lt;{MASKED_CONTACT}&gt;
             </p>
             <p className={`mb-6 text-sm ${mutedText}`}>
               A PDF copy of the invoice will be attached to the email.

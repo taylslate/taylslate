@@ -1,11 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { getAuthenticatedUser, getInvoiceById, getIOById, getDealById, getProfileById } from "@/lib/data/queries";
+import { getAuthEmail } from "@/lib/auth/auth-email";
+import {
+  getAuthenticatedUser,
+  getInvoiceForDelivery,
+  getDealById,
+  getProfileById,
+  getShowProfileByUserId,
+} from "@/lib/data/queries";
 import { generateInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { EMAIL_ADDRESS_INVOICES, viaTaylslateFrom } from "@/lib/email/addresses";
 import { resolveManagedDelivery } from "@/lib/email/send";
 import { renderInvoiceNotice } from "@/lib/email/templates/invoice-notice";
-import type { Invoice } from "@/lib/data";
+import { enforceIoSend } from "@/lib/security/rate-limit";
+import type { Invoice } from "@/lib/data/types";
+
+const NOT_FOUND = { error: "Invoice not found" };
+
+function notFound() {
+  return NextResponse.json(NOT_FOUND, { status: 404 });
+}
+
+function profileId(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+type PublisherDeal = {
+  agent_id?: unknown;
+  show_profile_id?: unknown;
+};
+
+/** The show side that generated the invoice: legacy agent_id, or the show profile on the deal. */
+async function publisherOwns(userId: string, deal: PublisherDeal): Promise<boolean> {
+  if (!userId) return false;
+  if (deal.agent_id === userId) return true;
+  const showProfileId = profileId(deal.show_profile_id);
+  if (!showProfileId) return false;
+  try {
+    const showProfile = await getShowProfileByUserId(userId);
+    return showProfile?.id === showProfileId;
+  } catch {
+    console.warn("[invoices/send]", "owner");
+    return false;
+  }
+}
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.RESEND_API_KEY;
@@ -19,12 +57,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { invoice_id?: string; invoice?: Invoice };
+  let body: { invoice_id?: unknown; invoice?: unknown };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  }
+  if ("invoice" in body) {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  }
+  if (typeof body.invoice_id !== "string" || body.invoice_id.trim() === "") {
+    return NextResponse.json({ error: "invoice_id is required" }, { status: 400 });
+  }
+  const invoiceId = body.invoice_id.trim();
 
   try {
     const user = await getAuthenticatedUser();
@@ -32,58 +81,54 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Resolve the invoice: either by ID (existing) or from the body (generated)
-    let invoice: Invoice;
-    if (body.invoice_id) {
-      const found = await getInvoiceById(body.invoice_id);
-      if (!found) {
-        return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-      }
-      invoice = found;
-    } else if (body.invoice) {
-      invoice = body.invoice;
-    } else {
-      return NextResponse.json({ error: "Provide invoice_id or invoice object" }, { status: 400 });
-    }
+    const limited = await enforceIoSend(user.id);
+    if (limited) return limited;
 
-    // Determine recipient from invoice bill_to fields
-    const recipientEmail = invoice.bill_to_email;
-    const recipientName = invoice.bill_to_name;
+    const loaded = await getInvoiceForDelivery(invoiceId);
+    if (!loaded) return notFound();
+    const invoice = loaded.invoice;
 
-    if (!recipientEmail) {
+    const deal = await getDealById(loaded.dealId);
+    if (!deal) return notFound();
+
+    const owned = await publisherOwns(user.id, deal);
+    if (!owned) return notFound();
+
+    // Account on the deal. Agency when the deal has one, otherwise the brand.
+    // IO contact columns and the stored invoice address are not recipients.
+    const recipientProfileId = profileId(deal.agency_id) || profileId(deal.brand_id);
+    if (!recipientProfileId || recipientProfileId === user.id) {
       return NextResponse.json(
-        { error: "No billing email found on the invoice." },
-        { status: 400 }
+        { error: "No recipient on file for this invoice" },
+        { status: 409 }
       );
     }
 
-    // Determine sender from the IO's publisher/agent, and which profile
-    // should receive the mail. A managed brand or agency is rerouted.
-    let senderName = invoice.from_name;
-    let recipientProfileId: string | undefined;
-    const io = await getIOById(invoice.io_id);
-    if (io) {
-      const deal = await getDealById(io.deal_id);
-      const agent = deal?.agent_id ? await getProfileById(deal.agent_id) : undefined;
-      if (agent) senderName = agent.full_name;
-      if (deal) {
-        const billedToAgency =
-          !!io.agency_contact_email &&
-          invoice.bill_to_email.trim().toLowerCase() ===
-            io.agency_contact_email.trim().toLowerCase();
-        recipientProfileId = billedToAgency
-          ? (deal.agency_id ?? undefined)
-          : (deal.brand_id ?? undefined);
-      }
+    let recipientEmail: string | null = null;
+    try {
+      recipientEmail = await getAuthEmail(recipientProfileId);
+    } catch {
+      console.warn("[invoices/send]", "recipient");
+      recipientEmail = null;
+    }
+    if (!recipientEmail) {
+      return NextResponse.json(
+        { error: "No recipient on file for this invoice" },
+        { status: 409 }
+      );
     }
 
-    // Generate PDF
-    const pdfBuffer = generateInvoicePdf(invoice);
+    let senderName = invoice.from_name;
+    const agentId = profileId(deal.agent_id);
+    const agent = agentId ? await getProfileById(agentId) : undefined;
+    if (agent?.full_name) senderName = agent.full_name;
+
+    const forSend: Invoice = { ...invoice, bill_to_email: recipientEmail };
+    const pdfBuffer = generateInvoicePdf(forSend);
     const filename = `${invoice.invoice_number.replace(/\s+/g, "_")}.pdf`;
 
-    // Build email
     const subject = `Invoice ${invoice.invoice_number} for ${invoice.advertiser_name}, ${invoice.campaign_period}`;
-    const rendered = renderInvoiceNotice(invoice, senderName);
+    const rendered = renderInvoiceNotice(forSend, senderName);
 
     const delivery = await resolveManagedDelivery({
       to: recipientEmail,
@@ -100,7 +145,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Send via Resend. Managed recipients go to MANAGED_ACCOUNT_INBOX.
     const resend = new Resend(apiKey);
 
     const { error } = await resend.emails.send({
@@ -118,24 +162,18 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
-      return NextResponse.json(
-        { error: `Failed to send: ${error.message}` },
-        { status: 500 }
-      );
+      console.warn("[invoices/send]", (error as { code?: string }).code ?? "unknown");
+      return NextResponse.json({ error: "Failed to send" }, { status: 500 });
     }
 
     return NextResponse.json({
       success: true,
-      to: delivery.to,
-      toName: recipientName,
-      subject: delivery.subject,
+      toName: invoice.bill_to_name,
+      subject,
       invoiceNumber: invoice.invoice_number,
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json(
-      { error: `Email send failed: ${message}` },
-      { status: 500 }
-    );
+  } catch {
+    console.warn("[invoices/send]", "unknown");
+    return NextResponse.json({ error: "Email send failed" }, { status: 500 });
   }
 }
