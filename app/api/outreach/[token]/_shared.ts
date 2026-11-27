@@ -34,17 +34,89 @@ import { addBrandToShowCrmOnFirstResponse } from "@/lib/relay/crm";
 import type {
   Outreach,
   OutreachResponseStatus,
-  BrandProfile,
   Profile,
   ShowProfile,
   Wave12Deal,
 } from "@/lib/data/types";
 
+// Columns below are the only brand_profiles / profiles fields these public
+// routes read. The select string is the type's keys, so a field on the type
+// but missing from the list (or the reverse) fails tsc. Reading any other
+// field off the result fails tsc too.
+export interface OutreachTokenBrandProfile {
+  user_id: string;
+  brand_name: string | null;
+  brand_identity: string | null;
+  brand_website: string | null;
+}
+
+export interface OutreachTokenBrandUser {
+  id: string;
+  email: string;
+  full_name: string | null;
+  company_name: string | null;
+}
+
+function selectOf<const Fields extends Record<string, true>>(fields: Fields): string {
+  return (Object.keys(fields) as (keyof Fields)[]).join(", ");
+}
+
+const BRAND_PROFILE_SELECT = selectOf({
+  user_id: true,
+  brand_name: true,
+  brand_identity: true,
+  brand_website: true,
+} as const satisfies Record<keyof OutreachTokenBrandProfile, true>);
+
+const BRAND_USER_SELECT = selectOf({
+  id: true,
+  email: true,
+  full_name: true,
+  company_name: true,
+} as const satisfies Record<keyof OutreachTokenBrandUser, true>);
+
 export interface ResolvedOutreach {
   outreach: Outreach;
-  brandProfile: BrandProfile;
-  brandUser: Profile;
+  brandProfile: OutreachTokenBrandProfile;
+  brandUser: OutreachTokenBrandUser;
   campaignName: string;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function textOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function readBrandProfile(value: unknown): OutreachTokenBrandProfile | null {
+  const row = asRecord(value);
+  if (!row) return null;
+  const userId = row.user_id;
+  if (typeof userId !== "string" || userId.length === 0) return null;
+  return {
+    user_id: userId,
+    brand_name: textOrNull(row.brand_name),
+    brand_identity: textOrNull(row.brand_identity),
+    brand_website: textOrNull(row.brand_website),
+  };
+}
+
+function readBrandUser(value: unknown): OutreachTokenBrandUser | null {
+  const row = asRecord(value);
+  if (!row) return null;
+  const id = row.id;
+  const email = row.email;
+  if (typeof id !== "string" || id.length === 0) return null;
+  if (typeof email !== "string" || email.length === 0) return null;
+  return {
+    id,
+    email,
+    full_name: textOrNull(row.full_name),
+    company_name: textOrNull(row.company_name),
+  };
 }
 
 export type ResolveResult =
@@ -92,12 +164,14 @@ export async function resolveOutreachOr400(
     };
   }
 
-  // Brand profile + user (admin client — public endpoint, RLS would block).
-  const { data: brandProfile, error: bpErr } = await supabaseAdmin
+  // Brand profile + user (admin client. Public endpoint, RLS would block).
+  // Copy into the narrow types so a wider row cannot stay in memory.
+  const { data: brandProfileRow, error: bpErr } = await supabaseAdmin
     .from("brand_profiles")
-    .select("*")
+    .select(BRAND_PROFILE_SELECT)
     .eq("id", outreach.brand_profile_id)
     .single();
+  const brandProfile = readBrandProfile(brandProfileRow);
   if (bpErr || !brandProfile) {
     return {
       ok: false,
@@ -105,11 +179,12 @@ export async function resolveOutreachOr400(
     };
   }
 
-  const { data: brandUser } = await supabaseAdmin
+  const { data: brandUserRow } = await supabaseAdmin
     .from("profiles")
-    .select("*")
+    .select(BRAND_USER_SELECT)
     .eq("id", brandProfile.user_id)
     .single();
+  const brandUser = readBrandUser(brandUserRow);
   if (!brandUser) {
     return {
       ok: false,
@@ -126,8 +201,8 @@ export async function resolveOutreachOr400(
     ok: true,
     data: {
       outreach,
-      brandProfile: brandProfile as BrandProfile,
-      brandUser: brandUser as Profile,
+      brandProfile,
+      brandUser,
       campaignName: campaign?.name ?? "your campaign",
     },
   };
@@ -151,6 +226,24 @@ function siteOrigin(request: Request): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL;
   if (envOrigin) return envOrigin.replace(/\/$/, "");
   return new URL(request.url).origin;
+}
+
+function notificationBrandName(
+  profile: OutreachTokenBrandProfile,
+  user: OutreachTokenBrandUser
+): string {
+  // brandNameFromProfile reads brand_name, brand_identity, and brand_website.
+  // id, created_at, and updated_at only satisfy its parameter type.
+  const fromProfile = brandNameFromProfile({
+    id: "",
+    user_id: profile.user_id,
+    created_at: "",
+    updated_at: "",
+    brand_name: profile.brand_name,
+    brand_identity: profile.brand_identity,
+    brand_website: profile.brand_website,
+  });
+  return fromProfile || user.full_name || user.company_name || "Your campaign";
 }
 
 export async function applyAndNotify(
@@ -250,11 +343,10 @@ export async function applyAndNotify(
     });
   }
 
-  const brandName =
-    brandNameFromProfile(args.resolved.brandProfile) ||
-    args.resolved.brandUser.full_name ||
-    args.resolved.brandUser.company_name ||
-    "Your campaign";
+  const brandName = notificationBrandName(
+    args.resolved.brandProfile,
+    args.resolved.brandUser
+  );
 
   const origin = siteOrigin(args.request);
   const email = renderBrandNotification({
